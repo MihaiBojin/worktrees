@@ -8,7 +8,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from . import __version__, create_branch, prune
+from . import __version__, new_branch, prune
 from . import repo as R
 from .git import GitError, Refused, commands, options
 
@@ -166,7 +166,7 @@ def run_create(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
     if not args.name:
-        _err("usage: gcb NAME")
+        _err("usage: gwnb NAME")
         return 2
 
     warn = None if args.quiet else _err
@@ -174,8 +174,8 @@ def run_create(args: argparse.Namespace) -> int:
         _err("branching from what is already here; refs may be stale (--no-fetch)")
 
     try:
-        started = create_branch.create(args.name, fetch=not args.no_fetch, warn=warn)
-    except create_branch.Refusal as exc:
+        started = new_branch.create(args.name, fetch=not args.no_fetch, warn=warn)
+    except new_branch.Refusal as exc:
         _err(str(exc))
         return 1
 
@@ -204,9 +204,9 @@ def gwp(argv: list[str] | None = None) -> int:
     return _dispatch(p, argv, run_prune)
 
 
-def gcb(argv: list[str] | None = None) -> int:
+def gwnb(argv: list[str] | None = None) -> int:
     """The same, for starting a branch. Checking out needs no shell either."""
-    p = _parser("gcb", "Fetch, then branch NAME off the head branch and check it out.")
+    p = _parser("gwnb", "Fetch, then branch NAME off the head branch and check it out.")
     _add_create_flags(p)
     return _dispatch(p, argv, run_create)
 
@@ -214,7 +214,7 @@ def gcb(argv: list[str] | None = None) -> int:
 # The subcommand each name runs, and the flags it takes.
 _COMMANDS = {
     "prune": (run_prune, _add_prune_flags, "say which worktrees are finished"),
-    "create-branch": (run_create, _add_create_flags, "start a branch off the head branch"),
+    "new-branch": (run_create, _add_create_flags, "start a branch off the head branch"),
 }
 
 

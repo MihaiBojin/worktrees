@@ -1,4 +1,4 @@
-"""gcb: fetch, then branch off the head branch and check it out."""
+"""gwnb: fetch, then branch off the head branch and check it out."""
 
 from __future__ import annotations
 
@@ -9,20 +9,20 @@ from pathlib import Path
 
 import pytest
 
-from worktrees import create_branch
+from worktrees import new_branch
 from worktrees.git import Refused, guard
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 
-def gcb(world, *args: str) -> subprocess.CompletedProcess[str]:
+def gwnb(world, *args: str) -> subprocess.CompletedProcess[str]:
     from conftest import ENV
 
     return subprocess.run(
         [
             sys.executable,
             "-c",
-            "from worktrees.cli import gcb; raise SystemExit(gcb())",
+            "from worktrees.cli import gwnb; raise SystemExit(gwnb())",
             *args,
         ],
         cwd=str(world.repo),
@@ -47,7 +47,7 @@ def with_remote(world) -> None:
 
 
 def test_it_branches_off_the_head_branch(world) -> None:
-    started = create_branch.create("feature", fetch=False)
+    started = new_branch.create("feature", fetch=False)
     assert started.branch == "feature"
     assert started.base == "refs/heads/main"
     assert world.git("symbolic-ref", "--short", "HEAD") == "feature"
@@ -57,7 +57,7 @@ def test_the_base_is_the_remote_copy_when_there_is_one(world) -> None:
     """A branch made here is already on top of what the server has."""
     with_remote(world)
     world.commit("local-only", "x\n")  # main moves; origin/main does not
-    started = create_branch.create("feature", fetch=False)
+    started = new_branch.create("feature", fetch=False)
     assert started.base == "refs/remotes/origin/main"
     assert world.git("rev-parse", "HEAD") == world.git(
         "rev-parse", "refs/remotes/origin/main"
@@ -68,7 +68,7 @@ def test_the_new_branch_does_not_track_the_head_branch(world) -> None:
     """A branch that tracked it would take it as its upstream, and git push
     would target the head branch."""
     with_remote(world)
-    create_branch.create("feature", fetch=False)
+    new_branch.create("feature", fetch=False)
     proc = subprocess.run(
         ["git", "-C", str(world.repo), "config", "--get", "branch.feature.merge"],
         capture_output=True,
@@ -79,16 +79,16 @@ def test_the_new_branch_does_not_track_the_head_branch(world) -> None:
 
 def test_an_existing_branch_is_refused(world) -> None:
     world.git("branch", "taken", "main")
-    with pytest.raises(create_branch.Refusal) as exc:
-        create_branch.create("taken", fetch=False)
+    with pytest.raises(new_branch.Refusal) as exc:
+        new_branch.create("taken", fetch=False)
     assert "already a branch" in str(exc.value)
     assert "git switch taken" in str(exc.value)
 
 
 @pytest.mark.parametrize("name", ["has space", "-leading", "a..b", "x.lock", ""])
 def test_an_invalid_name_is_refused(world, name: str) -> None:
-    with pytest.raises(create_branch.Refusal) as exc:
-        create_branch.create(name, fetch=False)
+    with pytest.raises(new_branch.Refusal) as exc:
+        new_branch.create(name, fetch=False)
     assert "not a valid branch name" in str(exc.value)
     assert world.git("symbolic-ref", "--short", "HEAD") == "main"
 
@@ -98,19 +98,19 @@ def test_a_tag_cannot_be_the_base(world) -> None:
     with_remote(world)
     world.commit("later", "later\n")
     world.git("tag", "origin/main", "HEAD")  # the tag is not where origin/main is
-    started = create_branch.create("feature", fetch=False)
+    started = new_branch.create("feature", fetch=False)
     assert started.base == "refs/remotes/origin/main"
     assert world.git("rev-parse", "HEAD") != world.git("rev-parse", "refs/tags/origin/main")
 
 
 def test_a_name_is_required(world) -> None:
-    p = gcb(world)
+    p = gwnb(world)
     assert p.returncode == 2
-    assert "usage: gcb NAME" in p.stderr
+    assert "usage: gwnb NAME" in p.stderr
 
 
 def test_the_binary_reports_what_it_made(world) -> None:
-    p = gcb(world, "feature", "--no-fetch")
+    p = gwnb(world, "feature", "--no-fetch")
     assert p.returncode == 0, p.stderr
     sha = world.git("rev-parse", "--short", "refs/heads/main")
     assert p.stdout.strip() == f"feature from main at {sha}"
@@ -118,14 +118,14 @@ def test_the_binary_reports_what_it_made(world) -> None:
 
 
 def test_json_is_data_on_stdout(world) -> None:
-    p = gcb(world, "feature", "--no-fetch", "--json")
+    p = gwnb(world, "feature", "--no-fetch", "--json")
     assert p.returncode == 0, p.stderr
     assert json.loads(p.stdout)["base"] == "refs/heads/main"
 
 
 def test_a_refusal_leaves_the_checkout_alone(world) -> None:
     world.git("branch", "taken", "main")
-    p = gcb(world, "taken", "--no-fetch")
+    p = gwnb(world, "taken", "--no-fetch")
     assert p.returncode == 1
     assert "already a branch" in p.stderr
     assert p.stdout == ""

@@ -6,7 +6,7 @@ caller.
 | | |
 | --- | --- |
 | `gwp` | say which worktrees are finished, and why, and remove them on `--yes` |
-| `gcb NAME` | fetch, then branch `NAME` off the head branch and check it out |
+| `gwnb NAME` | fetch, then branch `NAME` off the head branch and check it out |
 
 ## gwp
 
@@ -70,10 +70,10 @@ will one day cite as the reason a sweep was safe.
 | `-v`, `--verbose` | print every git command as it runs |
 | `--explain` | print every git command the program can issue, and exit |
 
-## gcb
+## gwnb
 
 ```console
-$ gcb fix-parser
+$ gwnb fix-parser
 fix-parser from origin/main at 4a91c02
 ```
 
@@ -90,7 +90,7 @@ target the head branch.
 A failed fetch is not fatal. An offline machine still gets a branch, off
 whatever it last saw, and the line at the end names the commit it got.
 
-`gcb` takes `--no-fetch`, `--json`, `-q`, `-v` and `--explain`.
+`gwnb` takes `--no-fetch`, `--json`, `-q`, `-v` and `--explain`.
 
 ## Every git call is visible
 
