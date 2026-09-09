@@ -107,6 +107,12 @@ def guard(argv: Sequence[str]) -> None:
 
     if head == "reset" and _has(argv, "--hard"):
         raise Refused(f"{_ABSOLUTE} `git reset --hard`; it discards the working tree")
+    if head in ("checkout", "switch") and (
+        _short(rest, "f") or _has(rest, "--force", "--discard-changes")
+    ):
+        raise Refused(
+            f"{_ABSOLUTE} a forced `git {head}`; it discards the working tree"
+        )
     if head == "clean" and (_short(rest, "f") or _has(rest, "--force")):
         raise Refused(f"{_ABSOLUTE} `git clean -f`; nothing restores what it deletes")
     if head == "push" and (_short(rest, "f") or _has(rest, "--force")):

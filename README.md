@@ -1,5 +1,15 @@
 # worktrees
 
+Two commands so far, and neither needs a shell wrapper: nothing here cds its
+caller.
+
+| | |
+| --- | --- |
+| `gwp` | say which worktrees are finished, and why, and remove them on `--yes` |
+| `gcb NAME` | fetch, then branch `NAME` off the head branch and check it out |
+
+## gwp
+
 `gwp` says which of this repository's worktrees are finished, why, and removes
 them when you pass `--yes`.
 
@@ -15,7 +25,7 @@ unknown  try-something  not merged into main, and no upstream says whether its c
 nothing removed; pass --yes to remove the 1 above
 ```
 
-## Two holes in git
+### Two holes in git
 
 **A squash merge inverts `git branch -d`.** A branch whose change is already in
 `main` reports `error: the branch 'x' is not fully merged` and points you at
@@ -34,7 +44,7 @@ git brings them back: no ref ever pointed at them. `gwp` reads
 `--ignored=traditional`, counts what would go, and refuses without
 `--delete-ignored`. `--yes` does not answer that question.
 
-## Three verdicts
+### Three verdicts
 
 `unknown` is not `keep` with a softer word.
 
@@ -48,7 +58,7 @@ There is no `--dry-run`. Without `--yes` this only reports, and a flag meaning
 "do not act" on a command that does not act reads as a safety feature somebody
 will one day cite as the reason a sweep was safe.
 
-## Flags
+### Flags
 
 | | |
 | --- | --- |
@@ -59,6 +69,28 @@ will one day cite as the reason a sweep was safe.
 | `--json` | verdicts as data |
 | `-v`, `--verbose` | print every git command as it runs |
 | `--explain` | print every git command the program can issue, and exit |
+
+## gcb
+
+```console
+$ gcb fix-parser
+fix-parser from origin/main at 4a91c02
+```
+
+The base is `<remote>/<head>` as it stands after the fetch, not the local copy
+of it, so the branch starts on top of what the server has and nothing has to be
+rebased afterwards. It travels as a full ref, because git resolves a bare name
+as a tag first and a repository holding a tag called `origin/main` would branch
+from the tag.
+
+`--no-track`, so the head branch does not become the new branch's upstream. A
+branch that tracked it would take it as its upstream and `git push` would
+target the head branch.
+
+A failed fetch is not fatal. An offline machine still gets a branch, off
+whatever it last saw, and the line at the end names the commit it got.
+
+`gcb` takes `--no-fetch`, `--json`, `-q`, `-v` and `--explain`.
 
 ## Every git call is visible
 
@@ -81,10 +113,11 @@ def remove_worktree(path):
 ```
 
 The argv is a real list, so nothing is ever a shell string and a branch name
-cannot inject. `gwp --explain` prints all 26 of them. A guard runs on the
+cannot inject. `gwp --explain` prints all 28 of them. A guard runs on the
 resolved argv inside the wrapper, so no call site can assemble its way past it:
-`reset --hard`, `clean -f`, a bare `push --force`, `worktree remove --force`
-and `branch -D` are refused whatever flags are passed.
+`reset --hard`, a forced `checkout` or `switch`, `clean -f`, a bare
+`push --force`, `worktree remove --force` and `branch -D` are refused whatever
+flags are passed.
 
 A branch is deleted only on git's own proof, with `branch -d`. The command that
 puts it back is printed before anything is removed, and `--quiet` and `--yes`

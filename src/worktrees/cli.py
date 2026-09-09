@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
-from . import __version__, prune
+from . import __version__, create_branch, prune
 from . import repo as R
 from .git import GitError, Refused, commands, options
 
@@ -42,8 +43,9 @@ def _explain() -> int:
     print()
     print(
         "! takes the repository's shared refs and runs serially. The guard "
-        "refuses\n  reset --hard, clean -f, push --force, worktree remove --force "
-        "and branch -D\n  outright, whatever flags are passed."
+        "refuses\n  reset --hard, a forced checkout or switch, clean -f, push "
+        "--force,\n  worktree remove --force and branch -D outright, whatever "
+        "flags are passed."
     )
     return 0
 
@@ -150,40 +152,94 @@ def run_prune(args: argparse.Namespace) -> int:
     return 0
 
 
-def _parser(prog: str) -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog=prog,
-        description="Say which worktrees are finished, and why. Removes nothing "
-        "unless --yes.",
-    )
+def _add_create_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument("name", nargs="?", default="", metavar="NAME", help="the branch to start")
+    p.add_argument("--no-fetch", action="store_true", help="branch off what is already here")
+    p.add_argument("--json", action="store_true", help="the result as data")
+    p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
+    p.add_argument("-v", "--verbose", action="store_true", help="print every git command")
+    p.add_argument("--explain", action="store_true", help="print every git command and exit")
+
+
+def run_create(args: argparse.Namespace) -> int:
+    options.verbose = args.verbose
+    if args.explain:
+        return _explain()
+    if not args.name:
+        _err("usage: gcb NAME")
+        return 2
+
+    warn = None if args.quiet else _err
+    if args.no_fetch and not args.quiet:
+        _err("branching from what is already here; refs may be stale (--no-fetch)")
+
+    try:
+        started = create_branch.create(args.name, fetch=not args.no_fetch, warn=warn)
+    except create_branch.Refusal as exc:
+        _err(str(exc))
+        return 1
+
+    if args.json:
+        print(
+            json.dumps(
+                {"branch": started.branch, "base": started.base, "sha": started.sha},
+                indent=2,
+            )
+        )
+    elif not args.quiet:
+        print(f"{started.branch} from {R.ref_name(started.base)} at {started.sha}")
+    return 0
+
+
+def _parser(prog: str, description: str) -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog=prog, description=description)
     p.add_argument("--version", action="version", version=__version__)
     return p
 
 
 def gwp(argv: list[str] | None = None) -> int:
     """The alias a person types. It never cds, so it needs no shell."""
-    p = _parser("gwp")
+    p = _parser("gwp", "Say which worktrees are finished, and why. Removes nothing unless --yes.")
     _add_prune_flags(p)
-    return _dispatch(p, argv)
+    return _dispatch(p, argv, run_prune)
+
+
+def gcb(argv: list[str] | None = None) -> int:
+    """The same, for starting a branch. Checking out needs no shell either."""
+    p = _parser("gcb", "Fetch, then branch NAME off the head branch and check it out.")
+    _add_create_flags(p)
+    return _dispatch(p, argv, run_create)
+
+
+# The subcommand each name runs, and the flags it takes.
+_COMMANDS = {
+    "prune": (run_prune, _add_prune_flags, "say which worktrees are finished"),
+    "create-branch": (run_create, _add_create_flags, "start a branch off the head branch"),
+}
 
 
 def main(argv: list[str] | None = None) -> int:
     """The CLI a shim and an agent call."""
-    p = _parser("worktrees")
+    p = _parser("worktrees", "Git worktree commands that refuse to lose work.")
     subs = p.add_subparsers(dest="command")
-    _add_prune_flags(subs.add_parser("prune", help="say which worktrees are finished"))
+    for name, (_, flags, help_text) in _COMMANDS.items():
+        flags(subs.add_parser(name, help=help_text))
     args_in = sys.argv[1:] if argv is None else argv
     if args_in and args_in[0].startswith("-") and args_in[0] not in (
         "-h",
         "--help",
         "--version",
     ):
-        # `worktrees --explain` means prune, which is the only command so far.
+        # `worktrees --explain` is not about one command; prune answers it.
         args_in = ["prune", *args_in]
-    return _dispatch(p, args_in)
+    return _dispatch(p, args_in, None)
 
 
-def _dispatch(p: argparse.ArgumentParser, argv: list[str] | None) -> int:
+def _dispatch(
+    p: argparse.ArgumentParser,
+    argv: list[str] | None,
+    run: Callable[[argparse.Namespace], int] | None,
+) -> int:
     raw = sys.argv[1:] if argv is None else argv
     # Before parsing, so it is refused rather than absorbed. A flag meaning
     # "do not act" on a command that does not act is a no-op wearing the
@@ -196,11 +252,13 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str] | None) -> int:
         )
         return 2
     args = p.parse_args(raw)
-    if getattr(args, "command", "prune") is None:
-        p.print_help()
-        return 0
+    if run is None:
+        if args.command is None:
+            p.print_help()
+            return 0
+        run = _COMMANDS[args.command][0]
     try:
-        return run_prune(args)
+        return run(args)
     except Refused as exc:
         _err(str(exc))
         return 3
