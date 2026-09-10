@@ -15,9 +15,20 @@ from worktrees.git import Refused, guard
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 
-def gwnb(world, *args: str) -> subprocess.CompletedProcess[str]:
+def _env(world) -> dict[str, str]:
     from conftest import ENV
 
+    return {
+        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+        "PYTHONPATH": SRC,
+        "HOME": str(world.root),
+        "GIT_CONFIG_GLOBAL": str(world.root / "gitconfig"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        **ENV,
+    }
+
+
+def gwnb(world, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             sys.executable,
@@ -28,14 +39,7 @@ def gwnb(world, *args: str) -> subprocess.CompletedProcess[str]:
         cwd=str(world.repo),
         capture_output=True,
         text=True,
-        env={
-            "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-            "PYTHONPATH": SRC,
-            "HOME": str(world.root),
-            "GIT_CONFIG_GLOBAL": str(world.root / "gitconfig"),
-            "GIT_CONFIG_NOSYSTEM": "1",
-            **ENV,
-        },
+        env=_env(world),
     )
 
 
@@ -144,3 +148,25 @@ def test_a_forced_checkout_is_refused(world) -> None:
         with pytest.raises(Refused):
             guard(argv)
     guard(("checkout", "--no-track", "-b", "x", "refs/heads/main"))
+
+
+def test_the_usage_line_names_what_was_typed(world) -> None:
+    """The alias and the subcommand are two programs, not one."""
+    p = gwnb(world)
+    assert p.returncode == 2
+    assert p.stderr.strip() == "usage: gwnb NAME"
+
+    p = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import main; raise SystemExit(main())",
+            "new-branch",
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=_env(world),
+    )
+    assert p.returncode == 2
+    assert p.stderr.strip() == "usage: worktrees new-branch NAME"

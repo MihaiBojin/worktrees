@@ -261,7 +261,9 @@ def run_new_branch(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
     if not args.name:
-        _err("usage: gwnb NAME")
+        # The program the caller typed, so `worktrees new-branch` does not
+        # answer with the name of its own alias.
+        _err(f"usage: {args.prog} NAME")
         return 2
 
     warn = None if args.quiet else _err
@@ -376,6 +378,10 @@ def _dispatch(
         _err("there is no --dry-run: gws reports, and gwp asks before removing")
         return 2
     args = p.parse_args(raw)
+    # argparse gives a subparser its own prog; rebuild it rather than reach
+    # into the private table for it.
+    command = getattr(args, "command", None)
+    args.prog = f"{p.prog} {command}" if command else p.prog
     if run is None:
         if args.command is None:
             p.print_help()
