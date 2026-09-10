@@ -47,11 +47,16 @@ jobs:
           python-version: "3.14"
           enable-cache: true
 
-      # Three guards, cheapest first. The tag has to name a version the
-      # repository actually carries, the commit has to be one main took, and
-      # its tests have to have passed already.
+      # Four guards, cheapest first. The tag has to name a version the
+      # repository actually carries, that version has to have a changelog
+      # entry, the commit has to be one main took, and its tests have to have
+      # passed already. All of them here in build, because the release job
+      # runs after the PyPI upload and a refusal there would be too late.
       - name: Check the tag matches the project version
         run: scripts/check-tag-version.bash
+
+      - name: Check the changelog has an entry for it
+        run: scripts/changelog-section.bash "${GITHUB_REF_NAME#v}" >/dev/null
 
       - name: Check the commit is on main
         run: scripts/check-on-main.bash
@@ -155,8 +160,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # What was written for this version, not a list of pull request titles.
+      # build already proved the section exists, before anything was published.
+      - name: Read the changelog entry
+        run: scripts/changelog-section.bash "${GITHUB_REF_NAME#v}" >RELEASE_NOTES.md
+
       - name: Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
           make_latest: true

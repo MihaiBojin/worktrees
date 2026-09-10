@@ -259,6 +259,12 @@ a tag that already exists on the remote, and a version PyPI already carries.
 That last one matters most: PyPI rejects a duplicate at the very end of a
 publish run, after everything else has already happened.
 
+The `release-notes` skill writes the `CHANGELOG.md` entry on the release
+branch, so the notes are reviewed in the same pull request as the version
+bump. `publish.yml` reads that section back out for the GitHub release, and
+`build` refuses a tag whose version has no section, before anything is
+published. Nothing is generated from pull request titles.
+
 By hand it is the same four commands:
 
 ```console
