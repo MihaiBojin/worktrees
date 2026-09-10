@@ -103,22 +103,46 @@ The rules that come with it, both the same shape as `gwp`'s prompt:
 `--json` and `--list` answer the same question without any of this, and an
 agent uses those.
 
-## Every git command is one decorated function
+## Every git command is one spec
 
-The body returns the argv that follows `git`, so the module reads as the list
-of commands the program can run and `--explain` prints it.
+The spec is the command as you would type it, with `$name` where a value goes.
+The module reads as the list of commands the program can run, and `--explain`
+prints the specs themselves.
 
 ```python
-@git(ok=(0, 1))
-def is_ancestor(ref, head):
-    """Non-zero means 'no', not 'broken'."""
-    return "merge-base", "--is-ancestor", ref, head
+@git("merge-base --is-ancestor $ref $head", ok=(0, 1))
+def is_ancestor(ref, head): ...
+
+
+@git("--no-optional-locks status --porcelain --ignored=traditional")
+def ignored_paths(): ...
+
+
+@git("commit-tree $tree -p $parent -m _", env=_SYNTHETIC, ok=(0, 128))
+def commit_tree(tree, parent): ...
 ```
 
-The argv is a real list. Nothing is ever a shell string, so a branch name
-cannot inject. `--explain` derives its output by calling each body with
-`<param>` placeholders, which is sound only while a body does nothing but
-return a tuple built from its parameters. Keep it that way.
+`shlex.split` runs once, at decoration time, on the literal spec. Only then is
+each token scanned for a placeholder. That ordering is the whole safety
+property: the splitting is over before any value is seen, so a branch named
+`$(id)`, `a"b` or `has space` lands as exactly one argv element. git accepts
+the first two as branch names, and there is a test that creates them.
+
+`$` rather than `{}`, because git's revision syntax is full of braces:
+`^{tree}`, `^{commit}` and `@{upstream}` pass through untouched. `$$` is a
+literal `$`, and so is a `$` with no name after it.
+
+Three ways to place a value: `$name` anywhere, including inside a token so
+`--format=$fmt` stays one element; `$*name` splats a list at that position;
+and anything the body returns is appended as a tail, for arguments with no
+fixed place. Names bind from `inspect.signature`, so there is no second
+mapping to keep in step, and a spec naming a parameter the function does not
+have raises `NameError` at import.
+
+The form catches its own bugs. `-C $path status --porcelain
+--no-optional-locks` is wrong, because `--no-optional-locks` is a git global
+and belongs before the subcommand. That is visible in a spec and invisible in
+a tuple.
 
 `guard()` runs on the resolved argv inside the wrapper, not at declaration, so
 no call site can assemble its way past it. `reset --hard`, a forced `checkout`

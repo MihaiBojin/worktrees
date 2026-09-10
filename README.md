@@ -184,28 +184,26 @@ gwa() {
 
 ## Every git call is visible
 
-A decorated function's body is the command it runs:
+Each one is a spec, written the way you would type it, with `$name` where a
+value goes:
 
 ```python
-@git
-def worktree_records():
-    """Every worktree, NUL-delimited."""
-    return "worktree", "list", "--porcelain", "-z"
+@git("worktree list --porcelain -z")
+def worktree_records(): ...
 
 
-@git(ok=(0, 1))
-def is_ancestor(ref, head):
-    """Non-zero means 'no', not 'broken'."""
-    return "merge-base", "--is-ancestor", ref, head
+@git("merge-base --is-ancestor $ref $head", ok=(0, 1))
+def is_ancestor(ref, head): ...
 
 
-@git(mutates=True)
-def remove_worktree(path):
-    return "worktree", "remove", "--", path
+@git("worktree remove -- $path", mutates=True)
+def remove_worktree(path): ...
 ```
 
-The argv is a real list, so nothing is ever a shell string and a branch name
-cannot inject. `--explain` prints all 28 of them, marking the six that mutate.
+`shlex.split` runs once at decoration time on the literal spec, before any
+value exists. So a branch named `$(id)` becomes one argv element and stays a
+name: git accepts that as a refname, and the suite creates it. `--explain`
+prints all 28 specs, marking the six that mutate.
 A guard runs on the resolved argv inside the wrapper, so no call site can
 assemble its way past it: `reset --hard`, a forced `checkout` or `switch`,
 `clean -f`, a bare `push --force`, `worktree remove --force` and `branch -D`

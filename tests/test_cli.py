@@ -257,7 +257,7 @@ def test_explain_lists_every_command_and_runs_none(world) -> None:
     p = run(world, "gws", "--explain")
     assert p.returncode == 0, p.stderr
     assert "git worktree list --porcelain -z" in p.stdout
-    assert "git branch -d -- <branch>" in p.stdout
+    assert "git branch -d -- $branch" in p.stdout
     assert "git branch -D" not in p.stdout
 
 

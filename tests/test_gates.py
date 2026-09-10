@@ -273,13 +273,34 @@ def test_the_guard_cannot_be_bypassed(world) -> None:
     """It runs on the resolved argv inside the wrapper, not at declaration."""
     from worktrees.git import git
 
-    @git
-    def sneaky(flag: str) -> tuple[str, ...]:
+    @git("branch $flag x")
+    def sneaky(flag: str) -> None:
         """A caller assembling a refused command from data."""
-        return "branch", flag, "x"
 
     with pytest.raises(Refused):
         sneaky("-D")
+
+
+def test_a_spec_naming_an_unknown_parameter_fails_at_import(world) -> None:
+    """A typo in a spec is cheapest to hear about at decoration."""
+    from worktrees.git import git
+
+    with pytest.raises(NameError, match=r"\$brnch"):
+
+        @git("branch -d $brnch")
+        def typo(branch: str) -> None:
+            """The spec and the signature disagree."""
+
+
+def test_the_spec_must_be_a_string(world) -> None:
+    """The bare `@git` form is gone; say so rather than failing in shlex."""
+    from worktrees.git import git
+
+    with pytest.raises(TypeError, match="takes the command as a string"):
+
+        @git  # type: ignore[arg-type]
+        def bare(ref: str) -> None:
+            """Decorated the old way."""
 
 
 def test_no_unexpected_git_command_ran(world) -> None:

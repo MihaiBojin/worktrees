@@ -30,34 +30,29 @@ _SYNTHETIC = {
 }
 
 
-@git(ok=(0, 1))
-def is_ancestor(ref: str, head: str) -> tuple[str, ...]:
+@git("merge-base --is-ancestor $ref $head", ok=(0, 1))
+def is_ancestor(ref: str, head: str) -> None:
     """Non-zero means 'no', not 'broken'."""
-    return "merge-base", "--is-ancestor", ref, head
 
 
-@git(ok=(0, 128))
-def merge_base(a: str, b: str) -> tuple[str, ...]:
+@git("merge-base $a $b", ok=(0, 128))
+def merge_base(a: str, b: str) -> None:
     """The commit two refs last had in common."""
-    return "merge-base", a, b
 
 
-@git(ok=(0, 128))
-def tree_of(ref: str) -> tuple[str, ...]:
+@git("rev-parse $ref^{tree}", ok=(0, 128))
+def tree_of(ref: str) -> None:
     """The tree a ref points at."""
-    return "rev-parse", f"{ref}^{{tree}}"
 
 
-@git(env=_SYNTHETIC, ok=(0, 128))
-def commit_tree(tree: str, parent: str) -> tuple[str, ...]:
+@git("commit-tree $tree -p $parent -m _", env=_SYNTHETIC, ok=(0, 128))
+def commit_tree(tree: str, parent: str) -> None:
     """Replay a tree as one commit on top of a parent."""
-    return "commit-tree", tree, "-p", parent, "-m", "_"
 
 
-@git(ok=(0, 128))
-def cherry(head: str, synth: str) -> tuple[str, ...]:
+@git("cherry $head $synth", ok=(0, 128))
+def cherry(head: str, synth: str) -> None:
     """Compare by patch content, which is what a squash preserves."""
-    return "cherry", head, synth
 
 
 def squash_merged(

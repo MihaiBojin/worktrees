@@ -14,26 +14,23 @@ from . import repo as R
 from .git import git
 
 
-@git(ok=(0, 1, 128))
-def check_ref_format(name: str) -> tuple[str, ...]:
+@git("check-ref-format --branch $name", ok=(0, 1, 128))
+def check_ref_format(name: str) -> None:
     """Would git accept this as a branch name?"""
-    return "check-ref-format", "--branch", name
 
 
-@git(ok=(0, 128))
-def abbrev(ref: str) -> tuple[str, ...]:
+@git("rev-parse --short $ref", ok=(0, 128))
+def abbrev(ref: str) -> None:
     """The short sha a ref names."""
-    return "rev-parse", "--short", ref
 
 
-@git(mutates=True)
-def checkout_new_branch(name: str, base: str) -> tuple[str, ...]:
+@git("switch --create $name --no-track $base", mutates=True)
+def start_branch(name: str, base: str) -> None:
     """--no-track, so the head branch does not become this branch's upstream.
 
     A branch off refs/remotes/<remote>/main that tracked it would take it as
     its upstream, and `git push` would target the head branch.
     """
-    return "checkout", "--no-track", "-b", name, base
 
 
 @dataclass(frozen=True)
@@ -57,7 +54,9 @@ def create(
     if not check_ref_format(name, repo=repo):
         raise Refusal(f"{name} is not a valid branch name")
     if R.ref_exists(f"refs/heads/{name}", repo=repo):
-        raise Refusal(f"{name} is already a branch; gb! {name} checks it out")
+        # Native git, so the message names a command that exists for somebody
+        # who installed the package without the shell plugin.
+        raise Refusal(f"{name} is already a branch; git switch {name} checks it out")
 
     remote = R.remote(repo=repo)
     if fetch and remote and not R.fetch(remote, repo=repo) and callable(warn):
@@ -76,5 +75,5 @@ def create(
         )
 
     sha = abbrev(base, repo=repo)
-    checkout_new_branch(name, base, repo=repo)
+    start_branch(name, base, repo=repo)
     return Started(name, base, sha.out.strip() if sha else "")

@@ -13,98 +13,86 @@ from .git import git
 # --------------------------------------------------------------------------
 
 
-@git
-def worktree_records() -> tuple[str, ...]:
+@git("worktree list --porcelain -z")
+def worktree_records() -> None:
     """Every worktree, NUL-delimited."""
-    return "worktree", "list", "--porcelain", "-z"
 
 
-@git
-def remotes() -> tuple[str, ...]:
+@git("remote")
+def remotes() -> None:
     """The names of every remote."""
-    return ("remote",)
 
 
-@git(ok=(0, 1))
-def config_get(key: str) -> tuple[str, ...]:
+@git("config --get $key", ok=(0, 1))
+def config_get(key: str) -> None:
     """One config value. Exit 1 means unset, not broken."""
-    return "config", "--get", key
 
 
-@git(ok=(0, 1, 128))
-def symbolic_ref(ref: str) -> tuple[str, ...]:
+@git("symbolic-ref --quiet $ref", ok=(0, 1, 128))
+def symbolic_ref(ref: str) -> None:
     """What a symbolic ref points at."""
-    return "symbolic-ref", "--quiet", ref
 
 
-@git(ok=(0, 1, 128))
-def current_branch() -> tuple[str, ...]:
+@git("symbolic-ref --quiet --short HEAD", ok=(0, 1, 128))
+def current_branch() -> None:
     """The checked-out branch, short. Exit 1 on a detached HEAD."""
-    return "symbolic-ref", "--quiet", "--short", "HEAD"
 
 
-@git(ok=(0, 1))
-def ref_exists(ref: str) -> tuple[str, ...]:
+@git("show-ref --verify --quiet $ref", ok=(0, 1))
+def ref_exists(ref: str) -> None:
     """Does this exact ref exist?"""
-    return "show-ref", "--verify", "--quiet", ref
 
 
-@git
-def first_ref_under(prefix: str) -> tuple[str, ...]:
+@git("for-each-ref --count=1 --format=%(refname) $prefix")
+def first_ref_under(prefix: str) -> None:
     """One ref under a prefix, or nothing."""
-    return "for-each-ref", "--count=1", "--format=%(refname)", prefix
 
 
-@git
-def refs_containing(sha: str) -> tuple[str, ...]:
+@git("for-each-ref --count=1 --contains $sha")
+def refs_containing(sha: str) -> None:
     """One ref reaching this commit, or nothing."""
-    return "for-each-ref", "--count=1", "--contains", sha
 
 
-@git(ok=(0, 1, 128))
-def upstream_of(branch: str) -> tuple[str, ...]:
+# @{upstream} survives the spec: braces are git's revision syntax, not a
+# placeholder, which is why placeholders are spelled with $.
+@git("rev-parse --abbrev-ref --symbolic-full-name $branch@{upstream}", ok=(0, 1, 128))
+def upstream_of(branch: str) -> None:
     """The upstream a branch tracks. Failure means unknown, not none."""
-    return "rev-parse", "--abbrev-ref", "--symbolic-full-name", f"{branch}@{{upstream}}"
 
 
-@git(ok=(0, 128))
-def count_between(a: str, b: str) -> tuple[str, ...]:
+@git("rev-list --count $a..$b", ok=(0, 128))
+def count_between(a: str, b: str) -> None:
     """How many commits b has that a does not."""
-    return "rev-list", "--count", f"{a}..{b}"
 
 
-@git(ok=(0, 128))
-def toplevel() -> tuple[str, ...]:
+@git("rev-parse --show-toplevel", ok=(0, 128))
+def toplevel() -> None:
     """The root of the worktree we stand in."""
-    return "rev-parse", "--show-toplevel"
 
 
-# --no-optional-locks because a listing has no business writing another
-# worktree's index; without it a `gwp` run contends with a `git add` there.
-@git(opts=("--no-optional-locks",))
-def status_porcelain() -> tuple[str, ...]:
+# --no-optional-locks is a git global, so it goes before the subcommand, which
+# a spec shows and a tuple hides. Without it a listing writes another
+# worktree's index and contends with a `git add` there.
+@git("--no-optional-locks status --porcelain")
+def status_porcelain() -> None:
     """Tracked and untracked changes, one line each."""
-    return "status", "--porcelain"
 
 
 # --ignored=traditional collapses an ignored directory into one entry, so
 # node_modules/ is one line rather than forty thousand.
-@git(opts=("--no-optional-locks",))
-def status_with_ignored() -> tuple[str, ...]:
+@git("--no-optional-locks status --porcelain --ignored=traditional")
+def status_with_ignored() -> None:
     """The same, plus the gitignored paths git otherwise never mentions."""
-    return "status", "--porcelain", "--ignored=traditional"
 
 
-@git(mutates=True)
-def fetch(remote: str) -> tuple[str, ...]:
+@git("fetch --prune $remote", mutates=True)
+def fetch(remote: str) -> None:
     """Refresh every remote-tracking ref, dropping the ones that are gone."""
-    return "fetch", "--prune", remote
 
 
-@git(mutates=True)
-def set_head_auto(remote: str) -> tuple[str, ...]:
+@git("remote set-head $remote --auto", mutates=True)
+def set_head_auto(remote: str) -> None:
     """Ask the server which branch it serves by default."""
-    return "remote", "set-head", remote, "--auto"
 
 
 # --------------------------------------------------------------------------

@@ -1,11 +1,18 @@
 """Every git command this program can run.
 
-A decorated function's body is the command. It returns the argv that follows
-`git`, so reading a module top to bottom gives the complete list of git calls
-that can be issued, and `worktrees --explain` prints it.
+A decorated function's spec is the command, written the way you would type it,
+with `$name` where a value goes. Reading a module top to bottom gives the
+complete list of git calls that can be issued, and `worktrees --explain`
+prints it.
 
-The argv is a real list. Nothing is ever a shell string, so a branch named
-`; rm -rf ~` is an argument and not a command.
+`shlex.split` runs once, at decoration time, on the literal spec. Only then is
+each token scanned for placeholders. That ordering is the safety property: the
+splitting is already over before any value is seen, so a branch named
+`feat$(touch /tmp/PWNED)`, `a"b` or `has space` lands as exactly one argv
+element. Nothing is ever a shell string.
+
+`$` rather than `{}` because git's revision syntax is full of braces:
+`^{tree}`, `^{commit}` and `@{upstream}` pass through a spec untouched.
 """
 
 from __future__ import annotations
@@ -13,11 +20,12 @@ from __future__ import annotations
 import functools
 import inspect
 import os
+import shlex
 import subprocess
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, overload
+from typing import Any, Protocol
 
 Argv = tuple[str, ...]
 
@@ -145,74 +153,128 @@ def guard(argv: Sequence[str]) -> None:
 
 
 class GitCall(Protocol):
-    """What a decorated function becomes: the same arguments, plus `repo`."""
+    """What a decorated function becomes: its own arguments, plus `repo`."""
 
     __name__: str
 
     def __call__(
-        self, *args: str, repo: str | os.PathLike[str] | None = None
+        self, *args: Any, repo: str | os.PathLike[str] | None = None, **kwargs: Any
     ) -> Run: ...
 
 
-def _placeholder_shape(func: Callable[..., Argv]) -> Argv:
-    """The argv with `<param>` standing in for each argument.
+def _placeholders(token: str) -> list[str]:
+    """The parameter names a spec token refers to."""
+    names, i = [], 0
+    while i < len(token):
+        if token[i] != "$":
+            i += 1
+            continue
+        if token[i + 1 : i + 2] == "$":
+            i += 2
+            continue
+        j = i + 2 if token[i + 1 : i + 2] == "*" else i + 1
+        k = j
+        while k < len(token) and (token[k].isalnum() or token[k] == "_"):
+            k += 1
+        if k > j:
+            names.append(token[j:k])
+        i = max(k, i + 1)
+    return names
 
-    Sound only because a decorated body does nothing but return a tuple built
-    from its parameters. That is the same constraint that makes the module
-    readable as a list of commands.
+
+def _expand(token: str, bound: Mapping[str, Any]) -> list[str]:
+    """One spec token becomes one argv element, or several for a `$*splat`.
+
+    `$$` is a literal `$`, and so is a `$` with no name after it, so a
+    `--format=` string can hold one without meaning a parameter.
     """
-    params = inspect.signature(func).parameters
-    try:
-        return tuple(func(*(f"<{p}>" for p in params)))
-    except Exception:  # a body that needs a real value gets named, not guessed
-        return (f"<{func.__name__}>",)
+    if "$*" in token:
+        return [str(v) for v in bound[token[token.index("$*") + 2 :]]]
+    out, i = "", 0
+    while i < len(token):
+        if token[i] != "$":
+            out += token[i]
+            i += 1
+            continue
+        if token[i + 1 : i + 2] == "$":
+            out += "$"
+            i += 2
+            continue
+        j = i + 1
+        while j < len(token) and (token[j].isalnum() or token[j] == "_"):
+            j += 1
+        if j == i + 1:
+            out += "$"
+            i += 1
+            continue
+        out += str(bound[token[i + 1 : j]])
+        i = j
+    return [out]
 
 
-@overload
-def git(func: Callable[..., Argv]) -> GitCall: ...
-
-
-@overload
 def git(
-    *,
-    ok: Iterable[int] = ...,
-    mutates: bool = ...,
-    opts: Argv = ...,
-    env: Mapping[str, str] | None = ...,
-) -> Callable[[Callable[..., Argv]], GitCall]: ...
-
-
-def git(
-    func: Callable[..., Argv] | None = None,
+    spec: str,
     *,
     ok: Iterable[int] = (0,),
     mutates: bool = False,
-    opts: Argv = (),
     env: Mapping[str, str] | None = None,
-) -> GitCall | Callable[[Callable[..., Argv]], GitCall]:
-    """Turn a function that names a git command into one that runs it.
+) -> Callable[[Callable[..., Any]], GitCall]:
+    """Turn a spec into a function that runs it.
 
+    spec     the command as you would type it, with `$name` where a value goes
     ok       exit codes that mean an answer rather than a failure
     mutates  takes the repository's shared refs, so it runs serially
-    opts     git's own options, which go before the subcommand
     env      pinned environment, for a command whose output must be reproducible
-    """
-    accept = tuple(ok)
 
-    def decorate(fn: Callable[..., Argv]) -> GitCall:
+    A value goes in three ways. `$name` anywhere, including inside a token, so
+    `--format=$fmt` stays one element. `$*name` splats a list at that position.
+    Anything the body returns is appended as a tail, for arguments with no
+    fixed place.
+    """
+    if not isinstance(spec, str):
+        raise TypeError(
+            '@git takes the command as a string: @git("worktree list -z"). '
+            f"Got {type(spec).__name__}."
+        )
+    accept = tuple(ok)
+    tokens = shlex.split(spec)
+
+    def decorate(fn: Callable[..., Any]) -> GitCall:
+        signature = inspect.signature(fn)
+        # At import, not at the call. A spec naming a parameter the function
+        # does not have is a typo, and this is the moment it is cheapest to
+        # hear about.
+        for token in tokens:
+            for name in _placeholders(token):
+                if name not in signature.parameters:
+                    raise NameError(
+                        f"{fn.__name__}: spec names ${name}, which is not a "
+                        f"parameter of {fn.__name__}{signature}"
+                    )
+
         @functools.wraps(fn)
-        def call(*args: str, repo: str | os.PathLike[str] | None = None) -> Run:
-            argv = tuple(fn(*args))
+        def call(
+            *args: Any, repo: str | os.PathLike[str] | None = None, **kwargs: Any
+        ) -> Run:
+            bound = signature.bind(*args, **kwargs)
+            bound.apply_defaults()
+            argv: list[str] = []
+            for token in tokens:
+                argv += _expand(token, bound.arguments)
+            tail = fn(*args, **kwargs)
+            if tail:
+                argv += [str(t) for t in tail]
             guard(argv)
 
             full = ["git"]
             if repo is not None:
                 full += ["-C", os.fspath(repo)]
-            full += [*opts, *argv]
+            full += argv
 
             options.log.append(tuple(full))
             if options.verbose:
-                print("+ " + " ".join(full), file=sys.stderr)
+                # shlex.join, so the printed line pastes back into a shell.
+                print("+ " + shlex.join(full), file=sys.stderr)
             environ = None
             if env is not None:
                 environ = {**os.environ, **env}
@@ -221,7 +283,7 @@ def git(
             )
             if proc.returncode not in accept:
                 raise GitError(
-                    f"git {' '.join(argv)} exited {proc.returncode}: "
+                    f"git {shlex.join(argv)} exited {proc.returncode}: "
                     f"{proc.stderr.strip() or '(no output)'}"
                 )
             return Run(proc.returncode, proc.stdout, proc.stderr)
@@ -232,11 +294,9 @@ def git(
                 doc=(fn.__doc__ or "").strip().splitlines()[0] if fn.__doc__ else "",
                 mutates=mutates,
                 ok=accept,
-                shape=(*opts, *_placeholder_shape(fn)),
+                shape=tuple(tokens),
             )
         )
         return call
 
-    if func is not None:
-        return decorate(func)
     return decorate

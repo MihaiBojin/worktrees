@@ -12,34 +12,29 @@ from .git import GitError, Refused, git
 from .verdicts import GO, Verdict
 
 
-@git(mutates=True)
-def prune_records() -> tuple[str, ...]:
+@git("worktree prune", mutates=True)
+def prune_records() -> None:
     """Clear git's bookkeeping for worktrees somebody deleted by hand."""
-    return "worktree", "prune"
 
 
-@git(mutates=True)
-def remove_worktree(path: str) -> tuple[str, ...]:
+@git("worktree remove -- $path", mutates=True)
+def remove_worktree(path: str) -> None:
     """Drop a checkout. Refuses on its own when the worktree is dirty."""
-    return "worktree", "remove", "--", path
 
 
-@git(mutates=True)
-def delete_branch(branch: str) -> tuple[str, ...]:
+@git("branch -d -- $branch", mutates=True)
+def delete_branch(branch: str) -> None:
     """-d, never -D: git's own proof of merge is the only proof accepted."""
-    return "branch", "-d", "--", branch
 
 
-@git(ok=(0, 128))
-def rev_parse(ref: str) -> tuple[str, ...]:
+@git("rev-parse --verify $ref", ok=(0, 128))
+def rev_parse(ref: str) -> None:
     """The sha a ref names, for the line that puts it back."""
-    return "rev-parse", "--verify", ref
 
 
-@git(ok=(0, 128))
-def object_type(sha: str) -> tuple[str, ...]:
+@git("cat-file -t $sha", ok=(0, 128))
+def object_type(sha: str) -> None:
     """What kind of object a sha is. Every printed sha must be a commit."""
-    return "cat-file", "-t", sha
 
 
 def removable(verdicts: list[Verdict]) -> list[Verdict]:
