@@ -243,7 +243,23 @@ the checkout in place of the published version.
 
 ## Publishing a version
 
-A release is two steps, and nothing automates either of them.
+```console
+/release 0.2.0
+```
+
+The skill at `.claude/skills/release/` does the whole of it: cut
+`release/v0.2.0` from `origin/main`, `uv version 0.2.0`, open the pull
+request, wait for its checks, merge with `--rebase`, wait for main's own run
+on the rebased commit, and only then tag. The tag lands on a commit already
+proved green, so it never has to move.
+
+`scripts/check-releasable.bash` runs first and refuses a version that is not
+`x.y.z`, a dirty tree, a version that is not after the one on `origin/main`,
+a tag that already exists on the remote, and a version PyPI already carries.
+That last one matters most: PyPI rejects a duplicate at the very end of a
+publish run, after everything else has already happened.
+
+By hand it is the same four commands:
 
 ```console
 uv version 0.2.0          # rewrites pyproject.toml and re-locks
