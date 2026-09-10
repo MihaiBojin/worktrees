@@ -213,24 +213,34 @@ are refused whatever flags are passed.
 
 ## Install
 
-The console scripts come from the package, into `~/.local/bin`:
+Two installs, because they are two kinds of thing.
+
+The console scripts come from the published package, into `~/.local/bin`:
 
 ```console
-uv tool install --from . worktrees
+uv tool install worktrees
 ```
 
-That is one 124 KB venv serving every command name. Shell functions and
-completions are a separate install and a separate manager: Fisher copies
-`functions/`, `completions/` and `conf.d/` from the repository root, and
-Antidote takes a `path:` to a `<name>.plugin.zsh` inside it.
+One venv of 124 KB serves every command name, at about 1 KB each.
 
-```
+Shell functions and completions come from a plugin manager, the same way any
+other plugin does. Fisher copies `functions/`, `completions/` and `conf.d/`
+from the repository root; Antidote takes a `path:` to a `<name>.plugin.zsh`
+inside it.
+
+```console
 fisher install MihaiBojin/worktrees
+```
+
+```
 MihaiBojin/worktrees path:zsh/plugins/worktrees   # in zsh_plugins.txt
 ```
 
-Neither manager puts a binary on `$PATH`, which is why the two steps stay
-separate. Nothing in this repository ships shell code yet.
+Neither manager puts a binary on `$PATH`, which is why the two stay separate.
+Nothing here ships shell code yet.
+
+Working on the package itself, `uv tool install --from . worktrees` installs
+the checkout in place of the published version.
 
 ## Tests
 

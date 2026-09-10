@@ -66,7 +66,11 @@ zsh/plugins/worktrees/completions/_gwa
 ```
 
 Neither manager puts a binary on `$PATH`. The console scripts arrive through
-`uv tool install`, which is a separate step and belongs in dotfiles.
+`uv tool install` from the published package, which is a separate step.
+
+Nothing installs this from a checkout on the user's disk. It is consumed as a
+third-party plugin and a third-party tool, so anything that assumes a local
+clone at a known path is wrong here.
 
 A completion asks the CLI for its candidates rather than deriving them. The
 ranking is tested in Python; a shell file that reimplements it is a second
