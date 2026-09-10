@@ -76,29 +76,42 @@ A completion asks the CLI for its candidates rather than deriving them. The
 ranking is tested in Python; a shell file that reimplements it is a second
 answer to the same question.
 
-## The picker is Python's, and fzf is only the widget
+## The picker is Python's, and there is no fzf
 
-Building the candidate list, ranking it, deciding what each row shows, reading
-the answer back: all of it in the CLI. `fzf` is spawned by the CLI with the
-candidates on its stdin, and the selection is read from its stdout. No shell
-file ever holds a candidate, a format string or a rank, so there is one
-implementation rather than one per dialect.
+Building the candidate list, matching a query against it, ranking, deciding
+what each row shows, reading the answer back: all of it in the CLI. No shell
+file holds a candidate, a format string or a rank, and nothing spawns an
+external picker.
 
-This works in the shim's own configuration, where the CLI's stdout is already a
-pipe. `fzf` draws on `/dev/tty` rather than on stdout, so the two do not
-collide:
+The set is small. Across the repositories this was written for, the largest
+number of linked worktrees in one is four. A fuzzy finder is the wrong
+instrument at that size, and a numbered prompt reads faster:
 
 ```
-                     tty  ->  fzf's UI
-cd (command gwl)  ->  CLI  ->  fzf  ->  selection  ->  CLI's stdout  ->  cd
+1  fix-parser     ~/git/.worktrees/fix-parser/repo
+2  add-tests      ~/git/.worktrees/add-tests/repo
+>
 ```
 
-The rules that come with it, both the same shape as `gwp`'s prompt:
+Dropping `fzf` is less code, not more. It removes the spawn, the tty rules
+around it, and the fallback branch a machine without `fzf` would otherwise
+need.
 
-- No terminal, no picker. Refuse at exit 2 and name the flag that answers
-  without one, rather than launching something nothing can drive.
-- No `fzf` on `$PATH` is not a failure. Fall back to a numbered prompt read
-  from the tty, so the command works on a machine that never installed it.
+Matching is substring first, then subsequence, which is the one idea worth
+taking from `fzf`: the query's letters appearing in order, ranked by how
+tightly they cluster. About twenty lines, `difflib` not required.
+
+```
+'parse'  -> ['fix-parser']
+'tst'    -> ['add-tests', 'try-something']
+'ruff'   -> ['renovate/ruff-0.x']
+```
+
+Two rules, both the shape `gwp`'s prompt already has:
+
+- One match takes it outright, with no prompt at all.
+- No terminal, no prompt. Refuse at exit 2 and name the flag that answers
+  without one, rather than blocking on something nothing can drive.
 
 `--json` and `--list` answer the same question without any of this, and an
 agent uses those.
