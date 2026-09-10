@@ -5,6 +5,7 @@ caller.
 
 | | |
 | --- | --- |
+| `gw` | the CLI itself, taking a subcommand. `worktrees` is the same program under its long name |
 | `gws` | say which worktrees are finished, and why. Removes nothing, and has no flag that could |
 | `gwp` | remove the ones `gws` marks removable, having asked first |
 | `gwnb NAME` | fetch, then branch `NAME` off the head branch and check it out |
