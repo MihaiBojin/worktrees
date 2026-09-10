@@ -247,7 +247,7 @@ the checkout in place of the published version.
 /release 0.2.0
 ```
 
-The skill at `.claude/skills/release/` does the whole of it: cut
+The skill at `.agents/skills/release/` does the whole of it: cut
 `release/v0.2.0` from `origin/main`, `uv version 0.2.0`, open the pull
 request, wait for its checks, merge with `--rebase`, wait for main's own run
 on the rebased commit, and only then tag. The tag lands on a commit already
@@ -259,11 +259,18 @@ a tag that already exists on the remote, and a version PyPI already carries.
 That last one matters most: PyPI rejects a duplicate at the very end of a
 publish run, after everything else has already happened.
 
-The `release-notes` skill writes the `CHANGELOG.md` entry on the release
-branch, so the notes are reviewed in the same pull request as the version
-bump. `publish.yml` reads that section back out for the GitHub release, and
-`build` refuses a tag whose version has no section, before anything is
-published. Nothing is generated from pull request titles.
+`/release-notes:draft` writes the `CHANGELOG.md` entry on the release branch,
+so the notes are reviewed in the same pull request as the version bump. It
+comes from the ReleaseTools marketplace:
+
+```console
+claude plugin marketplace add releasetools/agent-plugins
+claude plugin install release-notes@ReleaseTools
+```
+
+`publish.yml` reads that section back out for the GitHub release, and `build`
+refuses a tag whose version has no section, before anything is published.
+Nothing is generated from pull request titles.
 
 By hand it is the same four commands:
 

@@ -9,6 +9,9 @@ An entry earns its place by being observable. If running a command produces
 no different result, no different output and no different exit code, it is
 not in here, whatever it cost to build.
 
+A release closes with a `### Choices` section when a decision in it is worth
+the reader's time: what was chosen, and what the alternative failed to do.
+
 ## [Unreleased]
 
 Nothing released yet. `/release <version>` turns this heading into a dated

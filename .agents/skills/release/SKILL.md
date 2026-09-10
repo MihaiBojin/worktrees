@@ -29,17 +29,31 @@ is after the one on `origin/main`, that the tag is free on the remote, and
 that PyPI does not already carry it. If it refuses, say what it said and
 stop. Do not fix a dirty tree by stashing on the user's behalf.
 
-## 2. The branch and the bump
+## 2. The branch, the notes, and the bump
 
 ```bash
 git switch --create release/v<version> --no-track origin/main
+```
+
+Then run `/release-notes:draft <version>`, from the ReleaseTools plugin. It
+rules on every commit since the previous tag, writes the body to
+`.git/RELEASE_EDITMSG`, and puts the entry in `CHANGELOG.md` under
+`## <version> - <date>`. It shows the draft and waits before its last step,
+so the user changes it there.
+
+Do not write that entry by hand and do not skip it: `publish.yml` reads the
+section back out for the GitHub release, and `build` refuses a tag whose
+version has no section.
+
+```bash
 uv version <version>
 git commit --all --message "Release <version>"
 git push --set-upstream origin refs/heads/release/v<version>
 ```
 
 `uv version` rewrites `pyproject.toml` and re-locks, so the commit carries
-both files. Check that with `git show --stat` before pushing: a commit
+those two files and `CHANGELOG.md`. Check that with `git show --stat`
+before pushing: a commit
 missing `uv.lock` fails `uv sync --locked` in CI, and it fails after the
 merge rather than before it.
 
@@ -53,10 +67,9 @@ gh pr create --base main --title "Release <version>" --body "..."
 gh pr checks --watch --fail-fast
 ```
 
-The body says what is in the release, read from `git log origin/main..HEAD`
-of the *previous* tag to this one, not from the bump commit, which says
-nothing. Three to five lines. If there is no previous tag, say it is the
-first release.
+The body is the changelog entry just written. It is already the summary,
+already reviewed by the reader, and writing a second one invites the two to
+disagree.
 
 `--watch` blocks. When it reports a failure, report which check failed and
 its URL, and stop. The branch and the pull request stay; nothing has been
