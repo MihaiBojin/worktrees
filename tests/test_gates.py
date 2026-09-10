@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from worktrees import prune
+from worktrees import prune, verdicts
 from worktrees import repo as R
 from worktrees.git import Refused, guard
 
@@ -62,18 +62,18 @@ def test_the_probe_separates_them(world) -> None:
     world.git("add", "--", "feature.txt")
     world.git("commit", "--quiet", "-m", "squash of squashed")
 
-    verdicts = {v.branch: v for v in prune.assess("", "refs/heads/main", "main", False)}
-    assert verdicts["squashed"].verdict == prune.GO
-    assert verdicts["squashed"].why == "squash-merged"
-    assert verdicts["unmerged"].verdict == prune.UNKNOWN
-    assert "no upstream" in verdicts["unmerged"].why
+    seen = {v.branch: v for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)}
+    assert seen["squashed"].verdict == verdicts.GO
+    assert seen["squashed"].why == "squash-merged"
+    assert seen["unmerged"].verdict == verdicts.UNKNOWN
+    assert "no upstream" in seen["unmerged"].why
 
 
 def test_a_branch_that_changed_nothing_is_finished(world) -> None:
     """Short-circuit: branch^{tree} == head^{tree}, whatever history says."""
     world.worktree("noop")
-    verdicts = {v.branch: v for v in prune.assess("", "refs/heads/main", "main", False)}
-    assert verdicts["noop"].verdict == prune.GO
+    seen = {v.branch: v for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)}
+    assert seen["noop"].verdict == verdicts.GO
 
 
 # --------------------------------------------------------------------------
@@ -110,14 +110,14 @@ def test_ignored_files_stop_the_verdict(world) -> None:
     (wt / "node_modules").mkdir()
     (wt / "node_modules" / "pkg.js").write_text("x\n")
 
-    v = {x.branch: x for x in prune.assess("", "refs/heads/main", "main", False)}["holds"]
-    assert v.verdict == prune.KEEP
+    v = {x.branch: x for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)}["holds"]
+    assert v.verdict == verdicts.KEEP
     assert "2 ignored path(s)" in v.why
     assert "--delete-ignored" in v.why
 
     # --yes must not answer that question; only --delete-ignored does.
-    v = {x.branch: x for x in prune.assess("", "refs/heads/main", "main", True)}["holds"]
-    assert v.verdict == prune.GO
+    v = {x.branch: x for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", True)}["holds"]
+    assert v.verdict == verdicts.GO
 
 
 def test_ignored_directory_collapses_to_one_entry(world) -> None:
@@ -146,8 +146,8 @@ def test_a_tag_cannot_answer_for_a_branch(world) -> None:
     # A tag with the branch's name, on a commit main already contains.
     world.git("tag", "feature", "main")
 
-    v = {x.branch: x for x in prune.assess("", "refs/heads/main", "main", False)}["feature"]
-    assert v.verdict != prune.GO, "the tag answered for the branch"
+    v = {x.branch: x for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)}["feature"]
+    assert v.verdict != verdicts.GO, "the tag answered for the branch"
 
 
 def test_the_head_ref_is_never_a_bare_name(world) -> None:
@@ -183,8 +183,8 @@ def test_the_head_branch_is_never_proposed(world) -> None:
     # A worktree on the head branch itself, made the way git allows.
     world.git("worktree", "add", "--quiet", "--detach", str(path.parent / "x"), "main")
 
-    verdicts = prune.assess("", "refs/heads/main", "main", False)
-    assert all(v.branch != "main" for v in verdicts)
+    rows = verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    assert all(v.branch != "main" for v in rows)
 
 
 def test_a_tag_shadowing_the_head_branch_does_not_shadow_it(world) -> None:
@@ -195,8 +195,8 @@ def test_a_tag_shadowing_the_head_branch_does_not_shadow_it(world) -> None:
     world.git("tag", "origin/main", "refs/heads/feature")
 
     assert R.full_ref("origin/main") == "refs/remotes/origin/main"
-    v = {x.branch: x for x in prune.assess("", R.full_ref("origin/main"), "main", False)}
-    assert v["feature"].verdict != prune.GO
+    v = {x.branch: x for x in verdicts.assess(R.worktrees(), "", R.full_ref("origin/main"), "main", False)}
+    assert v["feature"].verdict != verdicts.GO
 
 
 def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
@@ -204,11 +204,11 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
     path = world.parent / ".worktrees" / "detached" / "repo"
     path.parent.mkdir(parents=True)
     world.git("worktree", "add", "--quiet", "--detach", str(path), "main")
-    v = prune.assess("", "refs/heads/main", "main", False)
+    v = verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
     assert len(v) == 1
     assert v[0].branch == ""
     assert v[0].label == "(detached)"
-    assert v[0].verdict == prune.GO
+    assert v[0].verdict == verdicts.GO
     assert v[0].why == "its commit is reached by a ref"
 
 
@@ -269,7 +269,7 @@ def test_no_unexpected_git_command_ran(world) -> None:
     from worktrees.git import commands, options
 
     world.worktree("done")
-    prune.assess("", "refs/heads/main", "main", False)
+    verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
 
     # The canary. An empty log is indistinguishable from a run that never
     # reached git, and would pass every assertion below.

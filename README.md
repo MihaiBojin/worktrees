@@ -1,29 +1,40 @@
 # worktrees
 
-Two commands so far, and neither needs a shell wrapper: nothing here cds its
+Three commands, and none of them needs a shell wrapper: nothing here cds its
 caller.
 
 | | |
 | --- | --- |
-| `gwp` | say which worktrees are finished, and why, and remove them on `--yes` |
+| `gws` | say which worktrees are finished, and why. Removes nothing, and has no flag that could |
+| `gwp` | remove the ones `gws` marks removable, having asked first |
 | `gwnb NAME` | fetch, then branch `NAME` off the head branch and check it out |
 
-## gwp
-
-`gwp` says which of this repository's worktrees are finished, why, and removes
-them when you pass `--yes`.
+## gws
 
 ```console
-$ gwp
-VERDICT  BRANCH         WHY                                              PATH
-go       fix-parser     squash-merged                                    ~/git/.worktrees/fix-parser/repo
-keep     add-tests      it has uncommitted changes                       ~/git/.worktrees/add-tests/repo
-keep     spike-cache    merged, but holds 2 ignored path(s); pass --delete-ignored
-unknown  try-something  not merged into main, and no upstream says whether its commits were pushed
+$ gws
+VERDICT  BRANCH         WHY
+go       squash-merged  squash-merged
+keep     dirty-work     it has uncommitted changes
+keep     holds-secrets  merged, but holds 2 ignored path(s); pass --delete-ignored
+unknown  never-pushed   not merged into main, and no upstream says whether its commits were pushed
 
-1 to remove, 2 kept, 1 unclear
-nothing removed; pass --yes to remove the 1 above
+1 removable, 2 kept, 1 unclear
 ```
+
+### Three verdicts
+
+`unknown` is not `keep` with a softer word.
+
+| | means |
+| --- | --- |
+| `go` | finished, and safe to remove. The reason says how it was proved: `merged`, `squash-merged`, or a ref reaching a detached commit |
+| `keep` | something says no. Uncommitted work, the head branch, a lock, the worktree you are standing in, ignored files, or a branch simply not merged |
+| `unknown` | it could not tell. A branch with no upstream is the usual one: nothing says whether its commits were pushed anywhere |
+
+A record left behind by a directory somebody deleted by hand is nobody's
+verdict. `gws` names how many there are; clearing them is `git worktree prune`,
+which mutates, so `gwp` is what runs it.
 
 ### Two holes in git
 
@@ -40,35 +51,39 @@ compares content rather than history, which is what a squash preserves.
 **`git worktree remove` silently deletes ignored files.** With `.env` and
 `node_modules/` present, `git status --porcelain` prints nothing,
 `git worktree remove` exits 0 with no `--force`, and both are gone. Nothing in
-git brings them back: no ref ever pointed at them. `gwp` reads
-`--ignored=traditional`, counts what would go, and refuses without
-`--delete-ignored`. `--yes` does not answer that question.
+git brings them back: no ref ever pointed at them. `gws` reads
+`--ignored=traditional`, counts what would go, and marks the worktree `keep`
+until you pass `--delete-ignored`.
 
-### Three verdicts
+## gwp
 
-`unknown` is not `keep` with a softer word.
+```console
+$ gwp
+squash-merged  ~/git/.worktrees/squash-merged/repo
+  restore with: git branch squash-merged d79e417
+remove 1 worktree(s)? [y/N]
+```
 
-| | means |
-| --- | --- |
-| `go` | finished, and safe to remove. The reason says how it was proved: `merged`, `squash-merged`, or a ref reaching a detached commit |
-| `keep` | something says no. Uncommitted work, the head branch, a lock, the worktree you are standing in, ignored files, or a branch simply not merged |
-| `unknown` | it could not tell. A branch with no upstream is the usual one: nothing says whether its commits were pushed anywhere |
+It removes exactly the rows `gws` marks `go`, under the same flags, and one
+function returns that set for both. What goes and what puts it back is printed
+before anything does, and neither `--quiet` nor `--yes` silences it.
 
-There is no `--dry-run`. Without `--yes` this only reports, and a flag meaning
-"do not act" on a command that does not act reads as a safety feature somebody
-will one day cite as the reason a sweep was safe.
+`-y` skips the question. A run whose stdin is not a terminal refuses rather
+than blocking, because an agent or a pipe reaching a prompt would hang forever
+holding the repository's worktrees:
 
-### Flags
+```console
+$ gwp < /dev/null
+not a terminal, so nothing can answer for the 1 above; pass --yes to remove them
+```
 
-| | |
-| --- | --- |
-| `--branch NAME` | consider only that branch |
-| `--no-fetch` | assess from what is already here, and say so |
-| `--delete-ignored` | let a worktree holding gitignored files go |
-| `-y`, `--yes` | remove what it proposes |
-| `--json` | verdicts as data |
-| `-v`, `--verbose` | print every git command as it runs |
-| `--explain` | print every git command the program can issue, and exit |
+The checkout goes through plain `git worktree remove`, so every refusal git
+makes still applies. The branch goes through `git branch -d`, never `-D`, so a
+squash-merged branch keeps its ref after its worktree is gone.
+
+There is no `--dry-run`. `gws` reports and `gwp` asks, so a flag meaning "do
+not act" would be a no-op wearing the clothes of a safety feature, and somebody
+would one day cite it as the reason a sweep was safe.
 
 ## gwnb
 
@@ -90,7 +105,14 @@ target the head branch.
 A failed fetch is not fatal. An offline machine still gets a branch, off
 whatever it last saw, and the line at the end names the commit it got.
 
-`gwnb` takes `--no-fetch`, `--json`, `-q`, `-v` and `--explain`.
+## Flags
+
+`--branch NAME`, `--no-fetch`, `--delete-ignored`, `--json`, `-q`, `-v` and
+`--explain` are shared by `gws` and `gwp`. `-y` is `gwp` alone. `gwnb` takes
+`--no-fetch`, `--json`, `-q`, `-v` and `--explain`.
+
+Data goes to stdout and diagnostics to stderr, including the prompt, so
+`--json` is parseable in every mode.
 
 ## Every git call is visible
 
@@ -113,15 +135,11 @@ def remove_worktree(path):
 ```
 
 The argv is a real list, so nothing is ever a shell string and a branch name
-cannot inject. `gwp --explain` prints all 28 of them. A guard runs on the
-resolved argv inside the wrapper, so no call site can assemble its way past it:
-`reset --hard`, a forced `checkout` or `switch`, `clean -f`, a bare
-`push --force`, `worktree remove --force` and `branch -D` are refused whatever
-flags are passed.
-
-A branch is deleted only on git's own proof, with `branch -d`. The command that
-puts it back is printed before anything is removed, and `--quiet` and `--yes`
-do not silence it.
+cannot inject. `--explain` prints all 28 of them, marking the six that mutate.
+A guard runs on the resolved argv inside the wrapper, so no call site can
+assemble its way past it: `reset --hard`, a forced `checkout` or `switch`,
+`clean -f`, a bare `push --force`, `worktree remove --force` and `branch -D`
+are refused whatever flags are passed.
 
 ## Install
 

@@ -43,6 +43,7 @@ dev = [
 [project.scripts]
 gwnb = "worktrees.cli:gwnb"
 gwp = "worktrees.cli:gwp"
+gws = "worktrees.cli:gws"
 worktrees = "worktrees.cli:main"
 
 [build-system]

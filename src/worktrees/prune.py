@@ -1,35 +1,15 @@
-"""One verdict per worktree, and the sweep that acts on them."""
+"""Removing the worktrees `status` marked `go`, and nothing else."""
 
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
 from . import repo as R
 from .git import GitError, Refused, git
-from .merged import merged_reason
-
-# The verdicts. `unknown` is not `keep` with a softer word: "no upstream, so
-# nothing says whether this was pushed" is a different fact from "this is not
-# merged", and a sweep printing them the same way invites somebody to act on
-# the wrong one.
-GO = "go"
-KEEP = "keep"
-UNKNOWN = "unknown"
-
-
-@dataclass(frozen=True)
-class Verdict:
-    verdict: str
-    branch: str  # empty when detached
-    path: str
-    why: str
-
-    @property
-    def label(self) -> str:
-        return self.branch or "(detached)"
+from .verdicts import GO, Verdict
 
 
 @git(mutates=True)
@@ -62,77 +42,13 @@ def object_type(sha: str) -> tuple[str, ...]:
     return "cat-file", "-t", sha
 
 
-def assess(
-    only: str,
-    head: str,
-    head_branch: str,
-    delete_ignored: bool,
-    repo: str | os.PathLike[str] | None = None,
-) -> list[Verdict]:
-    """Every worktree, in the order `git worktree remove` would refuse them.
+def removable(verdicts: list[Verdict]) -> list[Verdict]:
+    """The `go` rows, which is the whole of what prune may touch.
 
-    Proposing something that would then be refused is a bug here, not a
-    surprise at the confirmation.
+    The one place the set is derived. `status` prints these as `go` and
+    `prune` removes these, so the two cannot drift.
     """
-    main = R.main_worktree(repo)
-    here = R.toplevel(repo=repo).out.strip()
-    head_name = R.ref_name(head)
-
-    out: list[Verdict] = []
-    for wt in R.worktrees(repo):
-        if "bare" in wt.flags or wt.path == main:
-            continue
-        if only and wt.branch != only:
-            continue
-
-        def say(verdict: str, why: str, wt: R.Worktree = wt) -> None:
-            out.append(Verdict(verdict, wt.branch, wt.path, why))
-
-        if here and Path(wt.path).resolve() == Path(here).resolve():
-            say(KEEP, "you are standing in it")
-            continue
-        if "locked" in wt.flags:
-            say(KEEP, "it is locked")
-            continue
-        if wt.branch and wt.branch == head_branch:
-            say(KEEP, "it is the head branch")
-            continue
-        if R.is_dirty(wt.path):
-            say(KEEP, "it has uncommitted changes")
-            continue
-
-        if not wt.branch:
-            # Detached: finished when some ref already reaches the commit,
-            # which is the question `git worktree remove` asks of one.
-            if R.refs_containing(wt.sha, repo=repo).out.strip():
-                say(GO, "its commit is reached by a ref")
-            else:
-                say(UNKNOWN, f"no ref reaches {wt.sha}")
-            continue
-
-        reason = merged_reason(wt.branch, head, repo=repo)
-        if not reason:
-            if R.unpushed_count(wt.branch, repo=repo) is None:
-                say(
-                    UNKNOWN,
-                    f"not merged into {head_name}, and no upstream says whether "
-                    "its commits were pushed",
-                )
-            else:
-                say(KEEP, f"not merged into {head_name}")
-            continue
-
-        ignored = R.ignored_paths(wt.path)
-        if ignored and not delete_ignored:
-            say(
-                KEEP,
-                f"{reason}, but holds {len(ignored)} ignored path(s); "
-                "pass --delete-ignored",
-            )
-            continue
-
-        say(GO, reason)
-    return out
+    return [v for v in verdicts if v.verdict == GO]
 
 
 def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str:
@@ -154,26 +70,17 @@ def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str
     return f"git branch {branch} {text}"
 
 
-def sweep(
-    verdicts: list[Verdict],
+def plan(
+    go: list[Verdict],
     delete_ignored: bool,
     say: Callable[[str], None],
     repo: str | os.PathLike[str] | None = None,
-) -> int:
-    """Remove every `go`, one at a time. Returns how many failed.
+) -> None:
+    """Print what would go, and what puts it back, before anything does.
 
-    Serial because `worktree remove` and `branch -d` take the repository's
-    shared refs and its worktrees/ directory. One that git refuses is not a
-    reason to abandon the rest.
+    --quiet and --yes do not silence this.
     """
-    main = R.main_worktree(repo)
-    failed = 0
-    for v in verdicts:
-        if v.verdict != GO:
-            continue
-
-        # What goes, and what puts it back, before anything is deleted.
-        # --quiet and --yes do not silence this.
+    for v in go:
         say(f"{v.label}  {v.path}")
         restore = restore_line(v.branch, repo=repo)
         if restore:
@@ -182,10 +89,54 @@ def sweep(
             for path in R.ignored_paths(v.path):
                 say(f"  deleting ignored, unrecoverable: {path}")
 
+
+def _prompt(text: str) -> str:
+    """The question on stderr, the answer from stdin.
+
+    Not `input`, which puts its prompt on stdout: stdout carries the result
+    and nothing else, so `--json` stays parseable in every mode.
+    """
+    sys.stderr.write(text)
+    sys.stderr.flush()
+    return sys.stdin.readline()
+
+
+def confirm(count: int, ask: Callable[[str], str] | None = None) -> bool:
+    """Ask before removing. Anything but yes is no.
+
+    A run whose stdin is not a terminal cannot answer, so it is refused
+    rather than left to block: an agent or a pipe reaches this and would
+    otherwise hang forever holding the repository's worktrees.
+    """
+    if ask is None:
+        if not sys.stdin.isatty():
+            raise Refused(
+                f"not a terminal, so nothing can answer for the {count} above; "
+                "pass --yes to remove them"
+            )
+        ask = _prompt
+    return ask(f"remove {count} worktree(s)? [y/N] ").strip().lower() in ("y", "yes")
+
+
+def sweep(
+    go: list[Verdict],
+    delete_ignored: bool,
+    say: Callable[[str], None],
+    repo: str | os.PathLike[str] | None = None,
+) -> int:
+    """Remove each one, in order. Returns how many failed.
+
+    Serial because `worktree remove` and `branch -d` take the repository's
+    shared refs and its worktrees/ directory. One that git refuses is not a
+    reason to abandon the rest.
+    """
+    main = R.main_worktree(repo)
+    failed = 0
+    for v in go:
         try:
             remove_worktree(v.path, repo=repo)
         except (GitError, Refused) as exc:
-            say(f"  kept: {exc}")
+            say(f"{v.label} kept: {exc}")
             failed += 1
             continue
 
@@ -195,10 +146,10 @@ def sweep(
             try:
                 # -d, so git's own proof of merge decides. A squash-merged
                 # branch is refused here and kept: the checkout goes, the
-                # branch stays, and the restore line above is not needed.
+                # branch stays, and the restore line is not needed.
                 delete_branch(v.branch, repo=repo)
             except (GitError, Refused) as exc:
-                say(f"  branch {v.branch} kept: {exc}")
+                say(f"branch {v.branch} kept: {exc}")
 
     prune_records(repo=repo)
     return failed
