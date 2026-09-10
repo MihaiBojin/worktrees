@@ -241,6 +241,41 @@ Nothing here ships shell code yet.
 Working on the package itself, `uv tool install --from . git-worktrees` installs
 the checkout in place of the published version.
 
+## Publishing a version
+
+Releasing is merging a version bump. Bump `version` in `pyproject.toml`, run
+`uv lock`, and merge. `tag-release.yml` reads the version on every push to
+`main`, tags the commit when that tag does not exist yet, and dispatches
+`publish.yml` against it. A push that changes no version finds its tag already
+there and does nothing.
+
+```
+build ──> publish-test ──> publish ──> release
+```
+
+`build` refuses a tag that disagrees with `pyproject.toml`, runs the suite one
+last time, and hands the same artifact to every job below, so what reaches PyPI
+is byte-for-byte what TestPyPI accepted. TestPyPI gates the real upload on
+purpose: a PyPI upload cannot be undone or replaced, so a failed rehearsal
+stops the run while there is still nothing to pin against.
+
+No API token is stored anywhere. Both uploads use PyPI Trusted Publishing over
+OIDC, which needs one registration on each index before the first release:
+
+| field | value |
+| --- | --- |
+| owner | `MihaiBojin` |
+| repository | `worktrees` |
+| workflow | `publish.yml` |
+| environment | `testpypi` on TestPyPI, `pypi` on PyPI |
+
+Both GitHub environments have to exist under Settings, Environments. Adding a
+required reviewer to `pypi` puts a manual gate in front of the real index.
+
+**Renaming `publish.yml` breaks publishing.** PyPI matches a request against
+the repository, that filename and the environment, so a rename means
+re-registering the publisher first.
+
 ## Tests
 
 ```console
