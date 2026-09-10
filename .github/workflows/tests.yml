@@ -1,0 +1,55 @@
+name: Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+# Least privilege: this reads the repository and nothing else. Without a
+# default, GITHUB_TOKEN's scopes come from the repository setting, which is
+# invisible from here.
+permissions:
+  contents: read
+
+# A second push to a pull request cancels the run still going for the first.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      # One version failing is a fact about that version, so let the others
+      # finish and say which.
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up uv and Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@v10.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Install dependencies
+        # --locked fails the run on a stale uv.lock, rather than quietly
+        # resolving something the lock file never described.
+        run: uv sync --all-extras --locked
+
+      # The suite drives real git: it builds repositories, adds worktrees and
+      # removes them. Recording the version makes a failure that is git's
+      # rather than ours readable from the log alone.
+      - name: Record the git version
+        run: git --version
+
+      - name: Run tests
+        run: uv run --no-sync pytest tests -q
