@@ -57,7 +57,7 @@ def create(
     if not check_ref_format(name, repo=repo):
         raise Refusal(f"{name} is not a valid branch name")
     if R.ref_exists(f"refs/heads/{name}", repo=repo):
-        raise Refusal(f"{name} is already a branch; git switch {name} checks it out")
+        raise Refusal(f"{name} is already a branch; gb! {name} checks it out")
 
     remote = R.remote(repo=repo)
     if fetch and remote and not R.fetch(remote, repo=repo) and callable(warn):

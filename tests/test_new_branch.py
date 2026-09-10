@@ -82,7 +82,8 @@ def test_an_existing_branch_is_refused(world) -> None:
     with pytest.raises(new_branch.Refusal) as exc:
         new_branch.create("taken", fetch=False)
     assert "already a branch" in str(exc.value)
-    assert "git switch taken" in str(exc.value)
+    # gb! is the picker in shell-plugins git-alias; gb is plain `git branch`.
+    assert "gb! taken checks it out" in str(exc.value)
 
 
 @pytest.mark.parametrize("name", ["has space", "-leading", "a..b", "x.lock", ""])
