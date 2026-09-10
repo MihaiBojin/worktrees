@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 
 from worktrees import new_branch
@@ -125,10 +127,8 @@ def test_a_dollar_with_no_name_is_a_literal(world, spec: str, expected: str) -> 
         """No placeholder here at all."""
 
     options.log.clear()
-    try:
+    with contextlib.suppress(GitError):
         dollars()
-    except GitError:
-        pass
     assert options.log[-1][-1] == expected
 
 
