@@ -10,6 +10,39 @@ caller.
 | `gwp` | remove the ones `gws` marks removable, having asked first |
 | `gwnb NAME` | fetch, then branch `NAME` off the head branch and check it out |
 
+## Install
+
+```console
+uv tool install git+https://github.com/MihaiBojin/worktrees
+```
+
+One venv of 124 KB serves every command name, at about 1 KB each, all of them
+into `~/.local/bin`. A tag installs that release and nothing later:
+
+```console
+uv tool install git+https://github.com/MihaiBojin/worktrees@v0.1.0
+```
+
+Python 3.11 or newer, and no dependencies. The standard library answers every
+question this asks, so an invocation pays for the interpreter and nothing
+else.
+
+Shell functions and completions arrive separately, through a plugin manager,
+the same way any other plugin does. Nothing here ships shell code yet; when
+it does, Fisher reads `functions/`, `completions/` and `conf.d/` from the
+repository root and Antidote takes a `path:` into it:
+
+```console
+fisher install MihaiBojin/worktrees
+```
+
+```
+MihaiBojin/worktrees path:zsh/plugins/worktrees   # in zsh_plugins.txt
+```
+
+Neither manager puts a binary on `$PATH`, which is why the two installs stay
+separate.
+
 ## gws
 
 ```console
@@ -152,102 +185,27 @@ $ gwp --yes --json          # what an agent runs
 Data is on stdout and every diagnostic on stderr, the prompt included, so
 `--json` parses in all three cases.
 
-### Commands that land you somewhere need a shell function
+## What it refuses
 
-A binary cannot `cd` its caller. A command that does gets a function of the
-same name, whose whole body is `command <name>` and a `cd`, so a script calling
-the binary still gets the path and only loses the move. None of the three
-commands here needs one yet; `gwa`, `gwl`, `gwr` and `gwm` will.
-
-```fish
-function gwa --wraps gwa
-    set -l dest (command gwa $argv | string collect)
-    set -l code $pipestatus[1]
-    test $code -eq 0; or return $code
-    test -n "$dest"; or return 0
-    cd -- $dest
-end
-```
-
-`string collect` because fish splits command substitution on newlines and a
-path may hold one. `$pipestatus[1]` because that pipeline's `$status` belongs
-to `string collect`, which returns 1 whenever it collected nothing, which is
-the failure case. bash and zsh need neither:
-
-```bash
-gwa() {
-  local dest
-  dest="$(command gwa "$@")" || return
-  [ -n "$dest" ] || return 0
-  cd -- "$dest"
-}
-```
-
-## Every git call is visible
-
-Each one is a spec, written the way you would type it, with `$name` where a
-value goes:
-
-```python
-@git("worktree list --porcelain -z")
-def worktree_records(): ...
-
-
-@git("merge-base --is-ancestor $ref $head", ok=(0, 1))
-def is_ancestor(ref, head): ...
-
-
-@git("worktree remove -- $path", mutates=True)
-def remove_worktree(path): ...
-```
-
-`shlex.split` runs once at decoration time on the literal spec, before any
-value exists. So a branch named `$(id)` becomes one argv element and stays a
-name: git accepts that as a refname, and the suite creates it. `--explain`
-prints all 28 specs, marking the six that mutate.
-A guard runs on the resolved argv inside the wrapper, so no call site can
-assemble its way past it: `reset --hard`, a forced `checkout` or `switch`,
-`clean -f`, a bare `push --force`, `worktree remove --force` and `branch -D`
-are refused whatever flags are passed.
-
-## Install
-
-Two installs, because they are two kinds of thing.
-
-The console scripts come from the published package, into `~/.local/bin`:
-
-```console
-uv tool install git-worktrees
-```
-
-One venv of 124 KB serves every command name, at about 1 KB each.
-
-Shell functions and completions come from a plugin manager, the same way any
-other plugin does. Fisher copies `functions/`, `completions/` and `conf.d/`
-from the repository root; Antidote takes a `path:` to a `<name>.plugin.zsh`
-inside it.
-
-```console
-fisher install MihaiBojin/worktrees
-```
+Six git commands are refused wherever they appear, whatever flags are passed
+and whatever a caller asks for:
 
 ```
-MihaiBojin/worktrees path:zsh/plugins/worktrees   # in zsh_plugins.txt
+reset --hard      a forced checkout or switch      clean -f
+push --force      worktree remove --force          branch -D
 ```
 
-Neither manager puts a binary on `$PATH`, which is why the two stay separate.
-Nothing here ships shell code yet.
+The check runs on the argument list as it is about to be handed to git, so no
+code path can assemble its way past one. `gws --explain` prints every git
+command the program can issue, all 28 of them, marking the six that change
+anything.
 
-Working on the package itself, `uv tool install --from . git-worktrees` installs
-the checkout in place of the published version.
+`--force-with-lease` is not `--force` and is allowed. `branch -d` is not
+`branch -D` and is how a branch is deleted here: on git's own proof of merge,
+or not at all.
 
-## Tests
+## Contributing
 
-```console
-uv run --with pytest pytest
-```
-
-The fixture needs no global git config, no signing key, no forge and no
-network. `GIT_CONFIG_GLOBAL` carries that: without it git still reads
-`$HOME/.gitconfig`, and setting `HOME` alone still leaves
-`$XDG_CONFIG_HOME/git/config`.
+The Python, the tests and the release procedure are in
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). The rules the code follows are in
+[AGENTS.md](AGENTS.md).
