@@ -1,9 +1,10 @@
 name: Tests
 
 on:
+  # Every pull request, not only those into main: a stacked branch targets the
+  # one below it, and a filter on `main` leaves that pull request with no
+  # checks at all.
   pull_request:
-    branches:
-      - main
   push:
     branches:
       - main
