@@ -114,6 +114,74 @@ whatever it last saw, and the line at the end names the commit it got.
 Data goes to stdout and diagnostics to stderr, including the prompt, so
 `--json` is parseable in every mode.
 
+## From a prompt, and from a script
+
+Every command here is a console script, so a script reaches it with no shell
+loaded at all. `gws` and `gwnb` answer identically either way:
+
+```console
+$ gws --json | jq -r '.verdicts[] | select(.verdict=="go") | .branch'
+fix-parser
+
+$ fish -c 'gws --json' | jq '.verdicts | length'
+4
+
+$ bash -c 'gwnb spike --json' | jq -r .base
+refs/remotes/origin/main
+```
+
+`gwp` is the one that reads the terminal, and it does so deliberately. With a
+tty it asks; without one it refuses rather than blocking, because a script or
+an agent reaching a prompt would hang holding the repository's worktrees:
+
+```console
+$ gwp                       # at a prompt
+squash-merged  ~/git/.worktrees/squash-merged/repo
+  restore with: git branch squash-merged d79e417
+remove 1 worktree(s)? [y/N] y
+removed 1 worktree(s)
+
+$ gwp < /dev/null           # in a script, a pipe, a CI job
+not a terminal, so nothing can answer for the 1 above; pass --yes to remove them
+
+$ gwp --yes --json          # what an agent runs
+{"removed": ["squash-merged"], "failed": 0}
+```
+
+Data is on stdout and every diagnostic on stderr, the prompt included, so
+`--json` parses in all three cases.
+
+### Commands that land you somewhere need a shell function
+
+A binary cannot `cd` its caller. A command that does gets a function of the
+same name, whose whole body is `command <name>` and a `cd`, so a script calling
+the binary still gets the path and only loses the move. None of the three
+commands here needs one yet; `gwa`, `gwl`, `gwr` and `gwm` will.
+
+```fish
+function gwa --wraps gwa
+    set -l dest (command gwa $argv | string collect)
+    set -l code $pipestatus[1]
+    test $code -eq 0; or return $code
+    test -n "$dest"; or return 0
+    cd -- $dest
+end
+```
+
+`string collect` because fish splits command substitution on newlines and a
+path may hold one. `$pipestatus[1]` because that pipeline's `$status` belongs
+to `string collect`, which returns 1 whenever it collected nothing, which is
+the failure case. bash and zsh need neither:
+
+```bash
+gwa() {
+  local dest
+  dest="$(command gwa "$@")" || return
+  [ -n "$dest" ] || return 0
+  cd -- "$dest"
+}
+```
+
 ## Every git call is visible
 
 A decorated function's body is the command it runs:
@@ -145,9 +213,24 @@ are refused whatever flags are passed.
 
 ## Install
 
+The console scripts come from the package, into `~/.local/bin`:
+
 ```console
 uv tool install --from . worktrees
 ```
+
+That is one 124 KB venv serving every command name. Shell functions and
+completions are a separate install and a separate manager: Fisher copies
+`functions/`, `completions/` and `conf.d/` from the repository root, and
+Antidote takes a `path:` to a `<name>.plugin.zsh` inside it.
+
+```
+fisher install MihaiBojin/worktrees
+MihaiBojin/worktrees path:zsh/plugins/worktrees   # in zsh_plugins.txt
+```
+
+Neither manager puts a binary on `$PATH`, which is why the two steps stay
+separate. Nothing in this repository ships shell code yet.
 
 ## Tests
 
