@@ -243,21 +243,47 @@ the checkout in place of the published version.
 
 ## Publishing a version
 
-Releasing is merging a version bump. Bump `version` in `pyproject.toml`, run
-`uv lock`, and merge. `tag-release.yml` reads the version on every push to
-`main`, tags the commit when that tag does not exist yet, and dispatches
-`publish.yml` against it. A push that changes no version finds its tag already
-there and does nothing.
+A release is two steps, and nothing automates either of them.
+
+```console
+uv version 0.2.0          # rewrites pyproject.toml and re-locks
+# open a pull request, review it, merge it
+git switch main && git pull
+git tag -a v0.2.0 -m v0.2.0
+git push origin v0.2.0
+```
+
+The version lives in `pyproject.toml`, in the repository, on every commit,
+and in git history. The tag agrees with it or nothing is published. A tag
+moved onto a commit carrying a different version is refused, which is the
+integrity check a tag-derived version could not have:
+
+```console
+$ scripts/check-tag-version.bash
+Tag/version mismatch, refusing to publish.
+  tag(s) at HEAD:         9.9.9
+  pyproject.toml version: 0.1.0
+```
+
+Pushing the tag starts `publish.yml`:
 
 ```
 build ──> publish-test ──> publish ──> release
 ```
 
-`build` refuses a tag that disagrees with `pyproject.toml`, runs the suite one
-last time, and hands the same artifact to every job below, so what reaches PyPI
-is byte-for-byte what TestPyPI accepted. TestPyPI gates the real upload on
-purpose: a PyPI upload cannot be undone or replaced, so a failed rehearsal
-stops the run while there is still nothing to pin against.
+`build` runs three guards before it does anything, cheapest first. The tag has
+to name the version the commit carries. The commit has to be one `main` took,
+so nothing is released from a tree no review ever saw. And that commit's test
+run has to have passed already, so a doomed release stops before it reaches
+TestPyPI. Then it runs the suite again and hands one artifact to every job
+below, so what reaches PyPI is byte-for-byte what TestPyPI accepted.
+
+TestPyPI gates the real upload on purpose: a PyPI upload cannot be undone or
+replaced, so a failed rehearsal stops the run while there is still nothing to
+pin against. The merge happens first and the irreversible step is last, so
+everything recoverable is already done by the time anything is published.
+
+`workflow_dispatch` against a tag ref re-runs a release whose publish failed.
 
 No API token is stored anywhere. Both uploads use PyPI Trusted Publishing over
 OIDC, which needs one registration on each index before the first release:

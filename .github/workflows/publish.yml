@@ -6,6 +6,10 @@ name: Publish
 #
 #   build -> publish-test -> publish -> release
 #
+# Nothing here creates a tag. A release is a version bump merged into main and
+# then tagged by hand, so the irreversible step is the last one and everything
+# before it is a normal reviewed change.
+#
 # TestPyPI gates the real upload deliberately: a PyPI upload cannot be undone
 # or replaced, so if the rehearsal fails there is nothing to pin against and
 # the run stops there.
@@ -15,10 +19,9 @@ name: Publish
 on:
   push:
     tags:
-      - "v0.*"
-  # How tag-release.yml starts this: a tag pushed with GITHUB_TOKEN raises no
-  # push event, and workflow_dispatch is exempt from that rule. Run it against
-  # a tag ref, not a branch.
+      - "v*.*.*"
+  # To re-run a release whose publish failed. Run it against a tag ref, not a
+  # branch: every guard below reads the tag at HEAD.
   workflow_dispatch:
 
 permissions:
@@ -44,8 +47,19 @@ jobs:
           python-version: "3.14"
           enable-cache: true
 
+      # Three guards, cheapest first. The tag has to name a version the
+      # repository actually carries, the commit has to be one main took, and
+      # its tests have to have passed already.
       - name: Check the tag matches the project version
         run: scripts/check-tag-version.bash
+
+      - name: Check the commit is on main
+        run: scripts/check-on-main.bash
+
+      - name: Wait for the tests on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/await-checks.bash "$GITHUB_SHA"
 
       - name: Install dependencies
         run: uv sync --all-extras --locked

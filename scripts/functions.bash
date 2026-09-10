@@ -2,15 +2,6 @@
 #
 # Shared by the release scripts. Sourced, never run.
 
-# Is the working copy carrying uncommitted changes?
-is_dirty() {
-    if [ -n "$(git status --porcelain)" ]; then
-        echo "-dirty"
-    else
-        echo ""
-    fi
-}
-
 # The release tags pointing at HEAD, 'v' prefix removed, one per line.
 #
 # --points-at rather than --contains: the latter lists every tag whose history
