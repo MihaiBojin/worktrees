@@ -1,5 +1,5 @@
 [project]
-name = "worktrees"
+name = "git-worktrees"
 license = "Apache-2.0"
 description = "Git worktree commands that refuse to lose work."
 keywords = ["git", "worktree", "cli"]

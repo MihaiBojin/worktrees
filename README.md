@@ -218,7 +218,7 @@ Two installs, because they are two kinds of thing.
 The console scripts come from the published package, into `~/.local/bin`:
 
 ```console
-uv tool install worktrees
+uv tool install git-worktrees
 ```
 
 One venv of 124 KB serves every command name, at about 1 KB each.
@@ -239,7 +239,7 @@ MihaiBojin/worktrees path:zsh/plugins/worktrees   # in zsh_plugins.txt
 Neither manager puts a binary on `$PATH`, which is why the two stay separate.
 Nothing here ships shell code yet.
 
-Working on the package itself, `uv tool install --from . worktrees` installs
+Working on the package itself, `uv tool install --from . git-worktrees` installs
 the checkout in place of the published version.
 
 ## Tests

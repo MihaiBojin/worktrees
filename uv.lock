@@ -39,6 +39,24 @@ wheels = [
 ]
 
 [[package]]
+name = "git-worktrees"
+version = "0.1.0"
+source = { editable = "." }
+
+[package.optional-dependencies]
+dev = [
+    { name = "pre-commit" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = "==4.6.1" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = "==9.1.1" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "identify"
 version = "2.6.19"
 source = { registry = "https://pypi.org/simple" }
@@ -214,21 +232,3 @@ sdist = { url = "https://files.pythonhosted.org/packages/52/5c/ba82fdd0da13ade01
 wheels = [
     { url = "https://files.pythonhosted.org/packages/85/fc/888c80b8da917bfc48a41887eca244f995d190bd3c01175727089fcaf27e/virtualenv-21.7.9-py3-none-any.whl", hash = "sha256:ba3b0bb41063c848d84d76a9fe3fb7711aaa0f2fe78708e8f3cd9714770e4eac", size = 5324667, upload-time = "2026-09-09T01:03:26.023Z" },
 ]
-
-[[package]]
-name = "worktrees"
-version = "0.1.0"
-source = { editable = "." }
-
-[package.optional-dependencies]
-dev = [
-    { name = "pre-commit" },
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = "==4.6.1" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = "==9.1.1" },
-]
-provides-extras = ["dev"]

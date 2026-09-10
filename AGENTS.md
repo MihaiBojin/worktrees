@@ -76,6 +76,33 @@ A completion asks the CLI for its candidates rather than deriving them. The
 ranking is tested in Python; a shell file that reimplements it is a second
 answer to the same question.
 
+## The picker is Python's, and fzf is only the widget
+
+Building the candidate list, ranking it, deciding what each row shows, reading
+the answer back: all of it in the CLI. `fzf` is spawned by the CLI with the
+candidates on its stdin, and the selection is read from its stdout. No shell
+file ever holds a candidate, a format string or a rank, so there is one
+implementation rather than one per dialect.
+
+This works in the shim's own configuration, where the CLI's stdout is already a
+pipe. `fzf` draws on `/dev/tty` rather than on stdout, so the two do not
+collide:
+
+```
+                     tty  ->  fzf's UI
+cd (command gwl)  ->  CLI  ->  fzf  ->  selection  ->  CLI's stdout  ->  cd
+```
+
+The rules that come with it, both the same shape as `gwp`'s prompt:
+
+- No terminal, no picker. Refuse at exit 2 and name the flag that answers
+  without one, rather than launching something nothing can drive.
+- No `fzf` on `$PATH` is not a failure. Fall back to a numbered prompt read
+  from the tty, so the command works on a machine that never installed it.
+
+`--json` and `--list` answer the same question without any of this, and an
+agent uses those.
+
 ## Every git command is one decorated function
 
 The body returns the argv that follows `git`, so the module reads as the list
