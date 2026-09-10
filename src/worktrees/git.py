@@ -17,6 +17,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol, overload
 
 Argv = tuple[str, ...]
 
@@ -143,6 +144,16 @@ def guard(argv: Sequence[str]) -> None:
 # --------------------------------------------------------------------------
 
 
+class GitCall(Protocol):
+    """What a decorated function becomes: the same arguments, plus `repo`."""
+
+    __name__: str
+
+    def __call__(
+        self, *args: str, repo: str | os.PathLike[str] | None = None
+    ) -> Run: ...
+
+
 def _placeholder_shape(func: Callable[..., Argv]) -> Argv:
     """The argv with `<param>` standing in for each argument.
 
@@ -157,6 +168,20 @@ def _placeholder_shape(func: Callable[..., Argv]) -> Argv:
         return (f"<{func.__name__}>",)
 
 
+@overload
+def git(func: Callable[..., Argv]) -> GitCall: ...
+
+
+@overload
+def git(
+    *,
+    ok: Iterable[int] = ...,
+    mutates: bool = ...,
+    opts: Argv = ...,
+    env: Mapping[str, str] | None = ...,
+) -> Callable[[Callable[..., Argv]], GitCall]: ...
+
+
 def git(
     func: Callable[..., Argv] | None = None,
     *,
@@ -164,7 +189,7 @@ def git(
     mutates: bool = False,
     opts: Argv = (),
     env: Mapping[str, str] | None = None,
-) -> Callable[..., Run] | Callable[[Callable[..., Argv]], Callable[..., Run]]:
+) -> GitCall | Callable[[Callable[..., Argv]], GitCall]:
     """Turn a function that names a git command into one that runs it.
 
     ok       exit codes that mean an answer rather than a failure
@@ -174,7 +199,7 @@ def git(
     """
     accept = tuple(ok)
 
-    def decorate(fn: Callable[..., Argv]) -> Callable[..., Run]:
+    def decorate(fn: Callable[..., Argv]) -> GitCall:
         @functools.wraps(fn)
         def call(*args: str, repo: str | os.PathLike[str] | None = None) -> Run:
             argv = tuple(fn(*args))

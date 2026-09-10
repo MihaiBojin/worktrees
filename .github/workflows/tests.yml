@@ -20,6 +20,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v10.0.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras --locked
+
+      # ruff and mypy both run from here, so what CI checks and what a commit
+      # checks are the same versions pinned in the same file.
+      - name: Run pre-commit
+        run: uv run --no-sync pre-commit run --all-files --show-diff-on-failure
+
   test:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest

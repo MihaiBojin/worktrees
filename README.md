@@ -124,10 +124,12 @@ def worktree_records():
     """Every worktree, NUL-delimited."""
     return "worktree", "list", "--porcelain", "-z"
 
+
 @git(ok=(0, 1))
 def is_ancestor(ref, head):
     """Non-zero means 'no', not 'broken'."""
     return "merge-base", "--is-ancestor", ref, head
+
 
 @git(mutates=True)
 def remove_worktree(path):

@@ -265,7 +265,9 @@ def head_ref(
         ]
     if not found:
         found = [
-            c for c in ("main", "master", "trunk") if ref_exists(f"refs/heads/{c}", repo=repo)
+            c
+            for c in ("main", "master", "trunk")
+            if ref_exists(f"refs/heads/{c}", repo=repo)
         ]
     if not found:
         return "", ""
@@ -306,7 +308,9 @@ def ignored_paths(path: str) -> list[str]:
     ]
 
 
-def unpushed_count(branch: str, repo: str | os.PathLike[str] | None = None) -> int | None:
+def unpushed_count(
+    branch: str, repo: str | os.PathLike[str] | None = None
+) -> int | None:
     """Commits the upstream has not got, or None when there is no upstream.
 
     None is not zero. Branches made here do not track, so "no upstream" is the

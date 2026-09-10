@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
 
 import pytest
 
 from worktrees import prune, verdicts
 from worktrees import repo as R
 from worktrees.git import Refused, guard
-
 
 # --------------------------------------------------------------------------
 # Hole 1: a squash merge inverts `git branch -d`
@@ -23,7 +21,9 @@ def test_squashed_and_unmerged_are_indistinguishable_to_git(world) -> None:
     wt = world.parent / ".worktrees" / "squashed" / "repo"
     world.commit("feature.txt", "one\n", at=wt)
     world.worktree("unmerged")
-    world.commit("other.txt", "two\n", at=world.parent / ".worktrees" / "unmerged" / "repo")
+    world.commit(
+        "other.txt", "two\n", at=world.parent / ".worktrees" / "unmerged" / "repo"
+    )
 
     # main takes squashed's change as one commit, which is what a forge does.
     (world.repo / "feature.txt").write_text("one\n")
@@ -62,7 +62,10 @@ def test_the_probe_separates_them(world) -> None:
     world.git("add", "--", "feature.txt")
     world.git("commit", "--quiet", "-m", "squash of squashed")
 
-    seen = {v.branch: v for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)}
+    seen = {
+        v.branch: v
+        for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    }
     assert seen["squashed"].verdict == verdicts.GO
     assert seen["squashed"].why == "squash-merged"
     assert seen["unmerged"].verdict == verdicts.UNKNOWN
@@ -72,7 +75,10 @@ def test_the_probe_separates_them(world) -> None:
 def test_a_branch_that_changed_nothing_is_finished(world) -> None:
     """Short-circuit: branch^{tree} == head^{tree}, whatever history says."""
     world.worktree("noop")
-    seen = {v.branch: v for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)}
+    seen = {
+        v.branch: v
+        for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    }
     assert seen["noop"].verdict == verdicts.GO
 
 
@@ -110,13 +116,19 @@ def test_ignored_files_stop_the_verdict(world) -> None:
     (wt / "node_modules").mkdir()
     (wt / "node_modules" / "pkg.js").write_text("x\n")
 
-    v = {x.branch: x for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)}["holds"]
+    v = {
+        x.branch: x
+        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    }["holds"]
     assert v.verdict == verdicts.KEEP
     assert "2 ignored path(s)" in v.why
     assert "--delete-ignored" in v.why
 
     # --yes must not answer that question; only --delete-ignored does.
-    v = {x.branch: x for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", True)}["holds"]
+    v = {
+        x.branch: x
+        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", True)
+    }["holds"]
     assert v.verdict == verdicts.GO
 
 
@@ -140,13 +152,14 @@ def test_ignored_directory_collapses_to_one_entry(world) -> None:
 def test_a_tag_cannot_answer_for_a_branch(world) -> None:
     """A1/A7. gitrevisions resolves a bare name as a tag before a branch."""
     world.worktree("feature")
-    world.commit(
-        "f.txt", "f\n", at=world.parent / ".worktrees" / "feature" / "repo"
-    )
+    world.commit("f.txt", "f\n", at=world.parent / ".worktrees" / "feature" / "repo")
     # A tag with the branch's name, on a commit main already contains.
     world.git("tag", "feature", "main")
 
-    v = {x.branch: x for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)}["feature"]
+    v = {
+        x.branch: x
+        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    }["feature"]
     assert v.verdict != verdicts.GO, "the tag answered for the branch"
 
 
@@ -195,7 +208,12 @@ def test_a_tag_shadowing_the_head_branch_does_not_shadow_it(world) -> None:
     world.git("tag", "origin/main", "refs/heads/feature")
 
     assert R.full_ref("origin/main") == "refs/remotes/origin/main"
-    v = {x.branch: x for x in verdicts.assess(R.worktrees(), "", R.full_ref("origin/main"), "main", False)}
+    v = {
+        x.branch: x
+        for x in verdicts.assess(
+            R.worktrees(), "", R.full_ref("origin/main"), "main", False
+        )
+    }
     assert v["feature"].verdict != verdicts.GO
 
 

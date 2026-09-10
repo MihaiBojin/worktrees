@@ -101,7 +101,9 @@ def test_a_tag_cannot_be_the_base(world) -> None:
     world.git("tag", "origin/main", "HEAD")  # the tag is not where origin/main is
     started = new_branch.create("feature", fetch=False)
     assert started.base == "refs/remotes/origin/main"
-    assert world.git("rev-parse", "HEAD") != world.git("rev-parse", "refs/tags/origin/main")
+    assert world.git("rev-parse", "HEAD") != world.git(
+        "rev-parse", "refs/tags/origin/main"
+    )
 
 
 def test_a_name_is_required(world) -> None:

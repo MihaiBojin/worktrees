@@ -1,0 +1,10 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "github>MihaiBojin/renovate",
+    "github>MihaiBojin/renovate:group-github-actions",
+    "github>MihaiBojin/renovate:group-python-tooling",
+    "github>MihaiBojin/renovate:pre-commit"
+  ],
+  "constraintsFiltering": "strict"
+}

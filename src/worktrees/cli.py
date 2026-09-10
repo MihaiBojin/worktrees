@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from . import __version__, new_branch, prune, verdicts
@@ -22,7 +22,7 @@ def _pretty(path: str) -> str:
     return "~" + path[len(home) :] if path.startswith(home + "/") else path
 
 
-def _table(rows: list[tuple[str, ...]]) -> str:
+def _table(rows: Sequence[tuple[str, ...]]) -> str:
     """Columns wide enough for their content, the last one unpadded."""
     if not rows:
         return ""
@@ -56,7 +56,9 @@ def _explain() -> int:
 
 
 def _add_assess_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--branch", default="", metavar="NAME", help="consider only that branch")
+    p.add_argument(
+        "--branch", default="", metavar="NAME", help="consider only that branch"
+    )
     p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
     p.add_argument(
         "--delete-ignored",
@@ -66,8 +68,12 @@ def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--json", action="store_true", help="verdicts as data")
     p.add_argument("-q", "--quiet", action="store_true", help="verdicts only")
-    p.add_argument("-v", "--verbose", action="store_true", help="print every git command")
-    p.add_argument("--explain", action="store_true", help="print every git command and exit")
+    p.add_argument(
+        "-v", "--verbose", action="store_true", help="print every git command"
+    )
+    p.add_argument(
+        "--explain", action="store_true", help="print every git command and exit"
+    )
 
 
 class _Stop(Exception):
@@ -78,7 +84,9 @@ class _Stop(Exception):
         self.code = code
 
 
-def _assess(args: argparse.Namespace) -> tuple[list[verdicts.Verdict], list[R.Worktree], str]:
+def _assess(
+    args: argparse.Namespace,
+) -> tuple[list[verdicts.Verdict], list[R.Worktree], str]:
     """Fetch, resolve the head branch, and judge every worktree.
 
     The one path both commands take, so `prune` can only ever act on what
@@ -102,9 +110,7 @@ def _assess(args: argparse.Namespace) -> tuple[list[verdicts.Verdict], list[R.Wo
 
     records = R.worktrees()
     return (
-        verdicts.assess(
-            records, args.branch, head, head_branch, args.delete_ignored
-        ),
+        verdicts.assess(records, args.branch, head, head_branch, args.delete_ignored),
         verdicts.stale(records),
         head,
     )
@@ -234,12 +240,20 @@ def run_prune(args: argparse.Namespace) -> int:
 
 
 def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument("name", nargs="?", default="", metavar="NAME", help="the branch to start")
-    p.add_argument("--no-fetch", action="store_true", help="branch off what is already here")
+    p.add_argument(
+        "name", nargs="?", default="", metavar="NAME", help="the branch to start"
+    )
+    p.add_argument(
+        "--no-fetch", action="store_true", help="branch off what is already here"
+    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
-    p.add_argument("-v", "--verbose", action="store_true", help="print every git command")
-    p.add_argument("--explain", action="store_true", help="print every git command and exit")
+    p.add_argument(
+        "-v", "--verbose", action="store_true", help="print every git command"
+    )
+    p.add_argument(
+        "--explain", action="store_true", help="print every git command and exit"
+    )
 
 
 def run_new_branch(args: argparse.Namespace) -> int:
@@ -287,7 +301,11 @@ def _add_prune_flags(p: argparse.ArgumentParser) -> None:
 _COMMANDS = {
     "status": (run_status, _add_assess_flags, "say which worktrees are finished"),
     "prune": (run_prune, _add_prune_flags, "remove the ones status marks removable"),
-    "new-branch": (run_new_branch, _add_new_branch_flags, "start a branch off the head branch"),
+    "new-branch": (
+        run_new_branch,
+        _add_new_branch_flags,
+        "start a branch off the head branch",
+    ),
 }
 
 _STATUS_HELP = "Say which of this repository's worktrees are finished, and why."
@@ -329,10 +347,15 @@ def main(argv: list[str] | None = None) -> int:
     for name, (_, flags, help_text) in _COMMANDS.items():
         flags(subs.add_parser(name, help=help_text))
     args_in = sys.argv[1:] if argv is None else argv
-    if args_in and args_in[0].startswith("-") and args_in[0] not in (
-        "-h",
-        "--help",
-        "--version",
+    if (
+        args_in
+        and args_in[0].startswith("-")
+        and args_in[0]
+        not in (
+            "-h",
+            "--help",
+            "--version",
+        )
     ):
         # `worktrees --explain` is not about one command; status answers it.
         args_in = ["status", *args_in]
