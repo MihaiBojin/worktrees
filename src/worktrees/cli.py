@@ -6,7 +6,6 @@ import argparse
 import json
 import sys
 from collections.abc import Callable, Sequence
-from pathlib import Path
 
 from . import __version__, new_branch, pick, prune, verdicts
 from . import repo as R
@@ -17,11 +16,6 @@ from .git import GitError, Refused, commands, options
 
 def _err(text: str) -> None:
     print(text, file=sys.stderr)
-
-
-def _pretty(path: str) -> str:
-    home = str(Path.home())
-    return "~" + path[len(home) :] if path.startswith(home + "/") else path
 
 
 def _table(rows: Sequence[tuple[str, ...]]) -> str:
@@ -175,7 +169,7 @@ def run_status(args: argparse.Namespace) -> int:
         print("no worktrees besides the main checkout")
     else:
         table: list[tuple[str, ...]] = [("VERDICT", "BRANCH", "WHY", "PATH")]
-        table += [(v.verdict, v.label, v.why, _pretty(v.path)) for v in rows]
+        table += [(v.verdict, v.label, v.why, v.path) for v in rows]
         print(_table(table))
 
     if args.quiet:
@@ -497,7 +491,7 @@ def run_list(args: argparse.Namespace) -> int:
     if args.list:
         width = max(len(w.label) for w in found)
         for w in found:
-            print(f"{w.label:<{width}}  {_pretty(w.path)}")
+            print(f"{w.label:<{width}}  {w.path}")
         return 0
 
     chosen = pick.choose(found, _err)

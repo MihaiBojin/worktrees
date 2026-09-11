@@ -14,7 +14,8 @@ name: Publish
 # or replaced, so if the rehearsal fails there is nothing to pin against and
 # the run stops there.
 #
-# No API token is stored anywhere. See README, "Publishing a version".
+# No API token is stored anywhere. See docs/DEVELOPMENT.md, "Publishing a
+# version".
 
 on:
   push:

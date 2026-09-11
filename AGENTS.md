@@ -101,9 +101,9 @@ number of linked worktrees in one is four. A fuzzy finder is the wrong
 instrument at that size, and a numbered prompt reads faster:
 
 ```
-1  fix-parser     ~/git/.worktrees/fix-parser/repo
-2  add-tests      ~/git/.worktrees/add-tests/repo
->
+  1  fix-parser     /home/you/git/.worktrees/fix-parser/repo
+  2  add-tests      /home/you/git/.worktrees/add-tests/repo
+which? [1-2, or blank to cancel]
 ```
 
 Dropping `fzf` is less code, not more. It removes the spawn, the tty rules
@@ -123,7 +123,7 @@ tightly they cluster. About twenty lines, `difflib` not required.
 Two rules, both the shape `gwp`'s prompt already has:
 
 - One match takes it outright, with no prompt at all.
-- No terminal, no prompt. Refuse at exit 2 and name the flag that answers
+- No terminal, no prompt. Refuse at exit 3 and name the flag that answers
   without one, rather than blocking on something nothing can drive.
 
 `--json` and `--list` answer the same question without any of this, and an
@@ -186,9 +186,8 @@ no call site can assemble its way past it. `reset --hard`, a forced `checkout`
 or `switch`, `clean -f`, a bare `push --force`, `worktree remove --force` and
 `branch -D` are refused absolutely. There is no flag, and `--yes` least of all.
 
-`verdicts.py` declares no mutating command. `prune.py` declares the six that
-mutate. A read-only command may not call one: a test reads the verbose log and
-asserts it.
+`verdicts.py` declares no mutating command. A read-only command may not call
+one: a test reads the verbose log and asserts it.
 
 ## Content cannot settle a stacked branch
 
