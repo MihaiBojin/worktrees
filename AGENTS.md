@@ -156,6 +156,11 @@ shorthands and whether the command changes the caller's directory. `gws`,
 so, and `gwh` prints the table rather than a second list that can disagree
 with it.
 
+`version` is the one row that installs no console script, and `gwh` prints a
+`—` in its first column to say so. A tool's version is asked through the
+tool's name, so `gw version` and `gw v` are the two spellings and no parser
+carries a `--version` flag.
+
 `_canonical()` raises at import when two rows answer to one name. A dict
 comprehension would keep the last one and leave a command reachable under a
 name that runs a different one.

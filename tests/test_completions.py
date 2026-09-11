@@ -36,7 +36,7 @@ SRC = str(ROOT / "src")
 FISH = ROOT / "completions"
 ZSH = ROOT / "zsh" / "plugins" / "worktrees" / "completions"
 
-BINARIES = sorted(c.binary for c in _COMMANDS.values())
+BINARIES = sorted(c.binary for c in _COMMANDS.values() if c.binary)
 
 
 def _help(entry: str) -> str:

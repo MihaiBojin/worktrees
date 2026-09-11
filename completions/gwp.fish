@@ -13,5 +13,4 @@ complete -c gwp -s q -l quiet -d 'verdicts only'
 complete -c gwp -s v -l verbose -d 'print every git command'
 complete -c gwp -l explain -d 'print every git command and exit'
 
-complete -c gwp -l version -d 'show the version and exit'
 complete -c gwp -s h -l help -d 'show the help and exit'

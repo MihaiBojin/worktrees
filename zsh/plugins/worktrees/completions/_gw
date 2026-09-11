@@ -13,7 +13,6 @@ _gw() {
     local curcontext="$curcontext" state
 
     _arguments -C \
-        '--version[show the version and exit]' \
         '(-h --help)'{-h,--help}'[show the help and exit]' \
         '1: :->command' \
         '*:: :->rest'

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import sys
 from collections.abc import Callable
@@ -706,6 +707,19 @@ def run_remove(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------
 
 
+def run_version(args: argparse.Namespace) -> int:
+    """The version of the installed distribution."""
+    print(__version__)
+    return 0
+
+
+def _listed(names: list[str]) -> str:
+    """`a, b and c`, and `a` on its own when there is one."""
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
 def run_help(args: argparse.Namespace) -> int:
     """Every name this package installs, and what each one answers."""
     print(f"worktrees {__version__}: git worktree commands that refuse to lose work")
@@ -718,7 +732,9 @@ def run_help(args: argparse.Namespace) -> int:
             spelled += " (" + ", ".join(c.aliases) + ")"
         rows.append(
             (
-                Cell(f"{c.binary} {c.usage}".strip(), BOLD),
+                # A row installing no binary has nothing for this column:
+                # `gw version` is the only way to type it.
+                Cell(f"{c.binary} {c.usage}".strip() or "\u2014", BOLD),
                 Cell(spelled),
                 Cell(c.about),
             )
@@ -728,7 +744,7 @@ def run_help(args: argparse.Namespace) -> int:
 
     lands = [c.binary for c in _COMMANDS.values() if c.lands]
     print(
-        f"{', '.join(lands[:-1])} and {lands[-1]} change the directory you are "
+        f"{_listed(lands)} change the directory you are "
         "standing in.\nA binary cannot do that, so each needs the shell function "
         "of the same name\nfrom the plugin; the rest need nothing but $PATH."
     )
@@ -736,8 +752,10 @@ def run_help(args: argparse.Namespace) -> int:
     # Which commands take the common flags is the table's answer, not a second
     # list here: a row with no flags takes none, and saying so in prose is how
     # a help text comes to promise a flag the program refuses.
-    bare = [c.binary for c in _COMMANDS.values() if c.flags is None]
-    scope = f"every command but {', '.join(bare)}" if bare else "every command"
+    bare = [
+        c.binary or f"gw {name}" for name, c in _COMMANDS.items() if c.flags is None
+    ]
+    scope = f"every command but {_listed(bare)}" if bare else "every command"
     print(
         "gwnb and gwrot start branches rather than worktrees. Both are alpha "
         f"and may go.\n\n--json, -q, -v and --explain work on {scope}, and\n"
@@ -785,7 +803,7 @@ class _Command:
     run: Callable[[argparse.Namespace], int]
     flags: Callable[[argparse.ArgumentParser], None] | None
     about: str
-    binary: str
+    binary: str = ""  # the console script, where the command installs one
     usage: str = ""
     aliases: tuple[str, ...] = ()
     lands: bool = False  # changes the caller's directory, so it needs a shim
@@ -864,6 +882,15 @@ _COMMANDS: dict[str, _Command] = {
         "gwh",
         aliases=("h",),
     ),
+    # The one row with no console script. Asking a tool its version is done
+    # through the tool's name, and a tenth binary for it would be a name
+    # nobody types.
+    "version": _Command(
+        run_version,
+        None,
+        "the version this package installs",
+        aliases=("v",),
+    ),
 }
 
 
@@ -902,9 +929,7 @@ _ROTATE_HELP = (
 
 
 def _parser(prog: str, description: str) -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog=prog, description=description)
-    p.add_argument("--version", action="version", version=__version__)
-    return p
+    return argparse.ArgumentParser(prog=prog, description=description)
 
 
 def gws(argv: list[str] | None = None) -> int:
@@ -974,6 +999,23 @@ def gw(argv: list[str] | None = None) -> int:
     return main(argv, prog="gw")
 
 
+def _unknown_command(prog: str, typed: str) -> int:
+    """A name no row answers to, and the nearest one that does.
+
+    argparse spells every command twice for this, once in a usage line and
+    once in the choices, so the name worth reading arrives last. The pool is
+    the same table `gwh` prints, plus `--help`, which people type as a
+    command.
+    """
+    _err(f"{prog}: there is no command {typed!r}")
+    pool = [*_CANONICAL, "--help"]
+    near = difflib.get_close_matches(typed, pool, n=1)
+    if near:
+        _err(f"the closest is: {prog} {near[0]}")
+    _err(f"{prog} help lists every command")
+    return 2
+
+
 def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     """The CLI a shim and an agent call."""
     p = _parser(prog, "Git worktree commands that refuse to lose work.")
@@ -992,11 +1034,12 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
         not in (
             "-h",
             "--help",
-            "--version",
         )
     ):
         # `worktrees --explain` is not about one command; status answers it.
         args_in = ["status", *args_in]
+    if args_in and not args_in[0].startswith("-") and args_in[0] not in _CANONICAL:
+        return _unknown_command(prog, args_in[0])
     return _dispatch(p, args_in, None)
 
 
