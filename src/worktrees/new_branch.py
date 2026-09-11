@@ -20,12 +20,12 @@ def check_ref_format(name: str) -> None:
 
 
 @git("rev-parse --short $ref", ok=(0, 128))
-def abbrev(ref: str) -> None:
+def short_sha(ref: str) -> None:
     """The short sha a ref names."""
 
 
 @git("switch --create $name --no-track $base", mutates=True)
-def start_branch(name: str, base: str) -> None:
+def switch_create(name: str, base: str) -> None:
     """--no-track, so the head branch does not become this branch's upstream.
 
     A branch off refs/remotes/<remote>/main that tracked it would take it as
@@ -74,6 +74,6 @@ def create(
             f"with: git remote set-head {hint} --auto"
         )
 
-    sha = abbrev(base, repo=repo)
-    start_branch(name, base, repo=repo)
+    sha = short_sha(base, repo=repo)
+    switch_create(name, base, repo=repo)
     return Started(name, base, sha.out.strip() if sha else "")

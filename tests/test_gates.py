@@ -325,3 +325,45 @@ def test_no_unexpected_git_command_ran(world) -> None:
     declared = {subcommand(("git", *c.shape)) for c in commands()}
     for argv in options.log:
         assert subcommand(argv) in declared, f"unregistered: {' '.join(argv)}"
+
+
+# --------------------------------------------------------------------------
+# a branch that is pushed is not `unknown`
+# --------------------------------------------------------------------------
+
+
+def test_a_tracked_branch_reports_a_count_not_none(world) -> None:
+    """`unpushed_count` returning None means "no upstream", and a broken
+    `upstream_of` returns None too. Every branch then reads as `unknown` and
+    nothing fails, because `ok=(0, 1, 128)` swallows the error.
+    """
+    upstream = world.root / "upstream.git"
+    world.git("init", "--bare", "--quiet", str(upstream), at=world.repo)
+    world.git("remote", "add", "origin", str(upstream))
+    world.git("push", "--quiet", "--set-upstream", "origin", "main")
+
+    world.git("switch", "--quiet", "--create", "pushed")
+    world.commit("p.txt", "p\n")
+    world.git("push", "--quiet", "--set-upstream", "origin", "pushed")
+
+    assert R.unpushed_count("pushed") == 0
+
+    world.commit("q.txt", "q\n")
+    assert R.unpushed_count("pushed") == 1
+
+    world.git("switch", "--quiet", "--create", "untracked", "main")
+    assert R.unpushed_count("untracked") is None
+
+
+def test_the_upstream_spec_is_a_flag_git_accepts(world) -> None:
+    """The spec reaches git verbatim, so a typo in a flag is a typo in the
+    command. This asserts on what came back rather than on the exit code.
+    """
+    upstream = world.root / "up2.git"
+    world.git("init", "--bare", "--quiet", str(upstream), at=world.repo)
+    world.git("remote", "add", "origin", str(upstream))
+    world.git("push", "--quiet", "--set-upstream", "origin", "main")
+
+    out = R.upstream_of("main")
+    assert out, "upstream_of failed; the spec is not a command git accepts"
+    assert out.out.strip() == "origin/main"

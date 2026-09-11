@@ -192,7 +192,7 @@ def run_prune(args: argparse.Namespace) -> int:
     # git's own bookkeeping for worktrees whose directories somebody removed
     # by hand. A stale record answers for a directory that is not there, and
     # neither command may propose removing one.
-    prune.prune_records()
+    prune.worktree_prune()
 
     rows, _, _ = _assess(args)
     go = prune.removable(rows)

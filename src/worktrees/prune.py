@@ -13,22 +13,22 @@ from .verdicts import GO, Verdict
 
 
 @git("worktree prune", mutates=True)
-def prune_records() -> None:
+def worktree_prune() -> None:
     """Clear git's bookkeeping for worktrees somebody deleted by hand."""
 
 
 @git("worktree remove -- $path", mutates=True)
-def remove_worktree(path: str) -> None:
+def worktree_remove(path: str) -> None:
     """Drop a checkout. Refuses on its own when the worktree is dirty."""
 
 
 @git("branch -d -- $branch", mutates=True)
-def delete_branch(branch: str) -> None:
+def branch_delete(branch: str) -> None:
     """-d, never -D: git's own proof of merge is the only proof accepted."""
 
 
 @git("rev-parse --verify $ref", ok=(0, 128))
-def rev_parse(ref: str) -> None:
+def sha_of(ref: str) -> None:
     """The sha a ref names, for the line that puts it back."""
 
 
@@ -55,7 +55,7 @@ def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str
     """
     if not branch:
         return ""
-    sha = rev_parse(f"refs/heads/{branch}", repo=repo)
+    sha = sha_of(f"refs/heads/{branch}", repo=repo)
     text = sha.out.strip() if sha else ""
     if not text:
         return ""
@@ -129,7 +129,7 @@ def sweep(
     failed = 0
     for v in go:
         try:
-            remove_worktree(v.path, repo=repo)
+            worktree_remove(v.path, repo=repo)
         except (GitError, Refused) as exc:
             say(f"{v.label} kept: {exc}")
             failed += 1
@@ -142,11 +142,11 @@ def sweep(
                 # -d, so git's own proof of merge decides. A squash-merged
                 # branch is refused here and kept: the checkout goes, the
                 # branch stays, and the restore line is not needed.
-                delete_branch(v.branch, repo=repo)
+                branch_delete(v.branch, repo=repo)
             except (GitError, Refused) as exc:
                 say(f"branch {v.branch} kept: {exc}")
 
-    prune_records(repo=repo)
+    worktree_prune(repo=repo)
     return failed
 
 
