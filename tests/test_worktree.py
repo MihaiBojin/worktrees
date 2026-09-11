@@ -136,11 +136,51 @@ def test_list_prints_the_selection_alone(world) -> None:
     assert p.stdout.strip() == str(world.parent / ".worktrees" / "fix-parser" / "repo")
 
 
-def test_list_omits_the_main_checkout(world) -> None:
+def test_list_offers_the_main_checkout(world) -> None:
+    """It is where a finished branch leaves you, so it is a destination."""
     world.worktree("one")
     p = run(world, "gwl", "--json")
     payload = json.loads(p.stdout)
-    assert [w["branch"] for w in payload] == ["one"]
+    assert [w["branch"] for w in payload] == ["main", "one"]
+    assert [w["main"] for w in payload] == [True, False]
+
+
+def test_list_says_so_rather_than_landing_you_where_you_are(world) -> None:
+    """The bug this replaced: one candidate, standing in it, no output at all."""
+    wt = world.worktree("one")
+    p = run(world, "gwl", "one", at=wt)
+    assert p.returncode == 0, p.stderr
+    assert p.stdout == ""
+    assert "already in one" in p.stderr
+
+
+def test_list_from_the_main_checkout_goes_to_the_only_other_one(world) -> None:
+    """Two worktrees and no query is not a question worth asking."""
+    world.worktree("one")
+    p = run(world, "gwl")
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.strip().endswith("/one/repo")
+
+
+def test_list_marks_the_one_you_stand_in(world) -> None:
+    wt = world.worktree("one")
+    p = run(world, "gwl", "--list", at=wt)
+    assert p.returncode == 0, p.stderr
+    marks = {ln[1:].split()[0]: ln[0] for ln in p.stdout.splitlines()}
+    assert marks == {"main": " ", "one": "*"}
+
+
+def test_the_main_checkout_says_so_without_saying_it_twice(world) -> None:
+    world.git("branch", "--move", "main", "trunk")
+    world.worktree("one", base="trunk")
+    p = run(world, "gwl", "--list")
+    assert "trunk (main)" in p.stdout
+
+
+def test_list_in_a_repository_with_no_worktrees_says_so(world) -> None:
+    p = run(world, "gwl")
+    assert p.returncode == 1
+    assert "this is the only worktree" in p.stderr
 
 
 def test_list_refuses_to_prompt_without_a_terminal(world) -> None:

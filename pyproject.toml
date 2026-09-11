@@ -42,8 +42,9 @@ dev = [
 # One venv, N names. `gwp` is the alias a person types; `worktrees` is the CLI
 # a shim and an agent call.
 [project.scripts]
-gw = "worktrees.cli:main"
+gw = "worktrees.cli:gw"
 gwa = "worktrees.cli:gwa"
+gwh = "worktrees.cli:gwh"
 gwl = "worktrees.cli:gwl"
 gwm = "worktrees.cli:gwm"
 gwnb = "worktrees.cli:gwnb"

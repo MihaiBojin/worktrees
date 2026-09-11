@@ -7,6 +7,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from . import render
 from . import repo as R
 from .git import GitError, Refused, git
 from .verdicts import REMOVE, Verdict
@@ -76,13 +77,17 @@ def plan(
     --quiet and --yes do not silence this.
     """
     for v in go:
-        say(f"{v.label}  {v.path}")
+        say(f"{render.err(v.label, render.BOLD)}  {render.err(v.path, render.DIM)}")
         restore = restore_line(v.branch, repo=repo)
         if restore:
-            say(f"  restore with: {restore}")
+            say(render.err(f"  restore with: {restore}", render.DIM))
         if delete_ignored:
             for path in R.ignored_paths(v.path):
-                say(f"  deleting ignored, unrecoverable: {path}")
+                say(
+                    render.err(
+                        f"  deleting ignored, unrecoverable: {path}", render.YELLOW
+                    )
+                )
 
 
 def _prompt(text: str) -> str:
