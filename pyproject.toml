@@ -45,6 +45,7 @@ dev = [
 gw = "worktrees.cli:main"
 gwnb = "worktrees.cli:gwnb"
 gwp = "worktrees.cli:gwp"
+gwrot = "worktrees.cli:gwrot"
 gws = "worktrees.cli:gws"
 worktrees = "worktrees.cli:main"
 
