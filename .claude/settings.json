@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "release-notes@ReleaseTools": true
+  }
+}
