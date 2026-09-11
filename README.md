@@ -412,6 +412,9 @@ Every command is a console script, so a script reaches it with no shell loaded
 at all:
 
 ```console
+$ gws --json | jq -r '.verdicts[] | select(.ignored > 0) | .branch'
+holds-secrets
+
 $ gws --json | jq -r '.verdicts[] | select(.verdict=="remove") | .branch'
 squash-merged
 

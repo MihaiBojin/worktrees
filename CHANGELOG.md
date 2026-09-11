@@ -49,6 +49,11 @@ on, two worktrees and no query go to the other one, and asking for the one
 you are in says `already in <branch>` and stays put. `--list` shows every
 worktree and marks that one.
 
+`gws --json` carries `ignored` and `sha` on every verdict. The count of
+ignored paths reads as a number rather than as a phrase inside `why`, and the
+sha is the commit the verdict was formed against, which is the value a caller
+would otherwise have to go and read for itself.
+
 `gwp` with nothing removable prints the verdict table. It used to print
 `nothing to remove; gws says why`, so the reason each worktree stayed cost a
 second command to read.
