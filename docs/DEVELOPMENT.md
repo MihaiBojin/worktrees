@@ -125,11 +125,11 @@ request, wait for its checks, merge with `--rebase`, wait for main's own run
 on the rebased commit, and only then tag. The tag lands on a commit already
 proved green, so it never has to move.
 
-`scripts/check-releasable.bash` runs first and refuses a version that is not
-`x.y.z`, a dirty tree, a version that is not after the one on `origin/main`,
-a tag that already exists on the remote, and a version PyPI already carries.
-That last one matters most: PyPI rejects a duplicate at the very end of a
-publish run, after everything else has already happened.
+`rt release::prechecks` runs first and refuses a version that is not `x.y.z`,
+a dirty tree, a tag that already exists on the remote, a version that is not
+after the newest release tag, a commit that is not on main, and a version PyPI
+already carries. That last one matters most: PyPI rejects a duplicate at the
+very end of a publish run, after everything else has already happened.
 
 `/release-notes:draft` writes the `CHANGELOG.md` entry on the release branch,
 so the notes are reviewed in the same pull request as the version bump. It
@@ -160,10 +160,10 @@ moved onto a commit carrying a different version is refused, which is the
 integrity check a tag-derived version could not have:
 
 ```console
-$ scripts/check-tag-version.bash
-Tag/version mismatch, refusing to publish.
-  tag(s) at HEAD:         9.9.9
-  pyproject.toml version: 0.1.0
+$ rt git::assert_tag_version "$(uv version --short)"
+ERROR: tag/version mismatch, refusing to continue.
+ERROR:   tag(s) at HEAD: v9.9.9
+ERROR:   version given:  0.1.0
 ```
 
 Pushing the tag starts `publish.yml`:

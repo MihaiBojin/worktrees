@@ -1,16 +1,13 @@
 #!/bin/bash
 set -ueo pipefail
 
-# Install the published package from an index and run what it installed, so a
-# green publish means installable rather than uploaded.
+# Install the published package from an index and run what it installed, so a green
+# publish means installable rather than uploaded.
 #
 # --prod reads PyPI; without it, TestPyPI.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly DIR
-
-# shellcheck disable=SC1091
-source "$DIR/functions.bash"
 
 INDEX="https://test.pypi.org/simple/"
 WHICH="TestPyPI"
@@ -20,15 +17,20 @@ if [ "${1:-}" = "--prod" ]; then
 fi
 readonly INDEX WHICH
 
-NAME="$(get_project_name)"
-VERSION="$(get_project_version)"
+# 'uv version' prints "<name> <version>", which is both halves of what this needs. Reading
+# pyproject.toml here would mean carrying a TOML parser for one line, which is what
+# functions.bash used to do.
+PROJECT="$(cd "$DIR/.." && uv version)"
+readonly PROJECT
+NAME="${PROJECT%% *}"
+VERSION="${PROJECT##* }"
 readonly NAME VERSION
 
 echo "Verifying $NAME==$VERSION from $WHICH..." >&2
 
-# --isolated and a throwaway cache, so a local build of the same version
-# cannot answer for the index. --index-strategy unsafe-best-match because
-# TestPyPI carries none of the dependencies.
+# --isolated and a throwaway cache, so a local build of the same version cannot answer for
+# the index. --index-strategy unsafe-best-match because TestPyPI carries none of the
+# dependencies.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
