@@ -34,15 +34,43 @@ echo "Verifying $NAME==$VERSION from $WHICH..." >&2
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# An index accepts an upload before it serves it, and the delay differs between the JSON
+# API and the simple index resolved against here: 0.2.0 answered on the former while this
+# still could not find it. So the wait is this resolution retried rather than a different
+# endpoint polled, because this is the condition a green publish is claiming.
+#
+# Six attempts backing off from 15s is about 7.75 minutes, and it stops the moment the
+# version resolves.
+readonly ATTEMPTS=6
+readonly BASE=15
+
 # The version the installed script reports, compared against the one asked
 # of the index. Running it and discarding the output would pass while every
 # command on the machine printed a number from a previous release.
-REPORTED="$(UV_CACHE_DIR="$TMP/cache" uv tool run \
-    --isolated \
-    --index "$INDEX" \
-    --index-strategy unsafe-best-match \
-    --from "$NAME==$VERSION" \
-    gws --version)"
+attempt=0
+delay="$BASE"
+while :; do
+    attempt=$((attempt + 1))
+
+    if REPORTED="$(UV_CACHE_DIR="$TMP/cache" uv tool run \
+        --isolated \
+        --index "$INDEX" \
+        --index-strategy unsafe-best-match \
+        --from "$NAME==$VERSION" \
+        gws --version 2>"$TMP/resolve.err")"; then
+        break
+    fi
+
+    if [ "$attempt" -ge "$ATTEMPTS" ]; then
+        cat "$TMP/resolve.err" >&2
+        echo "$WHICH did not serve $NAME==$VERSION after $ATTEMPTS attempts." >&2
+        exit 1
+    fi
+
+    echo "waiting ${delay}s for $WHICH to serve $NAME==$VERSION (attempt $attempt/$ATTEMPTS)..." >&2
+    sleep "$delay"
+    delay=$((delay * 2))
+done
 readonly REPORTED
 
 [ "$REPORTED" = "$VERSION" ] || {
