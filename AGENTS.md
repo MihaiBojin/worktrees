@@ -233,10 +233,30 @@ tested on what it returns rather than on its exit code. `upstream_of` takes
 `ok=(0, 1, 128)`, so a typo in one of its flags exits 128, reads as "no
 upstream", and turns every branch into `unknown` with nothing failing.
 
+The two calls that reach the network, `fetch` and `remote set-head --auto`,
+take `ok=(0, 128)` for the same reason in reverse: a remote that cannot be
+reached is an answer rather than a failure. The caller reads the result, says
+so on stderr, and carries on with the refs already here, which is where
+`--no-fetch` sends it on request. It also stops asking: a failed fetch means
+the head-branch ladder is told it is offline, rather than spending a second
+round trip proving it.
+
+One `git status --porcelain --ignored=traditional` answers both questions a
+worktree is asked. It is a strict superset of plain `--porcelain`, so `dirty`
+is "a line that does not start with `!! `" and `ignored` is the rest. Asking
+both ways was 18 of an assessment's 35 calls over nine worktrees.
+
 `guard()` runs on the resolved argv inside the wrapper, not at declaration, so
 no call site can assemble its way past it. `reset --hard`, a forced `checkout`
-or `switch`, `clean -f`, a bare `push --force`, `worktree remove --force` and
-`branch -D` are refused absolutely. There is no flag, and `--yes` least of all.
+or `switch`, `clean -f`, a bare `push --force`, `worktree remove --force`,
+`branch -D` and an `update-ref` delete that names no full sha are refused
+absolutely. There is no flag, and `--yes` least of all.
+
+Those seven are `RULES`, a tuple, each row carrying the name `--explain`
+prints, the clause the refusal ends with, and the test. The footer `--explain`
+prints is built from it. A rule written in one place and described in another
+is a rule that goes quiet: the hand-written footer fell a rule behind the
+moment `update-ref` was added, and nothing failed.
 
 `verdicts.py` declares no mutating command. A read-only command may not call
 one: a test reads the verbose log and asserts it.

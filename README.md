@@ -197,6 +197,12 @@ function returns that set for both. What goes and what puts it back is printed
 before anything does, and neither `--quiet` nor `--yes` silences it. The sha in
 the restore line is full length, because that line is meant to be pasted.
 
+A stash made on a branch that is about to go is named too. `refs/stash` is
+per-repository and pins its own commits, so the entry survives the branch and
+`git stash branch <new> stash@{0}` still recovers it. What does not survive is
+the branch name in its subject, so the line says which entry is about to start
+pointing at nothing.
+
 The checkout goes through plain `git worktree remove`, so every refusal git
 makes still applies. The branch goes through `git update-ref -d`, naming the
 sha the verdict was formed against: a branch somebody committed to in between
@@ -215,7 +221,8 @@ squash-merged  /home/you/git/.worktrees/squash-merged/repo
 not a terminal, so nothing can answer for the 1 above; pass --yes to remove them
 ```
 
-That exits 2 and touches nothing. `gwp --yes --json` is what an agent runs.
+That exits 3 and touches nothing, the code every refusal uses. `gwp --yes --json`
+is what an agent runs.
 
 With nothing to remove it prints the table `gws` prints, rather than the name
 of the command that would have printed it. The reason each worktree stayed is
@@ -395,12 +402,16 @@ Beyond those:
 | --- | --- |
 | `gws` | `--branch NAME`, `--no-fetch`, `--delete-ignored`, `--no-forge` |
 | `gwp` | those four, and `-y` |
-| `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `-y` |
+| `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--no-forge`, `-y` |
 | `gwa`, `gwnb`, `gwrot` | `--no-fetch` |
 | `gwl` | `-l` |
 | `gwm`, `gwh` | none |
 
 `gw <command> --help` prints one command's own list.
+
+A remote that cannot be reached is not fatal anywhere. The fetch fails, the
+command says so on stderr, and it answers from the refs already here, which is
+where `--no-fetch` sends it on request.
 
 Data goes to stdout and diagnostics to stderr, the prompt included, so `--json`
 is parseable in every mode. Colour is decided per stream and only for a
@@ -433,12 +444,14 @@ and whatever a caller asks for:
 ```
 reset --hard      a forced checkout or switch      clean -f
 push --force      worktree remove --force          branch -D
+an update-ref delete that names no full sha
 ```
 
 The check runs on the argument list as it is about to be handed to git, so no
 code path can assemble its way past one. `gws --explain` prints every git
 command the program can issue, marking the ones that take the repository's
-shared refs and therefore run serially.
+shared refs and therefore run serially, and ends with that list of seven,
+generated from the rules rather than written out beside them.
 
 `--force-with-lease` is not `--force` and is allowed, and so is
 `update-ref -d <ref> <sha>`, which is how a branch is deleted here: against the

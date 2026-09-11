@@ -78,24 +78,28 @@ def common_dir() -> None:
 # --no-optional-locks is a git global, so it goes before the subcommand, which
 # a spec shows and a tuple hides. Without it a listing writes another
 # worktree's index and contends with a `git add` there.
-@git("--no-optional-locks status --porcelain")
-def status_porcelain() -> None:
-    """Tracked and untracked changes, one line each."""
-
-
+#
 # --ignored=traditional collapses an ignored directory into one entry, so
-# node_modules/ is one line rather than forty thousand.
+# node_modules/ is one line rather than forty thousand. It is also a strict
+# superset of plain --porcelain, which is why there is one spec here and not
+# two: asking twice was 18 of this program's 35 calls over nine worktrees.
 @git("--no-optional-locks status --porcelain --ignored=traditional")
-def status_with_ignored() -> None:
-    """The same, plus the gitignored paths git otherwise never mentions."""
+def status_lines() -> None:
+    """Every change in a worktree, the gitignored paths included."""
 
 
-@git("fetch --prune $remote", mutates=True)
+# 128 is what git exits when it cannot reach the remote, and that is an
+# answer rather than a failure: the caller carries on with the refs already
+# here and says so. Asserted on what comes back, not on the code, because an
+# ok= this wide would otherwise swallow a typo in one of the flags.
+@git("fetch --prune $remote", ok=(0, 128), mutates=True)
 def fetch(remote: str) -> None:
     """Refresh every remote-tracking ref, dropping the ones that are gone."""
 
 
-@git("remote set-head $remote --auto", mutates=True)
+# The other call that reaches the network, and 128 is how it says it could
+# not. head_ref already reads the result rather than assuming it worked.
+@git("remote set-head $remote --auto", ok=(0, 128), mutates=True)
 def set_head_auto(remote: str) -> None:
     """Ask the server which branch it serves by default."""
 
@@ -296,24 +300,32 @@ def head_ref(
 # --------------------------------------------------------------------------
 
 
-def is_dirty(path: str) -> bool:
-    """Uncommitted work, which is what makes `git worktree remove` refuse."""
-    return bool(status_porcelain(repo=path).out.strip())
+@dataclass(frozen=True)
+class Status:
+    """What one `git status` says about a worktree.
+
+    Both answers from one call. `dirty` is what makes `git worktree remove`
+    refuse; `ignored` is what it deletes at exit 0 without --force and without
+    a word, which nothing in git brings back because no ref ever pointed at
+    them.
+    """
+
+    dirty: bool
+    ignored: list[str]
+
+
+def status_of(path: str) -> Status:
+    """Read a worktree once and answer both questions about it."""
+    lines = status_lines(repo=path).lines
+    return Status(
+        dirty=any(not line.startswith("!! ") for line in lines),
+        ignored=[line[3:] for line in lines if line.startswith("!! ")],
+    )
 
 
 def ignored_paths(path: str) -> list[str]:
-    """The gitignored paths inside a worktree.
-
-    `git status --porcelain` does not mention these, so a checkout holding
-    .env and node_modules/ reads clean, and `git worktree remove` deletes both
-    at exit 0 without --force and without a word. Nothing in git brings them
-    back: no ref ever pointed at them.
-    """
-    return [
-        line[3:]
-        for line in status_with_ignored(repo=path).lines
-        if line.startswith("!! ")
-    ]
+    """The gitignored paths alone, for a caller that has no verdict in hand."""
+    return status_of(path).ignored
 
 
 def unpushed_count(

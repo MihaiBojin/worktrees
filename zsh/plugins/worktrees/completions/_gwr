@@ -19,6 +19,7 @@ _arguments -s \
     '(-f --force)'{-f,--force}'[remove it even when unfinished]' \
     '--delete-ignored[also delete its gitignored files]' \
     '--no-fetch[use the refs already here]' \
+    '--no-forge[decide from git alone; never ask the forge]' \
     '(-y --yes)'{-y,--yes}'[do not ask]' \
     '--json[the result as data]' \
     '(-q --quiet)'{-q,--quiet}'[the path alone]' \

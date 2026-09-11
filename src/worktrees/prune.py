@@ -44,6 +44,14 @@ def object_type(sha: str) -> None:
     """What kind of object a sha is. Every printed sha must be a commit."""
 
 
+# One call for the whole repository, because refs/stash is per-repository
+# rather than per-branch. The quotes survive shlex.split, so the format stays
+# one argv element.
+@git("stash list --format='%gd %gs'")
+def stash_list() -> None:
+    """Every stash entry: its selector, then the subject naming its branch."""
+
+
 def removable(verdicts: list[Verdict]) -> list[Verdict]:
     """The `remove` rows, which is the whole of what prune may touch.
 
@@ -72,6 +80,22 @@ def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str
     return f"git branch {branch} {text}"
 
 
+def stashes_on(branch: str, entries: list[str]) -> list[str]:
+    """The selectors of the stash entries made on this branch.
+
+    `git stash` writes `WIP on <branch>: ...` and `git stash push -m` writes
+    `On <branch>: ...`, so the branch is in the subject and nowhere else.
+    """
+    if not branch:
+        return []
+    found = []
+    for line in entries:
+        selector, _, subject = line.partition(" ")
+        if subject.startswith((f"On {branch}:", f"WIP on {branch}:")):
+            found.append(selector)
+    return found
+
+
 def plan(
     go: list[Verdict],
     say: Callable[[str], None],
@@ -85,11 +109,23 @@ def plan(
     `git worktree remove` takes the whole directory, so --delete-ignored
     decides consent and never decides what is deleted.
     """
+    entries = stash_list(repo=repo).lines
     for v in go:
         say(f"{render.err(v.label, render.BOLD)}  {render.err(v.path, render.DIM)}")
         restore = restore_line(v.branch, repo=repo)
         if restore:
             say(render.err(f"  restore with: {restore}", render.DIM))
+        # A stash survives the branch it was made on: refs/stash pins its own
+        # commits. What does not survive is the name in its subject, so say
+        # which entry is about to start pointing at nothing.
+        for selector in stashes_on(v.branch, entries):
+            say(
+                render.err(
+                    f"  {selector} was made on this branch and outlives it: "
+                    f"git stash branch <new> {selector}",
+                    render.DIM,
+                )
+            )
         for path in R.ignored_paths(v.path):
             say(render.err(f"  deleting ignored, unrecoverable: {path}", render.YELLOW))
 

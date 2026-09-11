@@ -11,8 +11,8 @@ authors = [
 # request and run `uv lock`; the release tag only has to agree with it.
 version = "0.2.0"
 # The standard library answers every question this asks. A dependency here
-# would be paid on every invocation, and the whole reason this is Python is
-# that an invocation costs ~25 ms.
+# would be paid on every invocation, and an invocation is 67 ms of which 25 ms
+# is the interpreter starting.
 dependencies = []
 requires-python = ">=3.11"
 classifiers = [
@@ -30,6 +30,9 @@ classifiers = [
 [project.optional-dependencies]
 dev = [
     # keep-sorted start
+    # The build backend, because tests/test_version.py drives the build hook
+    # that writes the version into the wheel.
+    "hatchling==1.28.0",
     "pre-commit==4.6.1",
     "pytest==9.1.1",
     # keep-sorted end
@@ -70,6 +73,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/worktrees"]
 
+# Writes src/worktrees/_version.py from the version above, so an invocation
+# reads a constant rather than asking importlib.metadata. See hatch_build.py.
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
 [tool.ruff]
 line-length = 88
 target-version = "py311"
@@ -101,6 +109,11 @@ show_error_codes = true
 warn_unused_ignores = true
 # keep-sorted end
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+# Generated at build time and absent from a checkout.
+module = "worktrees._version"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

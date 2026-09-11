@@ -59,12 +59,17 @@ def create(
         raise Refusal(f"{name} is already a branch; git switch {name} checks it out")
 
     remote = R.remote(repo=repo)
-    if fetch and remote and not R.fetch(remote, repo=repo) and callable(warn):
+    online = fetch
+    if fetch and remote and not R.fetch(remote, repo=repo):
         # An offline machine still gets a branch, off whatever it last saw,
-        # and the line at the end names the commit it got.
-        warn(f"{remote} could not be fetched; branching from what is already here")
+        # and the line at the end names the commit it got. It is also offline
+        # for the head-branch ladder, which would otherwise spend a second
+        # round trip proving the same thing.
+        online = False
+        if callable(warn):
+            warn(f"{remote} could not be fetched; branching from what is already here")
 
-    base, warning = R.head_ref(remote, online=fetch, repo=repo)
+    base, warning = R.head_ref(remote, online=online, repo=repo)
     if warning and callable(warn):
         warn(warning)
     if not base:

@@ -13,7 +13,7 @@ from . import __version__, new_branch, pick, prune, render, verdicts
 from . import repo as R
 from . import rotate as rotate_mod
 from . import worktree as wt_mod
-from .git import GitError, Refused, commands, options
+from .git import RULES, GitError, Refused, commands, options
 from .render import BLUE, BOLD, DIM, GREEN, RED, YELLOW, Cell, Row, table
 
 
@@ -78,11 +78,20 @@ def _explain() -> int:
         )
     print(table(rows))
     print()
+    # Generated from the guard itself. The footer used to be a sentence
+    # written by hand in this file, and it fell a rule behind the moment one
+    # was added.
+    import textwrap
+
+    named = [rule.named for rule in RULES]
+    listed = ", ".join(named[:-1]) + " and " + named[-1]
     print(
-        "! takes the repository's shared refs and runs serially. The guard "
-        "refuses\n  reset --hard, a forced checkout or switch, clean -f, push "
-        "--force,\n  worktree remove --force and branch -D outright, whatever "
-        "flags are passed."
+        textwrap.fill(
+            "! takes the repository's shared refs and runs serially. The guard "
+            f"refuses these outright, whatever flags are passed: {listed}.",
+            width=76,
+            subsequent_indent="  ",
+        )
     )
     return 0
 
@@ -129,7 +138,8 @@ class _Stop(Exception):
 def _assess(
     args: argparse.Namespace,
     judge: Callable[..., list[verdicts.Verdict]] | None = None,
-) -> tuple[list[verdicts.Verdict], list[R.Worktree], str]:
+    ask_forge: bool | None = None,
+) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str]:
     """Fetch, resolve the head branch, and judge every worktree.
 
     The one path every command takes, so `prune` can only ever act on what
@@ -137,13 +147,21 @@ def _assess(
     to be judged like any other, having stepped out of it first.
     """
     remote = R.remote()
-    if not args.no_fetch:
-        if remote:
-            R.fetch(remote)
+    online = not args.no_fetch
+    if online:
+        # An unreachable remote is not a reason to refuse to answer. It lands
+        # where --no-fetch already goes, and says so, and the head-branch
+        # ladder is told not to spend a second round trip on the same remote.
+        if remote and not R.fetch(remote):
+            online = False
+            if not args.quiet:
+                _err(
+                    f"{remote} could not be fetched; judging from the refs already here"
+                )
     elif not args.quiet:
         _err("using the refs already here; they may be stale (--no-fetch)")
 
-    head, warning = R.head_ref(remote, online=not args.no_fetch)
+    head, warning = R.head_ref(remote, online=online)
     if warning and not args.quiet:
         _err(warning)
     if not head:
@@ -159,7 +177,8 @@ def _assess(
     # round trip, and a branch merged as part of a stack is the one case
     # content cannot answer: its changes reach the head branch across several
     # squashes, so a stale intermediate and real work look alike to a diff.
-    ask_forge = not getattr(args, "no_forge", False)
+    if ask_forge is None:
+        ask_forge = not getattr(args, "no_forge", False)
     rows = (
         judge(only, head, head_branch, ignored, ask_forge=ask_forge)
         if judge
@@ -167,7 +186,7 @@ def _assess(
             records, only, head, head_branch, ignored, ask_forge=ask_forge
         )
     )
-    return rows, verdicts.stale(records), head
+    return rows, verdicts.stale(records), head, head_branch
 
 
 # --------------------------------------------------------------------------
@@ -181,7 +200,7 @@ def run_status(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    rows, stale, head = _assess(args)
+    rows, stale, head, _ = _assess(args)
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
 
@@ -252,7 +271,7 @@ def run_prune(args: argparse.Namespace) -> int:
     # neither command may propose removing one.
     prune.worktree_prune()
 
-    rows, _, _ = _assess(args)
+    rows, _, _, _ = _assess(args)
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
 
@@ -279,14 +298,11 @@ def run_prune(args: argparse.Namespace) -> int:
     # --quiet and --yes do not silence it.
     prune.plan(go, _err)
 
-    if not args.yes:
-        try:
-            if not prune.confirm(len(go)):
-                _err("nothing removed")
-                return 0
-        except Refused as exc:
-            _err(render.err(str(exc), RED))
-            return 2
+    # A Refused from here goes to _dispatch, which exits 3 for every refusal.
+    # No terminal is one condition, so it is one code wherever it is met.
+    if not args.yes and not prune.confirm(len(go)):
+        _err("nothing removed")
+        return 0
 
     failed = prune.sweep(go, _err)
     removed = [v.label for v in go]
@@ -484,6 +500,11 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
         help="also delete its gitignored files; nothing restores them",
     )
     p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
+    p.add_argument(
+        "--no-forge",
+        action="store_true",
+        help="decide from git alone; never ask the forge",
+    )
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
     # Its own, not gwl's: assess skips the main checkout, so gwr can never act
     # on it and offering it would complete to "no worktree matches".
@@ -636,7 +657,10 @@ def run_remove(args: argparse.Namespace) -> int:
                 print(f"{w.label}\t{w.path}")
         return 0
 
-    rows, _, _ = _assess(args, judge=wt_mod.removable)
+    # The picker shows a path and a branch and no verdict, so nothing before
+    # the answer needs the forge. Scanning without it turns one round trip per
+    # worktree into at most one for the whole command.
+    rows, _, head, head_branch = _assess(args, judge=wt_mod.removable, ask_forge=False)
     found = pick.matches(
         args.query, [R.Worktree(v.path, "", v.branch, frozenset()) for v in rows]
     )
@@ -659,6 +683,15 @@ def run_remove(args: argparse.Namespace) -> int:
         return 0
     chosen = by_path[picked.path]
 
+    # Now that there is one branch, the forge is worth a question: it is the
+    # only thing that settles a branch merged as part of a stack.
+    if chosen.verdict != prune.REMOVE and not args.no_forge:
+        judged = wt_mod.removable(
+            chosen.branch, head, head_branch, args.delete_ignored, ask_forge=True
+        )
+        if judged:
+            chosen = judged[0]
+
     if chosen.verdict != prune.REMOVE and not args.force:
         # A finished branch held back by ignored files is not an unfinished
         # branch. Saying so would contradict the reason printed beside it,
@@ -674,14 +707,9 @@ def run_remove(args: argparse.Namespace) -> int:
         return 1
 
     prune.plan([chosen], _err)
-    if not args.yes:
-        try:
-            if not prune.confirm(1):
-                _err("nothing removed")
-                return 0
-        except Refused as exc:
-            _err(render.err(str(exc), RED))
-            return 2
+    if not args.yes and not prune.confirm(1):
+        _err("nothing removed")
+        return 0
 
     keep_branch = chosen.verdict != prune.REMOVE
     # --force keeps the branch: the worktree was in the way, the work was not.

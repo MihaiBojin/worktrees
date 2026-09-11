@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from worktrees import prune, verdicts
 from worktrees import repo as R
 from worktrees.git import GitError, Refused, guard
+
+ROOT = Path(__file__).resolve().parents[1]
 
 # --------------------------------------------------------------------------
 # Hole 1: a squash merge inverts `git branch -d`
@@ -372,8 +375,10 @@ def test_no_unexpected_git_command_ran(world) -> None:
     verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
 
     # The canary. An empty log is indistinguishable from a run that never
-    # reached git, and would pass every assertion below.
-    assert len(options.log) > 5
+    # reached git, and would pass every assertion below. Named commands
+    # rather than a count, so dropping a redundant call does not fail here.
+    for flag in ("--ignored=traditional", "--is-ancestor"):
+        assert any(flag in argv for argv in options.log), options.log
 
     def subcommand(argv: tuple[str, ...]) -> str:
         rest = list(argv[1:])
@@ -428,3 +433,49 @@ def test_the_upstream_spec_is_a_flag_git_accepts(world) -> None:
     out = R.upstream_of("main")
     assert out, "upstream_of failed; the spec is not a command git accepts"
     assert out.out.strip() == "origin/main"
+
+
+# --------------------------------------------------------------------------
+# one git status per worktree, not two
+# --------------------------------------------------------------------------
+
+
+def test_a_worktree_is_read_once(world) -> None:
+    """`--ignored=traditional` is a superset of plain `--porcelain`, so asking
+    both ways was half of every assessment's git calls.
+    """
+    from worktrees.git import options
+
+    for name in ("a", "b", "c"):
+        world.worktree(name)
+    verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+
+    status = [argv for argv in options.log if "status" in argv]
+    assert len(status) == 3, status
+    assert all("--ignored=traditional" in argv for argv in status)
+
+
+def test_the_guard_names_every_rule_it_enforces(world) -> None:
+    """The footer --explain prints is generated, so it cannot fall behind."""
+    from worktrees import cli
+    from worktrees.git import RULES
+
+    assert len(RULES) == 7
+    for rule in RULES:
+        assert rule.named
+        assert rule.why
+    # Each one refuses something, and says so in its own words.
+    assert "update-ref" in "".join(rule.refusal("update-ref") for rule in RULES)
+    assert cli.RULES is RULES
+
+
+def test_the_readme_names_every_rule(world) -> None:
+    """README.md is the third copy of the list. `--explain` generates its
+    copy from the rules; this one is written out, so it is diffed instead.
+    """
+    from worktrees.git import RULES
+
+    block = ROOT.joinpath("README.md").read_text().split("## What it refuses")[1]
+    listed = " ".join(block.split("```")[1].split())
+    for rule in RULES:
+        assert rule.named in listed, rule.named

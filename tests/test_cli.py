@@ -258,10 +258,24 @@ def test_without_a_terminal_it_refuses_rather_than_blocking(world) -> None:
     """An agent or a pipe reaches this and would otherwise hang forever."""
     wt = world.worktree("done")
     p = run(world, "gwp", "--no-fetch")
-    assert p.returncode == 2
+    assert p.returncode == 3
     assert "not a terminal" in p.stderr
     assert "pass --yes" in p.stderr
     assert wt.exists()
+
+
+def test_no_terminal_is_one_exit_code(world) -> None:
+    """One condition, one number. 2 is already argparse's and _Stop's."""
+    world.worktree("a")
+    world.worktree("b")
+    for entry, args in (
+        ("gwp", ("--no-fetch",)),
+        ("gwl", ()),
+        ("gwr", ("--no-fetch",)),
+    ):
+        p = run(world, entry, *args)
+        assert p.returncode == 3, f"{entry} exited {p.returncode}: {p.stderr}"
+        assert "terminal" in p.stderr
 
 
 @pytest.mark.parametrize(
@@ -538,3 +552,109 @@ def test_no_color_turns_it_off_on_a_terminal(world) -> None:
     )
     assert code == 0, out
     assert "[" not in out
+
+
+# --------------------------------------------------------------------------
+# an unreachable remote is answered, not refused
+# --------------------------------------------------------------------------
+
+
+def _unreachable(world) -> None:
+    world.git("remote", "add", "origin", str(world.root / "nowhere.git"))
+
+
+def test_a_failed_fetch_still_makes_the_branch(world) -> None:
+    """An offline machine gets a branch off whatever it last saw."""
+    _unreachable(world)
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+    p = run(world, "gwnb", "spike")
+    assert p.returncode == 0, p.stderr
+    assert "could not be fetched" in p.stderr
+    assert "spike from origin/main" in p.stdout
+    assert world.git("rev-parse", "--verify", "refs/heads/spike")
+
+
+def test_a_failed_fetch_still_makes_the_worktree(world) -> None:
+    _unreachable(world)
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+    p = run(world, "gwa", "fix-parser")
+    assert p.returncode == 0, p.stderr
+    assert "could not be fetched" in p.stderr
+    assert (world.parent / ".worktrees" / "fix-parser" / "repo").is_dir()
+
+
+def test_a_failed_fetch_still_answers_status(world) -> None:
+    _unreachable(world)
+    world.worktree("done")
+    p = run(world, "gws")
+    assert p.returncode == 0, p.stderr
+    assert "could not be fetched" in p.stderr
+    assert "done" in p.stdout
+
+
+def test_explain_names_every_refusal_the_guard_holds(world) -> None:
+    """The footer is generated from the rules, so the seventh is in it."""
+    p = run(world, "gws", "--explain")
+    assert p.returncode == 0, p.stderr
+    # textwrap fills the footer, so compare against one line of it.
+    flat = " ".join(p.stdout.split())
+    for named in (
+        "reset --hard",
+        "a forced checkout or switch",
+        "clean -f",
+        "push --force",
+        "worktree remove --force",
+        "branch -D",
+        "an update-ref delete that names no full sha",
+    ):
+        assert named in flat, named
+
+
+def test_remove_takes_no_forge_like_status_and_prune(world) -> None:
+    world.worktree("done")
+    assert "--no-forge" in run(world, "gwr", "--help").stdout
+    p = run(world, "gwr", "--no-fetch", "--no-forge", "done", "-y")
+    assert p.returncode == 0, p.stderr
+
+
+# --------------------------------------------------------------------------
+# a stash outlives the branch it names
+# --------------------------------------------------------------------------
+
+
+def test_a_removal_names_the_stash_made_on_the_branch(world) -> None:
+    """refs/stash pins its own commits, so the entry survives. Its subject
+    does not: it goes on naming a branch that is gone.
+    """
+    wt = world.worktree("wip")
+    world.commit("f.txt", "one\n", at=wt)
+    (wt / "f.txt").write_text("half-finished\n")
+    world.git("stash", "push", "--quiet", "-m", "half-finished", at=wt)
+
+    (world.repo / "f.txt").write_text("one\n")
+    world.git("add", "--", "f.txt")
+    world.git("commit", "--quiet", "-m", "squash of wip")
+
+    p = run(world, "gwp", "--no-fetch", "--no-forge", "-y")
+    assert p.returncode == 0, p.stderr
+    assert "stash@{0} was made on this branch and outlives it" in p.stderr
+    assert "git stash branch <new> stash@{0}" in p.stderr
+    # And it did outlive it.
+    assert world.git("stash", "list")
+    assert "wip" not in world.git("branch", "--format=%(refname:short)").split()
+
+
+def test_a_stash_on_another_branch_is_not_named(world) -> None:
+    wt = world.worktree("wip")
+    world.commit("f.txt", "one\n", at=wt)
+    (world.repo / "other.txt").write_text("x\n")
+    world.git("add", "--", "other.txt")
+    world.git("stash", "push", "--quiet", "-m", "elsewhere")
+
+    (world.repo / "f.txt").write_text("one\n")
+    world.git("add", "--", "f.txt")
+    world.git("commit", "--quiet", "-m", "squash of wip")
+
+    p = run(world, "gwp", "--no-fetch", "--no-forge", "-y")
+    assert p.returncode == 0, p.stderr
+    assert "was made on this branch" not in p.stderr
