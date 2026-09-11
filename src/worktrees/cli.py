@@ -74,6 +74,11 @@ def _add_assess_flags(p: argparse.ArgumentParser) -> None:
         "-v", "--verbose", action="store_true", help="print every git command"
     )
     p.add_argument(
+        "--no-forge",
+        action="store_true",
+        help="decide from git alone; never ask the forge",
+    )
+    p.add_argument(
         "--explain", action="store_true", help="print every git command and exit"
     )
 
@@ -115,10 +120,17 @@ def _assess(
     only = getattr(args, "branch", "")
     ignored = getattr(args, "delete_ignored", False)
     records = R.worktrees()
+    # The forge is asked last and only where git could not tell. It costs a
+    # round trip, and a branch merged as part of a stack is the one case
+    # content cannot answer: its changes reach the head branch across several
+    # squashes, so a stale intermediate and real work look alike to a diff.
+    ask_forge = not getattr(args, "no_forge", False)
     rows = (
-        judge(only, head, head_branch, ignored)
+        judge(only, head, head_branch, ignored, ask_forge=ask_forge)
         if judge
-        else verdicts.assess(records, only, head, head_branch, ignored)
+        else verdicts.assess(
+            records, only, head, head_branch, ignored, ask_forge=ask_forge
+        )
     )
     return rows, verdicts.stale(records), head
 

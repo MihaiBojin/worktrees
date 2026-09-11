@@ -80,6 +80,14 @@ unknown  never-pushed   not merged into main, and no upstream says whether its c
 | `keep` | something says no. Uncommitted work, the head branch, a lock, the worktree you are standing in, ignored files, or a branch simply not merged |
 | `unknown` | it could not tell. A branch with no upstream is the usual one: nothing says whether its commits were pushed anywhere |
 
+Where git cannot tell, the forge is asked. A branch merged as part of a
+stack is that case: its changes reach the head branch across several
+squashes, so the intermediate state it holds differs from the final one in
+the same regions, and a diff cannot separate a stale branch from one with
+work left. A merged pull request settles it, cross-checked against the
+commits an upstream has not got, because a request speaks for what reached
+it and nothing about what never did. `--no-forge` decides from git alone.
+
 A record left behind by a directory somebody deleted by hand is nobody's
 verdict. `gws` names how many there are; clearing them is `git worktree prune`,
 which mutates, so `gwp` is what runs it.
