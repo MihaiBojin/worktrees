@@ -1,0 +1,49 @@
+#compdef gw worktrees
+
+# Subcommands come from the CLI. `gw --complete` prints every name and
+# shorthand with its description, so a command added to the table needs no
+# edit here.
+#
+# Only the flags every subcommand shares are offered after one. The rest are
+# on the binaries, where they are typed: repeating the per-command sets here
+# would be a second copy of nine files that has to change with them.
+
+_gw() {
+    local -a subs descs line
+    local curcontext="$curcontext" state
+
+    _arguments -C \
+        '--version[show the version and exit]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]' \
+        '1: :->command' \
+        '*:: :->rest'
+
+    case $state in
+        command)
+            for line in ${(f)"$(command gw --complete 2>/dev/null)"}; do
+                subs+=( ${line%%$'\t'*} )
+                descs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
+            done
+            (( $#subs )) && _describe -t commands 'gw command' descs subs
+            ;;
+        rest)
+            case ${words[1]} in
+                list|l|ls|remove|rm)
+                    local -a names wdescs
+                    for line in ${(f)"$(command gwl --complete 2>/dev/null)"}; do
+                        names+=( ${line%%$'\t'*} )
+                        wdescs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
+                    done
+                    (( $#names )) && _describe -t worktrees worktree wdescs names
+                    ;;
+            esac
+            _arguments -s \
+                '--json[the result as data]' \
+                '(-q --quiet)'{-q,--quiet}'[less output]' \
+                '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+                '--explain[print every git command and exit]'
+            ;;
+    esac
+}
+
+_gw "$@"
