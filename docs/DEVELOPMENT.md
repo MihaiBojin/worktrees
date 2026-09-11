@@ -143,11 +143,11 @@ very end of a publish run, after everything else has already happened.
 
 `/release-notes:draft` writes the `CHANGELOG.md` entry on the release branch,
 so the notes are reviewed in the same pull request as the version bump. It
-comes from the ReleaseTools marketplace:
+comes from the release-tools marketplace:
 
 ```console
 claude plugin marketplace add releasetools/agent-plugins
-claude plugin install release-notes@ReleaseTools
+claude plugin install release-notes@release-tools
 ```
 
 `publish.yml` reads that section back out for the GitHub release, and `build`
