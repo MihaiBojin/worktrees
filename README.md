@@ -1,13 +1,18 @@
 # worktrees
 
-Four commands, and none of them needs a shell wrapper: nothing here cds its
-caller.
+Eight commands. Four of them answer a question and print it; four land you
+somewhere, and those need ten lines of shell each, because a binary cannot
+change its caller's directory.
 
 | | |
 | --- | --- |
 | `gw` | the CLI itself, taking a subcommand. `worktrees` is the same program under its long name |
 | `gws` | say which worktrees are finished, and why. Removes nothing, and has no flag that could |
 | `gwp` | remove the ones `gws` marks removable, having asked first |
+| `gwa NAME [BASE]` | create a worktree for `NAME` and land you in it |
+| `gwl [QUERY]` | pick one of this repository's worktrees and land you in it |
+| `gwm NEW` | rename this worktree's branch and move the checkout to match |
+| `gwr [QUERY]` | remove a worktree whose branch is finished, and the branch |
 | `gwnb NAME` | alpha. Fetch, then branch `NAME` off the head branch and check it out |
 | `gwrot` | alpha. Start the next branch after this one, or catch the head branch up |
 
@@ -187,6 +192,42 @@ That is `merge --ff-only`, never a rebase: rewriting local commits on the
 head branch is the class this tooling refuses everywhere else. Commits the
 remote does not have are refused and listed, because they are a change of
 their own and `gwnb` puts them on a branch.
+
+## gwa, gwl, gwm, gwr
+
+Worktrees live at `<PARENT>/.worktrees/<NAME>/<REPO>`, derived rather than
+configured, so two tools cannot disagree about a location neither can be
+told. A branch name with slashes becomes directories, and the repository
+name goes last, so `feat/oauth` cannot collide with `feat`.
+
+```console
+$ gwa fix-parser          # creates it and lands you in it
+$ gwl parse               # one match takes it outright
+$ gwm parser-v2           # renames the branch and moves the checkout
+$ gwr                     # removes the one you are standing in
+```
+
+Each prints one destination on stdout and nothing else, which is what the
+shell function reads. `gwr` prints a path **only** when you were standing in
+what it removed; empty output means stay put.
+
+`gwm` is the one that is not a convenience. Renaming the directory you are
+standing in leaves the shell with a stale `$PWD` and every later command
+failing:
+
+```console
+$ git status
+fatal: Unable to read current working directory: No such file or directory
+```
+
+`gwl` with more than one match asks, numbered. Matching is substring first
+and then subsequence, so `tst` finds `add-tests`, and a substring hit always
+outranks a loose one. Without a terminal it refuses rather than blocking and
+names `--list` and `--json`.
+
+`gwr` refuses a branch that is not finished and says why, the same verdict
+`gws` prints. `--force` removes the checkout and keeps the branch: the
+worktree was in the way, the work was not.
 
 ## Flags
 

@@ -1,0 +1,9 @@
+# cd to where gwr lands you.
+#
+# The binary prints one destination and nothing else. `$(...)` strips only
+# trailing newlines, so a path holding one arrives whole and zsh needs no
+# equivalent of fish's `string collect`. Empty output means stay put.
+local dest
+dest="$(command gwr "$@")" || return
+[[ -n $dest ]] || return 0
+cd -- "$dest"
