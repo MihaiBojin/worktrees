@@ -276,12 +276,42 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
         ("branch", "-D", "x"),
         ("branch", "--delete", "--force", "x"),
         ("update-ref", "-d", "refs/heads/x"),
-        ("update-ref", "-d", "refs/heads/x", "sha", "extra"),
+        ("update-ref", "-d", "refs/heads/x", ""),
+        ("update-ref", "-d", "refs/heads/x", "HEAD"),
+        ("update-ref", "-d", "refs/heads/x", "main"),
+        ("update-ref", "-d", "refs/heads/x", "0e68734"),
+        ("update-ref", "-d", "refs/heads/x", "f" * 40, "extra"),
+        ("update-ref", "--stdin"),
     ],
 )
 def test_the_guard_refuses(argv) -> None:
     with pytest.raises(Refused):
         guard(argv)
+
+
+def test_git_reads_an_empty_old_value_as_no_old_value(world) -> None:
+    """The premise behind the sha check, reproduced.
+
+    `update-ref -d <ref> ""` is not a compare-and-delete that fails. git
+    takes the branch at exit 0, whatever it pointed at, so a guard counting
+    arguments rather than reading the last one passes `branch -D`.
+    """
+    world.git("branch", "victim", "main")
+    subprocess.run(
+        ["git", "-C", str(world.repo), "update-ref", "-d", "refs/heads/victim", ""],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    gone = subprocess.run(
+        ["git", "-C", str(world.repo), "rev-parse", "--verify", "refs/heads/victim"],
+        capture_output=True,
+        text=True,
+    )
+    assert gone.returncode != 0, "git kept the branch, so this premise is stale"
+
+    with pytest.raises(Refused):
+        guard(["update-ref", "-d", "refs/heads/victim", ""])
 
 
 @pytest.mark.parametrize(
@@ -290,7 +320,8 @@ def test_the_guard_refuses(argv) -> None:
         ("push", "--force-with-lease", "origin", "main"),
         ("worktree", "remove", "--", "/tmp/x"),
         ("branch", "-d", "--", "x"),
-        ("update-ref", "-d", "refs/heads/x", "0e68734"),
+        ("update-ref", "-d", "refs/heads/x", "0" * 40),
+        ("update-ref", "-d", "refs/heads/x", "a" * 64),
         ("clean", "-n"),
         ("status", "--porcelain"),
     ],
