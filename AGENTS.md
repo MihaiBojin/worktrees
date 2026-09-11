@@ -23,7 +23,7 @@ call `command <name>` and `cd` to what that prints.**
 
 | | changes directory | ships as |
 | --- | --- | --- |
-| `gws`, `gwp`, `gwnb`, `gwrot` | no | a console script, and nothing else |
+| `gws`, `gwp`, `gwnb`, `gwrot`, `gwh` | no | a console script, and nothing else |
 | a command that lands you somewhere | yes | a console script, plus a function of the same name |
 
 A binary cannot `cd` its caller. That is the only thing shell code is here for,
@@ -126,8 +126,51 @@ Two rules, both the shape `gwp`'s prompt already has:
 - No terminal, no prompt. Refuse at exit 3 and name the flag that answers
   without one, rather than blocking on something nothing can drive.
 
+Two more about what is in the list at all:
+
+- The main checkout is a destination. It is the one that is always there and
+  the one a finished branch leaves you in, so leaving it out leaves out the
+  only answer that is always right. `main` finds it whatever branch it stands
+  on, because its label carries the word, once.
+- The worktree you are standing in is listed and never offered. Picking it is
+  the one answer that takes you nowhere, and a picker whose single candidate
+  is where you already are prints nothing at all, which reads as a broken
+  command.
+
 `--json` and `--list` answer the same question without any of this, and an
 agent uses those.
+
+## One row per command, under every name it answers to
+
+`_COMMANDS` in `cli.py` is the table. A row carries the function, the flags,
+the one-line description, the console script, the argument shape, the
+shorthands and whether the command changes the caller's directory. `gws`,
+`gw status`, `gw st` and `gw s` reach the same function because that row says
+so, and `gwh` prints the table rather than a second list that can disagree
+with it.
+
+`_canonical()` raises at import when two rows answer to one name. A dict
+comprehension would keep the last one and leave a command reachable under a
+name that runs a different one.
+
+A shorthand is for typing, so it is short and it is not clever: the first
+letters of the word, or the two-letter name the same job has in git and in a
+shell. `rm` and `mv` mean what they mean everywhere else.
+
+## Colour is a property of the stream, not of the program
+
+`render.py` holds both halves of it: the codes, and a table whose columns line
+up. `render.setup()` runs once per invocation and decides per stream.
+
+Padding runs on the text and painting after it. The other order counts an
+escape sequence as width, and every column under a coloured cell sits crooked
+by exactly the length of the code.
+
+stdout carries the path `cd $(gwa x)` reads and the JSON `jq` parses, so a
+redirect, a pipe, `NO_COLOR` set to anything, or `TERM=dumb` mean the bytes go
+out as they would have without the module. `--json` is never painted at all:
+the colour is applied at the call site that formats a table, and the JSON
+paths do not pass through one.
 
 ## Every git command is one spec
 
