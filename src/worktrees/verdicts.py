@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import forge
 from . import repo as R
 from .merged import merged_reason
 
@@ -47,6 +48,7 @@ def assess(
     delete_ignored: bool,
     repo: str | os.PathLike[str] | None = None,
     here: str | None = None,
+    ask_forge: bool = False,
 ) -> list[Verdict]:
     """Every worktree, in the order `git worktree remove` would refuse them.
 
@@ -95,6 +97,11 @@ def assess(
             continue
 
         reason = merged_reason(wt.branch, head, repo=repo)
+        if not reason and ask_forge:
+            reason, verdict = _forge_reason(wt.branch, repo=repo)
+            if verdict:
+                say(verdict, reason)
+                continue
         if not reason:
             if R.unpushed_count(wt.branch, repo=repo) is None:
                 say(
@@ -117,3 +124,38 @@ def assess(
 
         say(GO, reason)
     return out
+
+
+def _forge_reason(
+    branch: str, repo: str | os.PathLike[str] | None = None
+) -> tuple[str, str]:
+    """What the forge says, cross-checked against what it cannot see.
+
+    Returns (reason, verdict), or ("", "") when the forge said nothing and
+    the content probes keep the answer.
+
+    A merged request speaks for what was pushed. Commits an upstream has not
+    got were never in it, and a branch with no upstream at all leaves that
+    unknown rather than zero: branches made here do not track, so "no
+    upstream" is the normal state for exactly the ones this would otherwise
+    reap.
+    """
+    request = forge.request_for(branch, repo=repo)
+    if request is None or request.state not in ("MERGED", "CLOSED"):
+        return "", ""
+
+    lower = request.state.lower()
+    unpushed = R.unpushed_count(branch, repo=repo)
+    if unpushed is None:
+        return (
+            f"its {request.noun} is {lower}, but the branch has no upstream "
+            "to have been pushed to",
+            UNKNOWN,
+        )
+    if unpushed:
+        return (
+            f"its {request.noun} is {lower}, but {unpushed} commit(s) here "
+            "are not in it",
+            KEEP,
+        )
+    return f"its {request.noun} #{request.number} is {lower}", GO

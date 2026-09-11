@@ -198,6 +198,7 @@ def removable(
     head_branch: str,
     delete_ignored: bool,
     repo: str | os.PathLike[str] | None = None,
+    ask_forge: bool = True,
 ) -> list[Verdict]:
     """Every worktree, judging the one you stand in like any other.
 
@@ -206,7 +207,14 @@ def removable(
     that protects a listing would only hide the answer here.
     """
     return assess(
-        R.worktrees(repo), only, head, head_branch, delete_ignored, repo=repo, here=""
+        R.worktrees(repo),
+        only,
+        head,
+        head_branch,
+        delete_ignored,
+        repo=repo,
+        here="",
+        ask_forge=ask_forge,
     )
 
 

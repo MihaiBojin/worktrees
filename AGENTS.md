@@ -190,6 +190,24 @@ or `switch`, `clean -f`, a bare `push --force`, `worktree remove --force` and
 mutate. A read-only command may not call one: a test reads the verbose log and
 asserts it.
 
+## Content cannot settle a stacked branch
+
+`merged_reason` answers by content: an ancestor, or a patch already upstream.
+That works for a branch squashed whole into one commit and fails for one
+merged as part of a stack, where the changes arrive across several squashes
+and the branch keeps an intermediate state the head branch edited further.
+
+Measured on this repository's own stack: `rotate` changed `README.md` by
++54/-5 from the merge base and the head branch by +96/-6 over the same
+regions. `git merge-tree` reports a conflict, and a diff cannot tell that
+from real work left over. There is no content probe that answers this.
+
+So the forge answers it, asked last because it costs a round trip and only
+where git already failed. A merged request is cross-checked against
+`unpushed_count`: it speaks for what reached it, never for commits nobody
+pushed, and no upstream at all stays `unknown` rather than becoming zero.
+`--no-forge` keeps a run offline.
+
 ## Three verdicts, and the third is not a softer second
 
 `go` was proved finished, `keep` has a reason not to be, and `unknown` could
