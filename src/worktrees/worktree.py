@@ -77,8 +77,11 @@ def add(
         raise Refusal(f"{dest} already exists and this repository does not own it")
 
     remote = R.remote(repo=repo)
-    if fetch and remote and not R.fetch(remote, repo=repo) and callable(warn):
-        warn(f"{remote} could not be fetched; branching from what is already here")
+    online = fetch
+    if fetch and remote and not R.fetch(remote, repo=repo):
+        online = False
+        if callable(warn):
+            warn(f"{remote} could not be fetched; branching from what is already here")
 
     existing = bool(R.ref_exists(f"refs/heads/{name}", repo=repo))
     made = _first_absent(dest.parent, main)
@@ -89,7 +92,7 @@ def add(
             worktree_add_existing(str(dest), name, repo=repo)
             return Landed(str(dest), name, created=False)
 
-        start = base or _head(remote, fetch, warn, repo=repo)
+        start = base or _head(remote, online, warn, repo=repo)
         worktree_add(name, str(dest), start, repo=repo)
     except (GitError, Refusal, Refused):
         # The directories went in before git was asked, so a refusal leaves
@@ -123,11 +126,11 @@ def _first_absent(dest_parent: Path, main: str) -> Path | None:
 
 def _head(
     remote: str,
-    fetch: bool,
+    online: bool,
     warn: object,
     repo: str | os.PathLike[str] | None = None,
 ) -> str:
-    ref, warning = R.head_ref(remote, online=fetch, repo=repo)
+    ref, warning = R.head_ref(remote, online=online, repo=repo)
     if warning and callable(warn):
         warn(warning)
     if not ref:

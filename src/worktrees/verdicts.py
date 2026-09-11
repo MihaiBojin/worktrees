@@ -92,7 +92,10 @@ def assess(
         if wt.branch and wt.branch == head_branch:
             say(KEEP, "it is the head branch")
             continue
-        if R.is_dirty(wt.path):
+        # One read, both answers. Asking again further down was half of
+        # every assessment's git calls.
+        status = R.status_of(wt.path)
+        if status.dirty:
             say(KEEP, "it has uncommitted changes")
             continue
 
@@ -122,7 +125,7 @@ def assess(
                 say(KEEP, f"not merged into {head_name}")
             continue
 
-        ignored = R.ignored_paths(wt.path)
+        ignored = status.ignored
         if ignored and not delete_ignored:
             say(
                 KEEP,

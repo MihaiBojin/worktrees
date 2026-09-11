@@ -93,10 +93,13 @@ def rotate(
         )
 
     remote = R.remote(repo=repo)
-    if fetch and remote and not R.fetch(remote, repo=repo) and callable(warn):
-        warn(f"{remote} could not be fetched; working from what is already here")
+    online = fetch
+    if fetch and remote and not R.fetch(remote, repo=repo):
+        online = False
+        if callable(warn):
+            warn(f"{remote} could not be fetched; working from what is already here")
 
-    base, warning = R.head_ref(remote, online=fetch, repo=repo)
+    base, warning = R.head_ref(remote, online=online, repo=repo)
     if warning and callable(warn):
         warn(warning)
     if not base:

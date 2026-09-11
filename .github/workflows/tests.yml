@@ -67,11 +67,17 @@ jobs:
         # resolving something the lock file never described.
         run: uv sync --all-extras --locked
 
+      # Neither shell is on the image. Without them the nine assertions that
+      # drive a real fish or zsh call pytest.skip, which is invisible in
+      # `pytest -q`, so the run goes green without either shim ever running.
+      - name: Install fish and zsh
+        run: sudo apt-get update && sudo apt-get install -y fish zsh
+
       # The suite drives real git: it builds repositories, adds worktrees and
       # removes them. Recording the version makes a failure that is git's
       # rather than ours readable from the log alone.
       - name: Record the git version
-        run: git --version
+        run: git --version && fish --version && zsh --version
 
       - name: Run tests
         run: uv run --no-sync pytest tests -q

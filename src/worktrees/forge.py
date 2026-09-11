@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from dataclasses import dataclass
 
@@ -32,7 +31,14 @@ class Request:
 
 
 def available() -> str:
-    """The forge CLI on PATH, or empty when there is none."""
+    """The forge CLI on PATH, or empty when there is none.
+
+    shutil costs 4.7 ms to import and one call needs it, so it is imported
+    here rather than at the top: every command that never asks the forge pays
+    nothing for the question.
+    """
+    import shutil
+
     for tool in ("gh", "glab"):
         if shutil.which(tool):
             return tool

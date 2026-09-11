@@ -7,6 +7,7 @@ complete -c gwr -a '(command gwr --complete)'
 complete -c gwr -s f -l force -d 'remove it even when unfinished'
 complete -c gwr -l delete-ignored -d 'also delete its gitignored files'
 complete -c gwr -l no-fetch -d 'use the refs already here'
+complete -c gwr -l no-forge -d 'decide from git alone; never ask the forge'
 complete -c gwr -s y -l yes -d 'do not ask'
 
 complete -c gwr -l json -d 'the result as data'

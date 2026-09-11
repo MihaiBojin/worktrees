@@ -117,56 +117,99 @@ def _full_sha(value: str) -> bool:
     return len(value) in (40, 64) and all(c in "0123456789abcdef" for c in value)
 
 
+@dataclass(frozen=True)
+class Rule:
+    """One command refused absolutely, under the name `--explain` prints.
+
+    The list is the whole of the guard, so the refusal, the help and any test
+    that walks it read the same rows. A rule written in one place and
+    described in another is a rule that goes quiet.
+    """
+
+    named: str  # what --explain prints
+    why: str  # the clause after the semicolon
+    test: Callable[[str, Sequence[str]], bool]
+    # How the refusal names it, when `git <named>` is not how you would say
+    # it. `{head}` is the subcommand that was about to run.
+    phrase: str = ""
+
+    def refusal(self, head: str) -> str:
+        spelled = (self.phrase or f"`git {self.named}`").format(head=head)
+        return f"{_ABSOLUTE} {spelled}; {self.why}"
+
+
+RULES: tuple[Rule, ...] = (
+    Rule(
+        "reset --hard",
+        "it discards the working tree",
+        lambda head, rest: head == "reset" and _has(rest, "--hard"),
+    ),
+    Rule(
+        "a forced checkout or switch",
+        "it discards the working tree",
+        lambda head, rest: (
+            head in ("checkout", "switch")
+            and (_short(rest, "f") or _has(rest, "--force", "--discard-changes"))
+        ),
+        phrase="a forced `git {head}`",
+    ),
+    Rule(
+        "clean -f",
+        "nothing restores what it deletes",
+        lambda head, rest: (
+            head == "clean" and (_short(rest, "f") or _has(rest, "--force"))
+        ),
+    ),
+    Rule(
+        "push --force",
+        "use --force-with-lease instead",
+        lambda head, rest: (
+            head == "push" and (_short(rest, "f") or _has(rest, "--force"))
+        ),
+        phrase="a bare `git push --force`",
+    ),
+    Rule(
+        "worktree remove --force",
+        "it takes uncommitted work and ignored files without a word",
+        lambda head, rest: (
+            head == "worktree"
+            and rest[:1] == ["remove"]
+            and (_short(rest, "f") or _has(rest, "--force"))
+        ),
+    ),
+    Rule(
+        "branch -D",
+        "a branch is deleted on proof of merge or not at all",
+        lambda head, rest: (
+            head == "branch"
+            and (_has(rest, "-D") or (_has(rest, "--delete") and _has(rest, "--force")))
+        ),
+    ),
+    # --stdin deletes refs with no -d anywhere in argv, so it is refused with
+    # the rest: the shape below is the only delete this program may issue.
+    Rule(
+        "an update-ref delete that names no full sha",
+        "an absent, empty or abbreviated old value, or a name like HEAD, is "
+        "`git branch -D` spelled longer",
+        lambda head, rest: (
+            head == "update-ref"
+            and _has(rest, "-d", "--stdin")
+            and not (len(rest) == 3 and rest[0] == "-d" and _full_sha(rest[2]))
+        ),
+        phrase="`git update-ref` deleting a ref without naming the full sha it "
+        "must still hold",
+    ),
+)
+
+
 def guard(argv: Sequence[str]) -> None:
     """Raise Refused for a command that can lose work."""
     if not argv:
         raise Refused("empty git command")
-    head = argv[0]
-    rest = argv[1:]
-
-    if head == "reset" and _has(argv, "--hard"):
-        raise Refused(f"{_ABSOLUTE} `git reset --hard`; it discards the working tree")
-    if head in ("checkout", "switch") and (
-        _short(rest, "f") or _has(rest, "--force", "--discard-changes")
-    ):
-        raise Refused(
-            f"{_ABSOLUTE} a forced `git {head}`; it discards the working tree"
-        )
-    if head == "clean" and (_short(rest, "f") or _has(rest, "--force")):
-        raise Refused(f"{_ABSOLUTE} `git clean -f`; nothing restores what it deletes")
-    if head == "push" and (_short(rest, "f") or _has(rest, "--force")):
-        raise Refused(
-            f"{_ABSOLUTE} a bare `git push --force`; use --force-with-lease instead"
-        )
-    if (
-        head == "worktree"
-        and rest
-        and rest[0] == "remove"
-        and (_short(rest, "f") or _has(rest, "--force"))
-    ):
-        raise Refused(
-            f"{_ABSOLUTE} `git worktree remove --force`; it takes uncommitted work "
-            "and ignored files without a word"
-        )
-    if head == "branch" and (
-        _has(rest, "-D") or (_has(rest, "--delete") and _has(rest, "--force"))
-    ):
-        raise Refused(
-            f"{_ABSOLUTE} `git branch -D`; a branch is deleted on proof of merge "
-            "or not at all"
-        )
-    # --stdin deletes refs with no -d anywhere in argv, so it is refused with
-    # the rest: the shape below is the only delete this program may issue.
-    if (
-        head == "update-ref"
-        and _has(rest, "-d", "--stdin")
-        and not (len(rest) == 3 and rest[0] == "-d" and _full_sha(rest[2]))
-    ):
-        raise Refused(
-            f"{_ABSOLUTE} `git update-ref` deleting a ref without naming the full "
-            "sha it must still hold; an absent, empty or abbreviated old value, "
-            "or a name like HEAD, is `git branch -D` spelled longer"
-        )
+    head, rest = argv[0], list(argv[1:])
+    for rule in RULES:
+        if rule.test(head, rest):
+            raise Refused(rule.refusal(head))
 
 
 # --------------------------------------------------------------------------

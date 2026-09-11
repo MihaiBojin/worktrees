@@ -5,3 +5,6 @@ __pycache__/
 .mypy_cache/
 .venv/
 dist/
+
+# Written by hatch_build.py during a build.
+src/worktrees/_version.py

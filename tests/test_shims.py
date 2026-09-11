@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import tomllib
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -93,10 +94,22 @@ def _fake(tmp_path: Path, name: str, script: str) -> Path:
     return bin_dir
 
 
+def _missing(shell: str) -> NoReturn:  # pragma: no cover
+    """Skip locally, fail in CI.
+
+    A skip is invisible in `pytest -q`, so a runner without the shell went
+    green without the shim ever running. A checkout on a machine with one
+    shell and not the other still skips.
+    """
+    if os.environ.get("CI"):
+        pytest.fail(f"{shell} is not installed, and CI has to run its shim")
+    pytest.skip(f"{shell} is not installed")
+
+
 def _run_fish(bin_dir: Path, line: str) -> tuple[int, str]:
     fish = shutil.which("fish")
     if not fish:  # pragma: no cover
-        pytest.skip("fish is not installed")
+        _missing("fish")
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
     proc = subprocess.run(
         [
@@ -151,7 +164,7 @@ def test_the_fish_shim_stays_put_on_empty_output(tmp_path) -> None:
 def _run_zsh(bin_dir: Path, line: str) -> tuple[int, str]:
     zsh = shutil.which("zsh")
     if not zsh:  # pragma: no cover
-        pytest.skip("zsh is not installed")
+        _missing("zsh")
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
     fns = ROOT / "zsh/plugins/worktrees/functions"
     proc = subprocess.run(
@@ -193,7 +206,7 @@ def test_a_real_terminal_is_not_required(tmp_path) -> None:
     pty so the interactive path is exercised too."""
     fish = shutil.which("fish")
     if not fish:  # pragma: no cover
-        pytest.skip("fish is not installed")
+        _missing("fish")
     target = tmp_path / "pty-landing"
     target.mkdir()
     bin_dir = _fake(tmp_path, "gwa", f'#!/bin/sh\nprintf "%s\\n" "{target}"\n')
