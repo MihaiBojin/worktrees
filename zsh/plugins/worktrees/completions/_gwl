@@ -21,6 +21,5 @@ _arguments -s \
     '(-q --quiet)'{-q,--quiet}'[the path alone]' \
     '(-v --verbose)'{-v,--verbose}'[print every git command]' \
     '--explain[print every git command and exit]' \
-    '--version[show the version and exit]' \
     '(-h --help)'{-h,--help}'[show the help and exit]' \
     '1:worktree:__worktrees_names'

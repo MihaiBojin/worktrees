@@ -1,4 +1,4 @@
-"""The version is written once, and `--version` reads that one."""
+"""The version is written once, and `gw version` reads that one."""
 
 from __future__ import annotations
 
@@ -36,18 +36,18 @@ def test_version_matches_the_distribution() -> None:
     assert __version__ == declared
 
 
-def test_every_console_script_reports_it() -> None:
-    """Driven, because `--version` goes through argparse rather than a return."""
+def test_both_names_that_take_a_subcommand_report_it() -> None:
+    """Driven, because the console script is what a person runs."""
     declared = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"][
         "version"
     ]
-    for entry in ("gws", "gwp", "gwnb", "main"):
+    for entry in ("gw", "main"):
         proc = subprocess.run(
             [
                 sys.executable,
                 "-c",
                 f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
-                "--version",
+                "version",
             ],
             capture_output=True,
             text=True,

@@ -379,6 +379,7 @@ gwr [QUERY]      gw remove (rm)           remove one whose branch is finished
 gwnb NAME        gw new-branch (nb, new)  branch off the head branch (alpha)
 gwrot            gw rotate (rot)          the next branch in a series (alpha)
 gwh              gw help (h)              every command and alias, this list
+—                gw version (v)           the version this package installs
 ```
 
 `gw help`, `gw h` and `gw` with no subcommand print the same thing. One table
@@ -387,9 +388,10 @@ cannot disagree, and it raises at import if two commands ever claim one name.
 
 ## Flags
 
-Every command takes `--version`. All but `gwh`, which prints a table and has
-nothing to be quiet about, also take `--json`, `-q`, `-v` and `--explain`.
-Beyond those:
+`gw version`, or `gw v`, prints the version. No command takes a `--version`
+flag. Every command but that one and `gwh`, which
+print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
+`-v` and `--explain`. Beyond those:
 
 | | |
 | --- | --- |

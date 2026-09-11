@@ -326,6 +326,13 @@ def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
     assert "gws" not in p.stdout
 
 
+def test_version_is_a_command_and_not_a_flag(world) -> None:
+    for entry in ("gws", "gw", "main"):
+        p = run(world, entry, "--version")
+        assert p.returncode == 2
+        assert "unrecognized arguments: --version" in p.stderr
+
+
 def test_dry_run_is_refused_by_name(world) -> None:
     for entry in ("gws", "gwp"):
         p = run(world, entry, "--dry-run")
@@ -397,6 +404,27 @@ def test_a_bare_flag_means_status(world) -> None:
     assert "git worktree list --porcelain -z" in p.stdout
 
 
+def test_an_unknown_command_names_the_closest_one(world) -> None:
+    """argparse answers this with a usage line and twenty-two choices, and
+    the name worth reading arrives last."""
+    p = run(world, "gw", "verison")
+    assert p.returncode == 2
+    assert p.stderr.splitlines() == [
+        "gw: there is no command 'verison'",
+        "the closest is: gw version",
+        "gw help lists every command",
+    ]
+
+
+def test_an_unknown_command_near_nothing_still_points_at_help(world) -> None:
+    p = run(world, "main", "xyzzy")
+    assert p.returncode == 2
+    assert p.stderr.splitlines() == [
+        "worktrees: there is no command 'xyzzy'",
+        "worktrees help lists every command",
+    ]
+
+
 # --------------------------------------------------------------------------
 # shorthands, and the table they come from
 # --------------------------------------------------------------------------
@@ -450,10 +478,12 @@ def test_every_command_is_installed_under_its_own_name() -> None:
 
     root = Path(__file__).resolve().parents[1]
     scripts = tomllib.loads((root / "pyproject.toml").read_text())["project"]["scripts"]
-    declared = {c.binary for c in cli._COMMANDS.values()}
+    declared = {c.binary for c in cli._COMMANDS.values() if c.binary}
     assert declared <= set(scripts)
     # The two that take a subcommand are the only ones with no row of their own.
     assert set(scripts) - declared == {"gw", "worktrees"}
+    # and version is the only row that installs nothing.
+    assert [n for n, c in cli._COMMANDS.items() if not c.binary] == ["version"]
 
 
 # --------------------------------------------------------------------------

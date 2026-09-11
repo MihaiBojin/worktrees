@@ -44,7 +44,7 @@ trap 'rm -rf "$TMP"' EXIT
 readonly ATTEMPTS=6
 readonly BASE=15
 
-# The version the installed script reports, compared against the one asked
+# The version the installed command reports, compared against the one asked
 # of the index. Running it and discarding the output would pass while every
 # command on the machine printed a number from a previous release.
 attempt=0
@@ -57,7 +57,7 @@ while :; do
         --index "$INDEX" \
         --index-strategy unsafe-best-match \
         --from "$NAME==$VERSION" \
-        gws --version 2>"$TMP/resolve.err")"; then
+        gw version 2>"$TMP/resolve.err")"; then
         break
     fi
 
@@ -76,7 +76,7 @@ readonly REPORTED
 [ "$REPORTED" = "$VERSION" ] || {
     echo "Version mismatch after publishing to $WHICH." >&2
     echo "  asked the index for: $VERSION" >&2
-    echo "  gws --version says:  $REPORTED" >&2
+    echo "  gw version says:     $REPORTED" >&2
     exit 1
 }
 
