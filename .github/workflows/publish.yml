@@ -5,6 +5,7 @@ name: Publish
 # so a rename means re-registering the publisher on PyPI first.
 #
 #   build -> publish-test -> publish -> release
+#                                     \-> verify
 #
 # Nothing here creates a tag. A release is a version bump merged into main and
 # then tagged by hand, so the irreversible step is the last one and everything
@@ -166,16 +167,34 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Install the release tools
-        uses: releasetools/cli@v0
-
       - name: Publish
         run: uv publish --trusted-publishing always
 
-      # An index serves what it has just accepted only after a delay, so the
-      # script retries the resolution rather than polling a different endpoint
-      # first: the JSON API answered for 0.2.0 while the simple index uv reads
-      # had not caught up, and the run went red on a publish that had worked.
+  # Uploaded and installable are two claims with two timings, so they are two
+  # jobs. An index serves what it has accepted only after a delay of its own
+  # choosing: 0.2.1 took longer than the script waited, and a release that had
+  # published correctly went red and had to be re-run by hand. This job holds
+  # the second claim, `release` needs only the first, and a red `verify` says
+  # PyPI is slow rather than that the version is not out.
+  verify:
+    name: Verify it installs from PyPI
+    runs-on: ubuntu-latest
+    needs: publish
+    permissions:
+      contents: read
+    steps:
+      # The script reads the name and version from pyproject.toml through
+      # `uv version`, and installs from the index rather than from the
+      # artifact, so there is nothing to download here.
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
       - name: Verify it installs from PyPI
         run: scripts/verify-publish.bash --prod
 

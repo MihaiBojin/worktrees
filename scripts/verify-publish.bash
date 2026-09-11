@@ -39,9 +39,10 @@ trap 'rm -rf "$TMP"' EXIT
 # still could not find it. So the wait is this resolution retried rather than a different
 # endpoint polled, because this is the condition a green publish is claiming.
 #
-# Six attempts backing off from 15s is about 7.75 minutes, and it stops the moment the
-# version resolves.
-readonly ATTEMPTS=6
+# Eight attempts backing off from 15s is about 32 minutes, and it stops the moment the
+# version resolves. Nothing waits on this job, so the budget is how long PyPI is given
+# before somebody is told it is slow.
+readonly ATTEMPTS=8
 readonly BASE=15
 
 # The version the installed command reports, compared against the one asked
