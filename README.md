@@ -439,8 +439,11 @@ shared refs and therefore run serially.
 
 `--force-with-lease` is not `--force` and is allowed, and so is
 `update-ref -d <ref> <sha>`, which is how a branch is deleted here: against the
-sha the verdict was formed on, or not at all. The same command without that sha
-is refused, because a delete naming no old value is `branch -D` spelled longer.
+sha the verdict was formed on, or not at all. The sha has to be a full object
+name. An absent one, an empty one, an abbreviation and a name like `HEAD` are
+all refused, because git reads the empty string as "no old value" and takes
+the branch at exit 0, which is `branch -D` spelled longer. `update-ref --stdin`
+is refused with them: it deletes refs without `-d` appearing at all.
 
 ## Contributing
 

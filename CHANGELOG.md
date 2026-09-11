@@ -85,7 +85,10 @@ could paste.
 
 A branch is deleted by `update-ref -d <ref> <sha>` rather than by `branch -D`.
 Both force the delete; only one names what it expects to find, which turns a
-concurrent commit into a failure instead of a loss. `branch -d` was the
+concurrent commit into a failure instead of a loss. The guard reads that last
+argument rather than counting the arguments: git takes `""` as "no old value"
+and deletes the branch at exit 0, so a rule checking the shape would have
+passed the one spelling that matters. `branch -d` was the
 original choice and it inverts on the case this tool exists for: it reads
 history, a squash merge leaves none, and deferring to it meant the content
 probe bought the checkout and never the branch.
