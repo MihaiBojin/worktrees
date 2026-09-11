@@ -168,13 +168,10 @@ jobs:
       - name: Publish
         run: uv publish --trusted-publishing always
 
-      # An index serves what it has just accepted only after a delay, and a fixed
-      # sleep either wastes time or fails a publish that worked. This backs off
-      # across about 7.75 minutes and stops as soon as the version is there.
-      - name: Wait for the PyPI index to catch up
-        run: |
-          rt net::await_url "https://pypi.org/pypi/$(uv version | tr ' ' '/')/json"
-
+      # An index serves what it has just accepted only after a delay, so the
+      # script retries the resolution rather than polling a different endpoint
+      # first: the JSON API answered for 0.2.0 while the simple index uv reads
+      # had not caught up, and the run went red on a publish that had worked.
       - name: Verify it installs from PyPI
         run: scripts/verify-publish.bash --prod
 
