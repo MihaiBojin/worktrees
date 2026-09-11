@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import __version__, new_branch, prune, verdicts
 from . import repo as R
+from . import rotate as rotate_mod
 from .git import GitError, Refused, commands, options
 
 
@@ -289,6 +290,64 @@ def run_new_branch(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# rotate
+# --------------------------------------------------------------------------
+
+
+def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--no-fetch", action="store_true", help="work from what is already here"
+    )
+    p.add_argument("--json", action="store_true", help="the result as data")
+    p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
+    p.add_argument(
+        "-v", "--verbose", action="store_true", help="print every git command"
+    )
+    p.add_argument(
+        "--explain", action="store_true", help="print every git command and exit"
+    )
+
+
+def run_rotate(args: argparse.Namespace) -> int:
+    options.verbose = args.verbose
+    if args.explain:
+        return _explain()
+
+    warn = None if args.quiet else _err
+    if args.no_fetch and not args.quiet:
+        _err("working from what is already here; refs may be stale (--no-fetch)")
+
+    try:
+        result = rotate_mod.rotate(fetch=not args.no_fetch, warn=warn)
+    except new_branch.Refusal as exc:
+        _err(str(exc))
+        return 1
+
+    if isinstance(result, rotate_mod.CaughtUp):
+        if args.json:
+            print(json.dumps({"branch": result.branch, "at": result.at}, indent=2))
+        elif not args.quiet:
+            print(f"{result.branch} is at {result.at}")
+        return 0
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "branch": result.branch,
+                    "stem": result.stem,
+                    "base": result.base,
+                    "sha": result.sha,
+                },
+                indent=2,
+            )
+        )
+    elif not args.quiet:
+        print(f"{result.branch} from {R.ref_name(result.base)} at {result.sha}")
+    return 0
+
+
+# --------------------------------------------------------------------------
 # entry points
 # --------------------------------------------------------------------------
 
@@ -308,11 +367,17 @@ _COMMANDS = {
         _add_new_branch_flags,
         "start a branch off the head branch",
     ),
+    "rotate": (run_rotate, _add_rotate_flags, "start the next branch after this one"),
 }
 
 _STATUS_HELP = "Say which of this repository's worktrees are finished, and why."
 _PRUNE_HELP = "Remove the worktrees gws marks removable, and their branches."
 _NEW_BRANCH_HELP = "Fetch, then branch NAME off the head branch and check it out."
+_ROTATE_HELP = (
+    "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
+    "head branch there is no chain to continue, so it catches that up to the "
+    "remote instead."
+)
 
 
 def _parser(prog: str, description: str) -> argparse.ArgumentParser:
@@ -340,6 +405,13 @@ def gwnb(argv: list[str] | None = None) -> int:
     p = _parser("gwnb", _NEW_BRANCH_HELP)
     _add_new_branch_flags(p)
     return _dispatch(p, argv, run_new_branch)
+
+
+def gwrot(argv: list[str] | None = None) -> int:
+    """Naming a branch and continuing a series are two commands."""
+    p = _parser("gwrot", _ROTATE_HELP)
+    _add_rotate_flags(p)
+    return _dispatch(p, argv, run_rotate)
 
 
 def main(argv: list[str] | None = None) -> int:

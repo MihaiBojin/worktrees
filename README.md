@@ -1,6 +1,6 @@
 # worktrees
 
-Three commands, and none of them needs a shell wrapper: nothing here cds its
+Four commands, and none of them needs a shell wrapper: nothing here cds its
 caller.
 
 | | |
@@ -9,6 +9,7 @@ caller.
 | `gws` | say which worktrees are finished, and why. Removes nothing, and has no flag that could |
 | `gwp` | remove the ones `gws` marks removable, having asked first |
 | `gwnb NAME` | fetch, then branch `NAME` off the head branch and check it out |
+| `gwrot` | start the next branch after this one, or catch the head branch up |
 
 ## Install
 
@@ -139,11 +140,46 @@ target the head branch.
 A failed fetch is not fatal. An offline machine still gets a branch, off
 whatever it last saw, and the line at the end names the commit it got.
 
+## gwrot
+
+```console
+$ gwrot
+fix-parser-2026-09-11_001 from origin/main at 4a91c02
+```
+
+It takes no argument. The name comes from the branch you are standing on,
+with any suffix a previous rotation added already stripped, so four
+rotations in a day give four siblings rather than one name carrying four
+suffixes:
+
+```
+fix-parser                   -> fix-parser-2026-09-11_001
+fix-parser-2026-09-11_001    -> fix-parser-2026-09-11_002
+fix-parser-2026-09-10_003    -> fix-parser-2026-09-11_001
+```
+
+Three digits, so the sequence cannot be read as another field of the date. A
+number is free only when neither `refs/heads/` nor the remote holds it, or
+two people rotate into the same name.
+
+On the head branch there is no chain to continue, so it catches that up
+instead:
+
+```console
+$ gwrot
+main is at origin/main
+```
+
+That is `merge --ff-only`, never a rebase: rewriting local commits on the
+head branch is the class this tooling refuses everywhere else. Commits the
+remote does not have are refused and listed, because they are a change of
+their own and `gwnb` puts them on a branch.
+
 ## Flags
 
 `--branch NAME`, `--no-fetch`, `--delete-ignored`, `--json`, `-q`, `-v` and
-`--explain` are shared by `gws` and `gwp`. `-y` is `gwp` alone. `gwnb` takes
-`--no-fetch`, `--json`, `-q`, `-v` and `--explain`.
+`--explain` are shared by `gws` and `gwp`. `-y` is `gwp` alone. `gwnb` and
+`gwrot` take `--no-fetch`, `--json`, `-q`, `-v` and `--explain`.
 
 Data goes to stdout and diagnostics to stderr, including the prompt, so
 `--json` is parseable in every mode.
