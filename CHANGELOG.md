@@ -12,6 +12,29 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.2.1 - 2026-09-11
+
+`--version` is gone from every command. `gw version`, or `gw v`, prints the
+version this package installs; `gws --version` and the rest now fail as an
+unrecognised argument, so a script reading the version back has one line to
+change.
+
+A name `gw` does not carry names the closest one that exists, instead of
+printing a usage line and all twenty-two commands under an argparse error:
+
+    $ gw verison
+    gw: there is no command 'verison'
+    the closest is: gw version
+    gw help lists every command
+
+### Choices
+
+`version` installs no binary of its own, and `gwh` prints a `—` in its
+column to say so. A tenth console script, for a question asked once, would
+be a name nobody types. Keeping `--version` beside it was the alternative:
+two spellings of one answer, on every command, each to be completed,
+documented and tested.
+
 ## 0.2.0 - 2026-09-11
 
 A squash-merged branch goes with its checkout, every removal names the
