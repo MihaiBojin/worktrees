@@ -70,6 +70,11 @@ def toplevel() -> None:
     """The root of the worktree we stand in."""
 
 
+@git("rev-parse --path-format=absolute --git-common-dir", ok=(0, 128))
+def common_dir() -> None:
+    """The repository directory every worktree of it shares."""
+
+
 # --no-optional-locks is a git global, so it goes before the subcommand, which
 # a spec shows and a tuple hides. Without it a listing writes another
 # worktree's index and contends with a `git add` there.
@@ -106,6 +111,10 @@ class Worktree:
     sha: str
     branch: str  # empty when detached or bare
     flags: frozenset[str]  # any of bare, detached, locked, prunable
+
+    @property
+    def label(self) -> str:
+        return self.branch or "(detached)"
 
 
 def worktrees(repo: str | os.PathLike[str] | None = None) -> list[Worktree]:

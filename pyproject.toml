@@ -43,8 +43,12 @@ dev = [
 # a shim and an agent call.
 [project.scripts]
 gw = "worktrees.cli:main"
+gwa = "worktrees.cli:gwa"
+gwl = "worktrees.cli:gwl"
+gwm = "worktrees.cli:gwm"
 gwnb = "worktrees.cli:gwnb"
 gwp = "worktrees.cli:gwp"
+gwr = "worktrees.cli:gwr"
 gwrot = "worktrees.cli:gwrot"
 gws = "worktrees.cli:gws"
 worktrees = "worktrees.cli:main"

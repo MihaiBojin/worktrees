@@ -25,6 +25,9 @@ The rules this code follows, and the reasoning behind them, are in
 | `src/worktrees/prune.py` | the six commands that mutate, and the sweep |
 | `src/worktrees/new_branch.py` | alpha: starting a branch off the head branch |
 | `src/worktrees/rotate.py` | alpha: the next branch in a series |
+| `src/worktrees/layout.py` | where a worktree lives, derived from the main checkout |
+| `src/worktrees/pick.py` | matching a query, and the numbered prompt |
+| `src/worktrees/worktree.py` | adding, moving and removing a checkout |
 | `src/worktrees/cli.py` | argument parsing and output |
 
 `pyproject.toml` maps each console script to an entry point in `cli.py`.
