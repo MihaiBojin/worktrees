@@ -167,8 +167,10 @@ escape sequence as width, and every column under a coloured cell sits crooked
 by exactly the length of the code.
 
 stdout carries the path `cd $(gwa x)` reads and the JSON `jq` parses, so a
-redirect, a pipe, `NO_COLOR` set to anything, or `TERM=dumb` mean the bytes go
-out as they would have without the module. `--json` is never painted at all:
+redirect, a pipe, a non-empty `NO_COLOR`, or `TERM=dumb` mean the bytes go out
+as they would have without the module. `NO_COLOR=` is not a request to turn it
+off: that is the no-color.org rule, and it is why `supported` tests the value
+and not the key. `--json` is never painted at all:
 the colour is applied at the call site that formats a table, and the JSON
 paths do not pass through one.
 

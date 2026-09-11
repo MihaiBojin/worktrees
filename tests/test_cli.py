@@ -451,6 +451,20 @@ def test_the_cli_with_no_argument_prints_that_same_help(world) -> None:
     assert "gws" in bare and "gw status (s, st)" in bare
 
 
+@pytest.mark.parametrize("flag", ["--json", "-q", "-v", "--explain"])
+def test_help_promises_no_flag_the_program_refuses(world, flag: str) -> None:
+    """gwh declares no flags, so the footer has to carve it out by name. The
+    footer derives that from the table rather than asserting it in prose."""
+    p = run(world, "gwh", flag)
+    assert p.returncode == 2
+    assert "unrecognized arguments" in p.stderr
+
+    listed = run(world, "gwh")
+    assert "work on every command but gwh" in listed.stdout
+    # and the flags it does claim are taken by a command that has a row
+    assert run(world, "gws", "--no-fetch", flag).returncode == 0
+
+
 def test_help_stays_inside_eighty_columns(world) -> None:
     """It is read at a prompt, next to the commands it describes."""
     p = run(world, "gwh")

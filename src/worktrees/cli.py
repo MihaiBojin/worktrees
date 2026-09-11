@@ -695,10 +695,16 @@ def run_help(args: argparse.Namespace) -> int:
         "of the same name\nfrom the plugin; the rest need nothing but $PATH."
     )
     print()
+    # Which commands take the common flags is the table's answer, not a second
+    # list here: a row with no flags takes none, and saying so in prose is how
+    # a help text comes to promise a flag the program refuses.
+    bare = [c.binary for c in _COMMANDS.values() if c.flags is None]
+    scope = f"every command but {', '.join(bare)}" if bare else "every command"
     print(
         "gwnb and gwrot start branches rather than worktrees. Both are alpha "
-        "and may go.\n\n--json, -q, -v and --explain work everywhere, and "
-        "`gw <command> --help` has\nthe rest. NO_COLOR turns the colour off."
+        f"and may go.\n\n--json, -q, -v and --explain work on {scope}, and\n"
+        "`gw <command> --help` has the rest. A non-empty NO_COLOR turns the "
+        "colour off."
     )
     return 0
 

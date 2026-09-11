@@ -3,8 +3,12 @@
 Colour where something will render it, and columns that line up.
 
 Colour is off until `setup()` decides, per stream. stdout carries the data
-`cd $(gwa x)` and `jq` read, so a redirect, a pipe, `NO_COLOR` or `TERM=dumb`
-all mean the bytes go out exactly as they would have without this module.
+`cd $(gwa x)` and `jq` read, so a redirect, a pipe, a non-empty `NO_COLOR` or
+`TERM=dumb` all mean the bytes go out exactly as they would have without this
+module.
+
+Non-empty is the no-color.org rule, and the reason `supported` tests the value
+rather than the key: `NO_COLOR=` unsets the request instead of making it.
 """
 
 from __future__ import annotations

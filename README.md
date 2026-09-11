@@ -130,7 +130,7 @@ count are on stdout; the two lines after them are on stderr.
 On a terminal the verdict carries its own colour, `remove` green, `keep` blue
 and `unknown` yellow, with the branch in bold and the path dimmed. That
 decision is made per stream: redirect it, pipe it, set `NO_COLOR` to anything
-or run under `TERM=dumb` and the bytes are the ones above.
+non-empty or run under `TERM=dumb` and the bytes are the ones above.
 
 ### Three verdicts
 
@@ -364,8 +364,9 @@ Beyond those:
 
 Data goes to stdout and diagnostics to stderr, the prompt included, so `--json`
 is parseable in every mode. Colour is decided per stream and only for a
-terminal, so a redirect, a pipe, `NO_COLOR` set to anything or `TERM=dumb` give
-the bytes a pipe would have got, `--json` included.
+terminal, so a redirect, a pipe, a non-empty `NO_COLOR` or `TERM=dumb` give the
+bytes a pipe would have got, `--json` included. `NO_COLOR=` is not a request to
+turn it off, which is the no-color.org rule.
 
 Every command is a console script, so a script reaches it with no shell loaded
 at all:
