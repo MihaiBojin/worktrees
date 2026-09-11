@@ -73,7 +73,8 @@ def remove_worktree(path): ...
 `shlex.split` runs once at decoration time on the literal spec, before any
 value exists. So a branch named `$(id)` becomes one argv element and stays a
 name: git accepts that as a refname, and the suite creates it. `--explain`
-prints all 28 specs, marking the six that mutate.
+prints every spec, marking the ones that mutate.
+
 A guard runs on the resolved argv inside the wrapper, so no call site can
 assemble its way past it: `reset --hard`, a forced `checkout` or `switch`,
 `clean -f`, a bare `push --force`, `worktree remove --force` and `branch -D`
@@ -83,10 +84,10 @@ are refused whatever flags are passed.
 
 A binary cannot `cd` its caller. A command that does gets a shell function of
 the same name, whose whole body is `command <name>` and a `cd`, so a script
-calling the binary still gets the path and only loses the move. `gws`, `gwp`
-and `gwnb` need none; `gwa`, `gwl`, `gwr` and `gwm` will, and
-[issue #3](https://github.com/MihaiBojin/worktrees/issues/3) carries the rest
-of it.
+calling the binary still gets the path and only loses the move. `gwa`, `gwl`,
+`gwm` and `gwr` have one each, for fish under `functions/` and for zsh under
+`zsh/plugins/worktrees/functions/`. `gws`, `gwp`, `gwnb` and `gwrot` need
+none.
 
 ```fish
 function gwa --wraps gwa
@@ -101,7 +102,8 @@ end
 `string collect` because fish splits command substitution on newlines and a
 path may hold one. `$pipestatus[1]` because that pipeline's `$status` belongs
 to `string collect`, which returns 1 whenever it collected nothing, which is
-the failure case. bash and zsh need neither:
+the failure case. zsh needs neither, because `$(...)` strips only trailing
+newlines:
 
 ```bash
 gwa() {
@@ -114,7 +116,7 @@ gwa() {
 
 ## Tests
 
-99 of them, on Python 3.11 through 3.14 in CI. They drive the entry points
+Python 3.11 through 3.14 in CI. They drive the entry points
 through `subprocess`, so env, cwd, both streams and the exit code stay
 per-test, and the prompt tests drive a real pty.
 

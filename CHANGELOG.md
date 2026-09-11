@@ -47,7 +47,7 @@ this worktree's branch and moves the checkout to match. `gwr` removes one
 whose branch is finished, and the branch with it.
 
 Those four change your shell's directory, which a binary cannot do, so each
-ships a shell function of the same name for fish, zsh and bash. The function
+ships a shell function of the same name for fish and for zsh. The function
 reads the path the binary printed and does the `cd`, and carries nothing
 else.
 
