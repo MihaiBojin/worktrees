@@ -157,6 +157,17 @@ The form catches its own bugs. `-C $path status --porcelain
 and belongs before the subcommand. That is visible in a spec and invisible in
 a tuple.
 
+A command's name says what the caller gets, echoing the git command where the
+two can agree. `worktree_list`, `worktree_prune` and `worktree_remove` read as
+the subcommands they are; `is_ancestor` beats `merge_base`, because
+`merge-base --is-ancestor` answers a yes/no question and that answer is what
+the caller wants.
+
+A spec with `ok=` wide enough to swallow an error is a spec that has to be
+tested on what it returns rather than on its exit code. `upstream_of` takes
+`ok=(0, 1, 128)`, so a typo in one of its flags exits 128, reads as "no
+upstream", and turns every branch into `unknown` with nothing failing.
+
 `guard()` runs on the resolved argv inside the wrapper, not at declaration, so
 no call site can assemble its way past it. `reset --hard`, a forced `checkout`
 or `switch`, `clean -f`, a bare `push --force`, `worktree remove --force` and
