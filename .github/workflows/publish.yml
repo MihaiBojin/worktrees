@@ -74,15 +74,19 @@ jobs:
       # release that should go ahead. The API needs no local history.
       - name: Check the commit is on main
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+          # The runner sets GITHUB_REPOSITORY itself; this renames it to what gh reads.
+          # It sets no token: GITHUB_TOKEN is not a default variable, so that one has to
+          # be handed over.
+          GH_TOKEN: ${{ github.token }} # no runner default
+          GH_REPO: ${{ github.repository }} # = $GITHUB_REPOSITORY, under the name gh reads
         run: rt github::assert_on_branch main
 
       - name: Wait for the tests on this commit
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: rt github::await_workflow "$GITHUB_SHA" tests.yml
+          GH_TOKEN: ${{ github.token }} # no runner default
+          GH_REPO: ${{ github.repository }} # = $GITHUB_REPOSITORY, under the name gh reads
+          SHA: ${{ github.sha }} # = $GITHUB_SHA
+        run: rt github::await_workflow "$SHA" tests.yml
 
       - name: Install dependencies
         run: uv sync --all-extras --locked
