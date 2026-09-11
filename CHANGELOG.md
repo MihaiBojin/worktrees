@@ -12,6 +12,39 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.2.2 - 2026-09-11
+
+An unreachable remote is an answer rather than a failure. Every command that
+touches the network used to exit 1 with git's own message, so the warnings
+written for the offline case never reached anybody. A failed fetch now says
+the refs are the ones already here, and the assessment carries on.
+
+Refusing to prompt exits 3 everywhere. `gwp` used to exit 2 when stdin was
+not a terminal, which is argparse's code for a usage error, so a script could
+not tell a refusal from a typo.
+
+Removing a worktree names the stash entries made on its branch. A stash
+outlives the branch while its subject goes on naming it, which is how it
+becomes unfindable.
+
+`gwr` asks the forge once, about the branch it is removing, instead of about
+every worktree: three round trips became one in a three-worktree repository.
+`--no-forge` turns it off there, as it already did for `gws` and `gwp`.
+
+`--explain` lists all seven refusals the guard enforces. The footer was
+written by hand and had been a rule behind since `update-ref` was added.
+
+An invocation costs about 15 ms less, and an assessment makes half as many
+`git status` calls.
+
+### Choices
+
+The version is written into the wheel at build time rather than read back
+through `importlib.metadata`, which cost 10 ms of a 67 ms invocation for a
+string two commands print. Deriving it from the tag with `hatch-vcs` was the
+alternative, and it inverts which of the tag and `pyproject.toml` has to
+agree with the other.
+
 ## 0.2.1 - 2026-09-11
 
 `--version` is gone from every command. `gw version`, or `gw v`, prints the
