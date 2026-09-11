@@ -191,12 +191,19 @@ def run_status(args: argparse.Namespace) -> int:
                 {
                     "head": head,
                     "stale": [w.path for w in stale],
+                    # `ignored` and `sha` are fields rather than facts to
+                    # parse back out of `why`. A caller deciding whether to
+                    # pass --delete-ignored wants the count, not a sentence
+                    # that happens to contain it, and the sha is what the
+                    # verdict was formed against.
                     "verdicts": [
                         {
                             "verdict": v.verdict,
                             "branch": v.branch,
                             "path": v.path,
                             "why": v.why,
+                            "ignored": v.ignored,
+                            "sha": v.sha,
                         }
                         for v in rows
                     ],

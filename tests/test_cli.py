@@ -147,6 +147,35 @@ def test_status_json_is_data_on_stdout(world) -> None:
     assert payload["stale"] == []
 
 
+def test_json_carries_the_ignored_count_as_a_number(world) -> None:
+    """A caller deciding whether to pass --delete-ignored wants the count, not
+    a sentence it has to find the count inside."""
+    wt = world.worktree("holds-secrets")
+    world.repo.joinpath(".gitignore").write_text(".env\n")
+    world.git("add", ".gitignore")
+    world.git("commit", "--quiet", "-m", "ignore")
+    world.git("merge", "--quiet", "--ff-only", "main", at=wt)
+    wt.joinpath(".env").write_text("S=1\n")
+
+    p = run(world, "gws", "--no-fetch", "--no-forge", "--json")
+    assert p.returncode == 0, p.stderr
+    row = json.loads(p.stdout)["verdicts"][0]
+    assert row["ignored"] == 1
+    assert row["verdict"] == "keep"
+    # and the sentence still says it, for the person reading the table
+    assert "1 ignored path(s)" in row["why"]
+
+
+def test_json_carries_the_sha_the_verdict_was_formed_against(world) -> None:
+    wt = world.worktree("done")
+    head = world.git("rev-parse", "HEAD", at=wt)
+    p = run(world, "gws", "--no-fetch", "--no-forge", "--json")
+    assert p.returncode == 0, p.stderr
+    row = json.loads(p.stdout)["verdicts"][0]
+    assert row["sha"] == head
+    assert len(row["sha"]) == 40
+
+
 def test_status_names_a_stale_record_rather_than_clearing_it(world) -> None:
     """`git worktree prune` mutates, so a read-only command may not call it."""
     wt = world.worktree("gone")
