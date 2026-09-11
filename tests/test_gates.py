@@ -66,7 +66,7 @@ def test_the_probe_separates_them(world) -> None:
         v.branch: v
         for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
     }
-    assert seen["squashed"].verdict == verdicts.GO
+    assert seen["squashed"].verdict == verdicts.REMOVE
     assert seen["squashed"].why == "squash-merged"
     assert seen["unmerged"].verdict == verdicts.UNKNOWN
     assert "no upstream" in seen["unmerged"].why
@@ -79,7 +79,7 @@ def test_a_branch_that_changed_nothing_is_finished(world) -> None:
         v.branch: v
         for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
     }
-    assert seen["noop"].verdict == verdicts.GO
+    assert seen["noop"].verdict == verdicts.REMOVE
 
 
 # --------------------------------------------------------------------------
@@ -129,7 +129,7 @@ def test_ignored_files_stop_the_verdict(world) -> None:
         x.branch: x
         for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", True)
     }["holds"]
-    assert v.verdict == verdicts.GO
+    assert v.verdict == verdicts.REMOVE
 
 
 def test_ignored_directory_collapses_to_one_entry(world) -> None:
@@ -160,7 +160,7 @@ def test_a_tag_cannot_answer_for_a_branch(world) -> None:
         x.branch: x
         for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
     }["feature"]
-    assert v.verdict != verdicts.GO, "the tag answered for the branch"
+    assert v.verdict != verdicts.REMOVE, "the tag answered for the branch"
 
 
 def test_the_head_ref_is_never_a_bare_name(world) -> None:
@@ -214,7 +214,7 @@ def test_a_tag_shadowing_the_head_branch_does_not_shadow_it(world) -> None:
             R.worktrees(), "", R.full_ref("origin/main"), "main", False
         )
     }
-    assert v["feature"].verdict != verdicts.GO
+    assert v["feature"].verdict != verdicts.REMOVE
 
 
 def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
@@ -226,7 +226,7 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
     assert len(v) == 1
     assert v[0].branch == ""
     assert v[0].label == "(detached)"
-    assert v[0].verdict == verdicts.GO
+    assert v[0].verdict == verdicts.REMOVE
     assert v[0].why == "its commit is reached by a ref"
 
 

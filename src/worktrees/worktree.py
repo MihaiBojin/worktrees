@@ -16,7 +16,7 @@ from . import repo as R
 from .git import GitError, Refused, git
 from .new_branch import Refusal, check_ref_format
 from .prune import _prune_empty_parents, branch_delete, worktree_remove
-from .verdicts import GO, Verdict, assess
+from .verdicts import REMOVE, Verdict, assess
 
 
 @git("worktree add --no-track -b $name -- $dest $base", mutates=True)
@@ -218,4 +218,4 @@ def removable(
     )
 
 
-__all__ = ["GO", "Landed", "add", "move", "removable", "remove"]
+__all__ = ["REMOVE", "Landed", "add", "move", "removable", "remove"]
