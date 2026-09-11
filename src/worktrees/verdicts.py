@@ -46,14 +46,20 @@ def assess(
     head_branch: str,
     delete_ignored: bool,
     repo: str | os.PathLike[str] | None = None,
+    here: str | None = None,
 ) -> list[Verdict]:
     """Every worktree, in the order `git worktree remove` would refuse them.
 
     Proposing something that would then be refused is a bug here, not a
     surprise at the confirmation.
+
+    `here` is the checkout the caller is standing in, which is kept rather
+    than proposed. Pass "" to judge it like any other: `gwr` is asked for one
+    by name and steps out of it first, where a listing has no way to.
     """
     main = R.main_worktree(repo)
-    here = R.toplevel(repo=repo).out.strip()
+    if here is None:
+        here = R.toplevel(repo=repo).out.strip()
     head_name = R.ref_name(head)
 
     out: list[Verdict] = []
