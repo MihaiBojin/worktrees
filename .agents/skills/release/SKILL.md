@@ -21,13 +21,23 @@ forever.
 
 ```bash
 git fetch --all --prune
-scripts/check-releasable.bash <version>
+rt release::prechecks <version> \
+    --branch main \
+    --check-registry-url "https://pypi.org/pypi/git-worktrees/<version>/json"
 ```
 
-That checks the shape of the version, a clean working tree, that the version
-is after the one on `origin/main`, that the tag is free on the remote, and
-that PyPI does not already carry it. If it refuses, say what it said and
-stop. Do not fix a dirty tree by stashing on the user's behalf.
+That checks the shape of the version, a clean working tree, that the tag is
+free on the remote, that the version is after the newest release tag the
+remote carries, that HEAD is on `main`, and that PyPI answers 404 for it.
+PyPI matters most: it rejects a duplicate at the very end of a publish run,
+after everything else has already happened.
+
+`rt` is `releasetools/cli`. Install it with
+`brew install releasetools/tap/cli`, or read `dist/install.sh` in that
+repository.
+
+If it refuses, say what it said and stop. Do not fix a dirty tree by
+stashing on the user's behalf.
 
 ## 2. The branch, the notes, and the bump
 

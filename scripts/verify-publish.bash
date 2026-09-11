@@ -1,28 +1,29 @@
 #!/bin/bash
 set -ueo pipefail
 
-# Install the published package from an index and run what it installed, so a
+# Install the published package from an index and check what it reports, so a
 # green publish means installable rather than uploaded.
 #
 # --prod reads PyPI; without it, TestPyPI.
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly DIR
-
-# shellcheck disable=SC1091
-source "$DIR/functions.bash"
-
 INDEX="https://test.pypi.org/simple/"
+HOST="https://test.pypi.org"
 WHICH="TestPyPI"
 if [ "${1:-}" = "--prod" ]; then
     INDEX="https://pypi.org/simple/"
+    HOST="https://pypi.org"
     WHICH="PyPI"
 fi
-readonly INDEX WHICH
+readonly INDEX HOST WHICH
 
-NAME="$(get_project_name)"
-VERSION="$(get_project_version)"
+NAME="$(uv version --output-format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["package_name"])')"
+VERSION="$(uv version --short)"
 readonly NAME VERSION
+
+# An index takes time to serve what it has just accepted, and a short fixed
+# wait fails releases that published correctly. Six attempts backing off from
+# 15 seconds covers about 7.75 minutes.
+rt net::await_url "$HOST/pypi/$NAME/$VERSION/json"
 
 echo "Verifying $NAME==$VERSION from $WHICH..." >&2
 
@@ -32,8 +33,8 @@ echo "Verifying $NAME==$VERSION from $WHICH..." >&2
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# The version the installed script reports, compared against the one asked
-# of the index. Running it and discarding the output would pass while every
+# The version the installed script reports, compared against the one asked of
+# the index. Running it and discarding the output would pass while every
 # command on the machine printed a number from a previous release.
 REPORTED="$(UV_CACHE_DIR="$TMP/cache" uv tool run \
     --isolated \

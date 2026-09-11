@@ -182,17 +182,28 @@ Pushing the tag starts `publish.yml`:
 build ──> publish-test ──> publish ──> release
 ```
 
-`build` runs three guards before it does anything, cheapest first. The tag has
-to name the version the commit carries. The commit has to be one `main` took,
-so nothing is released from a tree no review ever saw. And that commit's test
-run has to have passed already, so a doomed release stops before it reaches
-TestPyPI. Then it runs the suite again and hands one artifact to every job
-below, so what reaches PyPI is byte-for-byte what TestPyPI accepted.
+The checks come from [releasetools/cli](https://github.com/releasetools/cli),
+so they exist once rather than once per repository. `build` runs four of them
+before it does anything, cheapest first: the tag has to name the version the
+commit carries, that version needs a `CHANGELOG.md` section, the commit has
+to be one `main` took, and that commit's test run has to have passed.
+
+The branch check asks GitHub's compare API rather than local history.
+`actions/checkout` fetches one commit, and `merge-base` on a shallow clone
+calls a real ancestor not one, which would refuse a release it should allow.
+
+Then `build` runs the suite again and hands one artifact to every job below,
+so what reaches PyPI is byte-for-byte what TestPyPI accepted.
 
 TestPyPI gates the real upload on purpose: a PyPI upload cannot be undone or
 replaced, so a failed rehearsal stops the run while there is still nothing to
 pin against. The merge happens first and the irreversible step is last, so
 everything recoverable is already done by the time anything is published.
+
+After the upload, `verify-publish.bash` waits on the index with
+`rt net::await_url`, six attempts backing off from 15 seconds, about 7.75
+minutes. An index takes time to serve what it has just accepted, and a short
+fixed wait fails releases that published correctly.
 
 `workflow_dispatch` against a tag ref re-runs a release whose publish failed.
 

@@ -47,24 +47,32 @@ jobs:
           python-version: "3.14"
           enable-cache: true
 
+      - name: Install releasetools
+        uses: releasetools/cli@94043c54396bd3daa66d694010336118d814c46a # v0.3.0
+
       # Four guards, cheapest first. The tag has to name a version the
       # repository actually carries, that version has to have a changelog
       # entry, the commit has to be one main took, and its tests have to have
       # passed already. All of them here in build, because the release job
       # runs after the PyPI upload and a refusal there would be too late.
       - name: Check the tag matches the project version
-        run: scripts/check-tag-version.bash
+        run: rt git::assert_tag_version "$(uv version --short)"
 
       - name: Check the changelog has an entry for it
-        run: scripts/changelog-section.bash "${GITHUB_REF_NAME#v}" >/dev/null
+        run: rt changelog::section "${GITHUB_REF_NAME#v}" >/dev/null
 
+      # The API rather than local history: actions/checkout fetches one
+      # commit, and merge-base on a shallow clone calls a real ancestor not
+      # one, which would refuse a release it should allow.
       - name: Check the commit is on main
-        run: scripts/check-on-main.bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: rt github::assert_on_branch main "$GITHUB_SHA"
 
       - name: Wait for the tests on this commit
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/await-checks.bash "$GITHUB_SHA"
+        run: rt github::await_workflow "$GITHUB_SHA" tests.yml
 
       - name: Install dependencies
         run: uv sync --all-extras --locked
@@ -144,12 +152,14 @@ jobs:
           name: dist
           path: dist/
 
+      - name: Install releasetools
+        uses: releasetools/cli@94043c54396bd3daa66d694010336118d814c46a # v0.3.0
+
       - name: Publish
         run: uv publish --trusted-publishing always
 
-      - name: Wait for the PyPI index to catch up
-        run: sleep 30
-
+      # verify-publish.bash waits on the index itself, backing off rather than
+      # sleeping a fixed 30 seconds, which failed releases that had published.
       - name: Verify it installs from PyPI
         run: scripts/verify-publish.bash --prod
 
@@ -163,10 +173,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Install releasetools
+        uses: releasetools/cli@94043c54396bd3daa66d694010336118d814c46a # v0.3.0
+
       # What was written for this version, not a list of pull request titles.
       # build already proved the section exists, before anything was published.
       - name: Read the changelog entry
-        run: scripts/changelog-section.bash "${GITHUB_REF_NAME#v}" >RELEASE_NOTES.md
+        run: rt changelog::section "${GITHUB_REF_NAME#v}" >RELEASE_NOTES.md
 
       - name: Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
