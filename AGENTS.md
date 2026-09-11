@@ -23,7 +23,7 @@ call `command <name>` and `cd` to what that prints.**
 
 | | changes directory | ships as |
 | --- | --- | --- |
-| `gws`, `gwp`, `gwnb` | no | a console script, and nothing else |
+| `gws`, `gwp`, `gwnb`, `gwrot` | no | a console script, and nothing else |
 | a command that lands you somewhere | yes | a console script, plus a function of the same name |
 
 A binary cannot `cd` its caller. That is the only thing shell code is here for,
@@ -50,6 +50,19 @@ end
 ```
 
 `command` is what stops the function calling itself, in all three shells.
+
+## Two commands are alpha
+
+`gwnb` and `gwrot` start branches, not worktrees. `origin new-branch` and
+`origin rotate` do the same job, only one of the two sets survives, and
+nothing has decided which. So they match `origin` rather than improve on it:
+the name format, the stem-stripping and the remote-aware collision check are
+copied, and a difference between them is a decision somebody has to make
+later. Say so wherever they are documented.
+
+Exit codes are the one deliberate divergence. `origin` has a single non-zero
+code and draws no line between a usage error and a runtime one; this CLI
+keeps argparse's 2 for a usage error.
 
 ## Where shell code goes
 

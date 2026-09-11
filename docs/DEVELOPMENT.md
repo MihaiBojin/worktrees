@@ -23,10 +23,17 @@ The rules this code follows, and the reasoning behind them, are in
 | `src/worktrees/merged.py` | whether a branch's change is already upstream |
 | `src/worktrees/verdicts.py` | one verdict per worktree, and nothing that mutates |
 | `src/worktrees/prune.py` | the six commands that mutate, and the sweep |
-| `src/worktrees/new_branch.py` | starting a branch off the head branch |
+| `src/worktrees/new_branch.py` | alpha: starting a branch off the head branch |
+| `src/worktrees/rotate.py` | alpha: the next branch in a series |
 | `src/worktrees/cli.py` | argument parsing and output |
 
 `pyproject.toml` maps each console script to an entry point in `cli.py`.
+
+`new_branch.py` and `rotate.py` are alpha. They start branches rather than
+worktrees, `origin new-branch` and `origin rotate` already do the same job,
+and only one of the two sets survives. Keep them matching `origin` rather
+than improving on it: a difference between them is a decision somebody has
+to make later, and there is no plan that makes both correct.
 
 ## Working on a checkout
 

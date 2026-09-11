@@ -8,8 +8,16 @@ caller.
 | `gw` | the CLI itself, taking a subcommand. `worktrees` is the same program under its long name |
 | `gws` | say which worktrees are finished, and why. Removes nothing, and has no flag that could |
 | `gwp` | remove the ones `gws` marks removable, having asked first |
-| `gwnb NAME` | fetch, then branch `NAME` off the head branch and check it out |
-| `gwrot` | start the next branch after this one, or catch the head branch up |
+| `gwnb NAME` | alpha. Fetch, then branch `NAME` off the head branch and check it out |
+| `gwrot` | alpha. Start the next branch after this one, or catch the head branch up |
+
+`gws` and `gwp` are what this tool is for and their behaviour is settled.
+
+**`gwnb` and `gwrot` are alpha and may go.** They start branches rather than
+worktrees, which is a different job from the one this repository exists to do,
+and `origin new-branch` and `origin rotate` already do it. Only one of the two
+sets survives. Until that is decided the names, the flags and the output may
+change, and nothing should be built on top of them.
 
 ## Install
 
@@ -120,12 +128,15 @@ There is no `--dry-run`. `gws` reports and `gwp` asks, so a flag meaning "do
 not act" would be a no-op wearing the clothes of a safety feature, and somebody
 would one day cite it as the reason a sweep was safe.
 
-## gwnb
+## gwnb (alpha)
 
 ```console
 $ gwnb fix-parser
 fix-parser from origin/main at 4a91c02
 ```
+
+Alpha, and a branch command rather than a worktree one. See the note above
+the install section.
 
 The base is `<remote>/<head>` as it stands after the fetch, not the local copy
 of it, so the branch starts on top of what the server has and nothing has to be
@@ -140,12 +151,14 @@ target the head branch.
 A failed fetch is not fatal. An offline machine still gets a branch, off
 whatever it last saw, and the line at the end names the commit it got.
 
-## gwrot
+## gwrot (alpha)
 
 ```console
 $ gwrot
 fix-parser-2026-09-11_001 from origin/main at 4a91c02
 ```
+
+Alpha, on the same footing as `gwnb`.
 
 It takes no argument. The name comes from the branch you are standing on,
 with any suffix a previous rotation added already stripped, so four
