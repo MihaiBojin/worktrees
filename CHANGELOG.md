@@ -14,9 +14,31 @@ the reader's time: what was chosen, and what the alternative failed to do.
 
 ## 0.2.0 - 2026-09-11
 
-`gwl` finds every worktree and `gwp` says why it removed nothing. Every
-command is also reachable by a short name, output takes colour, and both
-shells complete every command.
+A squash-merged branch goes with its checkout, every removal names the
+ignored files it deletes, `gwl` finds every worktree and `gwp` says why it
+removed nothing. Every command is also reachable by a short name, output takes
+colour, and both shells complete every command.
+
+A branch the probe proved squash-merged is deleted with its worktree. It used
+to survive: the verdict came from comparing content, and the delete then went
+through `git branch -d`, which reads history and refuses exactly that case, so
+`gwp` removed the checkout and left the branch behind with git's refusal
+printed under it. The delete is now `git update-ref -d <ref> <sha>` against the
+sha the verdict was formed on, so a commit landing between the verdict and the
+removal fails it rather than going with it. `git branch -D` stays refused, and
+so does `update-ref -d` with no sha, which is the same thing spelled longer.
+
+Every removal names the ignored files it is about to delete, not just the ones
+under `--delete-ignored`. `gwr --force` used to print a worktree, remove it,
+and say nothing about the `.env` inside it; `git worktree remove` takes the
+whole directory whatever flag got it there, so `--delete-ignored` decides
+consent and never decides what is deleted.
+
+`gwr` no longer calls a finished branch unfinished. A worktree holding ignored
+files was refused with `is not finished: squash-merged, but holds 6 ignored
+path(s)`, contradicting itself in one line, and the flag it offered was
+`--force`, which keeps a branch whose work already landed and deletes those
+files anyway. It now says `is finished` and names `--delete-ignored` alone.
 
 `gwl` offers the main checkout, and never the worktree you are standing in.
 In a repository with one linked worktree, standing in it, `gwl` printed
@@ -60,6 +82,13 @@ to `~/git/...`. The abbreviation was not what got printed and not what you
 could paste.
 
 ### Choices
+
+A branch is deleted by `update-ref -d <ref> <sha>` rather than by `branch -D`.
+Both force the delete; only one names what it expects to find, which turns a
+concurrent commit into a failure instead of a loss. `branch -d` was the
+original choice and it inverts on the case this tool exists for: it reads
+history, a squash merge leaves none, and deferring to it meant the content
+probe bought the checkout and never the branch.
 
 Completion flags live in the shell files, because that is the half that rots
 without failing: rename a flag and nothing breaks, the candidate just stops

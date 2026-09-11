@@ -25,6 +25,15 @@ class Verdict:
     branch: str  # empty when detached
     path: str
     why: str
+    # How many ignored paths held back a branch that is otherwise done, and 0
+    # everywhere else. Whether the work landed and whether the directory is
+    # safe to delete are two questions, and only the second one answers to
+    # --delete-ignored, so a caller that prints a refusal needs them apart.
+    ignored: int = 0
+    # The commit the verdict was formed against. Deleting the branch names it
+    # as the value the ref must still hold, so a commit made between the
+    # judgement and the removal fails the delete rather than going with it.
+    sha: str = ""
 
     @property
     def label(self) -> str:
@@ -71,8 +80,8 @@ def assess(
         if only and wt.branch != only:
             continue
 
-        def say(verdict: str, why: str, wt: R.Worktree = wt) -> None:
-            out.append(Verdict(verdict, wt.branch, wt.path, why))
+        def say(verdict: str, why: str, ignored: int = 0, wt: R.Worktree = wt) -> None:
+            out.append(Verdict(verdict, wt.branch, wt.path, why, ignored, wt.sha))
 
         if here and Path(wt.path).resolve() == Path(here).resolve():
             say(KEEP, "you are standing in it")
@@ -119,6 +128,7 @@ def assess(
                 KEEP,
                 f"{reason}, but holds {len(ignored)} ignored path(s); "
                 "pass --delete-ignored",
+                len(ignored),
             )
             continue
 

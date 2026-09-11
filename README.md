@@ -59,6 +59,11 @@ The probe that separates them replays the branch's tree as one commit on the
 merge base and asks `git cherry` whether that patch is already upstream. It
 compares content rather than history, which is what a squash preserves.
 
+A branch that probe proves is deleted with its checkout. The delete names the
+sha the ref must still hold, so a commit landing between the verdict and the
+removal fails it rather than going with it, and the command that puts the
+branch back is printed before anything runs.
+
 ### `git worktree remove` silently deletes ignored files
 
 With `.env` and `node_modules/` present, `git status --porcelain` prints
@@ -184,9 +189,6 @@ $ gwp
 squash-merged  /home/you/git/.worktrees/squash-merged/repo
   restore with: git branch squash-merged a2b41ad1fb271bd7d84256f0d35ee5d58c29dd08
 remove 1 worktree(s)? [y/N] y
-branch squash-merged kept: git branch -d -- squash-merged exited 1: error: the branch 'squash-merged' is not fully merged
-hint: If you are sure you want to delete it, run 'git branch -D squash-merged'
-hint: Disable this message with "git config set advice.forceDeleteBranch false"
 removed 1 worktree(s)
 ```
 
@@ -196,8 +198,11 @@ before anything does, and neither `--quiet` nor `--yes` silences it. The sha in
 the restore line is full length, because that line is meant to be pasted.
 
 The checkout goes through plain `git worktree remove`, so every refusal git
-makes still applies. The branch goes through `git branch -d`, never `-D`, which
-is why the branch above outlives its worktree and says so in git's own words.
+makes still applies. The branch goes through `git update-ref -d`, naming the
+sha the verdict was formed against: a branch somebody committed to in between
+survives, and says so in git's own words. Neither `branch -d`, which reads
+history and so refuses the squash merge the probe just proved, nor `branch -D`,
+which reads nothing and is refused by the guard.
 
 `-y` skips the question. A run whose stdin is not a terminal refuses rather
 than blocking, because an agent or a pipe reaching a prompt would hang forever
@@ -298,6 +303,19 @@ refuses at exit 3 and names `--list` and `--json`.
 `gwr` refuses a branch that is not finished and says why, the same verdict
 `gws` prints. `--force` removes the checkout and keeps the branch: the
 worktree was in the way, the work was not.
+
+A finished branch whose worktree holds ignored files is refused too, and named
+as finished, because it is:
+
+```console
+$ gwr holds-secrets
+holds-secrets is finished: squash-merged, but holds 2 ignored path(s); pass --delete-ignored
+```
+
+`--force` is not the answer to that one. It deletes those files just the same,
+since `git worktree remove` takes the whole directory, and it keeps a branch
+whose work already landed. Every ignored path is named before anything is
+deleted, under `--delete-ignored` and under `--force` alike.
 
 ## gwnb and gwrot (alpha)
 
@@ -419,9 +437,10 @@ code path can assemble its way past one. `gws --explain` prints every git
 command the program can issue, marking the ones that take the repository's
 shared refs and therefore run serially.
 
-`--force-with-lease` is not `--force` and is allowed. `branch -d` is not
-`branch -D` and is how a branch is deleted here: on git's own proof of merge,
-or not at all.
+`--force-with-lease` is not `--force` and is allowed, and so is
+`update-ref -d <ref> <sha>`, which is how a branch is deleted here: against the
+sha the verdict was formed on, or not at all. The same command without that sha
+is refused, because a delete naming no old value is `branch -D` spelled longer.
 
 ## Contributing
 
