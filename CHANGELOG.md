@@ -12,6 +12,47 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.2.0 - 2026-09-11
+
+Every command is reachable by a short name, output takes colour, and both
+shells complete every command.
+
+`gwh` is the help, so nothing needs `gw --help` typed out. It joins `gwa`,
+`gwl`, `gwm`, `gwr`, `gws`, `gwp`, `gwnb`, `gwrot` and `gw` on `$PATH`, and
+`gw` still takes the same set as subcommands.
+
+Output is coloured, and `NO_COLOR` turns it off. The check reads the value
+rather than the key, which is the no-color.org rule: `NO_COLOR=` unsets the
+request instead of making it. A redirect or a pipe turns colour off as well,
+because `cd $(gwa x)` and `jq` read that output and neither wants escapes.
+
+Completion covers every command in fish and in zsh, ten files per shell. The
+candidates come from the CLI and never from a shell file: `gw --complete`
+prints every subcommand and shorthand, `gwl --complete` and `gwr --complete`
+print worktrees, each as a name and a description separated by a tab, which
+fish reads directly and zsh splits for `_describe`. A command added to the
+table needs no edit in either shell.
+
+`gwl` and `gwr` do not offer the same set. `gwr` cannot remove the main
+checkout, so offering it would complete to "no worktree matches"; for `gwl`
+it is the one destination always there.
+
+`gwa` says when it leaves something behind. It creates the directories before
+git is asked, so a refusal used to strand an empty one silently.
+
+The worktree picker prints destinations in full rather than abbreviating them
+to `~/git/...`. The abbreviation was not what got printed and not what you
+could paste.
+
+### Choices
+
+Completion flags live in the shell files, because that is the half that rots
+without failing: rename a flag and nothing breaks, the candidate just stops
+being offered. `test_completions.py` diffs both shells against `--help` in
+both directions rather than trusting either copy, and drives every candidate
+`gwr` offers back through `gwr` rather than comparing against a second copy
+of the filter.
+
 ## 0.1.0 - 2026-09-11
 
 The first release. Eight commands for git worktrees, four of which answer a
