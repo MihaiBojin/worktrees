@@ -1,8 +1,8 @@
-# Candidates come from the CLI. `gwl --complete` prints every worktree
-# as name and path, and the shell narrows: no ranking lives here.
+# Candidates come from the CLI. `gwr --complete` prints the worktrees gwr
+# can reach, which is not gwl's list: the main checkout is never one.
 
 complete -c gwr -f
-complete -c gwr -a '(command gwl --complete)'
+complete -c gwr -a '(command gwr --complete)'
 
 complete -c gwr -s f -l force -d 'remove it even when unfinished'
 complete -c gwr -l delete-ignored -d 'also delete its gitignored files'

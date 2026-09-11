@@ -9,8 +9,10 @@
 complete -c gw -f
 complete -c gw -n __fish_use_subcommand -a '(command gw --complete)'
 
-complete -c gw -n '__fish_seen_subcommand_from list l ls remove rm' \
+complete -c gw -n '__fish_seen_subcommand_from list l ls' \
     -a '(command gwl --complete)'
+complete -c gw -n '__fish_seen_subcommand_from remove rm' \
+    -a '(command gwr --complete)'
 
 complete -c gw -n 'not __fish_use_subcommand' -l json -d 'the result as data'
 complete -c gw -n 'not __fish_use_subcommand' -s q -l quiet -d 'less output'

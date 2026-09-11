@@ -27,16 +27,21 @@ _gw() {
             (( $#subs )) && _describe -t commands 'gw command' descs subs
             ;;
         rest)
+            # gwl and gwr do not offer the same set: the main checkout is
+            # one gwl can take you to and one gwr can never remove.
+            local source=
             case ${words[1]} in
-                list|l|ls|remove|rm)
-                    local -a names wdescs
-                    for line in ${(f)"$(command gwl --complete 2>/dev/null)"}; do
-                        names+=( ${line%%$'\t'*} )
-                        wdescs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
-                    done
-                    (( $#names )) && _describe -t worktrees worktree wdescs names
-                    ;;
+                list|l|ls)   source=gwl ;;
+                remove|rm)   source=gwr ;;
             esac
+            if [[ -n $source ]]; then
+                local -a names wdescs
+                for line in ${(f)"$(command $source --complete 2>/dev/null)"}; do
+                    names+=( ${line%%$'\t'*} )
+                    wdescs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
+                done
+                (( $#names )) && _describe -t worktrees worktree wdescs names
+            fi
             _arguments -s \
                 '--json[the result as data]' \
                 '(-q --quiet)'{-q,--quiet}'[less output]' \

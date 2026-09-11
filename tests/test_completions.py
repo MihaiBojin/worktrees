@@ -17,6 +17,20 @@ import pytest
 
 from worktrees.cli import _CANONICAL, _COMMANDS
 
+
+def _env(world) -> dict[str, str]:
+    from conftest import ENV
+
+    return {
+        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+        "PYTHONPATH": SRC,
+        "HOME": str(world.root),
+        "GIT_CONFIG_GLOBAL": str(world.root / "gitconfig"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        **ENV,
+    }
+
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC = str(ROOT / "src")
 FISH = ROOT / "completions"
@@ -53,7 +67,7 @@ def _fish_flags(binary: str) -> set[str]:
 def _zsh_flags(binary: str) -> set[str]:
     text = (ZSH / f"_{binary}").read_text()
     found = set(re.findall(r"'(--[a-z][a-z-]+)\[", text))
-    found |= {m for m in re.findall(r"\{(?:-[a-z],)?(--[a-z][a-z-]+)\}", text)}
+    found |= set(re.findall(r"\{(?:-[a-z],)?(--[a-z][a-z-]+)\}", text))
     return found
 
 
@@ -117,3 +131,59 @@ def test_complete_lists_the_worktree_you_are_standing_in(world) -> None:
     assert p.returncode == 0, p.stderr
     offered = {line.split("\t")[0] for line in p.stdout.splitlines()}
     assert offered == {"main", "fix-parser"}
+
+
+def _complete(entry: str, world, at=None) -> list[str]:
+    p = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            "--complete",
+        ],
+        cwd=str(at or world.repo),
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": SRC},
+    )
+    assert p.returncode == 0, p.stderr
+    return [line.split("\t")[0] for line in p.stdout.splitlines()]
+
+
+def test_gwl_offers_the_main_checkout_and_gwr_does_not(world) -> None:
+    """assess skips the main checkout, so gwr can never act on it."""
+    world.worktree("one")
+    offered_by_gwl = _complete("gwl", world)
+    offered_by_gwr = _complete("gwr", world)
+
+    assert any("(main)" in name or name == "main" for name in offered_by_gwl)
+    assert not [n for n in offered_by_gwr if "(main)" in n]
+    assert "one" in offered_by_gwl
+    assert offered_by_gwr == ["one"]
+
+
+def test_gwr_offers_nothing_it_then_refuses_to_match(world) -> None:
+    """Every candidate reaches gwr's own picker, or the completion lies.
+
+    Driven through the entry point rather than compared against a second
+    copy of the filter: a candidate that cannot be matched is the defect,
+    and "no worktree matches" is how it shows.
+    """
+    world.worktree("one")
+    world.worktree("two")
+    for name in _complete("gwr", world):
+        p = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from worktrees.cli import gwr; raise SystemExit(gwr())",
+                "--no-fetch",
+                name,
+            ],
+            cwd=str(world.repo),
+            capture_output=True,
+            text=True,
+            env=_env(world),
+            stdin=subprocess.DEVNULL,
+        )
+        assert "no worktree matches" not in p.stderr, (name, p.stderr)

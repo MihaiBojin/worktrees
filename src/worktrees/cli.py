@@ -478,6 +478,9 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
+    # Its own, not gwl's: assess skips the main checkout, so gwr can never act
+    # on it and offering it would complete to "no worktree matches".
+    p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
     _add_cd_flags(p)
 
 
@@ -616,6 +619,15 @@ def run_remove(args: argparse.Namespace) -> int:
     options.verbose = args.verbose
     if args.explain:
         return _explain()
+
+    if args.complete:
+        # Every worktree this can reach, and no verdict: whether a branch is
+        # finished is what gwr works out after you pick one, not what decides
+        # whether its name can be typed. No fetch either, so TAB stays fast.
+        for w in R.worktrees():
+            if "bare" not in w.flags and not w.main:
+                print(f"{w.label}\t{w.path}")
+        return 0
 
     rows, _, _ = _assess(args, judge=wt_mod.removable)
     found = pick.matches(

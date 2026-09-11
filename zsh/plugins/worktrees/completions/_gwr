@@ -2,12 +2,12 @@
 
 # Flags as `gwr --help` lists them.
 
-# Candidates come from the CLI, never from this file: `gwl --complete` prints
-# every worktree as name and path, and compadd does the narrowing.
-(( $+functions[__worktrees_names] )) || __worktrees_names() {
+# Candidates come from the CLI, never from this file: `gwr --complete` prints
+# the worktrees gwr can reach, which is not gwl's list.
+(( $+functions[__gwr_targets] )) || __gwr_targets() {
     local -a names descs
     local line
-    for line in ${(f)"$(command gwl --complete 2>/dev/null)"}; do
+    for line in ${(f)"$(command gwr --complete 2>/dev/null)"}; do
         names+=( ${line%%$'\t'*} )
         descs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
     done
@@ -26,4 +26,4 @@ _arguments -s \
     '--explain[print every git command and exit]' \
     '--version[show the version and exit]' \
     '(-h --help)'{-h,--help}'[show the help and exit]' \
-    '1:worktree:__worktrees_names'
+    '1:worktree:__gwr_targets'
