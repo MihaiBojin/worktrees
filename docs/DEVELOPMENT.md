@@ -182,6 +182,7 @@ Pushing the tag starts `publish.yml`:
 
 ```
 build ──> publish-test ──> publish ──> release
+                                   └─> verify
 ```
 
 `build` runs three guards before it does anything, cheapest first. The tag has
@@ -195,6 +196,12 @@ TestPyPI gates the real upload on purpose: a PyPI upload cannot be undone or
 replaced, so a failed rehearsal stops the run while there is still nothing to
 pin against. The merge happens first and the irreversible step is last, so
 everything recoverable is already done by the time anything is published.
+
+`release` needs the upload and nothing else. `verify` installs the version
+from PyPI and runs what it installed, on its own, because an index serves what
+it has accepted after a delay it does not bound: 0.2.1 took longer than the
+script waited and a correct release went red. A red `verify` says PyPI is
+slow, not that the version is missing. It gives up after about 32 minutes.
 
 `workflow_dispatch` against a tag ref re-runs a release whose publish failed.
 
