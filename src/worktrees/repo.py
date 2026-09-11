@@ -14,7 +14,7 @@ from .git import git
 
 
 @git("worktree list --porcelain -z")
-def worktree_records() -> None:
+def worktree_list() -> None:
     """Every worktree, NUL-delimited."""
 
 
@@ -116,7 +116,7 @@ def worktrees(repo: str | os.PathLike[str] | None = None) -> list[Worktree]:
     newline, so a directory name holding one parses into two worktrees,
     neither of which exists.
     """
-    out = worktree_records(repo=repo).out
+    out = worktree_list(repo=repo).out
     found: list[Worktree] = []
     seen: set[str] = set()
     path = sha = branch = ""
