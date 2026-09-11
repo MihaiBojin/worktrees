@@ -1,0 +1,12 @@
+#compdef gwnb
+
+# Flags as `gwnb --help` lists them.
+
+_arguments -s \
+    '--no-fetch[branch off what is already here]' \
+    '--json[the result as data]' \
+    '(-q --quiet)'{-q,--quiet}'[say nothing on success]' \
+    '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+    '--explain[print every git command and exit]' \
+    '--version[show the version and exit]' \
+    '(-h --help)'{-h,--help}'[show the help and exit]'

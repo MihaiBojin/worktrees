@@ -1,0 +1,26 @@
+#compdef gwl
+
+# Flags as `gwl --help` lists them.
+
+# Candidates come from the CLI, never from this file: `gwl --complete` prints
+# every worktree as name and path, and compadd does the narrowing.
+(( $+functions[__worktrees_names] )) || __worktrees_names() {
+    local -a names descs
+    local line
+    for line in ${(f)"$(command gwl --complete 2>/dev/null)"}; do
+        names+=( ${line%%$'\t'*} )
+        descs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
+    done
+    (( $#names )) || return 1
+    _describe -t worktrees worktree descs names
+}
+
+_arguments -s \
+    '(-l --list)'{-l,--list}'[print them all and pick none]' \
+    '--json[the result as data]' \
+    '(-q --quiet)'{-q,--quiet}'[the path alone]' \
+    '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+    '--explain[print every git command and exit]' \
+    '--version[show the version and exit]' \
+    '(-h --help)'{-h,--help}'[show the help and exit]' \
+    '1:worktree:__worktrees_names'

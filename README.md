@@ -86,24 +86,46 @@ Python 3.11 or newer, and no dependencies. The standard library answers every
 question this asks, so an invocation pays for the interpreter and nothing
 else.
 
-`gwa`, `gwl`, `gwm` and `gwr` need a shell function as well, and it arrives
-through a plugin manager. Fisher takes the four from `functions/`, plus the
-`conf.d/` file that initialises nothing:
+That is the whole install for `gws`, `gwp`, `gwnb`, `gwrot` and `gwh`. The
+four that land you somewhere need a shell function too, and every command has
+a completion, both of which arrive through a plugin manager.
+
+### fish
 
 ```console
 fisher install MihaiBojin/worktrees
 ```
 
-Antidote takes a `path:` into it:
+Fisher copies `functions/` and `completions/` from the repository root, so the
+four functions and ten completions land together. Nothing has to be sourced.
+
+### zsh
+
+Antidote takes a `path:` into the repository:
 
 ```
 MihaiBojin/worktrees path:zsh/plugins/worktrees   # in zsh_plugins.txt
 ```
 
+The plugin puts its own `functions/` and `completions/` on `fpath` and
+autoloads the four. Completion needs `compinit`, which most zsh setups already
+run; without one, add it after the plugin loads:
+
+```zsh
+autoload -Uz compinit && compinit
+```
+
+### What the shell code does
+
 Each function runs `command <name>`, reads the one path the binary printed and
-`cd`s there, and carries nothing else. `gws`, `gwp`, `gwnb` and `gwrot` change
-no directory, so they ship as console scripts alone and answer the same from a
-prompt and from a script.
+`cd`s there, and carries nothing else. `gws`, `gwp`, `gwnb`, `gwrot` and `gwh`
+change no directory, so they ship as console scripts alone and answer the same
+from a prompt and from a script.
+
+The completions hold no candidate of their own. `gw --complete` prints every
+subcommand and shorthand, `gwl --complete` prints every worktree, and both
+shells narrow what those return, so the matching stays in one place and a
+command added to the table needs no edit in either shell.
 
 Neither manager puts a binary on `$PATH`, which is why the two installs stay
 separate.

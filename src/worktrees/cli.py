@@ -450,6 +450,10 @@ def _add_list_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "-l", "--list", action="store_true", help="print them all and pick none"
     )
+    # For the shell completions, which must not hold a candidate of their own.
+    # Hidden because a person has --list, which is the same answer formatted
+    # for eyes.
+    p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
     _add_cd_flags(p)
 
 
@@ -474,6 +478,9 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
+    # Its own, not gwl's: assess skips the main checkout, so gwr can never act
+    # on it and offering it would complete to "no worktree matches".
+    p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
     _add_cd_flags(p)
 
 
@@ -529,6 +536,15 @@ def run_list(args: argparse.Namespace) -> int:
 
     here = R.toplevel().out.strip()
     rows = [w for w in R.worktrees() if "bare" not in w.flags]
+
+    if args.complete:
+        # Every one of them, the current included: the shell does the
+        # narrowing, and a completion that hides a candidate is worse than one
+        # that offers a useless one.
+        for w in rows:
+            print(f"{w.label}\t{w.path}")
+        return 0
+
     found = pick.matches(args.query, rows)
 
     if args.json:
@@ -603,6 +619,15 @@ def run_remove(args: argparse.Namespace) -> int:
     options.verbose = args.verbose
     if args.explain:
         return _explain()
+
+    if args.complete:
+        # Every worktree this can reach, and no verdict: whether a branch is
+        # finished is what gwr works out after you pick one, not what decides
+        # whether its name can be typed. No fetch either, so TAB stays fast.
+        for w in R.worktrees():
+            if "bare" not in w.flags and not w.main:
+                print(f"{w.label}\t{w.path}")
+        return 0
 
     rows, _, _ = _assess(args, judge=wt_mod.removable)
     found = pick.matches(
@@ -706,6 +731,20 @@ def run_help(args: argparse.Namespace) -> int:
         "`gw <command> --help` has the rest. A non-empty NO_COLOR turns the "
         "colour off."
     )
+    return 0
+
+
+def _complete_commands() -> int:
+    """Every subcommand and shorthand, for the shell completions.
+
+    Name and description, tab-separated, which is what fish reads directly
+    and what zsh splits for `_describe`. It comes from the same table `gwh`
+    prints, so a command added there needs no edit in either shell file.
+    """
+    for name, c in _COMMANDS.items():
+        print(f"{name}\t{c.about}")
+        for alias in c.aliases:
+            print(f"{alias}\t{c.about}")
     return 0
 
 
@@ -931,6 +970,8 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
         if command.flags:
             command.flags(sub)
     args_in = sys.argv[1:] if argv is None else argv
+    if args_in and args_in[0] == "--complete":
+        return _complete_commands()
     if (
         args_in
         and args_in[0].startswith("-")

@@ -81,15 +81,44 @@ def add(
         warn(f"{remote} could not be fetched; branching from what is already here")
 
     existing = bool(R.ref_exists(f"refs/heads/{name}", repo=repo))
+    made = _first_absent(dest.parent, main)
     dest.parent.mkdir(parents=True, exist_ok=True)
 
-    if existing:
-        worktree_add_existing(str(dest), name, repo=repo)
-        return Landed(str(dest), name, created=False)
+    try:
+        if existing:
+            worktree_add_existing(str(dest), name, repo=repo)
+            return Landed(str(dest), name, created=False)
 
-    start = base or _head(remote, fetch, warn, repo=repo)
-    worktree_add(name, str(dest), start, repo=repo)
+        start = base or _head(remote, fetch, warn, repo=repo)
+        worktree_add(name, str(dest), start, repo=repo)
+    except (GitError, Refusal, Refused):
+        # The directories went in before git was asked, so a refusal leaves
+        # them behind. Nothing removes them here: this command says what it
+        # made, and deleting a directory the caller cannot see named is the
+        # move this tooling refuses everywhere else.
+        if made is not None and made.exists() and callable(warn):
+            warn(f"git refused, and {made} is left behind, empty")
+        raise
+
     return Landed(str(dest), name, created=True)
+
+
+def _first_absent(dest_parent: Path, main: str) -> Path | None:
+    """The topmost directory `mkdir -p` would have to create, or None.
+
+    Bounded by the worktrees root, the only tree this command may make. None
+    when every directory down to `dest_parent` is already there, which is the
+    ordinary case and leaves nothing to report.
+    """
+    root = layout.worktrees_root(main)
+    made: Path | None = None
+    d = dest_parent
+    while d == root or root in d.parents:
+        if d.exists():
+            break
+        made = d
+        d = d.parent
+    return made
 
 
 def _head(

@@ -85,9 +85,16 @@ Nothing installs this from a checkout on the user's disk. It is consumed as a
 third-party plugin and a third-party tool, so anything that assumes a local
 clone at a known path is wrong here.
 
-A completion asks the CLI for its candidates rather than deriving them. The
-ranking is tested in Python; a shell file that reimplements it is a second
-answer to the same question.
+A completion asks the CLI for its candidates rather than deriving them, and
+`--complete` is how: `gw --complete` prints every subcommand and shorthand,
+`gwl --complete` prints every worktree, both as name and description separated
+by a tab, which fish reads directly and zsh splits for `_describe`. Hidden from
+`--help`, because a person has `gwh` and `--list` for the same answers.
+
+No shell file holds a candidate or a rank. What each file does carry is its own
+command's flags, and `tests/test_completions.py` diffs those against `--help`
+in both directions for both shells: a renamed flag fails there rather than
+going quiet in a completion nobody is watching.
 
 ## The picker is Python's, and there is no fzf
 

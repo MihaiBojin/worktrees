@@ -1,0 +1,16 @@
+#compdef gwp
+
+# Flags as `gwp --help` lists them.
+
+_arguments -s \
+    '--branch[consider only that branch]:branch:' \
+    '--no-fetch[use the refs already here]' \
+    '--delete-ignored[count gitignored files as removable]' \
+    '--no-forge[decide from git alone; never ask the forge]' \
+    '(-y --yes)'{-y,--yes}'[do not ask before removing]' \
+    '--json[verdicts as data]' \
+    '(-q --quiet)'{-q,--quiet}'[verdicts only]' \
+    '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+    '--explain[print every git command and exit]' \
+    '--version[show the version and exit]' \
+    '(-h --help)'{-h,--help}'[show the help and exit]'

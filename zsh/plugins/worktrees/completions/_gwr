@@ -1,0 +1,29 @@
+#compdef gwr
+
+# Flags as `gwr --help` lists them.
+
+# Candidates come from the CLI, never from this file: `gwr --complete` prints
+# the worktrees gwr can reach, which is not gwl's list.
+(( $+functions[__gwr_targets] )) || __gwr_targets() {
+    local -a names descs
+    local line
+    for line in ${(f)"$(command gwr --complete 2>/dev/null)"}; do
+        names+=( ${line%%$'\t'*} )
+        descs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
+    done
+    (( $#names )) || return 1
+    _describe -t worktrees worktree descs names
+}
+
+_arguments -s \
+    '(-f --force)'{-f,--force}'[remove it even when unfinished]' \
+    '--delete-ignored[also delete its gitignored files]' \
+    '--no-fetch[use the refs already here]' \
+    '(-y --yes)'{-y,--yes}'[do not ask]' \
+    '--json[the result as data]' \
+    '(-q --quiet)'{-q,--quiet}'[the path alone]' \
+    '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+    '--explain[print every git command and exit]' \
+    '--version[show the version and exit]' \
+    '(-h --help)'{-h,--help}'[show the help and exit]' \
+    '1:worktree:__gwr_targets'
