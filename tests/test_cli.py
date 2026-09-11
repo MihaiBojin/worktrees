@@ -89,7 +89,7 @@ def test_status_leaves_a_removable_worktree_alone(world) -> None:
     wt = world.worktree("done")
     p = run(world, "gws", "--no-fetch")
     assert p.returncode == 0, p.stderr
-    assert "go" in p.stdout
+    assert "remove" in p.stdout
     assert "1 removable, 0 kept, 0 unclear" in p.stdout
     assert "gwp removes the 1 marked removable" in p.stderr
     assert wt.exists()
@@ -108,7 +108,7 @@ def test_status_json_is_data_on_stdout(world) -> None:
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
     assert payload["head"] == "refs/heads/main"
-    assert payload["verdicts"][0]["verdict"] == "go"
+    assert payload["verdicts"][0]["verdict"] == "remove"
     assert payload["stale"] == []
 
 
@@ -147,7 +147,9 @@ def test_prune_removes_exactly_what_status_marks(world, extra: tuple[str, ...]) 
 
     p = run(world, "gws", "--no-fetch", "--json", *extra)
     marked = sorted(
-        v["branch"] for v in json.loads(p.stdout)["verdicts"] if v["verdict"] == "go"
+        v["branch"]
+        for v in json.loads(p.stdout)["verdicts"]
+        if v["verdict"] == "remove"
     )
 
     p = run(world, "gwp", "--no-fetch", "--yes", "--json", *extra)

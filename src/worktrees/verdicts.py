@@ -10,11 +10,11 @@ from . import forge
 from . import repo as R
 from .merged import merged_reason
 
-# The verdicts. `unknown` is not `keep` with a softer word: "no upstream, so
-# nothing says whether this was pushed" is a different fact from "this is not
-# merged", and a sweep printing them the same way invites somebody to act on
-# the wrong one.
-GO = "go"
+# The verdicts, each the instruction it gives. `unknown` is not `keep` with a
+# softer word: "no upstream, so nothing says whether this was pushed" is a
+# different fact from "this is not merged", and a sweep printing them the same
+# way invites somebody to act on the wrong one.
+REMOVE = "remove"
 KEEP = "keep"
 UNKNOWN = "unknown"
 
@@ -91,7 +91,7 @@ def assess(
             # Detached: finished when some ref already reaches the commit,
             # which is the question `git worktree remove` asks of one.
             if R.refs_containing(wt.sha, repo=repo).out.strip():
-                say(GO, "its commit is reached by a ref")
+                say(REMOVE, "its commit is reached by a ref")
             else:
                 say(UNKNOWN, f"no ref reaches {wt.sha}")
             continue
@@ -122,7 +122,7 @@ def assess(
             )
             continue
 
-        say(GO, reason)
+        say(REMOVE, reason)
     return out
 
 
@@ -158,4 +158,4 @@ def _forge_reason(
             "are not in it",
             KEEP,
         )
-    return f"its {request.noun} #{request.number} is {lower}", GO
+    return f"its {request.noun} #{request.number} is {lower}", REMOVE

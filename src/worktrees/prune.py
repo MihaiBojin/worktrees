@@ -1,4 +1,4 @@
-"""Removing the worktrees `status` marked `go`, and nothing else."""
+"""Removing the worktrees `status` marked `remove`, and nothing else."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import repo as R
 from .git import GitError, Refused, git
-from .verdicts import GO, Verdict
+from .verdicts import REMOVE, Verdict
 
 
 @git("worktree prune", mutates=True)
@@ -38,12 +38,12 @@ def object_type(sha: str) -> None:
 
 
 def removable(verdicts: list[Verdict]) -> list[Verdict]:
-    """The `go` rows, which is the whole of what prune may touch.
+    """The `remove` rows, which is the whole of what prune may touch.
 
-    The one place the set is derived. `status` prints these as `go` and
+    The one place the set is derived. `status` prints these as `remove` and
     `prune` removes these, so the two cannot drift.
     """
-    return [v for v in verdicts if v.verdict == GO]
+    return [v for v in verdicts if v.verdict == REMOVE]
 
 
 def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str:

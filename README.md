@@ -62,7 +62,7 @@ separate.
 ```console
 $ gws
 VERDICT  BRANCH         WHY
-go       squash-merged  squash-merged
+remove   squash-merged  squash-merged
 keep     dirty-work     it has uncommitted changes
 keep     holds-secrets  merged, but holds 2 ignored path(s); pass --delete-ignored
 unknown  never-pushed   not merged into main, and no upstream says whether its commits were pushed
@@ -72,11 +72,12 @@ unknown  never-pushed   not merged into main, and no upstream says whether its c
 
 ### Three verdicts
 
-`unknown` is not `keep` with a softer word.
+Each is the instruction it gives. `unknown` is not `keep` with a softer
+word.
 
 | | means |
 | --- | --- |
-| `go` | finished, and safe to remove. The reason says how it was proved: `merged`, `squash-merged`, or a ref reaching a detached commit |
+| `remove` | finished, and safe to remove. The reason says how it was proved: `merged`, `squash-merged`, or a ref reaching a detached commit |
 | `keep` | something says no. Uncommitted work, the head branch, a lock, the worktree you are standing in, ignored files, or a branch simply not merged |
 | `unknown` | it could not tell. A branch with no upstream is the usual one: nothing says whether its commits were pushed anywhere |
 
@@ -120,7 +121,7 @@ squash-merged  ~/git/.worktrees/squash-merged/repo
 remove 1 worktree(s)? [y/N]
 ```
 
-It removes exactly the rows `gws` marks `go`, under the same flags, and one
+It removes exactly the rows `gws` marks `remove`, under the same flags, and one
 function returns that set for both. What goes and what puts it back is printed
 before anything does, and neither `--quiet` nor `--yes` silences it.
 
@@ -252,7 +253,7 @@ Every command here is a console script, so a script reaches it with no shell
 loaded at all. `gws` and `gwnb` answer identically either way:
 
 ```console
-$ gws --json | jq -r '.verdicts[] | select(.verdict=="go") | .branch'
+$ gws --json | jq -r '.verdicts[] | select(.verdict=="remove") | .branch'
 fix-parser
 
 $ fish -c 'gws --json' | jq '.verdicts | length'

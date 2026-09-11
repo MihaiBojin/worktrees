@@ -73,7 +73,7 @@ def test_a_merged_request_finishes_a_branch_git_cannot_see(world, with_forge) ->
         R.worktrees(), "", "refs/heads/main", "main", False, ask_forge=True
     )
     row = next(v for v in rows if v.branch == "stacked")
-    assert row.verdict == verdicts.GO
+    assert row.verdict == verdicts.REMOVE
     assert row.why == "its pull request #12 is merged"
 
 

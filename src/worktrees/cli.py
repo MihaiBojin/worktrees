@@ -554,7 +554,7 @@ def run_remove(args: argparse.Namespace) -> int:
         return 0
     chosen = by_path[picked.path]
 
-    if chosen.verdict != prune.GO and not args.force:
+    if chosen.verdict != prune.REMOVE and not args.force:
         _err(f"{chosen.label} is not finished: {chosen.why}")
         _err("pass --force to remove the worktree anyway; the branch is kept")
         return 1
@@ -569,7 +569,7 @@ def run_remove(args: argparse.Namespace) -> int:
             _err(str(exc))
             return 2
 
-    keep_branch = chosen.verdict != prune.GO
+    keep_branch = chosen.verdict != prune.REMOVE
     # --force keeps the branch: the worktree was in the way, the work was not.
     destination = wt_mod.remove(
         prune.Verdict(chosen.verdict, "", chosen.path, chosen.why)

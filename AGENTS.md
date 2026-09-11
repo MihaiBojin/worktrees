@@ -210,10 +210,10 @@ pushed, and no upstream at all stays `unknown` rather than becoming zero.
 
 ## Three verdicts, and the third is not a softer second
 
-`go` was proved finished, `keep` has a reason not to be, and `unknown` could
+`remove` was proved finished, `keep` has a reason not to be, and `unknown` could
 not tell. "No upstream, so nothing says whether this was pushed" is a different
 fact from "not merged", and printing them the same way invites somebody to act
-on the wrong one. `prune.removable()` returns the `go` set and both commands
+on the wrong one. `prune.removable()` returns the `remove` set and both commands
 call it, so what one prints and the other removes cannot drift.
 
 ## Reproduce a failure before asserting its fix
