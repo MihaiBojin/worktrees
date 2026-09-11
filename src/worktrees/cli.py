@@ -191,12 +191,19 @@ def run_status(args: argparse.Namespace) -> int:
                 {
                     "head": head,
                     "stale": [w.path for w in stale],
+                    # `ignored` and `sha` are fields rather than facts to
+                    # parse back out of `why`. A caller deciding whether to
+                    # pass --delete-ignored wants the count, not a sentence
+                    # that happens to contain it, and the sha is what the
+                    # verdict was formed against.
                     "verdicts": [
                         {
                             "verdict": v.verdict,
                             "branch": v.branch,
                             "path": v.path,
                             "why": v.why,
+                            "ignored": v.ignored,
+                            "sha": v.sha,
                         }
                         for v in rows
                     ],
@@ -270,7 +277,7 @@ def run_prune(args: argparse.Namespace) -> int:
     # What goes, and what puts it back, before anything does. On stderr with
     # the rest of the diagnostics, so stdout carries the result alone;
     # --quiet and --yes do not silence it.
-    prune.plan(go, args.delete_ignored, _err)
+    prune.plan(go, _err)
 
     if not args.yes:
         try:
@@ -281,7 +288,7 @@ def run_prune(args: argparse.Namespace) -> int:
             _err(render.err(str(exc), RED))
             return 2
 
-    failed = prune.sweep(go, args.delete_ignored, _err)
+    failed = prune.sweep(go, _err)
     removed = [v.label for v in go]
     if args.json:
         print(json.dumps({"removed": removed, "failed": failed}, indent=2))
@@ -653,14 +660,20 @@ def run_remove(args: argparse.Namespace) -> int:
     chosen = by_path[picked.path]
 
     if chosen.verdict != prune.REMOVE and not args.force:
+        # A finished branch held back by ignored files is not an unfinished
+        # branch. Saying so would contradict the reason printed beside it,
+        # and --force is the wrong answer to it: it deletes those files just
+        # the same, and keeps a branch whose work already landed.
+        state = "is finished" if chosen.ignored else "is not finished"
         _err(
-            f"{render.err(chosen.label, BOLD)} is not finished: "
+            f"{render.err(chosen.label, BOLD)} {state}: "
             f"{render.err(chosen.why, YELLOW)}"
         )
-        _err("pass --force to remove the worktree anyway; the branch is kept")
+        if not chosen.ignored:
+            _err("pass --force to remove the worktree anyway; the branch is kept")
         return 1
 
-    prune.plan([chosen], args.delete_ignored, _err)
+    prune.plan([chosen], _err)
     if not args.yes:
         try:
             if not prune.confirm(1):

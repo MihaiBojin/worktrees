@@ -147,6 +147,35 @@ def test_status_json_is_data_on_stdout(world) -> None:
     assert payload["stale"] == []
 
 
+def test_json_carries_the_ignored_count_as_a_number(world) -> None:
+    """A caller deciding whether to pass --delete-ignored wants the count, not
+    a sentence it has to find the count inside."""
+    wt = world.worktree("holds-secrets")
+    world.repo.joinpath(".gitignore").write_text(".env\n")
+    world.git("add", ".gitignore")
+    world.git("commit", "--quiet", "-m", "ignore")
+    world.git("merge", "--quiet", "--ff-only", "main", at=wt)
+    wt.joinpath(".env").write_text("S=1\n")
+
+    p = run(world, "gws", "--no-fetch", "--no-forge", "--json")
+    assert p.returncode == 0, p.stderr
+    row = json.loads(p.stdout)["verdicts"][0]
+    assert row["ignored"] == 1
+    assert row["verdict"] == "keep"
+    # and the sentence still says it, for the person reading the table
+    assert "1 ignored path(s)" in row["why"]
+
+
+def test_json_carries_the_sha_the_verdict_was_formed_against(world) -> None:
+    wt = world.worktree("done")
+    head = world.git("rev-parse", "HEAD", at=wt)
+    p = run(world, "gws", "--no-fetch", "--no-forge", "--json")
+    assert p.returncode == 0, p.stderr
+    row = json.loads(p.stdout)["verdicts"][0]
+    assert row["sha"] == head
+    assert len(row["sha"]) == 40
+
+
 def test_status_names_a_stale_record_rather_than_clearing_it(world) -> None:
     """`git worktree prune` mutates, so a read-only command may not call it."""
     wt = world.worktree("gone")
@@ -252,8 +281,8 @@ def test_prune_deletes_the_branch_and_the_empty_parents(world) -> None:
     assert not (world.parent / ".worktrees" / "done").exists()
 
 
-def test_a_squash_merged_branch_survives_branch_d(world) -> None:
-    """The checkout goes; the branch stays, because -d refuses it."""
+def test_a_squash_merged_branch_goes_with_its_checkout(world) -> None:
+    """The proof `-d` cannot read is the proof this deletes on."""
     wt = world.worktree("squashed")
     world.commit("f.txt", "one\n", at=wt)
     (world.repo / "f.txt").write_text("one\n")
@@ -263,8 +292,9 @@ def test_a_squash_merged_branch_survives_branch_d(world) -> None:
     p = run(world, "gwp", "--no-fetch", "--yes")
     assert p.returncode == 0, p.stderr
     assert not wt.exists()
-    assert world.git("rev-parse", "--verify", "refs/heads/squashed")
-    assert "branch squashed kept" in p.stderr
+    assert "squashed" not in world.git("branch", "--format=%(refname:short)").split()
+    assert "kept" not in p.stderr
+    assert "restore with: git branch squashed " in p.stderr
 
 
 def test_prune_clears_a_stale_record(world) -> None:
@@ -307,7 +337,7 @@ def test_explain_lists_every_command_and_runs_none(world) -> None:
     p = run(world, "gws", "--explain")
     assert p.returncode == 0, p.stderr
     assert "git worktree list --porcelain -z" in p.stdout
-    assert "git branch -d -- $branch" in p.stdout
+    assert "git update-ref -d $ref $sha" in p.stdout
     assert "git branch -D" not in p.stdout
 
 
@@ -329,8 +359,9 @@ def test_status_never_issues_a_mutating_command(world) -> None:
     issued = [ln for ln in p.stderr.splitlines() if ln.startswith("+ git")]
     assert issued
     for line in issued:
-        for forbidden in ("worktree prune", "worktree remove", "branch -d", "checkout"):
-            assert forbidden not in line, line
+        forbidden = ("worktree prune", "worktree remove", "update-ref", "checkout")
+        for bad in forbidden:
+            assert bad not in line, line
 
 
 def test_you_cannot_prune_the_worktree_you_stand_in(world) -> None:

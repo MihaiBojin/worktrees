@@ -8,7 +8,7 @@ import pytest
 
 from worktrees import prune, verdicts
 from worktrees import repo as R
-from worktrees.git import Refused, guard
+from worktrees.git import GitError, Refused, guard
 
 # --------------------------------------------------------------------------
 # Hole 1: a squash merge inverts `git branch -d`
@@ -145,6 +145,33 @@ def test_ignored_directory_collapses_to_one_entry(world) -> None:
 
 
 # --------------------------------------------------------------------------
+# Hole 1, the other half: deleting the branch the probe proved
+# --------------------------------------------------------------------------
+
+
+def test_a_branch_that_moved_since_the_verdict_is_not_deleted(world) -> None:
+    """`update-ref -d` names the sha the ref must still hold, so a commit
+    landing between the judgement and the removal fails the delete."""
+    wt = world.worktree("squashed")
+    world.commit("f.txt", "one\n", at=wt)
+    (world.repo / "f.txt").write_text("one\n")
+    world.git("add", "--", "f.txt")
+    world.git("commit", "--quiet", "-m", "squash")
+
+    v = {
+        x.branch: x
+        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    }["squashed"]
+    assert v.verdict == verdicts.REMOVE
+
+    after = world.commit("late.txt", "late\n", at=wt)
+    assert after != v.sha
+    with pytest.raises(GitError):
+        prune.ref_delete("refs/heads/squashed", v.sha, repo=world.repo)
+    assert world.git("rev-parse", "refs/heads/squashed") == after
+
+
+# --------------------------------------------------------------------------
 # Gate 1: a ref naming a branch resolves to that branch
 # --------------------------------------------------------------------------
 
@@ -248,11 +275,43 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
         ("worktree", "remove", "-f", "/tmp/x"),
         ("branch", "-D", "x"),
         ("branch", "--delete", "--force", "x"),
+        ("update-ref", "-d", "refs/heads/x"),
+        ("update-ref", "-d", "refs/heads/x", ""),
+        ("update-ref", "-d", "refs/heads/x", "HEAD"),
+        ("update-ref", "-d", "refs/heads/x", "main"),
+        ("update-ref", "-d", "refs/heads/x", "0e68734"),
+        ("update-ref", "-d", "refs/heads/x", "f" * 40, "extra"),
+        ("update-ref", "--stdin"),
     ],
 )
 def test_the_guard_refuses(argv) -> None:
     with pytest.raises(Refused):
         guard(argv)
+
+
+def test_git_reads_an_empty_old_value_as_no_old_value(world) -> None:
+    """The premise behind the sha check, reproduced.
+
+    `update-ref -d <ref> ""` is not a compare-and-delete that fails. git
+    takes the branch at exit 0, whatever it pointed at, so a guard counting
+    arguments rather than reading the last one passes `branch -D`.
+    """
+    world.git("branch", "victim", "main")
+    subprocess.run(
+        ["git", "-C", str(world.repo), "update-ref", "-d", "refs/heads/victim", ""],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    gone = subprocess.run(
+        ["git", "-C", str(world.repo), "rev-parse", "--verify", "refs/heads/victim"],
+        capture_output=True,
+        text=True,
+    )
+    assert gone.returncode != 0, "git kept the branch, so this premise is stale"
+
+    with pytest.raises(Refused):
+        guard(["update-ref", "-d", "refs/heads/victim", ""])
 
 
 @pytest.mark.parametrize(
@@ -261,6 +320,8 @@ def test_the_guard_refuses(argv) -> None:
         ("push", "--force-with-lease", "origin", "main"),
         ("worktree", "remove", "--", "/tmp/x"),
         ("branch", "-d", "--", "x"),
+        ("update-ref", "-d", "refs/heads/x", "0" * 40),
+        ("update-ref", "-d", "refs/heads/x", "a" * 64),
         ("clean", "-n"),
         ("status", "--porcelain"),
     ],

@@ -107,6 +107,16 @@ def _short(argv: Sequence[str], letter: str) -> bool:
     )
 
 
+def _full_sha(value: str) -> bool:
+    """A complete object name, 40 hex digits or 64 in a SHA-256 repository.
+
+    An abbreviation is not one, and neither is `HEAD`, `main` or the empty
+    string. git reads the empty string here as "no old value" and deletes
+    whatever the ref points at, so this is the whole of the check.
+    """
+    return len(value) in (40, 64) and all(c in "0123456789abcdef" for c in value)
+
+
 def guard(argv: Sequence[str]) -> None:
     """Raise Refused for a command that can lose work."""
     if not argv:
@@ -144,6 +154,18 @@ def guard(argv: Sequence[str]) -> None:
         raise Refused(
             f"{_ABSOLUTE} `git branch -D`; a branch is deleted on proof of merge "
             "or not at all"
+        )
+    # --stdin deletes refs with no -d anywhere in argv, so it is refused with
+    # the rest: the shape below is the only delete this program may issue.
+    if (
+        head == "update-ref"
+        and _has(rest, "-d", "--stdin")
+        and not (len(rest) == 3 and rest[0] == "-d" and _full_sha(rest[2]))
+    ):
+        raise Refused(
+            f"{_ABSOLUTE} `git update-ref` deleting a ref without naming the full "
+            "sha it must still hold; an absent, empty or abbreviated old value, "
+            "or a name like HEAD, is `git branch -D` spelled longer"
         )
 
 

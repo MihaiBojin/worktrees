@@ -12,6 +12,108 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.2.0 - 2026-09-11
+
+A squash-merged branch goes with its checkout, every removal names the
+ignored files it deletes, `gwl` finds every worktree and `gwp` says why it
+removed nothing. Every command is also reachable by a short name, output takes
+colour, and both shells complete every command.
+
+A branch the probe proved squash-merged is deleted with its worktree. It used
+to survive: the verdict came from comparing content, and the delete then went
+through `git branch -d`, which reads history and refuses exactly that case, so
+`gwp` removed the checkout and left the branch behind with git's refusal
+printed under it. The delete is now `git update-ref -d <ref> <sha>` against the
+sha the verdict was formed on, so a commit landing between the verdict and the
+removal fails it rather than going with it. `git branch -D` stays refused, and
+so does `update-ref -d` with no sha, which is the same thing spelled longer.
+
+Every removal names the ignored files it is about to delete, not just the ones
+under `--delete-ignored`. `gwr --force` used to print a worktree, remove it,
+and say nothing about the `.env` inside it; `git worktree remove` takes the
+whole directory whatever flag got it there, so `--delete-ignored` decides
+consent and never decides what is deleted.
+
+`gwr` no longer calls a finished branch unfinished. A worktree holding ignored
+files was refused with `is not finished: squash-merged, but holds 6 ignored
+path(s)`, contradicting itself in one line, and the flag it offered was
+`--force`, which keeps a branch whose work already landed and deletes those
+files anyway. It now says `is finished` and names `--delete-ignored` alone.
+
+`gwl` offers the main checkout, and never the worktree you are standing in.
+In a repository with one linked worktree, standing in it, `gwl` printed
+nothing and exited 0: the main checkout was filtered out of the candidates,
+leaving one, which the picker took outright and handed back the path you were
+already at. `gwl main` now finds the main checkout whatever branch it stands
+on, two worktrees and no query go to the other one, and asking for the one
+you are in says `already in <branch>` and stays put. `--list` shows every
+worktree and marks that one. A repository with no linked worktrees says so
+and names `gwa`, where it used to answer as though nothing were there.
+
+`gws --json` carries `ignored` and `sha` on every verdict. The count of
+ignored paths reads as a number rather than as a phrase inside `why`, and the
+sha is the commit the verdict was formed against, which is the value a caller
+would otherwise have to go and read for itself.
+
+`gwp` with nothing removable prints the verdict table. It used to print
+`nothing to remove; gws says why`, so the reason each worktree stayed cost a
+second command to read.
+
+`gwh` is the help, so nothing needs `gw --help` typed out. It joins `gwa`,
+`gwl`, `gwm`, `gwr`, `gws`, `gwp`, `gwnb`, `gwrot` and `gw` on `$PATH`, and
+`gw` still takes the same set as subcommands. `gw` with no subcommand prints
+that table too, where it used to print argparse's usage. `gw` has its own
+entry point now, so a usage error from it names `gw` rather than `worktrees`.
+
+Every subcommand answers to a shorthand as well as its name: `s` and `st` for
+`status`, `p` for `prune`, `a` for `add`, `l` and `ls` for `list`, `m` and
+`mv` for `move`, `rm` for `remove`, `nb` and `new` for `new-branch`, `rot` for
+`rotate`, `h` for `help`. One table in the CLI carries every name, so what
+`gwh` prints, what the completions offer and what `gw` accepts cannot
+disagree, and it refuses to import if two commands ever claim one name.
+
+Output is coloured, and `NO_COLOR` turns it off. The check reads the value
+rather than the key, which is the no-color.org rule: `NO_COLOR=` unsets the
+request instead of making it. A redirect or a pipe turns colour off as well,
+because `cd $(gwa x)` and `jq` read that output and neither wants escapes.
+
+Completion covers every command in fish and in zsh, ten files per shell. The
+candidates come from the CLI and never from a shell file: `gw --complete`
+prints every subcommand and shorthand, `gwl --complete` and `gwr --complete`
+print worktrees, each as a name and a description separated by a tab, which
+fish reads directly and zsh splits for `_describe`. A command added to the
+table needs no edit in either shell.
+
+`gwl` and `gwr` do not offer the same set. `gwr` cannot remove the main
+checkout, so offering it would complete to "no worktree matches"; for `gwl`
+it is the one destination always there.
+
+`gwa` says when it leaves something behind. It creates the directories before
+git is asked, so a refusal used to strand an empty one silently.
+
+The worktree picker prints destinations in full rather than abbreviating them
+to `~/git/...`. The abbreviation was not what got printed and not what you
+could paste.
+
+### Choices
+
+A branch is deleted by `update-ref -d <ref> <sha>` rather than by `branch -D`.
+Both force the delete; only one names what it expects to find, which turns a
+concurrent commit into a failure instead of a loss. The guard reads that last
+argument rather than counting the arguments: git takes `""` as "no old value"
+and deletes the branch at exit 0, so a rule checking the shape would have
+passed the one spelling that matters. `branch -d` was the
+original choice and it inverts on the case this tool exists for: it reads
+history, a squash merge leaves none, and deferring to it meant the content
+probe bought the checkout and never the branch.
+
+Completion flags live in the shell files, because that is the half that rots
+without failing: rename a flag and nothing breaks, the candidate just stops
+being offered. `test_completions.py` diffs both shells against `--help` in
+both directions rather than trusting either copy, and drives every candidate
+`gwr` offers back through `gwr` rather than comparing against a second copy
+of the filter.
+
 ## 0.1.0 - 2026-09-11
 
 The first release. Eight commands for git worktrees, four of which answer a

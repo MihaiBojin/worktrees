@@ -9,7 +9,7 @@ authors = [
 ]
 # Static, and the single source of truth for the version. Bump it in a pull
 # request and run `uv lock`; the release tag only has to agree with it.
-version = "0.1.0"
+version = "0.2.0"
 # The standard library answers every question this asks. A dependency here
 # would be paid on every invocation, and the whole reason this is Python is
 # that an invocation costs ~25 ms.
