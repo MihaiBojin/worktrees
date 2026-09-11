@@ -14,12 +14,27 @@ the reader's time: what was chosen, and what the alternative failed to do.
 
 ## 0.2.0 - 2026-09-11
 
-Every command is reachable by a short name, output takes colour, and both
+`gwl` finds every worktree and `gwp` says why it removed nothing. Every
+command is also reachable by a short name, output takes colour, and both
 shells complete every command.
+
+`gwl` offers the main checkout, and never the worktree you are standing in.
+In a repository with one linked worktree, standing in it, `gwl` printed
+nothing and exited 0: the main checkout was filtered out of the candidates,
+leaving one, which the picker took outright and handed back the path you were
+already at. `gwl main` now finds the main checkout whatever branch it stands
+on, two worktrees and no query go to the other one, and asking for the one
+you are in says `already in <branch>` and stays put. `--list` shows every
+worktree and marks that one.
+
+`gwp` with nothing removable prints the verdict table. It used to print
+`nothing to remove; gws says why`, so the reason each worktree stayed cost a
+second command to read.
 
 `gwh` is the help, so nothing needs `gw --help` typed out. It joins `gwa`,
 `gwl`, `gwm`, `gwr`, `gws`, `gwp`, `gwnb`, `gwrot` and `gw` on `$PATH`, and
-`gw` still takes the same set as subcommands.
+`gw` still takes the same set as subcommands. `gw` has its own entry point
+now, so a usage error from it names `gw` rather than `worktrees`.
 
 Output is coloured, and `NO_COLOR` turns it off. The check reads the value
 rather than the key, which is the no-color.org rule: `NO_COLOR=` unsets the
