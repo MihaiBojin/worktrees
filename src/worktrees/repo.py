@@ -111,10 +111,18 @@ class Worktree:
     sha: str
     branch: str  # empty when detached or bare
     flags: frozenset[str]  # any of bare, detached, locked, prunable
+    main: bool = False  # the original checkout, which git lists first
 
     @property
     def label(self) -> str:
-        return self.branch or "(detached)"
+        """What a person calls it, and whether it is the one you can always
+        go back to. Two branch names say nothing about which that is.
+
+        The word appears once. A main checkout standing on a branch called
+        main is `main`, not `main (main)`, and either way `main` finds it.
+        """
+        name = self.branch or "(detached)"
+        return name if not self.main or name == "main" else f"{name} (main)"
 
 
 def worktrees(repo: str | os.PathLike[str] | None = None) -> list[Worktree]:
@@ -138,7 +146,10 @@ def worktrees(repo: str | os.PathLike[str] | None = None) -> list[Worktree]:
             key = str(Path(path).resolve())
             if key not in seen:
                 seen.add(key)
-                found.append(Worktree(path, sha, branch, frozenset(flags)))
+                # git lists the main checkout first, and that ordering is the
+                # only thing that says which one it is.
+                main = not found
+                found.append(Worktree(path, sha, branch, frozenset(flags), main))
         path = sha = branch = ""
         flags = set()
 

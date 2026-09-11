@@ -45,6 +45,41 @@ def run(world, entry: str, *args: str, at: Path | None = None):
     )
 
 
+def run_with_a_terminal_on_stdout(
+    world, entry: str, *args: str, env_extra: dict[str, str] | None = None
+) -> tuple[int, str]:
+    """A real tty on stdout, so the colour decision is the live one."""
+    parent, child = pty.openpty()
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            *args,
+        ],
+        cwd=str(world.repo),
+        stdin=subprocess.DEVNULL,
+        stdout=child,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env={**_env(world), "TERM": "xterm-256color", **(env_extra or {})},
+    )
+    os.close(child)
+    chunks: list[bytes] = []
+    while True:
+        try:
+            data = os.read(parent, 65536)
+        except OSError:  # the child closed its end
+            break
+        if not data:
+            break
+        chunks.append(data)
+    proc.wait()
+    os.close(parent)
+    # A pty turns every \n into \r\n on the way out.
+    return proc.returncode, b"".join(chunks).decode().replace("\r\n", "\n")
+
+
 def run_on_a_terminal(world, entry: str, *args: str, answer: str) -> tuple[int, str]:
     """The same, with a real tty on stdin, so the prompt is reachable."""
     parent, child = pty.openpty()
@@ -245,7 +280,20 @@ def test_prune_clears_a_stale_record(world) -> None:
 def test_prune_says_so_when_there_is_nothing(world) -> None:
     p = run(world, "gwp", "--no-fetch", "--yes")
     assert p.returncode == 0, p.stderr
-    assert "nothing to remove; gws says why" in p.stdout
+    assert "no worktrees besides the main checkout" in p.stdout
+
+
+def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
+    """The bug this replaced: `nothing to remove; gws says why`, and a
+    second command to type before you learn why."""
+    world.worktree("busy")
+    (world.parent / ".worktrees" / "busy" / "repo" / "wip").write_text("x")
+    p = run(world, "gwp", "--no-fetch", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert "busy" in p.stdout
+    assert "it has uncommitted changes" in p.stdout
+    assert "nothing to remove; 0 removable, 1 kept, 0 unclear" in p.stdout
+    assert "gws" not in p.stdout
 
 
 def test_dry_run_is_refused_by_name(world) -> None:
@@ -308,7 +356,6 @@ def test_the_cli_name_takes_a_subcommand(world) -> None:
 def test_the_cli_name_with_no_argument_prints_help(world) -> None:
     p = run(world, "main")
     assert p.returncode == 0
-    assert "usage: worktrees" in p.stdout
     for name in ("status", "prune", "new-branch"):
         assert name in p.stdout
 
@@ -317,3 +364,146 @@ def test_a_bare_flag_means_status(world) -> None:
     p = run(world, "main", "--explain")
     assert p.returncode == 0, p.stderr
     assert "git worktree list --porcelain -z" in p.stdout
+
+
+# --------------------------------------------------------------------------
+# shorthands, and the table they come from
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("spelling", ["status", "st", "s"])
+def test_every_shorthand_reaches_the_same_command(world, spelling: str) -> None:
+    world.worktree("done")
+    p = run(world, "main", spelling, "--no-fetch", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["verdicts"][0]["branch"] == "done"
+
+
+@pytest.mark.parametrize(
+    ("spelling", "canonical"),
+    [
+        ("p", "prune"),
+        ("a", "add"),
+        ("l", "list"),
+        ("ls", "list"),
+        ("m", "move"),
+        ("mv", "move"),
+        ("rm", "remove"),
+        ("nb", "new-branch"),
+        ("new", "new-branch"),
+        ("rot", "rotate"),
+        ("h", "help"),
+    ],
+)
+def test_a_shorthand_names_the_command_it_stands_for(
+    spelling: str, canonical: str
+) -> None:
+    from worktrees import cli
+
+    assert cli._CANONICAL[spelling] == canonical
+
+
+def test_no_two_commands_answer_to_the_same_name() -> None:
+    """A dict comprehension would keep the last one and leave a command
+    reachable under a name that runs a different one."""
+    from worktrees import cli
+
+    assert cli._canonical()
+
+
+def test_every_command_is_installed_under_its_own_name() -> None:
+    """The help table names a binary per row; pyproject is what ships them."""
+    import tomllib
+
+    from worktrees import cli
+
+    root = Path(__file__).resolve().parents[1]
+    scripts = tomllib.loads((root / "pyproject.toml").read_text())["project"]["scripts"]
+    declared = {c.binary for c in cli._COMMANDS.values()}
+    assert declared <= set(scripts)
+    # The two that take a subcommand are the only ones with no row of their own.
+    assert set(scripts) - declared == {"gw", "worktrees"}
+
+
+# --------------------------------------------------------------------------
+# gwh
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("entry", ["gwh", "main"])
+def test_help_names_every_command_and_every_shorthand(world, entry: str) -> None:
+    args = () if entry == "gwh" else ("help",)
+    p = run(world, entry, *args)
+    assert p.returncode == 0, p.stderr
+    from worktrees import cli
+
+    for name, command in cli._COMMANDS.items():
+        assert command.binary in p.stdout, name
+        assert f"gw {name}" in p.stdout, name
+        for alias in command.aliases:
+            assert alias in p.stdout, alias
+
+
+def test_the_cli_with_no_argument_prints_that_same_help(world) -> None:
+    bare = run(world, "main").stdout
+    asked = run(world, "main", "help").stdout
+    assert bare == asked
+    assert "gws" in bare and "gw status (s, st)" in bare
+
+
+@pytest.mark.parametrize("flag", ["--json", "-q", "-v", "--explain"])
+def test_help_promises_no_flag_the_program_refuses(world, flag: str) -> None:
+    """gwh declares no flags, so the footer has to carve it out by name. The
+    footer derives that from the table rather than asserting it in prose."""
+    p = run(world, "gwh", flag)
+    assert p.returncode == 2
+    assert "unrecognized arguments" in p.stderr
+
+    listed = run(world, "gwh")
+    assert "work on every command but gwh" in listed.stdout
+    # and the flags it does claim are taken by a command that has a row
+    assert run(world, "gws", "--no-fetch", flag).returncode == 0
+
+
+def test_help_stays_inside_eighty_columns(world) -> None:
+    """It is read at a prompt, next to the commands it describes."""
+    p = run(world, "gwh")
+    assert p.returncode == 0, p.stderr
+    assert [ln for ln in p.stdout.splitlines() if len(ln) > 80] == []
+
+
+# --------------------------------------------------------------------------
+# colour
+# --------------------------------------------------------------------------
+
+
+def test_colour_reaches_a_terminal(world) -> None:
+    world.worktree("done")
+    code, out = run_with_a_terminal_on_stdout(world, "gws", "--no-fetch")
+    assert code == 0, out
+    assert "[32mremove" in out
+
+
+def test_a_pipe_gets_no_colour(world) -> None:
+    world.worktree("done")
+    p = run(world, "gws", "--no-fetch")
+    assert p.returncode == 0, p.stderr
+    assert "[" not in p.stdout
+
+
+def test_json_is_never_coloured_even_on_a_terminal(world) -> None:
+    """stdout carries what jq parses and what `cd $(gwa x)` reads."""
+    world.worktree("done")
+    code, out = run_with_a_terminal_on_stdout(world, "gws", "--no-fetch", "--json")
+    assert code == 0, out
+    assert "[" not in out
+    assert json.loads(out)["verdicts"][0]["branch"] == "done"
+
+
+def test_no_color_turns_it_off_on_a_terminal(world) -> None:
+    world.worktree("done")
+    code, out = run_with_a_terminal_on_stdout(
+        world, "gws", "--no-fetch", env_extra={"NO_COLOR": "1"}
+    )
+    assert code == 0, out
+    assert "[" not in out

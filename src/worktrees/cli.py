@@ -5,37 +5,78 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 
-from . import __version__, new_branch, pick, prune, verdicts
+from . import __version__, new_branch, pick, prune, render, verdicts
 from . import repo as R
 from . import rotate as rotate_mod
 from . import worktree as wt_mod
 from .git import GitError, Refused, commands, options
+from .render import BLUE, BOLD, DIM, GREEN, RED, YELLOW, Cell, Row, table
 
 
 def _err(text: str) -> None:
     print(text, file=sys.stderr)
 
 
-def _table(rows: Sequence[tuple[str, ...]]) -> str:
-    """Columns wide enough for their content, the last one unpadded."""
-    if not rows:
-        return ""
-    widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
-    out = []
-    for row in rows:
-        cells = [c.ljust(widths[i]) for i, c in enumerate(row[:-1])]
-        out.append("  ".join([*cells, row[-1]]).rstrip())
-    return "\n".join(out)
+def _same(a: str, b: str) -> bool:
+    """One directory under two spellings, or under a symlink."""
+    return bool(a) and bool(b) and Path(a).resolve() == Path(b).resolve()
+
+
+_VERDICT_CODE = {
+    verdicts.REMOVE: GREEN,
+    verdicts.KEEP: BLUE,
+    verdicts.UNKNOWN: YELLOW,
+}
+
+
+def _verdict_table(rows: list[verdicts.Verdict]) -> str:
+    """The table `gws` prints, which `gwp` prints too rather than name it."""
+    head: Row = (
+        Cell("VERDICT", DIM),
+        Cell("BRANCH", DIM),
+        Cell("WHY", DIM),
+        Cell("PATH", DIM),
+    )
+    body: list[Row] = [
+        (
+            Cell(v.verdict, _VERDICT_CODE.get(v.verdict, "")),
+            Cell(v.label, BOLD),
+            Cell(v.why),
+            Cell(v.path, DIM),
+        )
+        for v in rows
+    ]
+    return table([head, *body])
+
+
+def _counted(rows: list[verdicts.Verdict]) -> str:
+    """How many of each verdict, in the verdicts' own colours."""
+    go = len(prune.removable(rows))
+    unclear = len([v for v in rows if v.verdict == verdicts.UNKNOWN])
+    kept = len(rows) - go - unclear
+    return (
+        f"{render.out(str(go), GREEN)} removable, "
+        f"{render.out(str(kept), BLUE)} kept, "
+        f"{render.out(str(unclear), YELLOW)} unclear"
+    )
 
 
 def _explain() -> int:
     """Every git command the program can issue."""
-    rows = [("", "COMMAND", "GIT")]
+    rows: list[Row] = [(Cell("", DIM), Cell("COMMAND", DIM), Cell("GIT", DIM))]
     for c in commands():
-        rows.append(("!" if c.mutates else " ", c.name, "git " + " ".join(c.shape)))
-    print(_table(rows))
+        rows.append(
+            (
+                Cell("!", RED) if c.mutates else Cell(" "),
+                Cell(c.name, BOLD),
+                Cell("git " + " ".join(c.shape)),
+            )
+        )
+    print(table(rows))
     print()
     print(
         "! takes the repository's shared refs and runs serially. The guard "
@@ -168,16 +209,13 @@ def run_status(args: argparse.Namespace) -> int:
     if not rows:
         print("no worktrees besides the main checkout")
     else:
-        table: list[tuple[str, ...]] = [("VERDICT", "BRANCH", "WHY", "PATH")]
-        table += [(v.verdict, v.label, v.why, v.path) for v in rows]
-        print(_table(table))
+        print(_verdict_table(rows))
 
     if args.quiet:
         return 0
 
     print()
-    kept = len(rows) - len(go) - len(unknown)
-    print(f"{len(go)} removable, {kept} kept, {len(unknown)} unclear")
+    print(_counted(rows))
     if stale:
         _err(
             f"{len(stale)} stale record(s) for directories that are gone; "
@@ -211,16 +249,23 @@ def run_prune(args: argparse.Namespace) -> int:
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
 
+    if not go:
+        # The reason each one stayed, here, rather than the name of the
+        # command that would have printed it.
+        if args.json:
+            print(json.dumps({"removed": [], "failed": 0}, indent=2))
+        elif not rows:
+            print("no worktrees besides the main checkout")
+        else:
+            print(_verdict_table(rows))
+            if not args.quiet:
+                print()
+                print(f"nothing to remove; {_counted(rows)}")
+        return 0
+
     if unknown and not args.quiet:
         names = ", ".join(v.label for v in unknown)
         _err(f"unclear, and this does not touch them: {names}")
-
-    if not go:
-        if not args.json:
-            print("nothing to remove; gws says why")
-        else:
-            print(json.dumps({"removed": [], "failed": 0}, indent=2))
-        return 0
 
     # What goes, and what puts it back, before anything does. On stderr with
     # the rest of the diagnostics, so stdout carries the result alone;
@@ -233,7 +278,7 @@ def run_prune(args: argparse.Namespace) -> int:
                 _err("nothing removed")
                 return 0
         except Refused as exc:
-            _err(str(exc))
+            _err(render.err(str(exc), RED))
             return 2
 
     failed = prune.sweep(go, args.delete_ignored, _err)
@@ -241,7 +286,12 @@ def run_prune(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps({"removed": removed, "failed": failed}, indent=2))
     elif failed:
-        _err(f"{failed} of {len(go)} could not be removed; each said why above")
+        _err(
+            render.err(
+                f"{failed} of {len(go)} could not be removed; each said why above",
+                RED,
+            )
+        )
     else:
         print(f"removed {len(go)} worktree(s)")
     return 1 if failed else 0
@@ -286,7 +336,7 @@ def run_new_branch(args: argparse.Namespace) -> int:
     try:
         started = new_branch.create(args.name, fetch=not args.no_fetch, warn=warn)
     except new_branch.Refusal as exc:
-        _err(str(exc))
+        _err(render.err(str(exc), RED))
         return 1
 
     if args.json:
@@ -297,7 +347,10 @@ def run_new_branch(args: argparse.Namespace) -> int:
             )
         )
     elif not args.quiet:
-        print(f"{started.branch} from {R.ref_name(started.base)} at {started.sha}")
+        print(
+            f"{render.out(started.branch, BOLD)} from "
+            f"{R.ref_name(started.base)} at {started.sha}"
+        )
     return 0
 
 
@@ -332,14 +385,14 @@ def run_rotate(args: argparse.Namespace) -> int:
     try:
         result = rotate_mod.rotate(fetch=not args.no_fetch, warn=warn)
     except new_branch.Refusal as exc:
-        _err(str(exc))
+        _err(render.err(str(exc), RED))
         return 1
 
     if isinstance(result, rotate_mod.CaughtUp):
         if args.json:
             print(json.dumps({"branch": result.branch, "at": result.at}, indent=2))
         elif not args.quiet:
-            print(f"{result.branch} is at {result.at}")
+            print(f"{render.out(result.branch, BOLD)} is at {result.at}")
         return 0
 
     if args.json:
@@ -355,7 +408,10 @@ def run_rotate(args: argparse.Namespace) -> int:
             )
         )
     elif not args.quiet:
-        print(f"{result.branch} from {R.ref_name(result.base)} at {result.sha}")
+        print(
+            f"{render.out(result.branch, BOLD)} from "
+            f"{R.ref_name(result.base)} at {result.sha}"
+        )
     return 0
 
 
@@ -451,28 +507,41 @@ def run_add(args: argparse.Namespace) -> int:
     try:
         landed = wt_mod.add(args.name, args.base, fetch=not args.no_fetch, warn=warn)
     except new_branch.Refusal as exc:
-        _err(str(exc))
+        _err(render.err(str(exc), RED))
         return 1
     if not args.quiet and not args.json:
         made = "on a new branch" if landed.created else "on the branch already here"
-        _err(f"{landed.branch} {made}")
+        _err(f"{render.err(landed.branch, BOLD)} {made}")
     return _landed(args, landed)
 
 
 def run_list(args: argparse.Namespace) -> int:
+    """Pick a worktree to stand in, the main checkout included.
+
+    The main checkout is where a finished branch leaves you, so leaving it out
+    of the list is leaving out the only destination that is always there. The
+    one you are standing in is listed and never offered: picking it is the one
+    answer that cannot take you anywhere.
+    """
     options.verbose = args.verbose
     if args.explain:
         return _explain()
 
-    main = R.main_worktree()
-    rows = [w for w in R.worktrees() if "bare" not in w.flags and w.path != main]
+    here = R.toplevel().out.strip()
+    rows = [w for w in R.worktrees() if "bare" not in w.flags]
     found = pick.matches(args.query, rows)
 
     if args.json:
         print(
             json.dumps(
                 [
-                    {"branch": w.branch, "path": w.path, "flags": sorted(w.flags)}
+                    {
+                        "branch": w.branch,
+                        "path": w.path,
+                        "main": w.main,
+                        "here": _same(w.path, here),
+                        "flags": sorted(w.flags),
+                    }
                     for w in found
                 ],
                 indent=2,
@@ -480,21 +549,31 @@ def run_list(args: argparse.Namespace) -> int:
         )
         return 0
 
-    if not found:
-        _err(
-            "no worktree matches"
-            if args.query
-            else "no worktrees besides the main checkout"
-        )
-        return 1
-
     if args.list:
+        if not found:
+            _err("no worktree matches")
+            return 1
         width = max(len(w.label) for w in found)
         for w in found:
-            print(f"{w.label:<{width}}  {w.path}")
+            mark = render.out("*", GREEN) if _same(w.path, here) else " "
+            print(
+                f"{mark} {render.out(w.label.ljust(width), BOLD)}  "
+                f"{render.out(w.path, DIM)}"
+            )
         return 0
 
-    chosen = pick.choose(found, _err)
+    elsewhere = [w for w in found if not _same(w.path, here)]
+    if not elsewhere:
+        if not found:
+            _err("no worktree matches")
+            return 1
+        if len(rows) < 2:
+            _err("this is the only worktree; gwa NAME makes another")
+            return 1
+        _err(f"already in {render.err(found[0].label, BOLD)}")
+        return 0
+
+    chosen = pick.choose(elsewhere, _err)
     if chosen is None:
         _err("nothing picked")
         return 0
@@ -513,10 +592,10 @@ def run_move(args: argparse.Namespace) -> int:
     try:
         landed = wt_mod.move(args.name)
     except new_branch.Refusal as exc:
-        _err(str(exc))
+        _err(render.err(str(exc), RED))
         return 1
     if not args.quiet and not args.json:
-        _err(f"renamed to {landed.branch}")
+        _err(f"renamed to {render.err(landed.branch, BOLD)}")
     return _landed(args, landed)
 
 
@@ -549,7 +628,10 @@ def run_remove(args: argparse.Namespace) -> int:
     chosen = by_path[picked.path]
 
     if chosen.verdict != prune.REMOVE and not args.force:
-        _err(f"{chosen.label} is not finished: {chosen.why}")
+        _err(
+            f"{render.err(chosen.label, BOLD)} is not finished: "
+            f"{render.err(chosen.why, YELLOW)}"
+        )
         _err("pass --force to remove the worktree anyway; the branch is kept")
         return 1
 
@@ -560,7 +642,7 @@ def run_remove(args: argparse.Namespace) -> int:
                 _err("nothing removed")
                 return 0
         except Refused as exc:
-            _err(str(exc))
+            _err(render.err(str(exc), RED))
             return 2
 
     keep_branch = chosen.verdict != prune.REMOVE
@@ -572,7 +654,7 @@ def run_remove(args: argparse.Namespace) -> int:
         _err,
     )
     if not args.quiet and not args.json:
-        _err(f"removed {chosen.label}")
+        _err(f"removed {render.err(chosen.label, BOLD)}")
     if args.json:
         print(json.dumps({"removed": chosen.label, "path": destination}, indent=2))
         return 0
@@ -582,7 +664,53 @@ def run_remove(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
-# entry points
+# help
+# --------------------------------------------------------------------------
+
+
+def run_help(args: argparse.Namespace) -> int:
+    """Every name this package installs, and what each one answers."""
+    print(f"worktrees {__version__}: git worktree commands that refuse to lose work")
+    print()
+
+    rows: list[Row] = [(Cell("COMMAND", DIM), Cell("GW", DIM), Cell("DOES", DIM))]
+    for name, c in _COMMANDS.items():
+        spelled = f"gw {name}"
+        if c.aliases:
+            spelled += " (" + ", ".join(c.aliases) + ")"
+        rows.append(
+            (
+                Cell(f"{c.binary} {c.usage}".strip(), BOLD),
+                Cell(spelled),
+                Cell(c.about),
+            )
+        )
+    print(table(rows))
+    print()
+
+    lands = [c.binary for c in _COMMANDS.values() if c.lands]
+    print(
+        f"{', '.join(lands[:-1])} and {lands[-1]} change the directory you are "
+        "standing in.\nA binary cannot do that, so each needs the shell function "
+        "of the same name\nfrom the plugin; the rest need nothing but $PATH."
+    )
+    print()
+    # Which commands take the common flags is the table's answer, not a second
+    # list here: a row with no flags takes none, and saying so in prose is how
+    # a help text comes to promise a flag the program refuses.
+    bare = [c.binary for c in _COMMANDS.values() if c.flags is None]
+    scope = f"every command but {', '.join(bare)}" if bare else "every command"
+    print(
+        "gwnb and gwrot start branches rather than worktrees. Both are alpha "
+        f"and may go.\n\n--json, -q, -v and --explain work on {scope}, and\n"
+        "`gw <command> --help` has the rest. A non-empty NO_COLOR turns the "
+        "colour off."
+    )
+    return 0
+
+
+# --------------------------------------------------------------------------
+# the command table
 # --------------------------------------------------------------------------
 
 
@@ -593,24 +721,123 @@ def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     )
 
 
-_COMMANDS = {
-    "status": (run_status, _add_assess_flags, "say which worktrees are finished"),
-    "prune": (run_prune, _add_prune_flags, "remove the ones status marks removable"),
-    "new-branch": (
-        run_new_branch,
-        _add_new_branch_flags,
-        "start a branch off the head branch",
+@dataclass(frozen=True)
+class _Command:
+    """One command under both its names, and every shorthand for it.
+
+    The one place they are written down. `gw status`, `gw st`, `gw s` and
+    `gws` reach the same function because this row says so, and `gw help`
+    prints the row rather than a second list that can disagree with it.
+    """
+
+    run: Callable[[argparse.Namespace], int]
+    flags: Callable[[argparse.ArgumentParser], None] | None
+    about: str
+    binary: str
+    usage: str = ""
+    aliases: tuple[str, ...] = ()
+    lands: bool = False  # changes the caller's directory, so it needs a shim
+
+
+_COMMANDS: dict[str, _Command] = {
+    "status": _Command(
+        run_status,
+        _add_assess_flags,
+        "which worktrees are finished, and why",
+        "gws",
+        aliases=("s", "st"),
     ),
-    "rotate": (run_rotate, _add_rotate_flags, "start the next branch after this one"),
-    "add": (run_add, _add_add_flags, "create a worktree and land you in it"),
-    "list": (run_list, _add_list_flags, "pick one of this repository's worktrees"),
-    "move": (run_move, _add_move_flags, "rename this worktree's branch and move it"),
-    "remove": (
+    "prune": _Command(
+        run_prune,
+        _add_prune_flags,
+        "remove the ones status marks removable",
+        "gwp",
+        aliases=("p",),
+    ),
+    "add": _Command(
+        run_add,
+        _add_add_flags,
+        "create a worktree and land you in it",
+        "gwa",
+        usage="NAME [BASE]",
+        aliases=("a",),
+        lands=True,
+    ),
+    "list": _Command(
+        run_list,
+        _add_list_flags,
+        "pick a worktree and land you in it",
+        "gwl",
+        usage="[QUERY]",
+        aliases=("l", "ls"),
+        lands=True,
+    ),
+    "move": _Command(
+        run_move,
+        _add_move_flags,
+        "rename this branch and move it",
+        "gwm",
+        usage="NEW",
+        aliases=("m", "mv"),
+        lands=True,
+    ),
+    "remove": _Command(
         run_remove,
         _add_remove_flags,
-        "remove a worktree whose branch is finished",
+        "remove one whose branch is finished",
+        "gwr",
+        usage="[QUERY]",
+        aliases=("rm",),
+        lands=True,
+    ),
+    "new-branch": _Command(
+        run_new_branch,
+        _add_new_branch_flags,
+        "branch off the head branch (alpha)",
+        "gwnb",
+        usage="NAME",
+        aliases=("nb", "new"),
+    ),
+    "rotate": _Command(
+        run_rotate,
+        _add_rotate_flags,
+        "the next branch in a series (alpha)",
+        "gwrot",
+        aliases=("rot",),
+    ),
+    "help": _Command(
+        run_help,
+        None,
+        "every command and alias, this list",
+        "gwh",
+        aliases=("h",),
     ),
 }
+
+
+def _canonical() -> dict[str, str]:
+    """Every name and shorthand, mapped to the command it runs.
+
+    A collision is a typo in the table above, and import is the cheapest
+    moment to hear about it: a dict comprehension would keep the last one and
+    leave a command reachable under a name that runs a different one.
+    """
+    found: dict[str, str] = {}
+    for name, command in _COMMANDS.items():
+        for alias in (name, *command.aliases):
+            if alias in found:
+                raise AssertionError(f"{alias} names both {found[alias]} and {name}")
+            found[alias] = name
+    return found
+
+
+_CANONICAL = _canonical()
+
+
+# --------------------------------------------------------------------------
+# entry points
+# --------------------------------------------------------------------------
+
 
 _STATUS_HELP = "Say which of this repository's worktrees are finished, and why."
 _PRUNE_HELP = "Remove the worktrees gws marks removable, and their branches."
@@ -684,12 +911,25 @@ def gwrot(argv: list[str] | None = None) -> int:
     return _dispatch(p, argv, run_rotate)
 
 
-def main(argv: list[str] | None = None) -> int:
+def gwh(argv: list[str] | None = None) -> int:
+    """One name that answers "what did this install?"."""
+    p = _parser("gwh", "List every command and shorthand worktrees installs.")
+    return _dispatch(p, argv, run_help)
+
+
+def gw(argv: list[str] | None = None) -> int:
+    """The short name. Its own prog, so a usage error names what was typed."""
+    return main(argv, prog="gw")
+
+
+def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     """The CLI a shim and an agent call."""
-    p = _parser("worktrees", "Git worktree commands that refuse to lose work.")
+    p = _parser(prog, "Git worktree commands that refuse to lose work.")
     subs = p.add_subparsers(dest="command")
-    for name, (_, flags, help_text) in _COMMANDS.items():
-        flags(subs.add_parser(name, help=help_text))
+    for name, command in _COMMANDS.items():
+        sub = subs.add_parser(name, aliases=list(command.aliases), help=command.about)
+        if command.flags:
+            command.flags(sub)
     args_in = sys.argv[1:] if argv is None else argv
     if (
         args_in
@@ -711,6 +951,7 @@ def _dispatch(
     argv: list[str] | None,
     run: Callable[[argparse.Namespace], int] | None,
 ) -> int:
+    render.setup()
     raw = sys.argv[1:] if argv is None else argv
     # Before parsing, so it is refused rather than absorbed. A flag meaning
     # "do not act" on a command that already asks is a no-op wearing the
@@ -721,24 +962,24 @@ def _dispatch(
         return 2
     args = p.parse_args(raw)
     # argparse gives a subparser its own prog; rebuild it rather than reach
-    # into the private table for it.
+    # into the private table for it. The alias the caller typed, not the
+    # canonical name, so a usage line echoes what they wrote.
     command = getattr(args, "command", None)
     args.prog = f"{p.prog} {command}" if command else p.prog
     if run is None:
-        if args.command is None:
-            p.print_help()
-            return 0
-        run = _COMMANDS[args.command][0]
+        if command is None:
+            return run_help(args)
+        run = _COMMANDS[_CANONICAL[command]].run
     try:
         return run(args)
     except _Stop as exc:
-        _err(str(exc))
+        _err(render.err(str(exc), RED))
         return exc.code
     except Refused as exc:
-        _err(str(exc))
+        _err(render.err(str(exc), RED))
         return 3
     except GitError as exc:
-        _err(str(exc))
+        _err(render.err(str(exc), RED))
         return 1
 
 

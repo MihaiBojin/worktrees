@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable, Sequence
 
+from . import render
 from .git import Refused
 from .repo import Worktree
 
@@ -89,7 +90,11 @@ def choose(
 
     width = max(len(wt.label) for wt in candidates)
     for i, wt in enumerate(candidates, 1):
-        show(f"{i:>3}  {wt.label:<{width}}  {wt.path}")
+        show(
+            f"{render.err(f'{i:>3}', render.DIM)}  "
+            f"{render.err(wt.label.ljust(width), render.BOLD)}  "
+            f"{render.err(wt.path, render.DIM)}"
+        )
     answer = ask(f"which? [1-{len(candidates)}, or blank to cancel] ").strip()
     if not answer:
         return None
