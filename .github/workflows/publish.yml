@@ -92,6 +92,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --locked
 
+      # Neither shell is on the image, and the shim tests fail rather than
+      # skip under CI, so this job needs them exactly as tests.yml does.
+      - name: Install fish and zsh
+        run: sudo apt-get update && sudo apt-get install -y fish zsh
+
       # The tag is the last chance to catch a regression, and it costs 20s.
       - name: Run tests
         run: uv run --no-sync pytest tests -q
