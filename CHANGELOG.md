@@ -12,7 +12,7 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
-## 0.2.2 - 2026-09-11
+## 0.2.3 - 2026-09-11
 
 An unreachable remote is an answer rather than a failure. Every command that
 touches the network used to exit 1 with git's own message, so the warnings
