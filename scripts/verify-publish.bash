@@ -34,11 +34,22 @@ echo "Verifying $NAME==$VERSION from $WHICH..." >&2
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-UV_CACHE_DIR="$TMP/cache" uv tool run \
+# The version the installed script reports, compared against the one asked
+# of the index. Running it and discarding the output would pass while every
+# command on the machine printed a number from a previous release.
+REPORTED="$(UV_CACHE_DIR="$TMP/cache" uv tool run \
     --isolated \
     --index "$INDEX" \
     --index-strategy unsafe-best-match \
     --from "$NAME==$VERSION" \
-    gws --version
+    gws --version)"
+readonly REPORTED
 
-echo "$NAME==$VERSION installs from $WHICH and runs." >&2
+[ "$REPORTED" = "$VERSION" ] || {
+    echo "Version mismatch after publishing to $WHICH." >&2
+    echo "  asked the index for: $VERSION" >&2
+    echo "  gws --version says:  $REPORTED" >&2
+    exit 1
+}
+
+echo "$NAME==$VERSION installs from $WHICH and reports $REPORTED." >&2
