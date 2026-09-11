@@ -47,7 +47,8 @@ leaving one, which the picker took outright and handed back the path you were
 already at. `gwl main` now finds the main checkout whatever branch it stands
 on, two worktrees and no query go to the other one, and asking for the one
 you are in says `already in <branch>` and stays put. `--list` shows every
-worktree and marks that one.
+worktree and marks that one. A repository with no linked worktrees says so
+and names `gwa`, where it used to answer as though nothing were there.
 
 `gws --json` carries `ignored` and `sha` on every verdict. The count of
 ignored paths reads as a number rather than as a phrase inside `why`, and the
@@ -60,8 +61,16 @@ second command to read.
 
 `gwh` is the help, so nothing needs `gw --help` typed out. It joins `gwa`,
 `gwl`, `gwm`, `gwr`, `gws`, `gwp`, `gwnb`, `gwrot` and `gw` on `$PATH`, and
-`gw` still takes the same set as subcommands. `gw` has its own entry point
-now, so a usage error from it names `gw` rather than `worktrees`.
+`gw` still takes the same set as subcommands. `gw` with no subcommand prints
+that table too, where it used to print argparse's usage. `gw` has its own
+entry point now, so a usage error from it names `gw` rather than `worktrees`.
+
+Every subcommand answers to a shorthand as well as its name: `s` and `st` for
+`status`, `p` for `prune`, `a` for `add`, `l` and `ls` for `list`, `m` and
+`mv` for `move`, `rm` for `remove`, `nb` and `new` for `new-branch`, `rot` for
+`rotate`, `h` for `help`. One table in the CLI carries every name, so what
+`gwh` prints, what the completions offer and what `gw` accepts cannot
+disagree, and it refuses to import if two commands ever claim one name.
 
 Output is coloured, and `NO_COLOR` turns it off. The check reads the value
 rather than the key, which is the no-color.org rule: `NO_COLOR=` unsets the
