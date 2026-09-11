@@ -2,7 +2,7 @@
 name: release
 description: Release a version of this package to PyPI. Bumps the version on a release branch, opens and merges the pull request once its checks pass, then tags the merged commit so publish.yml uploads it. Use when the user says "release", "cut a release", "ship x.y.z", or "/release x.y.z".
 user-invocable: true
-allowed-tools: Bash(git:*), Bash(gh:*), Bash(uv:*), Bash(scripts/*.bash:*)
+allowed-tools: Bash(git:*), Bash(gh:*), Bash(uv:*), Bash(rt:*), Bash(scripts/*.bash:*)
 ---
 
 # release
@@ -21,13 +21,21 @@ forever.
 
 ```bash
 git fetch --all --prune
-scripts/check-releasable.bash <version>
+rt release::prechecks <version> \
+    --branch main \
+    --check-registry-url "https://pypi.org/pypi/$(uv version | cut -d' ' -f1)/<version>/json"
 ```
 
-That checks the shape of the version, a clean working tree, that the version
-is after the one on `origin/main`, that the tag is free on the remote, and
-that PyPI does not already carry it. If it refuses, say what it said and
-stop. Do not fix a dirty tree by stashing on the user's behalf.
+That checks the shape of the version, a clean working tree, that the tag is
+free on the remote, that the version is after the newest release tag, that
+HEAD is on main, and that PyPI does not already carry it. If it refuses, say
+what it said and stop. Do not fix a dirty tree by stashing on the user's
+behalf.
+
+`rt` is `releasetools/cli`, installed with `brew install releasetools/tap/releasetools-cli`
+or the installer in its README. Every check it runs refuses when it cannot
+prove what it was asked to prove, so a doubtful answer stops the release
+rather than passing it.
 
 ## 2. The branch, the notes, and the bump
 
@@ -80,7 +88,7 @@ tagged and nothing published.
 ```bash
 gh pr merge --rebase --delete-branch
 git switch main && git pull --ff-only
-scripts/await-checks.bash "$(git rev-parse HEAD)"
+rt github::await_workflow "$(git rev-parse HEAD)" tests.yml
 ```
 
 `--rebase` keeps the commit message rather than replacing it with the pull
@@ -88,7 +96,7 @@ request title.
 
 The wait matters. A rebase onto a main that moved is a tree neither the
 branch nor main has tested, and the tag must only ever land on a commit
-already proved green. `await-checks.bash` blocks until `tests.yml` finishes
+already proved green. `github::await_workflow` blocks until `tests.yml` finishes
 on that commit and exits non-zero if it failed.
 
 If it failed: `main` now carries the version bump and no release exists. Say
