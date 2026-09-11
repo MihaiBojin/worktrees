@@ -74,17 +74,17 @@ jobs:
       # release that should go ahead. The API needs no local history.
       - name: Check the commit is on main
         env:
-          # The runner sets GITHUB_REPOSITORY itself; this renames it to what gh reads.
-          # It sets no token: GITHUB_TOKEN is not a default variable, so that one has to
-          # be handed over.
+          # GH_REPO carries the value the runner publishes as GITHUB_REPOSITORY: gh looks for
+          # GH_REPO and never at GITHUB_REPOSITORY. GITHUB_TOKEN is not a default variable at
+          # all, so the token has to be handed over rather than renamed.
           GH_TOKEN: ${{ github.token }} # no runner default
-          GH_REPO: ${{ github.repository }} # = $GITHUB_REPOSITORY, under the name gh reads
+          GH_REPO: ${{ github.repository }} # = $GITHUB_REPOSITORY; gh only reads GH_REPO
         run: rt github::assert_on_branch main
 
       - name: Wait for the tests on this commit
         env:
           GH_TOKEN: ${{ github.token }} # no runner default
-          GH_REPO: ${{ github.repository }} # = $GITHUB_REPOSITORY, under the name gh reads
+          GH_REPO: ${{ github.repository }} # = $GITHUB_REPOSITORY; gh only reads GH_REPO
           SHA: ${{ github.sha }} # = $GITHUB_SHA
         run: rt github::await_workflow "$SHA" tests.yml
 
