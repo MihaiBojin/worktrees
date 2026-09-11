@@ -252,8 +252,8 @@ def test_prune_deletes_the_branch_and_the_empty_parents(world) -> None:
     assert not (world.parent / ".worktrees" / "done").exists()
 
 
-def test_a_squash_merged_branch_survives_branch_d(world) -> None:
-    """The checkout goes; the branch stays, because -d refuses it."""
+def test_a_squash_merged_branch_goes_with_its_checkout(world) -> None:
+    """The proof `-d` cannot read is the proof this deletes on."""
     wt = world.worktree("squashed")
     world.commit("f.txt", "one\n", at=wt)
     (world.repo / "f.txt").write_text("one\n")
@@ -263,8 +263,9 @@ def test_a_squash_merged_branch_survives_branch_d(world) -> None:
     p = run(world, "gwp", "--no-fetch", "--yes")
     assert p.returncode == 0, p.stderr
     assert not wt.exists()
-    assert world.git("rev-parse", "--verify", "refs/heads/squashed")
-    assert "branch squashed kept" in p.stderr
+    assert "squashed" not in world.git("branch", "--format=%(refname:short)").split()
+    assert "kept" not in p.stderr
+    assert "restore with: git branch squashed " in p.stderr
 
 
 def test_prune_clears_a_stale_record(world) -> None:
@@ -307,7 +308,7 @@ def test_explain_lists_every_command_and_runs_none(world) -> None:
     p = run(world, "gws", "--explain")
     assert p.returncode == 0, p.stderr
     assert "git worktree list --porcelain -z" in p.stdout
-    assert "git branch -d -- $branch" in p.stdout
+    assert "git update-ref -d $ref $sha" in p.stdout
     assert "git branch -D" not in p.stdout
 
 
@@ -329,8 +330,9 @@ def test_status_never_issues_a_mutating_command(world) -> None:
     issued = [ln for ln in p.stderr.splitlines() if ln.startswith("+ git")]
     assert issued
     for line in issued:
-        for forbidden in ("worktree prune", "worktree remove", "branch -d", "checkout"):
-            assert forbidden not in line, line
+        forbidden = ("worktree prune", "worktree remove", "update-ref", "checkout")
+        for bad in forbidden:
+            assert bad not in line, line
 
 
 def test_you_cannot_prune_the_worktree_you_stand_in(world) -> None:

@@ -23,9 +23,15 @@ def worktree_remove(path: str) -> None:
     """Drop a checkout. Refuses on its own when the worktree is dirty."""
 
 
-@git("branch -d -- $branch", mutates=True)
-def branch_delete(branch: str) -> None:
-    """-d, never -D: git's own proof of merge is the only proof accepted."""
+@git("update-ref -d $ref $sha", mutates=True)
+def ref_delete(ref: str, sha: str) -> None:
+    """Delete a branch ref, and only while it still holds $sha.
+
+    Not `branch -d`, which decides on history and so refuses the squash merge
+    this program proved by content; not `branch -D`, which decides on nothing
+    and is refused by the guard. The sha is the one the verdict was formed
+    against, so a commit landing on the branch in between fails here.
+    """
 
 
 @git("rev-parse --verify $ref", ok=(0, 128))
@@ -68,26 +74,24 @@ def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str
 
 def plan(
     go: list[Verdict],
-    delete_ignored: bool,
     say: Callable[[str], None],
     repo: str | os.PathLike[str] | None = None,
 ) -> None:
     """Print what would go, and what puts it back, before anything does.
 
     --quiet and --yes do not silence this.
+
+    Every ignored path is named, whatever flag got the worktree this far:
+    `git worktree remove` takes the whole directory, so --delete-ignored
+    decides consent and never decides what is deleted.
     """
     for v in go:
         say(f"{render.err(v.label, render.BOLD)}  {render.err(v.path, render.DIM)}")
         restore = restore_line(v.branch, repo=repo)
         if restore:
             say(render.err(f"  restore with: {restore}", render.DIM))
-        if delete_ignored:
-            for path in R.ignored_paths(v.path):
-                say(
-                    render.err(
-                        f"  deleting ignored, unrecoverable: {path}", render.YELLOW
-                    )
-                )
+        for path in R.ignored_paths(v.path):
+            say(render.err(f"  deleting ignored, unrecoverable: {path}", render.YELLOW))
 
 
 def _prompt(text: str) -> str:
@@ -120,13 +124,12 @@ def confirm(count: int, ask: Callable[[str], str] | None = None) -> bool:
 
 def sweep(
     go: list[Verdict],
-    delete_ignored: bool,
     say: Callable[[str], None],
     repo: str | os.PathLike[str] | None = None,
 ) -> int:
     """Remove each one, in order. Returns how many failed.
 
-    Serial because `worktree remove` and `branch -d` take the repository's
+    Serial because `worktree remove` and `update-ref` take the repository's
     shared refs and its worktrees/ directory. One that git refuses is not a
     reason to abandon the rest.
     """
@@ -144,10 +147,7 @@ def sweep(
 
         if v.branch:
             try:
-                # -d, so git's own proof of merge decides. A squash-merged
-                # branch is refused here and kept: the checkout goes, the
-                # branch stays, and the restore line is not needed.
-                branch_delete(v.branch, repo=repo)
+                ref_delete(f"refs/heads/{v.branch}", v.sha, repo=repo)
             except (GitError, Refused) as exc:
                 say(f"branch {v.branch} kept: {exc}")
 

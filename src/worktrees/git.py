@@ -145,6 +145,11 @@ def guard(argv: Sequence[str]) -> None:
             f"{_ABSOLUTE} `git branch -D`; a branch is deleted on proof of merge "
             "or not at all"
         )
+    if head == "update-ref" and _has(rest, "-d") and len(rest) != 3:
+        raise Refused(
+            f"{_ABSOLUTE} `git update-ref -d` without the sha the ref must still "
+            "hold; a delete that names no old value is `branch -D` spelled longer"
+        )
 
 
 # --------------------------------------------------------------------------
