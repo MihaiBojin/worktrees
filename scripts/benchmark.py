@@ -175,7 +175,9 @@ def collect(runs: int, versions: list[str]) -> dict[str, Any]:
         text=True,
         check=False,
     )
-    declared = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+    declared = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"][
+        "version"
+    ]
     with tempfile.TemporaryDirectory(prefix="worktrees-bench-") as tmp:
         scratch = Path(tmp)
         wheel = build_wheel(scratch / "dist")
@@ -246,7 +248,9 @@ def to_markdown(data: dict[str, Any], top: int) -> str:
                 f"| {row['cumulative_us'] / 1000:.1f} ms |"
             )
         out.append("")
-    return "\n".join(out)
+    # No trailing blank line: the rendered file is committed, and
+    # end-of-file-fixer would rewrite it every time it was regenerated.
+    return "\n".join(out).rstrip("\n")
 
 
 def main(argv: list[str] | None = None) -> int:

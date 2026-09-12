@@ -75,4 +75,3 @@ Measured 2026-09-12T08:43:43Z against `d18bc71`, version 0.2.3, on macOS-26.6.2-
 | `argparse` | 0.9 ms | 1.0 ms |
 | `_ast` | 0.8 ms | 0.8 ms |
 | `worktrees.rotate` | 0.8 ms | 1.0 ms |
-
