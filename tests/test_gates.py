@@ -457,7 +457,6 @@ def test_a_worktree_is_read_once(world) -> None:
 
 def test_the_guard_names_every_rule_it_enforces(world) -> None:
     """The footer --explain prints is generated, so it cannot fall behind."""
-    from worktrees import cli
     from worktrees.git import RULES
 
     assert len(RULES) == 7
@@ -466,7 +465,6 @@ def test_the_guard_names_every_rule_it_enforces(world) -> None:
         assert rule.why
     # Each one refuses something, and says so in its own words.
     assert "update-ref" in "".join(rule.refusal("update-ref") for rule in RULES)
-    assert cli.RULES is RULES
 
 
 def test_the_readme_names_every_rule(world) -> None:

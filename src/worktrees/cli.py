@@ -9,13 +9,16 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from . import __version__, new_branch, pick, prune, render, verdicts
-from . import repo as R
-from . import rotate as rotate_mod
-from . import worktree as wt_mod
-from .git import RULES, GitError, Refused, commands, options
+from . import __version__, render
+from .errors import GitError, Refused
 from .render import BLUE, BOLD, DIM, GREEN, RED, YELLOW, Cell, Row, table
+
+if TYPE_CHECKING:  # names used in annotations, which never run
+    from . import repo as R
+    from . import verdicts
+    from . import worktree as wt_mod
 
 
 def _err(text: str) -> None:
@@ -27,15 +30,17 @@ def _same(a: str, b: str) -> bool:
     return bool(a) and bool(b) and Path(a).resolve() == Path(b).resolve()
 
 
-_VERDICT_CODE = {
-    verdicts.REMOVE: GREEN,
-    verdicts.KEEP: BLUE,
-    verdicts.UNKNOWN: YELLOW,
-}
-
-
 def _verdict_table(rows: list[verdicts.Verdict]) -> str:
     """The table `gws` prints, which `gwp` prints too rather than name it."""
+    from . import verdicts
+
+    # Built here rather than at module level: naming the verdicts is what
+    # imports the module, and `gw version` has none to colour.
+    code = {
+        verdicts.REMOVE: GREEN,
+        verdicts.KEEP: BLUE,
+        verdicts.UNKNOWN: YELLOW,
+    }
     head: Row = (
         Cell("VERDICT", DIM),
         Cell("BRANCH", DIM),
@@ -44,7 +49,7 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
     )
     body: list[Row] = [
         (
-            Cell(v.verdict, _VERDICT_CODE.get(v.verdict, "")),
+            Cell(v.verdict, code.get(v.verdict, "")),
             Cell(v.label, BOLD),
             Cell(v.why),
             Cell(v.path, DIM),
@@ -56,6 +61,8 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
 
 def _counted(rows: list[verdicts.Verdict]) -> str:
     """How many of each verdict, in the verdicts' own colours."""
+    from . import prune, verdicts
+
     go = len(prune.removable(rows))
     unclear = len([v for v in rows if v.verdict == verdicts.UNKNOWN])
     kept = len(rows) - go - unclear
@@ -68,6 +75,8 @@ def _counted(rows: list[verdicts.Verdict]) -> str:
 
 def _explain() -> int:
     """Every git command the program can issue."""
+    from .git import RULES, commands
+
     rows: list[Row] = [(Cell("", DIM), Cell("COMMAND", DIM), Cell("GIT", DIM))]
     for c in commands():
         rows.append(
@@ -147,6 +156,9 @@ def _assess(
     `status` printed. `judge` is how `remove` asks for the one you stand in
     to be judged like any other, having stepped out of it first.
     """
+    from . import repo as R
+    from . import verdicts
+
     remote = R.remote()
     online = not args.no_fetch
     if online:
@@ -197,6 +209,9 @@ def _assess(
 
 def run_status(args: argparse.Namespace) -> int:
     """Say what is here. Nothing in this path removes anything."""
+    from . import prune, verdicts
+    from .git import options
+
     options.verbose = args.verbose
     if args.explain:
         return _explain()
@@ -263,6 +278,9 @@ def run_status(args: argparse.Namespace) -> int:
 
 def run_prune(args: argparse.Namespace) -> int:
     """Remove exactly what status marks removable, having asked first."""
+    from . import prune, verdicts
+    from .git import options
+
     options.verbose = args.verbose
     if args.explain:
         return _explain()
@@ -344,6 +362,10 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
 
 
 def run_new_branch(args: argparse.Namespace) -> int:
+    from . import new_branch
+    from . import repo as R
+    from .git import options
+
     options.verbose = args.verbose
     if args.explain:
         return _explain()
@@ -398,6 +420,11 @@ def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
 
 
 def run_rotate(args: argparse.Namespace) -> int:
+    from . import new_branch
+    from . import repo as R
+    from . import rotate as rotate_mod
+    from .git import options
+
     options.verbose = args.verbose
     if args.explain:
         return _explain()
@@ -532,6 +559,10 @@ def _landed(args: argparse.Namespace, landed: wt_mod.Landed) -> int:
 
 
 def run_add(args: argparse.Namespace) -> int:
+    from . import new_branch
+    from . import worktree as wt_mod
+    from .git import options
+
     options.verbose = args.verbose
     if args.explain:
         return _explain()
@@ -559,6 +590,10 @@ def run_list(args: argparse.Namespace) -> int:
     one you are standing in is listed and never offered: picking it is the one
     answer that cannot take you anywhere.
     """
+    from . import pick
+    from . import repo as R
+    from .git import options
+
     options.verbose = args.verbose
     if args.explain:
         return _explain()
@@ -627,6 +662,10 @@ def run_list(args: argparse.Namespace) -> int:
 
 
 def run_move(args: argparse.Namespace) -> int:
+    from . import new_branch
+    from . import worktree as wt_mod
+    from .git import options
+
     options.verbose = args.verbose
     if args.explain:
         return _explain()
@@ -645,6 +684,11 @@ def run_move(args: argparse.Namespace) -> int:
 
 
 def run_remove(args: argparse.Namespace) -> int:
+    from . import pick, prune
+    from . import repo as R
+    from . import worktree as wt_mod
+    from .git import options
+
     options.verbose = args.verbose
     if args.explain:
         return _explain()
@@ -1046,6 +1090,7 @@ def _unknown_command(prog: str, typed: str) -> int:
 
 def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     """The CLI a shim and an agent call."""
+
     p = _parser(prog, "Git worktree commands that refuse to lose work.")
     subs = p.add_subparsers(dest="command")
     for name, command in _COMMANDS.items():
