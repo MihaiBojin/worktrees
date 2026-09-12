@@ -194,7 +194,8 @@ below, so what reaches PyPI is byte-for-byte what TestPyPI accepted.
 
 TestPyPI gates the real upload on purpose: a PyPI upload cannot be undone or
 replaced, so a failed rehearsal stops the run while there is still nothing to
-pin against. The merge happens first and the irreversible step is last, so
+pin against. The rehearsal installs what it uploaded and runs it, and that
+check blocks, because nothing after it is reversible. The merge happens first and the irreversible step is last, so
 everything recoverable is already done by the time anything is published.
 
 `release` needs the upload and nothing else. `verify` installs the version
