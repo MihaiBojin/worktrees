@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
 from datetime import date
 
 from . import repo as R
@@ -33,18 +32,30 @@ def log_oneline(range: str) -> None:
     """The commits in a range, for saying which ones are in the way."""
 
 
-@dataclass(frozen=True)
 class Rotated:
+    __slots__ = ("base", "branch", "sha", "stem")
+
     branch: str
     stem: str
     base: str  # the full ref
     sha: str
 
+    def __init__(self, branch: str, stem: str, base: str, sha: str) -> None:
+        self.branch = branch
+        self.stem = stem
+        self.base = base
+        self.sha = sha
 
-@dataclass(frozen=True)
+
 class CaughtUp:
+    __slots__ = ("at", "branch")
+
     branch: str
     at: str  # the ref it now matches
+
+    def __init__(self, branch: str, at: str) -> None:
+        self.branch = branch
+        self.at = at
 
 
 def stem(branch: str) -> str:

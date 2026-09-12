@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 from .git import git
@@ -109,13 +108,28 @@ def set_head_auto(remote: str) -> None:
 # --------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
 class Worktree:
+    __slots__ = ("branch", "flags", "main", "path", "sha")
+
     path: str
     sha: str
     branch: str  # empty when detached or bare
     flags: frozenset[str]  # any of bare, detached, locked, prunable
-    main: bool = False  # the original checkout, which git lists first
+    main: bool  # the original checkout, which git lists first
+
+    def __init__(
+        self,
+        path: str,
+        sha: str,
+        branch: str,
+        flags: frozenset[str],
+        main: bool = False,
+    ) -> None:
+        self.path = path
+        self.sha = sha
+        self.branch = branch
+        self.flags = flags
+        self.main = main
 
     @property
     def label(self) -> str:
@@ -300,7 +314,6 @@ def head_ref(
 # --------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
 class Status:
     """What one `git status` says about a worktree.
 
@@ -310,8 +323,14 @@ class Status:
     them.
     """
 
+    __slots__ = ("dirty", "ignored")
+
     dirty: bool
     ignored: list[str]
+
+    def __init__(self, dirty: bool, ignored: list[str]) -> None:
+        self.dirty = dirty
+        self.ignored = ignored
 
 
 def status_of(path: str) -> Status:

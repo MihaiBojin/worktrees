@@ -8,7 +8,6 @@ line and does the move.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 from . import layout
@@ -41,13 +40,19 @@ def branch_move(old: str, new: str) -> None:
     collision to report rather than one to resolve."""
 
 
-@dataclass(frozen=True)
 class Landed:
     """Where the caller should end up, and what happened to get there."""
+
+    __slots__ = ("branch", "created", "path")
 
     path: str
     branch: str
     created: bool  # False when the branch was already here
+
+    def __init__(self, path: str, branch: str, created: bool) -> None:
+        self.path = path
+        self.branch = branch
+        self.created = created
 
 
 def add(

@@ -16,18 +16,23 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from dataclasses import dataclass
 
 from .git import options
 
 
-@dataclass(frozen=True)
 class Request:
     """A pull or merge request for a branch."""
+
+    __slots__ = ("noun", "number", "state")
 
     number: int
     state: str  # MERGED, CLOSED, OPEN
     noun: str  # what that forge calls it
+
+    def __init__(self, number: int, state: str, noun: str) -> None:
+        self.number = number
+        self.state = state
+        self.noun = noun
 
 
 def available() -> str:

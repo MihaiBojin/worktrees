@@ -24,7 +24,6 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 Argv = tuple[str, ...]
@@ -38,13 +37,19 @@ class Refused(Exception):
     """The guard will not issue this command. No flag reaches past it."""
 
 
-@dataclass
 class Run:
     """What one git call produced."""
+
+    __slots__ = ("code", "err", "out")
 
     code: int
     out: str
     err: str
+
+    def __init__(self, code: int, out: str, err: str) -> None:
+        self.code = code
+        self.out = out
+        self.err = err
 
     def __bool__(self) -> bool:
         return self.code == 0
@@ -54,28 +59,48 @@ class Run:
         return self.out.splitlines()
 
 
-@dataclass
 class Options:
     """Set once by the CLI, read by every call."""
 
-    verbose: bool = False
+    __slots__ = ("log", "verbose")
+
+    verbose: bool
     # Every argv issued, in order. A test asserts on this; nothing else reads
     # it, so it costs a list append.
-    log: list[Argv] = field(default_factory=list)
+    log: list[Argv]
+
+    def __init__(self, verbose: bool = False, log: list[Argv] | None = None) -> None:
+        self.verbose = verbose
+        self.log = [] if log is None else log
 
 
 options = Options()
 
 
-@dataclass(frozen=True)
 class Command:
     """A decorated git call, for --explain."""
+
+    __slots__ = ("doc", "mutates", "name", "ok", "shape")
 
     name: str
     doc: str
     mutates: bool
     ok: tuple[int, ...]
     shape: Argv
+
+    def __init__(
+        self,
+        name: str,
+        doc: str,
+        mutates: bool,
+        ok: tuple[int, ...],
+        shape: Argv,
+    ) -> None:
+        self.name = name
+        self.doc = doc
+        self.mutates = mutates
+        self.ok = ok
+        self.shape = shape
 
 
 _registry: list[Command] = []
@@ -117,7 +142,6 @@ def _full_sha(value: str) -> bool:
     return len(value) in (40, 64) and all(c in "0123456789abcdef" for c in value)
 
 
-@dataclass(frozen=True)
 class Rule:
     """One command refused absolutely, under the name `--explain` prints.
 
@@ -126,12 +150,26 @@ class Rule:
     described in another is a rule that goes quiet.
     """
 
+    __slots__ = ("named", "phrase", "test", "why")
+
     named: str  # what --explain prints
     why: str  # the clause after the semicolon
     test: Callable[[str, Sequence[str]], bool]
     # How the refusal names it, when `git <named>` is not how you would say
     # it. `{head}` is the subcommand that was about to run.
-    phrase: str = ""
+    phrase: str
+
+    def __init__(
+        self,
+        named: str,
+        why: str,
+        test: Callable[[str, Sequence[str]], bool],
+        phrase: str = "",
+    ) -> None:
+        self.named = named
+        self.why = why
+        self.test = test
+        self.phrase = phrase
 
     def refusal(self, head: str) -> str:
         spelled = (self.phrase or f"`git {self.named}`").format(head=head)

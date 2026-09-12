@@ -7,7 +7,6 @@ import difflib
 import json
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
 from . import __version__, new_branch, pick, prune, render, verdicts
@@ -819,7 +818,6 @@ def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     )
 
 
-@dataclass(frozen=True)
 class _Command:
     """One command under both its names, and every shorthand for it.
 
@@ -828,13 +826,33 @@ class _Command:
     prints the row rather than a second list that can disagree with it.
     """
 
+    __slots__ = ("about", "aliases", "binary", "flags", "lands", "run", "usage")
+
     run: Callable[[argparse.Namespace], int]
     flags: Callable[[argparse.ArgumentParser], None] | None
     about: str
-    binary: str = ""  # the console script, where the command installs one
-    usage: str = ""
-    aliases: tuple[str, ...] = ()
-    lands: bool = False  # changes the caller's directory, so it needs a shim
+    binary: str  # the console script, where the command installs one
+    usage: str
+    aliases: tuple[str, ...]
+    lands: bool  # changes the caller's directory, so it needs a shim
+
+    def __init__(
+        self,
+        run: Callable[[argparse.Namespace], int],
+        flags: Callable[[argparse.ArgumentParser], None] | None,
+        about: str,
+        binary: str = "",
+        usage: str = "",
+        aliases: tuple[str, ...] = (),
+        lands: bool = False,
+    ) -> None:
+        self.run = run
+        self.flags = flags
+        self.about = about
+        self.binary = binary
+        self.usage = usage
+        self.aliases = aliases
+        self.lands = lands
 
 
 _COMMANDS: dict[str, _Command] = {

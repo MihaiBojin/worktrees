@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 from . import forge
@@ -19,8 +18,9 @@ KEEP = "keep"
 UNKNOWN = "unknown"
 
 
-@dataclass(frozen=True)
 class Verdict:
+    __slots__ = ("branch", "ignored", "path", "sha", "verdict", "why")
+
     verdict: str
     branch: str  # empty when detached
     path: str
@@ -29,11 +29,27 @@ class Verdict:
     # everywhere else. Whether the work landed and whether the directory is
     # safe to delete are two questions, and only the second one answers to
     # --delete-ignored, so a caller that prints a refusal needs them apart.
-    ignored: int = 0
+    ignored: int
     # The commit the verdict was formed against. Deleting the branch names it
     # as the value the ref must still hold, so a commit made between the
     # judgement and the removal fails the delete rather than going with it.
-    sha: str = ""
+    sha: str
+
+    def __init__(
+        self,
+        verdict: str,
+        branch: str,
+        path: str,
+        why: str,
+        ignored: int = 0,
+        sha: str = "",
+    ) -> None:
+        self.verdict = verdict
+        self.branch = branch
+        self.path = path
+        self.why = why
+        self.ignored = ignored
+        self.sha = sha
 
     @property
     def label(self) -> str:
