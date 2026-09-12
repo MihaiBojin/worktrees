@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import difflib
-import json
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -208,6 +207,8 @@ def _assess(
 
 def run_status(args: argparse.Namespace) -> int:
     """Say what is here. Nothing in this path removes anything."""
+    import json
+
     from . import prune, verdicts
     from .git import options
 
@@ -277,6 +278,8 @@ def run_status(args: argparse.Namespace) -> int:
 
 def run_prune(args: argparse.Namespace) -> int:
     """Remove exactly what status marks removable, having asked first."""
+    import json
+
     from . import prune, verdicts
     from .git import options
 
@@ -361,6 +364,8 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
 
 
 def run_new_branch(args: argparse.Namespace) -> int:
+    import json
+
     from . import new_branch
     from . import repo as R
     from .git import options
@@ -419,6 +424,8 @@ def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
 
 
 def run_rotate(args: argparse.Namespace) -> int:
+    import json
+
     from . import new_branch
     from . import repo as R
     from . import rotate as rotate_mod
@@ -541,6 +548,8 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
 
 def _landed(args: argparse.Namespace, landed: wt_mod.Landed) -> int:
     """One destination on stdout, so `cd $(gwa x)` works."""
+    import json
+
     if args.json:
         print(
             json.dumps(
@@ -589,6 +598,8 @@ def run_list(args: argparse.Namespace) -> int:
     one you are standing in is listed and never offered: picking it is the one
     answer that cannot take you anywhere.
     """
+    import json
+
     from . import pick
     from . import repo as R
     from .git import options
@@ -683,6 +694,8 @@ def run_move(args: argparse.Namespace) -> int:
 
 
 def run_remove(args: argparse.Namespace) -> int:
+    import json
+
     from . import pick, prune
     from . import repo as R
     from . import worktree as wt_mod

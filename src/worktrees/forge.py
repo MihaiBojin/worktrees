@@ -13,7 +13,6 @@ cross-checked against the commits an upstream has not got.
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 
@@ -60,6 +59,8 @@ def request_for(
     remote, no request. The caller treats that as "the forge said nothing"
     rather than as "no".
     """
+    import json
+
     tool = available()
     if not tool:
         return None
