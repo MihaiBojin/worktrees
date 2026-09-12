@@ -104,6 +104,17 @@ jobs:
       - name: Build
         run: uv build
 
+      # The wheel is not the tree: hatch_build.py writes _version.py into it,
+      # and one that lacks it falls back to the metadata lookup and says
+      # nothing. Installing it costs four seconds and happens before anything
+      # is uploaded anywhere.
+      - name: Install the wheel and run it
+        run: |
+          REPORTED="$(uv tool run --isolated --from dist/*.whl gw version)"
+          DECLARED="$(uv version --short)"
+          echo "the wheel reports $REPORTED, pyproject declares $DECLARED" >&2
+          [ "$REPORTED" = "$DECLARED" ]
+
       - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
