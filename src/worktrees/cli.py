@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import difflib
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -1110,6 +1109,10 @@ def _unknown_command(prog: str, typed: str) -> int:
     the same table `gwh` prints, plus `--help`, which people type as a
     command.
     """
+    # difflib costs 0.8 ms to import and only a mistyped command needs it,
+    # so the run that made the typo pays for it and no other run does.
+    import difflib
+
     _err(f"{prog}: there is no command {typed!r}")
     pool = [*_CANONICAL, "--help"]
     near = difflib.get_close_matches(typed, pool, n=1)
