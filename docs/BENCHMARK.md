@@ -14,15 +14,15 @@ The JSON keeps every module `-X importtime` named. This is one view of
 it, and a question about a module missing below is a filter rather
 than another run.
 
-Measured 2026-09-12T08:57:26Z against `f3f10a1`, version 0.2.3, on macOS-26.6.2-arm64-arm-64bit-Mach-O. 50 runs each, wall clock divided, after 3 discarded.
+Measured 2026-09-12T23:49:06Z against `b24d2e8`, version 0.2.3, on macOS-26.6.2-arm64-arm-64bit-Mach-O. 50 runs each, wall clock divided, after 3 discarded.
 
 |  | 3.11.13 | 3.12.14 | 3.13.15 | 3.14.7 |
 | --- | --- | --- | --- | --- |
-| the interpreter alone | 22.5 ms | 23.5 ms | 24.1 ms | 25.3 ms |
-| gw version | 48.4 ms | 49.6 ms | 50.7 ms | 55.6 ms |
-| gwh | 45.4 ms | 48.7 ms | 48.2 ms | 53.8 ms |
-| gws --help | 45.8 ms | 50.0 ms | 51.8 ms | 56.4 ms |
-| /bin/echo, for scale | 2.7 ms | 2.8 ms | 3.0 ms | 3.1 ms |
+| the interpreter alone | 22.8 ms | 24.3 ms | 25.1 ms | 25.7 ms |
+| gw version | 30.5 ms | 33.4 ms | 32.7 ms | 43.1 ms |
+| gwh | 29.9 ms | 32.8 ms | 32.3 ms | 43.0 ms |
+| gws --help | 31.1 ms | 33.3 ms | 33.7 ms | 44.0 ms |
+| /bin/echo, for scale | 3.2 ms | 3.3 ms | 3.0 ms | 3.1 ms |
 
 Every column is a uv-managed interpreter. That is the point of `--managed-python`:
 without it uv takes whatever it finds first, and a run compares packagers rather
@@ -39,50 +39,50 @@ check, which was worth 8 ms of interpreter startup on its own.
 
 | module | self | cumulative |
 | --- | --- | --- |
-| `worktrees.git` | 1.1 ms | 4.8 ms |
-| `enum` | 1.1 ms | 1.1 ms |
-| `worktrees.repo` | 1.1 ms | 5.8 ms |
-| `typing` | 1.0 ms | 1.1 ms |
-| `inspect` | 0.8 ms | 3.1 ms |
-| `worktrees.rotate` | 0.7 ms | 1.4 ms |
-| `subprocess` | 0.7 ms | 2.4 ms |
-| `worktrees.cli` | 0.6 ms | 21.3 ms |
+| `typing` | 1.4 ms | 1.4 ms |
+| `enum` | 1.0 ms | 1.0 ms |
+| `ipaddress` | 0.6 ms | 0.6 ms |
+| `urllib.parse` | 0.6 ms | 1.4 ms |
+| `time` | 0.6 ms | 0.6 ms |
+| `gettext` | 0.5 ms | 0.5 ms |
+| `argparse` | 0.5 ms | 3.1 ms |
+| `pathlib` | 0.4 ms | 2.3 ms |
 
 ### 3.12.14, the 8 costliest imports
 
 | module | self | cumulative |
 | --- | --- | --- |
-| `worktrees.repo` | 1.8 ms | 6.7 ms |
-| `typing` | 1.4 ms | 1.4 ms |
-| `worktrees.git` | 1.3 ms | 4.8 ms |
-| `inspect` | 1.1 ms | 3.9 ms |
+| `typing` | 1.3 ms | 1.3 ms |
 | `enum` | 0.8 ms | 0.8 ms |
-| `worktrees.rotate` | 0.8 ms | 1.0 ms |
-| `dataclasses` | 0.8 ms | 5.2 ms |
-| `worktrees.cli` | 0.7 ms | 23.9 ms |
+| `ipaddress` | 0.8 ms | 0.8 ms |
+| `urllib.parse` | 0.7 ms | 1.7 ms |
+| `argparse` | 0.6 ms | 3.6 ms |
+| `nt` | 0.6 ms | 0.6 ms |
+| `time` | 0.6 ms | 0.6 ms |
+| `gettext` | 0.5 ms | 0.5 ms |
 
 ### 3.13.15, the 8 costliest imports
 
 | module | self | cumulative |
 | --- | --- | --- |
-| `worktrees.git` | 1.4 ms | 3.7 ms |
-| `typing` | 1.3 ms | 1.3 ms |
-| `inspect` | 1.2 ms | 5.6 ms |
-| `worktrees.repo` | 1.2 ms | 4.9 ms |
+| `typing` | 1.1 ms | 1.1 ms |
 | `enum` | 0.8 ms | 0.8 ms |
-| `worktrees.rotate` | 0.8 ms | 0.9 ms |
-| `argparse` | 0.7 ms | 3.7 ms |
-| `ast` | 0.7 ms | 1.3 ms |
+| `time` | 0.6 ms | 0.6 ms |
+| `argparse` | 0.5 ms | 3.3 ms |
+| `site` | 0.5 ms | 3.7 ms |
+| `gettext` | 0.5 ms | 0.5 ms |
+| `_collections_abc` | 0.5 ms | 0.5 ms |
+| `pathlib._local` | 0.4 ms | 1.1 ms |
 
 ### 3.14.7, the 8 costliest imports
 
 | module | self | cumulative |
 | --- | --- | --- |
 | `typing` | 1.3 ms | 1.3 ms |
-| `worktrees.git` | 1.3 ms | 5.4 ms |
-| `worktrees.repo` | 1.1 ms | 6.6 ms |
-| `inspect` | 1.0 ms | 4.3 ms |
-| `worktrees.rotate` | 0.8 ms | 0.9 ms |
 | `enum` | 0.8 ms | 0.8 ms |
-| `worktrees.cli` | 0.7 ms | 22.8 ms |
+| `site` | 0.6 ms | 4.7 ms |
+| `argparse` | 0.6 ms | 3.1 ms |
 | `time` | 0.6 ms | 0.6 ms |
+| `contextlib` | 0.6 ms | 2.4 ms |
+| `_collections_abc` | 0.5 ms | 0.5 ms |
+| `encodings` | 0.5 ms | 1.2 ms |
