@@ -124,6 +124,32 @@ def import_table(python: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def build_facts(python: Path) -> dict[str, Any]:
+    """How this interpreter was put together, which the timings depend on.
+
+    A packager that links the C extensions into the executable and one that
+    ships them as shared objects do not start in the same time, and on macOS
+    every `dlopen` pays a code-signature check. Recorded per column so a row
+    that looks like a version difference can be checked against the build.
+    """
+    probe = (
+        "import sys, sysconfig, pathlib, json;"
+        "d = pathlib.Path(sysconfig.get_paths()['stdlib']) / 'lib-dynload';"
+        "print(json.dumps({"
+        "'executable': sys.executable,"
+        "'builtin_modules': len(sys.builtin_module_names),"
+        "'dynload_objects': len(list(d.glob('*.so'))) if d.exists() else 0,"
+        "'compiler': sysconfig.get_config_var('CC') or ''}))"
+    )
+    proc = subprocess.run(
+        [str(python), "-c", probe], capture_output=True, text=True, check=False
+    )
+    try:
+        return dict(json.loads(proc.stdout))
+    except json.JSONDecodeError:  # pragma: no cover
+        return {}
+
+
 def build_wheel(out: Path) -> Path:
     """One wheel, installed under every interpreter, so the only variable is
     the interpreter."""
@@ -142,8 +168,22 @@ def measure(wheel: Path, version: str, runs: int, scratch: Path) -> dict[str, An
         "UV_TOOL_DIR": str(tools),
         "UV_TOOL_BIN_DIR": str(binaries),
     }
+    # --managed-python, so every column is a uv-built interpreter. Without it
+    # uv takes whatever it finds first, and a run can compare Homebrew's 3.14
+    # against python.org's 3.13 against a downloaded 3.11: three packagers,
+    # not three versions, and the difference between them is larger than the
+    # difference this measures.
     subprocess.run(
-        ["uv", "tool", "install", "--quiet", "--python", version, str(wheel)],
+        [
+            "uv",
+            "tool",
+            "install",
+            "--quiet",
+            "--managed-python",
+            "--python",
+            version,
+            str(wheel),
+        ],
         env=env,
         capture_output=True,
         text=True,
@@ -163,6 +203,7 @@ def measure(wheel: Path, version: str, runs: int, scratch: Path) -> dict[str, An
     return {
         "requested": version,
         "actual": actual,
+        "build": build_facts(python),
         "timings_ms": {k: round(v, 1) for k, v in timings.items()},
         "imports": import_table(python),
     }
@@ -233,6 +274,27 @@ def to_markdown(data: dict[str, Any], top: int) -> str:
     out.append("| " + " | ".join("---" for _ in header) + " |")
     for label in labels:
         cells = [f"{p['timings_ms'].get(label, '')} ms" for p in pythons]
+        out.append(f"| {label} | " + " | ".join(cells) + " |")
+    out.append("")
+    out.append(
+        "Every column is a uv-managed interpreter. That is the point of "
+        "`--managed-python`:\nwithout it uv takes whatever it finds first, "
+        "and a run compares packagers rather\nthan versions. Homebrew's "
+        "3.14 ships 76 extension modules as shared objects\nwhere the "
+        "build below ships 2, and on macOS every `dlopen` pays a "
+        "code-signature\ncheck, which was worth 8 ms of interpreter "
+        "startup on its own."
+    )
+    out.append("")
+    out.append(
+        "| how each was built | " + " | ".join(p["actual"] for p in pythons) + " |"
+    )
+    out.append("| " + " | ".join("---" for _ in range(len(pythons) + 1)) + " |")
+    for key, label in (
+        ("builtin_modules", "modules linked into the executable"),
+        ("dynload_objects", "modules `dlopen`ed from `lib-dynload`"),
+    ):
+        cells = [str(p.get("build", {}).get(key, "")) for p in pythons]
         out.append(f"| {label} | " + " | ".join(cells) + " |")
     out.append("")
 

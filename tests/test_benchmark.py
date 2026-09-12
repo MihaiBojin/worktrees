@@ -79,6 +79,7 @@ def _sample() -> dict:
             {
                 "requested": "3.11",
                 "actual": "3.11.13",
+                "build": {"builtin_modules": 99, "dynload_objects": 4},
                 "timings_ms": {"the interpreter alone": 15.4, "gw version": 44.4},
                 "imports": [
                     {"module": "a", "depth": 0, "self_us": 900, "cumulative_us": 900},
@@ -88,6 +89,7 @@ def _sample() -> dict:
             {
                 "requested": "3.14",
                 "actual": "3.14.7",
+                "build": {"builtin_modules": 101, "dynload_objects": 2},
                 "timings_ms": {"the interpreter alone": 23.3, "gw version": 69.0},
                 "imports": [
                     {"module": "a", "depth": 0, "self_us": 800, "cumulative_us": 800}
@@ -103,6 +105,18 @@ def test_the_table_puts_one_version_per_column() -> None:
     assert "| the interpreter alone | 15.4 ms | 23.3 ms |" in text
     assert "| gw version | 44.4 ms | 69.0 ms |" in text
     assert "abc1234" in text and "9.9.9" in text
+
+
+def test_the_table_says_how_each_interpreter_was_built() -> None:
+    """A column that looks like a version difference is often a packager one.
+
+    Homebrew's 3.14 ships 76 extension modules as shared objects where uv's
+    ships 2, and on macOS each `dlopen` pays a code-signature check. Without
+    these two rows the timings read as a CPython regression.
+    """
+    text = benchmark.to_markdown(_sample(), top=1)
+    assert "| modules linked into the executable | 99 | 101 |" in text
+    assert "| modules `dlopen`ed from `lib-dynload` | 4 | 2 |" in text
 
 
 def test_top_narrows_the_view_and_not_the_record() -> None:
