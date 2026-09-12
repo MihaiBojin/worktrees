@@ -18,7 +18,6 @@ element. Nothing is ever a shell string.
 from __future__ import annotations
 
 import functools
-import inspect
 import os
 import shlex
 import subprocess
@@ -79,13 +78,16 @@ options = Options()
 class Command:
     """A decorated git call, for --explain."""
 
-    __slots__ = ("doc", "mutates", "name", "ok", "shape")
+    __slots__ = ("doc", "fn", "mutates", "name", "ok", "shape")
 
     name: str
     doc: str
     mutates: bool
     ok: tuple[int, ...]
     shape: Argv
+    # The decorated function, so a test can compare each spec's placeholders
+    # against the parameters it has. That check used to run at decoration.
+    fn: Callable[..., Any]
 
     def __init__(
         self,
@@ -94,12 +96,14 @@ class Command:
         mutates: bool,
         ok: tuple[int, ...],
         shape: Argv,
+        fn: Callable[..., Any],
     ) -> None:
         self.name = name
         self.doc = doc
         self.mutates = mutates
         self.ok = ok
         self.shape = shape
+        self.fn = fn
 
 
 _registry: list[Command] = []
@@ -342,23 +346,24 @@ def git(
     tokens = shlex.split(spec)
 
     def decorate(fn: Callable[..., Any]) -> GitCall:
-        signature = inspect.signature(fn)
-        # At import, not at the call. A spec naming a parameter the function
-        # does not have is a typo, and this is the moment it is cheapest to
-        # hear about.
-        for token in tokens:
-            for name in _placeholders(token):
-                if name not in signature.parameters:
-                    raise NameError(
-                        f"{fn.__name__}: spec names ${name}, which is not a "
-                        f"parameter of {fn.__name__}{signature}"
-                    )
+        # `inspect` costs 6 ms to import and every spec wants a signature, so
+        # it is read on the first call to each rather than at decoration. A
+        # spec naming a parameter its function does not have used to raise
+        # here; `test_spec.py` asks the registry instead.
+        cached: list[Any] = []
+
+        def signature() -> Any:
+            if not cached:
+                import inspect
+
+                cached.append(inspect.signature(fn))
+            return cached[0]
 
         @functools.wraps(fn)
         def call(
             *args: Any, repo: str | os.PathLike[str] | None = None, **kwargs: Any
         ) -> Run:
-            bound = signature.bind(*args, **kwargs)
+            bound = signature().bind(*args, **kwargs)
             bound.apply_defaults()
             argv: list[str] = []
             for token in tokens:
@@ -397,6 +402,7 @@ def git(
                 mutates=mutates,
                 ok=accept,
                 shape=tuple(tokens),
+                fn=fn,
             )
         )
         return call

@@ -345,17 +345,6 @@ def test_the_guard_cannot_be_bypassed(world) -> None:
         sneaky("-D")
 
 
-def test_a_spec_naming_an_unknown_parameter_fails_at_import(world) -> None:
-    """A typo in a spec is cheapest to hear about at decoration."""
-    from worktrees.git import git
-
-    with pytest.raises(NameError, match=r"\$brnch"):
-
-        @git("branch -d $brnch")
-        def typo(branch: str) -> None:
-            """The spec and the signature disagree."""
-
-
 def test_the_spec_must_be_a_string(world) -> None:
     """The bare `@git` form is gone; say so rather than failing in shlex."""
     from worktrees.git import git

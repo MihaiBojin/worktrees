@@ -143,3 +143,29 @@ def test_verbose_prints_a_line_that_pastes(world, capsys) -> None:
         options.verbose = False
     printed = capsys.readouterr().err
     assert "+ git show-ref --verify --quiet 'refs/heads/has space'" in printed
+
+
+def test_every_spec_names_parameters_its_function_has() -> None:
+    """A typo in a spec, caught here rather than at decoration.
+
+    `@git` used to read the signature as it decorated, which imports
+    `inspect` and costs 6 ms on every invocation for a check that only has
+    to be true once. The registry carries the function, so this asks the
+    same question of every spec in the program.
+    """
+    import inspect
+
+    from worktrees.git import _placeholders, commands
+
+    # This module's own specs. The registry is global and a test that
+    # decorates one adds to it, deliberately broken ones included.
+    ours = [c for c in commands() if c.fn.__module__.startswith("worktrees.")]
+    assert len(ours) > 30, "the registry came back empty"
+    for command in ours:
+        parameters = inspect.signature(command.fn).parameters
+        for token in command.shape:
+            for name in _placeholders(token):
+                assert name in parameters, (
+                    f"{command.name}: spec names ${name}, which is not a "
+                    f"parameter of {command.name}{inspect.signature(command.fn)}"
+                )
