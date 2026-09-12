@@ -145,6 +145,13 @@ jobs:
         # unavailable instead of quietly looking for a token.
         run: uv publish --index testpypi --trusted-publishing always
 
+      # A rehearsal that only uploads rehearses half of it. This check blocks,
+      # unlike its PyPI counterpart: waiting here costs nothing irreversible,
+      # and a wheel that does not install is what the real index must never be
+      # handed.
+      - name: Verify it installs from TestPyPI
+        run: scripts/verify-publish.bash
+
   publish:
     name: Publish to PyPI
     runs-on: ubuntu-latest
