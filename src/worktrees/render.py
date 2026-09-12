@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass
 from typing import IO
 
 RESET = "\033[0m"
@@ -59,12 +58,17 @@ def setup() -> None:
     err.on = supported(sys.stderr)
 
 
-@dataclass(frozen=True)
 class Cell:
     """One cell. The width comes from the text, the code paints it after."""
 
+    __slots__ = ("code", "text")
+
     text: str
-    code: str = ""
+    code: str
+
+    def __init__(self, text: str, code: str = "") -> None:
+        self.text = text
+        self.code = code
 
 
 Row = tuple["str | Cell", ...]

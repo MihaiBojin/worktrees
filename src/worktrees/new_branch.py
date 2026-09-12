@@ -8,7 +8,6 @@ to be rebased afterwards.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 
 from . import repo as R
 from .git import git
@@ -33,11 +32,17 @@ def switch_create(name: str, base: str) -> None:
     """
 
 
-@dataclass(frozen=True)
 class Started:
+    __slots__ = ("base", "branch", "sha")
+
     branch: str
     base: str  # the full ref
     sha: str
+
+    def __init__(self, branch: str, base: str, sha: str) -> None:
+        self.branch = branch
+        self.base = base
+        self.sha = sha
 
 
 class Refusal(Exception):
