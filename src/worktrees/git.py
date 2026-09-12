@@ -27,15 +27,14 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from .errors import GitError, Refused
+
 Argv = tuple[str, ...]
 
 
-class GitError(RuntimeError):
-    """git exited with a code the caller did not declare acceptable."""
-
-
-class Refused(Exception):
-    """The guard will not issue this command. No flag reaches past it."""
+# Re-exported: they are raised here and caught in `cli._dispatch`, which runs
+# for every command and must not pull this module in to name them.
+__all__ = ["GitError", "Refused", "git", "guard", "options"]
 
 
 @dataclass
