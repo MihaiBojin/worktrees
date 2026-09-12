@@ -6,9 +6,14 @@ through `subprocess` so env, cwd, both streams and the exit code stay per-test.
 
 ```console
 uv sync --all-extras
+uv run --no-sync pre-commit install
 uv run --no-sync pytest tests
 uv run --no-sync pre-commit run --all-files
 ```
+
+`pre-commit run --all-files` reads `git ls-files`, so a file that is new and
+unstaged is invisible to it. Stage before running the hooks, or install them
+and let the commit do it.
 
 ## Binaries and shell functions are not interchangeable
 

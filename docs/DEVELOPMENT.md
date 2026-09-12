@@ -10,6 +10,18 @@ uv run --no-sync pre-commit run --all-files
 
 `uv sync --all-extras --locked` is what CI runs, so a stale `uv.lock` fails
 there rather than resolving something the lock never described.
+`pre-commit install` writes the git hook, so the same checks run at `git
+commit` rather than only at CI. Do it once per clone:
+
+```console
+uv run --no-sync pre-commit install
+```
+
+Without it, `pre-commit run --all-files` is the only thing that runs them,
+and it reads `git ls-files`: a file that is new and not yet staged is
+invisible to it, so CI is the first thing to format a file you just wrote.
+`git add` before running the hooks, or let the installed hook do it for you.
+
 
 The rules this code follows, and the reasoning behind them, are in
 [AGENTS.md](../AGENTS.md). This file is what to run.
