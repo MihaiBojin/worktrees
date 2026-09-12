@@ -56,6 +56,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # python-version makes setup-uv run `uv python install`, so each entry
+      # gets a uv-managed cpython-X.Y.Z rather than whatever the runner image
+      # ships. Packagers differ enough to matter: one that links its C
+      # extensions into the executable and one that dlopens 76 of them do not
+      # start in the same time. scripts/README.md has the measurement.
       - name: Set up uv and Python ${{ matrix.python-version }}
         uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with:

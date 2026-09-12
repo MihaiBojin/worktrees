@@ -57,35 +57,8 @@ uv run scripts/benchmark.py > b.json
 uv run scripts/benchmark.py --markdown --from b.json > docs/BENCHMARK.md
 ```
 
-It builds one wheel, installs it with `uv tool install --managed-python` under
-every Python version `pyproject.toml` declares, and times the commands that
-touch no git:
-`gw version`, `gwh` and `gws --help`, against the bare interpreter and
-`/bin/echo` for a floor. [docs/BENCHMARK.md](BENCHMARK.md) is the last run.
-
-Starting is the only thing worth timing. Everything else is a `git`
-subprocess or a forge round trip, and both are facts about a repository and a
-network: a monorepo and a five-file repository do not agree, and neither do
-two runs on the same laptop. Where a count says something a clock cannot,
-`gws --explain` lists the git commands and `-v` prints the ones a run issued.
-
-The JSON holds every module `-X importtime` named, with `self` and
-`cumulative` microseconds and the nesting depth, because a later question
-about one of them should be a filter rather than another run. That is how the
-`shutil` and `difflib` imports were found, and how `ipaddress` was traced to
-`pathlib` and left alone.
-
-`--managed-python` is why the columns are comparable. Without it `uv` takes
-whatever interpreter it finds first, and a run on this machine compared
-Homebrew's 3.14 against python.org's 3.13 against a downloaded 3.11: three
-packagers rather than three versions. Homebrew's 3.14 `dlopen`s 76 extension
-modules where uv's builds link all but two into the executable, and on macOS
-each `dlopen` pays a code-signature check, which read as an 8 ms regression in
-CPython and was nothing of the sort. Each column records its own
-`builtin_modules` and `dynload_objects` so the next such reading is checkable.
-
-`uv` downloads an interpreter it does not have, so a cold machine reaches the
-network on the first run. Nothing else in the script does.
+[scripts/README.md](../scripts/README.md) says what it measures and why every
+interpreter comes from uv. [docs/BENCHMARK.md](BENCHMARK.md) is the last run.
 
 ## Working on a checkout
 

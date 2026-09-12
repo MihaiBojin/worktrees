@@ -15,6 +15,11 @@ uv run --no-sync pre-commit run --all-files
 unstaged is invisible to it. Stage before running the hooks, or install them
 and let the commit do it.
 
+Read [scripts/README.md](scripts/README.md) before measuring anything. It says
+what is worth timing and what is not, and why every interpreter the benchmark
+touches comes from uv: a run that compares packagers rather than versions
+produces a number that looks like a CPython regression and is not one.
+
 ## Binaries and shell functions are not interchangeable
 
 A shell function of a given name beats a binary of that name in bash, zsh and
