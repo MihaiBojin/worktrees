@@ -24,7 +24,10 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from typing import Protocol
 
 from .errors import GitError, Refused
 
@@ -254,14 +257,16 @@ def guard(argv: Sequence[str]) -> None:
 # --------------------------------------------------------------------------
 
 
-class GitCall(Protocol):
-    """What a decorated function becomes: its own arguments, plus `repo`."""
+if TYPE_CHECKING:  # a base class costs an import; an annotation does not
 
-    __name__: str
+    class GitCall(Protocol):
+        """What a decorated function becomes: its own arguments, plus `repo`."""
 
-    def __call__(
-        self, *args: Any, repo: str | os.PathLike[str] | None = None, **kwargs: Any
-    ) -> Run: ...
+        __name__: str
+
+        def __call__(
+            self, *args: Any, repo: str | os.PathLike[str] | None = None, **kwargs: Any
+        ) -> Run: ...
 
 
 def _placeholders(token: str) -> list[str]:

@@ -15,7 +15,10 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import IO
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import IO
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
