@@ -1108,13 +1108,6 @@ def _unknown_command(prog: str, typed: str) -> int:
 
 def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     """The CLI a shim and an agent call."""
-
-    p = _parser(prog, "Git worktree commands that refuse to lose work.")
-    subs = p.add_subparsers(dest="command")
-    for name, command in _COMMANDS.items():
-        sub = subs.add_parser(name, aliases=list(command.aliases), help=command.about)
-        if command.flags:
-            command.flags(sub)
     args_in = sys.argv[1:] if argv is None else argv
     if args_in and args_in[0] == "--complete":
         return _complete_commands()
@@ -1131,7 +1124,32 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
         args_in = ["status", *args_in]
     if args_in and not args_in[0].startswith("-") and args_in[0] not in _CANONICAL:
         return _unknown_command(prog, args_in[0])
+
+    p = _parser(prog, "Git worktree commands that refuse to lose work.")
+    subs = p.add_subparsers(dest="command")
+    for name in _needed(args_in):
+        command = _COMMANDS[name]
+        sub = subs.add_parser(name, aliases=list(command.aliases), help=command.about)
+        if command.flags:
+            command.flags(sub)
     return _dispatch(p, args_in, None)
+
+
+def _needed(args_in: list[str]) -> list[str]:
+    """Which subparsers this invocation has to have built.
+
+    One, normally. Building all eleven and their shorthands is 1.5 ms of a
+    47 ms run, and ten of them answer a question nobody asked.
+
+    Two invocations need the whole set. `gw --help` prints the list, and a
+    name is checked against `_CANONICAL` before this is reached, so anything
+    else reaching the else-branch is argparse's to report.
+    """
+    if not args_in:
+        return []  # `gw` on its own prints the help table and parses nothing
+    if args_in[0] in _CANONICAL:
+        return [_CANONICAL[args_in[0]]]
+    return list(_COMMANDS)
 
 
 def _dispatch(
