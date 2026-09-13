@@ -10,6 +10,18 @@ uv run --no-sync pre-commit run --all-files
 
 `uv sync --all-extras --locked` is what CI runs, so a stale `uv.lock` fails
 there rather than resolving something the lock never described.
+`pre-commit install` writes the git hook, so the same checks run at `git
+commit` rather than only at CI. Do it once per clone:
+
+```console
+uv run --no-sync pre-commit install
+```
+
+Without it, `pre-commit run --all-files` is the only thing that runs them,
+and it reads `git ls-files`: a file that is new and not yet staged is
+invisible to it, so CI is the first thing to format a file you just wrote.
+`git add` before running the hooks, or let the installed hook do it for you.
+
 
 The rules this code follows, and the reasoning behind them, are in
 [AGENTS.md](../AGENTS.md). This file is what to run.
@@ -37,6 +49,16 @@ worktrees, `origin new-branch` and `origin rotate` already do the same job,
 and only one of the two sets survives. Keep them matching `origin` rather
 than improving on it: a difference between them is a decision somebody has
 to make later, and there is no plan that makes both correct.
+
+## What an invocation costs
+
+```console
+uv run scripts/benchmark.py > b.json
+uv run scripts/benchmark.py --markdown --from b.json > docs/BENCHMARK.md
+```
+
+[scripts/README.md](../scripts/README.md) says what it measures and why every
+interpreter comes from uv. [docs/BENCHMARK.md](BENCHMARK.md) is the last run.
 
 ## Working on a checkout
 
