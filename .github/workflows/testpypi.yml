@@ -1,0 +1,69 @@
+name: TestPyPI
+
+# Renaming this file breaks the upload. TestPyPI's Trusted Publishing matches a
+# request against the repository, this workflow's FILENAME and the environment,
+# so a rename means re-registering the publisher on TestPyPI first.
+#
+# Every commit on main is published here as <version>.post<epoch>. A build made
+# after <version> shipped is a post release of it, which is what PEP 440's post
+# segment says, and it sorts above <version> and below the next patch, so the
+# newest snapshot is what TestPyPI serves.
+#
+# This is what proves the publishing path. The tree a release tag names has
+# already been uploaded and installed back from an index by the time the tag
+# exists, which is why publish.yml rehearses nothing of its own.
+#
+# The suite is not run again here. tests.yml runs it on this same commit, and a
+# snapshot a test would have caught costs one number on a test index.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    name: Publish a snapshot
+    runs-on: ubuntu-latest
+    # Binds this job to the trusted publisher registered for `testpypi`.
+    environment: testpypi
+    permissions:
+      # Lets the job mint the OIDC token TestPyPI exchanges for a short-lived,
+      # scoped credential. Without it uv has nothing to present.
+      id-token: write
+      contents: read
+    steps:
+      # `--index testpypi` resolves that name from [[tool.uv.index]] in
+      # pyproject.toml, and the script reads the version from the same file.
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      # Epoch seconds rather than the run number: a re-run repeats the number
+      # and TestPyPI refuses the duplicate, while the clock has moved on.
+      # `--frozen` writes pyproject.toml and leaves uv.lock alone, which is
+      # correct here because nothing in this job resolves dependencies.
+      - name: Number the snapshot
+        run: uv version --frozen "$(uv version --short).post$(date +%s)"
+
+      - name: Build
+        run: uv build
+
+      - name: Publish
+        # `always` rather than the default `automatic`: fail loudly if OIDC is
+        # unavailable instead of quietly looking for a token.
+        run: uv publish --index testpypi --trusted-publishing always
+
+      # Uploaded is not installable, and this is the claim the release path
+      # inherits from these runs.
+      - name: Verify it installs from TestPyPI
+        run: scripts/verify-publish.bash

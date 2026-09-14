@@ -181,22 +181,24 @@ ERROR:   version given:  0.1.0
 Pushing the tag starts `publish.yml`:
 
 ```
-build ──> publish-test ──> publish ──> release
-                                   └─> verify
+build ──> publish ──> release
+                   └─> verify
 ```
 
 `build` runs three guards before it does anything, cheapest first. The tag has
 to name the version the commit carries. The commit has to be one `main` took,
 so nothing is released from a tree no review ever saw. And that commit's test
-run has to have passed already, so a doomed release stops before it reaches
-TestPyPI. Then it runs the suite again and hands one artifact to every job
-below, so what reaches PyPI is byte-for-byte what TestPyPI accepted.
+run has to have passed already, so a doomed release stops before anything is
+uploaded. Then it runs the suite again, builds one artifact for every job
+below, installs that wheel and runs it: the wheel is not the tree, and one
+built without `_version.py` falls back to the metadata lookup and says
+nothing.
 
-TestPyPI gates the real upload on purpose: a PyPI upload cannot be undone or
-replaced, so a failed rehearsal stops the run while there is still nothing to
-pin against. The rehearsal installs what it uploaded and runs it, and that
-check blocks, because nothing after it is reversible. The merge happens first and the irreversible step is last, so
-everything recoverable is already done by the time anything is published.
+Nothing rehearses on TestPyPI here. `testpypi.yml` published this commit
+there when it reached `main`, as `<version>.post<epoch>`, and installed it
+back, so the tree the tag names has already proved it uploads to an index and
+installs from one. The merge happens first and the irreversible step is last,
+so everything recoverable is already done by the time anything is published.
 
 `release` needs the upload and nothing else. `verify` installs the version
 from PyPI and runs what it installed, on its own, because an index serves what
@@ -206,19 +208,33 @@ slow, not that the version is missing. It gives up after about 32 minutes.
 
 `workflow_dispatch` against a tag ref re-runs a release whose publish failed.
 
-No API token is stored anywhere. Both uploads use PyPI Trusted Publishing over
-OIDC, which needs one registration on each index before the first release:
+## Snapshots on TestPyPI
 
-| field | value |
-| --- | --- |
-| owner | `MihaiBojin` |
-| repository | `worktrees` |
-| workflow | `publish.yml` |
-| environment | `testpypi` on TestPyPI, `pypi` on PyPI |
+`testpypi.yml` runs on every commit to `main`. It numbers the tree
+`<version>.post<epoch>`, builds it, uploads it to TestPyPI and installs it
+back from there.
+
+`post` rather than `dev` because that is what the build is: made after
+`<version>` shipped. PEP 440 sorts `0.2.3.post1789247568` above `0.2.3` and
+below `0.2.4`, so TestPyPI's newest snapshot is what it serves, and a plain
+`pip install` finds it without `--pre`. Epoch seconds rather than the run
+number, because a re-run repeats that number and the duplicate upload is
+refused.
+
+The suite is not run again there. `tests.yml` runs it on the same commit, and
+a snapshot a test would have caught costs one number on a test index.
+
+No API token is stored anywhere. Every upload uses Trusted Publishing over
+OIDC, which matches a request against the repository, the workflow filename
+and the environment, so each row below is its own registration:
+
+| index | owner | repository | workflow | environment |
+| --- | --- | --- | --- | --- |
+| PyPI | `MihaiBojin` | `worktrees` | `publish.yml` | `pypi` |
+| TestPyPI | `MihaiBojin` | `worktrees` | `testpypi.yml` | `testpypi` |
 
 Both GitHub environments have to exist under Settings, Environments. Adding a
 required reviewer to `pypi` puts a manual gate in front of the real index.
 
-**Renaming `publish.yml` breaks publishing.** PyPI matches a request against
-the repository, that filename and the environment, so a rename means
-re-registering the publisher first.
+**Renaming either file breaks its uploads**, and a rename means re-registering
+that publisher first.
