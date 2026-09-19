@@ -43,7 +43,7 @@ rather than passing it.
 git switch --create release/v<version> --no-track origin/main
 ```
 
-Then run `/release-notes:draft <version>`, from the ReleaseTools plugin. It
+Then run `/release-notes:prepare <version>`, from the ReleaseTools plugin. It
 rules on every commit since the previous tag, writes the body to
 `.git/RELEASE_EDITMSG`, and puts the entry in `CHANGELOG.md` under
 `## <version> - <date>`. It shows the draft and waits before its last step,

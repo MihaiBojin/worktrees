@@ -143,14 +143,17 @@ after the newest release tag, a commit that is not on main, and a version PyPI
 already carries. That last one matters most: PyPI rejects a duplicate at the
 very end of a publish run, after everything else has already happened.
 
-`/release-notes:draft` writes the `CHANGELOG.md` entry on the release branch,
+`/release-notes:prepare` writes the `CHANGELOG.md` entry on the release branch,
 so the notes are reviewed in the same pull request as the version bump. It
 comes from the release-tools marketplace:
 
 ```console
-claude plugin marketplace add releasetools/agent-plugins
-claude plugin install release-notes@release-tools
+claude plugin marketplace add releasetools/agent-plugins --scope project
+claude plugin install release-notes@release-tools --scope project
 ```
+
+`--scope project` declares it in this repository rather than in your own
+configuration, so the next person to release is offered the same plugin.
 
 `publish.yml` reads that section back out for the GitHub release, and `build`
 refuses a tag whose version has no section, before anything is published.
