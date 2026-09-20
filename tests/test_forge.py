@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import env_for
 
 from worktrees import forge, verdicts
 from worktrees import repo as R
@@ -186,3 +187,68 @@ def test_the_cli_offers_no_forge(world) -> None:
         env=env_for(world),
     )
     assert "--no-forge" in proc.stdout
+
+
+# --------------------------------------------------------------------------
+# the forge is over the network the fetch just used
+# --------------------------------------------------------------------------
+
+
+def _marker_gh(tmp_path: Path, marker: Path) -> Path:
+    """A `gh` that records having been asked and answers nothing."""
+    bin_dir = tmp_path / "marker-bin"
+    bin_dir.mkdir(exist_ok=True)
+    exe = bin_dir / "gh"
+    exe.write_text(f"#!/bin/sh\n: > {marker}\nprintf '[]\\n'\n")
+    exe.chmod(0o755)
+    return bin_dir
+
+
+def _gws(world, bin_dir: Path):
+    env = env_for(world)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gws; raise SystemExit(gws())",
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def test_a_failed_fetch_stops_the_forge_being_asked(world, tmp_path) -> None:
+    """`gh` waits 30 seconds for a network that just refused git."""
+    marker = tmp_path / "asked"
+    bin_dir = _marker_gh(tmp_path, marker)
+    world.git("remote", "add", "origin", str(world.root / "nowhere.git"))
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+    wt = world.worktree("unmerged")
+    world.commit("u.txt", "u\n", at=wt)
+
+    p = _gws(world, bin_dir)
+    assert p.returncode == 0, p.stderr
+    assert "could not be fetched" in p.stderr
+    assert "not asking the forge" in p.stderr
+    assert not marker.exists()
+
+
+def test_a_reachable_remote_leaves_the_forge_asked(world, tmp_path) -> None:
+    """The control. Without it the test above passes on a run that never
+    reached the forge for some other reason."""
+    marker = tmp_path / "asked"
+    bin_dir = _marker_gh(tmp_path, marker)
+    bare = world.root / "origin.git"
+    subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
+    world.git("remote", "add", "origin", str(bare))
+    world.git("push", "--quiet", "origin", "main")
+    wt = world.worktree("unmerged")
+    world.commit("u.txt", "u\n", at=wt)
+
+    p = _gws(world, bin_dir)
+    assert p.returncode == 0, p.stderr
+    assert "could not be fetched" not in p.stderr
+    assert marker.exists()

@@ -164,9 +164,15 @@ def _assess(
         # ladder is told not to spend a second round trip on the same remote.
         if remote and not R.fetch(remote):
             online = False
+            # The forge is reached over the network the fetch just failed on,
+            # and `gh` waits 30 seconds before saying so, once for every
+            # branch git could not call merged. It is asked for an answer git
+            # cannot give, not for one it is about to fail to give too.
+            args.no_forge = True
             if not args.quiet:
                 _err(
-                    f"{remote} could not be fetched; judging from the refs already here"
+                    f"{remote} could not be fetched; judging from the refs "
+                    "already here, and not asking the forge"
                 )
     elif not args.quiet:
         _err("using the refs already here; they may be stale (--no-fetch)")

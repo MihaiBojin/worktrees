@@ -233,7 +233,7 @@ unmerged work" passes while it holds.
 | B3 | plus a branch named `origin/main` | held: `refs/remotes/origin/main` wins the ladder | none |
 | B4 | `git config git-worktree-plugin.headBranch origin/main` | gone. There is no such key | |
 | B5 | `headBranch` naming a ref that does not exist | gone with B4 | |
-| B6 | `origin/HEAD` unset, no remote-tracking refs, remote unreachable | held since #46: the fetch and the `set-head` behind it answer 128 rather than raising, and the command says so and judges from the refs already here | `test_a_failed_fetch_still_answers_status` |
+| B6 | `origin/HEAD` unset, no remote-tracking refs, remote unreachable | held since #46: the fetch and the `set-head` behind it answer 128 rather than raising, and the command says so and judges from the refs already here. The forge is not asked after a failed fetch either | `test_a_failed_fetch_still_answers_status`, `test_a_failed_fetch_stops_the_forge_being_asked` |
 | B7 | detached-HEAD worktree | held: named, and judged on whether a ref reaches its commit | `test_a_detached_worktree_is_named_not_mistaken` |
 
 B2 and B3 are why the head-branch ladder returns a full ref.

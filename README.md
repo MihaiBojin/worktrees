@@ -182,7 +182,8 @@ squashes, so the intermediate state it holds differs from the final one in
 the same regions, and a diff cannot separate a stale branch from one with
 work left. A merged pull request settles it, cross-checked against the
 commits an upstream has not got, because a request speaks for what reached
-it and nothing about what never did. `--no-forge` decides from git alone.
+it and nothing about what never did. `--no-forge` decides from git alone, and
+so does a run whose fetch just failed.
 
 A record left behind by a directory somebody deleted by hand is nobody's
 verdict. `gws` names how many there are; clearing them is `git worktree prune`,
@@ -426,7 +427,10 @@ print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
 
 A remote that cannot be reached is not fatal anywhere. The fetch fails, the
 command says so on stderr, and it answers from the refs already here, which is
-where `--no-fetch` sends it on request.
+where `--no-fetch` sends it on request. The forge is not asked either: it is
+over the same network, and `gh` waits 30 seconds before saying so, once per
+branch. `--no-fetch` alone says nothing about the network, so it leaves the
+forge asked.
 
 Data goes to stdout and diagnostics to stderr, the prompt included, so `--json`
 is parseable in every mode. Colour is decided per stream and only for a
