@@ -4,16 +4,18 @@ name: Publish
 # request against the repository, this workflow's FILENAME and the environment,
 # so a rename means re-registering the publisher on PyPI first.
 #
-#   build -> publish-test -> publish -> release
-#                                     \-> verify
+#   build -> publish -> release
+#                    \-> verify
 #
 # Nothing here creates a tag. A release is a version bump merged into main and
 # then tagged by hand, so the irreversible step is the last one and everything
 # before it is a normal reviewed change.
 #
-# TestPyPI gates the real upload deliberately: a PyPI upload cannot be undone
-# or replaced, so if the rehearsal fails there is nothing to pin against and
-# the run stops there.
+# There is no TestPyPI rehearsal. testpypi.yml publishes every commit on main
+# there as <version>.post<epoch> and installs it back, so the tree this tag
+# names has already proved it uploads to an index and installs from one. What
+# is left to prove before the upload PyPI cannot take back is that the wheel
+# runs, and build installs it and does that.
 #
 # No API token is stored anywhere. See docs/DEVELOPMENT.md, "Publishing a
 # version".
@@ -31,7 +33,7 @@ permissions:
 
 jobs:
   # Built once and handed to every job below, so what reaches PyPI is
-  # byte-for-byte what TestPyPI accepted.
+  # byte-for-byte what was tested and installed here.
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -122,51 +124,10 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-  publish-test:
-    name: Publish to TestPyPI
-    runs-on: ubuntu-latest
-    needs: build
-    # Binds this job to the trusted publisher registered for `testpypi`.
-    environment: testpypi
-    permissions:
-      # Lets the job mint the OIDC token PyPI exchanges for a short-lived,
-      # scoped credential. Without it uv has nothing to present.
-      id-token: write
-      contents: read
-    steps:
-      # `--index testpypi` resolves that name from [[tool.uv.index]] in
-      # pyproject.toml, which is not part of the built artifact.
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
-        with:
-          python-version: "3.14"
-          enable-cache: true
-
-      - name: Download distributions
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: dist
-          path: dist/
-
-      - name: Publish
-        # `always` rather than the default `automatic`: fail loudly if OIDC is
-        # unavailable instead of quietly looking for a token.
-        run: uv publish --index testpypi --trusted-publishing always
-
-      # A rehearsal that only uploads rehearses half of it. This check blocks,
-      # unlike its PyPI counterpart: waiting here costs nothing irreversible,
-      # and a wheel that does not install is what the real index must never be
-      # handed.
-      - name: Verify it installs from TestPyPI
-        run: scripts/verify-publish.bash
-
   publish:
     name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: publish-test
+    needs: build
     # Binds this job to the trusted publisher registered for `pypi`. Add a
     # required reviewer on this environment for a manual gate before anything
     # reaches the real index.
