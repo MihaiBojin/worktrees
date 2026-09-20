@@ -9,7 +9,7 @@ authors = [
 ]
 # Static, and the single source of truth for the version. Bump it in a pull
 # request and run `uv lock`; the release tag only has to agree with it.
-version = "0.2.3"
+version = "0.3.0"
 # The standard library answers every question this asks. A dependency here
 # would be paid on every invocation, and an invocation is 67 ms of which 25 ms
 # is the interpreter starting.
