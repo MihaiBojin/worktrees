@@ -144,7 +144,9 @@ tightly they cluster. About twenty lines, `difflib` not required.
 
 Two rules, both the shape `gwp`'s prompt already has:
 
-- One match takes it outright, with no prompt at all.
+- A query that narrows to one takes it outright, with no prompt at all. No
+  query asks however many there are, because being moved without being asked
+  is not what `gwl` with no argument means.
 - No terminal, no prompt. Refuse at exit 3 and name the flag that answers
   without one, rather than blocking on something nothing can drive.
 

@@ -143,10 +143,24 @@ def test_list_says_so_rather_than_landing_you_where_you_are(world) -> None:
     assert "already in one" in p.stderr
 
 
-def test_list_from_the_main_checkout_goes_to_the_only_other_one(world) -> None:
-    """Two worktrees and no query is not a question worth asking."""
+def test_list_with_no_query_asks_even_for_one_other_worktree(world) -> None:
+    """No query is a request to be shown the options.
+
+    Being moved without being asked, because the repository happened to hold
+    one other worktree, is not that. A query that narrows to one has already
+    said which, and still takes it outright.
+    """
     world.worktree("one")
     p = run(world, "gwl")
+    assert p.returncode == 3, p.stdout
+    assert "1 worktree to choose from and this is not a terminal" in p.stderr
+    assert "--list or --json" in p.stderr
+    assert p.stdout == ""
+
+
+def test_list_with_a_query_still_takes_the_one_match_outright(world) -> None:
+    world.worktree("one")
+    p = run(world, "gwl", "one")
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip().endswith("/one/repo")
 

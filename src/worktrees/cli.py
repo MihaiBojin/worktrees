@@ -662,7 +662,9 @@ def run_list(args: argparse.Namespace) -> int:
         _err(f"already in {render.err(found[0].label, BOLD)}")
         return 0
 
-    chosen = pick.choose(elsewhere, _err)
+    # A query that narrows to one has said which. No query has not, even
+    # when the repository holds exactly one other worktree.
+    chosen = pick.choose(elsewhere, _err, outright=bool(args.query))
     if chosen is None:
         _err("nothing picked")
         return 0

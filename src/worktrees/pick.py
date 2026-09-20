@@ -68,8 +68,14 @@ def choose(
     candidates: Sequence[Worktree],
     show: Callable[[str], None],
     ask: Callable[[str], str] | None = None,
+    outright: bool = True,
 ) -> Worktree | None:
-    """One match takes it outright. Otherwise ask, and None means cancelled.
+    """Ask which one, and None means cancelled.
+
+    `outright` says whether one candidate is taken without asking. A query
+    that narrows to one has already said which, so it is. No query at all is
+    a request to be shown the options, and being moved without being asked
+    because there happened to be one other worktree is not that.
 
     A run whose stdin is not a terminal is refused rather than left to block:
     an agent or a pipe reaching a prompt would hang, and --json answers the
@@ -77,13 +83,15 @@ def choose(
     """
     if not candidates:
         return None
-    if len(candidates) == 1:
+    if outright and len(candidates) == 1:
         return candidates[0]
 
     if ask is None:
         if not sys.stdin.isatty():
+            count = len(candidates)
+            noun = "worktree" if count == 1 else "worktrees"
             raise Refused(
-                f"{len(candidates)} worktrees match and this is not a terminal; "
+                f"{count} {noun} to choose from and this is not a terminal; "
                 "narrow the query, or use --list or --json"
             )
         ask = _prompt
