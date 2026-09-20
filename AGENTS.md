@@ -29,7 +29,12 @@ prompt and from a script unless the function is a pure adapter.
 
 The rule: **a function exists only for a command that must change the caller's
 directory, it carries the same name as the binary, and its body does nothing but
-call `command <name>` and `cd` to what that prints.**
+call `command <name>` and `cd` to what that prints, when that is a directory.**
+
+The last clause is not a hedge. `--json` and `--list` print what was asked for
+on the same stream a destination arrives on, and a shim that cannot tell them
+apart tries to `cd` into a JSON object. `fish -c 'gwl --json'` reaches the
+function too, so this is the agent path as much as the human one.
 
 | | changes directory | ships as |
 | --- | --- | --- |

@@ -122,8 +122,10 @@ autoload -Uz compinit && compinit
 
 ### What the shell code does
 
-Each function runs `command <name>`, reads the one path the binary printed and
-`cd`s there, and carries nothing else. `gws`, `gwp`, `gwnb`, `gwrot` and `gwh`
+Each function runs `command <name>` and `cd`s to what it printed, provided
+that is a directory. `--json` and `--list` print what was asked for on the
+same stream a destination arrives on, so the shim asks whether what it has is
+somewhere to go and stays put when it is not. `gws`, `gwp`, `gwnb`, `gwrot` and `gwh`
 change no directory, so they ship as console scripts alone and answer the same
 from a prompt and from a script.
 
@@ -257,9 +259,10 @@ $ gwm parser-v2           # renames the branch and moves the checkout
 $ gwr                     # removes the one you are standing in
 ```
 
-Each prints one destination on stdout and nothing else, which is what the
-shell function reads. `gwr` prints a path **only** when you were standing in
-what it removed; empty output means stay put.
+Each prints one destination on stdout, which is what the shell function
+reads, and prints data there instead under `--json` and `--list`. `gwr` prints
+a path **only** when you were standing in what it removed; empty output, and
+output that is not a directory, both mean stay put.
 
 `gwm` is the one that is not a convenience. Renaming the directory you are
 standing in leaves the shell with a stale `$PWD` and every later command

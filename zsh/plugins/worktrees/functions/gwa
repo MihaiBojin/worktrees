@@ -1,9 +1,14 @@
 # cd to where gwa lands you.
 #
-# The binary prints one destination and nothing else. `$(...)` strips only
+# The binary prints one destination, or the data `--json` and `--list` were
+# asked for, on the same stream. `$(...)` strips only
 # trailing newlines, so a path holding one arrives whole and zsh needs no
 # equivalent of fish's `string collect`. Empty output means stay put.
 local dest
 dest="$(command gwa "$@")" || return
 [[ -n $dest ]] || return 0
+# A directory or nothing. --json and --list print what was asked for on the
+# same stream a destination arrives on, and the shim cannot tell one from the
+# other by looking; it can ask whether it is somewhere to go.
+[[ -d $dest ]] || return 0
 cd -- "$dest"
