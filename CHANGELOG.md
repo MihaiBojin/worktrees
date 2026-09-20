@@ -1,9 +1,14 @@
 # Changelog
 
 Newest first. Each entry says what changed for somebody running these
-commands, and the choices behind it. Dates are ISO 8601, versions follow
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html), and the shape
-follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+commands, and the choices behind it. Dates are ISO 8601, released versions
+follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html), and the
+shape follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+Every version below was tagged and published. The snapshots `main` sends to
+TestPyPI are neither, and they are numbered `<version>.post<epoch>`, which
+PEP 440 orders after the release it follows and SemVer does not describe at
+all. `docs/DEVELOPMENT.md` says how and why.
 
 An entry earns its place by being observable. If running a command produces
 no different result, no different output and no different exit code, it is
