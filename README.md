@@ -38,6 +38,10 @@ function, because a binary cannot change its caller's directory.
 
 `worktrees` is the same program under its long name.
 
+Ctrl-C interrupts a running command with exit code 130 and no traceback.
+At a selection or removal prompt, it cancels without choosing or removing
+a worktree.
+
 `gws` and `gwp` are what this tool is for and their behaviour is settled.
 
 **`gwnb` and `gwrot` are alpha and may go.** They start branches rather than

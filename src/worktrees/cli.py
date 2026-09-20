@@ -1247,6 +1247,9 @@ def _dispatch(
         run = _COMMANDS[_CANONICAL[command]].run
     try:
         return run(args)
+    except KeyboardInterrupt:
+        _err("")
+        return 130
     except _Stop as exc:
         _err(render.err(str(exc), RED))
         return exc.code

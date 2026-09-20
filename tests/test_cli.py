@@ -6,14 +6,17 @@ from __future__ import annotations
 import json
 import os
 import pty
+import select
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 from conftest import env_for
 
-from worktrees import prune
+from worktrees import cli, prune
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 
@@ -745,6 +748,86 @@ def test_list_with_no_query_takes_blank_as_cancelled(world) -> None:
     code, out = run_on_a_terminal(world, "gwl", answer="\n")
     assert code == 0, out
     assert "nothing picked" in out
+
+
+@pytest.mark.parametrize(
+    "entry,args,prompt",
+    [
+        (entry, (*prefix, *flags), prompt)
+        for command, flags, prompt in (
+            ("list", (), "which? [1-2, or blank to cancel] "),
+            (
+                "remove",
+                ("--no-fetch", "--no-forge"),
+                "which? [1-2, or blank to cancel] ",
+            ),
+            (
+                "remove",
+                ("--no-fetch", "--no-forge", "one"),
+                "remove 1 worktree(s)? [y/N] ",
+            ),
+            ("prune", ("--no-fetch", "--no-forge"), "remove 2 worktree(s)? [y/N] "),
+        )
+        for entry, prefix in (
+            (cli._COMMANDS[command].binary, ()),
+            *(
+                (entry, (name,))
+                for entry in ("gw", "main")
+                for name in (command, *cli._COMMANDS[command].aliases)
+            ),
+        )
+    ],
+)
+def test_ctrl_c_at_every_prompt(world, entry, args, prompt) -> None:
+    """SIGINT cancels selection and confirmation without changing any worktree."""
+    paths = [world.worktree(name) for name in ("one", "two")]
+    before = world.git("worktree", "list", "--porcelain")
+    refs = world.git("show-ref")
+    parent, child = pty.openpty()
+    try:
+        with subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+                *args,
+            ],
+            cwd=world.repo,
+            stdin=child,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env_for(world),
+        ) as proc:
+            try:
+                assert proc.stderr is not None
+                seen = b""
+                deadline = time.monotonic() + 15
+                while prompt.encode() not in seen:
+                    remaining = deadline - time.monotonic()
+                    assert remaining > 0, seen.decode()
+                    ready, _, _ = select.select([proc.stderr], [], [], remaining)
+                    assert ready, seen.decode()
+                    chunk = os.read(proc.stderr.fileno(), 65536)
+                    assert chunk, seen.decode()
+                    seen += chunk
+                proc.send_signal(signal.SIGINT)
+                out, err = proc.communicate(timeout=15)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.communicate()
+    finally:
+        os.close(child)
+        os.close(parent)
+    stderr = (seen + err).decode()
+    assert "Traceback" not in stderr, stderr
+    assert "KeyboardInterrupt" not in stderr, stderr
+    assert proc.returncode == 130, stderr
+    assert out == b""
+    assert stderr.endswith(prompt + "\n"), stderr
+    assert world.git("worktree", "list", "--porcelain") == before
+    assert world.git("show-ref") == refs
+    assert all((path / "README").exists() for path in paths)
 
 
 def test_status_lists_the_main_checkout_and_never_proposes_it(world) -> None:
