@@ -17,6 +17,47 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.3.0 - 2026-09-20
+
+`gwl` with no query asks which worktree rather than moving you to one.
+Whenever exactly one was left it took it outright, so a repository holding
+the main checkout and one worktree moved you without a word, and running it
+twice walked you back and forth. A query that narrows to one has already said
+which and still takes it outright. Without a terminal it now refuses at exit
+3 and names `--list` and `--json`, where it used to print a path, so
+`cd $(gwl)` in a script stops working. `gwl <query>` is unchanged.
+
+`gwl --list` no longer tries to `cd` into its own listing, and `--json` no
+longer tries to `cd` into the JSON. The shell function reads what the binary
+printed and moves you there, and those two modes print on the same stream a
+destination arrives on, so every one of them ended in a failed `cd`. `gwa
+--json` was the worst: the worktree was created and then the move failed, so
+the run looked broken and was not. It reached `gwa`, `gwl`, `gwm` and `gwr`
+in both fish and zsh, and `fish -c 'gwl --json'` too, because a fish function
+wins there. **That fix lives in the shell functions, so `uv tool upgrade`
+alone does not deliver it; update the fish or zsh plugin as well.**
+
+An invocation costs about 18 ms less on Python 3.11 and about 12 ms less on
+3.14. `gw version` was 48.4 ms and is 30.5 ms on 3.11.13, and was 55.6 ms and
+is 43.1 ms on 3.14.7, measured from installed wheels on one machine. Four
+changes account for it: the command you typed imports only what it needs
+rather than every command, records are plain classes rather than dataclasses,
+the parser is built for the subcommand you asked for rather than all eleven,
+and `json` is imported only where it is printed. `difflib`, which named the
+closest command when you mistyped one, is no longer imported to start.
+
+### Choices
+
+`gwl` asks whenever no query was given, even when the repository holds one
+other worktree. Taking it outright reads as a toggle: the command moves you,
+and moves you back, and never says where. Prompting for a single option looks
+redundant until it is the difference between being shown your options and
+being sent somewhere. A query is the way to skip it, and it always was.
+
+`gwl` without a terminal exits 3, joining `gwp`, which 0.2.3 moved there for
+the same reason. A script can then tell a refusal from a typo: 2 is
+argparse's code for a usage error and 3 is nobody else's.
+
 ## 0.2.3 - 2026-09-11
 
 An unreachable remote is an answer rather than a failure. Every command that
