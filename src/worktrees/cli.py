@@ -227,12 +227,23 @@ def run_status(args: argparse.Namespace) -> int:
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
 
+    # Every repository beside this one shares the same `.worktrees` root, and
+    # nothing else says which of the directories there are somebody else's.
+    # git lists the main checkout first, so records[0] is it.
+    main = records[0].path if records else ""
+    others = layout.neighbours(main, [w.path for w in records]) if main else 0
+
     if args.json:
         print(
             json.dumps(
                 {
                     "head": head,
                     "stale": [w.path for w in stale],
+                    # How many worktrees under the shared root are a
+                    # sibling repository's. Nothing here reads or removes
+                    # them; a caller counting directories needs to know
+                    # they are not all this repository's.
+                    "neighbours": others,
                     # `ignored` and `sha` are fields rather than facts to
                     # parse back out of `why`. A caller deciding whether to
                     # pass --delete-ignored wants the count, not a sentence
@@ -269,11 +280,6 @@ def run_status(args: argparse.Namespace) -> int:
             f"{len(stale)} stale record(s) for directories that are gone; "
             "gwp clears them"
         )
-    # Every repository beside this one shares the same `.worktrees` root, and
-    # nothing else says which of the directories there are somebody else's.
-    # git lists the main checkout first, so records[0] is it.
-    main = records[0].path if records else ""
-    others = layout.neighbours(main, [w.path for w in records]) if main else 0
     if others:
         root = layout.worktrees_root(main)
         _err(f"{others} worktree(s) under {root} belong to another repository")

@@ -216,6 +216,15 @@ def test_status_says_nothing_when_the_root_is_all_ours(world) -> None:
     assert "another repository" not in p.stderr
 
 
+def test_json_carries_the_neighbour_count_as_a_number(world) -> None:
+    world.worktree("mine")
+    p = run(world, "gws", "--no-fetch", "--no-forge", "--json")
+    assert json.loads(p.stdout)["neighbours"] == 0
+    world.sibling("other", "theirs")
+    p = run(world, "gws", "--no-fetch", "--no-forge", "--json")
+    assert json.loads(p.stdout)["neighbours"] == 1
+
+
 # --------------------------------------------------------------------------
 # gwp removes exactly what gws marks removable
 # --------------------------------------------------------------------------

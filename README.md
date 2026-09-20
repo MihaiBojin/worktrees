@@ -163,9 +163,9 @@ count are on stdout; everything after them is on stderr.
 
 Every repository in the same parent directory keeps its worktrees under that
 one `.worktrees` root, so some of the directories in there are a sibling's.
-`gws` counts those and says so, because nothing else does. No command here
-reads or removes them, and the count comes from walking the root rather than
-from asking git.
+`gws` counts those and says so, because nothing else does, and `--json`
+carries the same count as `neighbours`. No command here reads or removes
+them, and the count comes from walking the root rather than from asking git.
 
 On a terminal the verdict carries its own colour, `remove` green, `keep` blue
 and `unknown` yellow, with the branch in bold and the path dimmed. That
