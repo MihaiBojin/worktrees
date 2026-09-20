@@ -152,36 +152,50 @@ network. `GIT_CONFIG_GLOBAL` carries that: without it git still reads
 ## Publishing a version
 
 ```console
-/release 0.2.0
+/release:cut 0.2.0
 ```
 
-The skill at `.agents/skills/release/` does the whole of it: cut
-`release/v0.2.0` from `origin/main`, `uv version 0.2.0`, open the pull
-request, wait for its checks, merge with `--rebase`, wait for main's own run
-on the rebased commit, and only then tag. The tag lands on a commit already
-proved green, so it never has to move.
+That does the whole of it: cut `release/v0.2.0` from `origin/main`,
+`uv version 0.2.0`, open the pull request, wait for its checks, squash-merge,
+wait for main's own run on the merged commit, and only then tag. The tag lands
+on a commit already proved green, so it never has to move.
+
+What each step needs is in `.releasetools.yaml`: the branch, the squash, the
+workflow that has to be green, the workflow the tag starts, the URL that must
+not already carry the version, and the command that sets it. The keys are the
+[releasetools conventions](https://github.com/releasetools/conventions/blob/main/FORMAT.md),
+so the guards and the release read the same file.
+
+The squash is not a preference. The `main` ruleset requires signed commits and
+linear history: GitHub replays the author's commits unsigned on a rebase merge
+and refuses with `Base branch requires signed commits`, and a merge commit is
+not linear. A squash is one commit, signed by GitHub's web-flow key, and its
+subject becomes `Release 0.2.0 (#NN)`.
 
 `rt release::prechecks` runs first and refuses a version that is not `x.y.z`,
 a dirty tree, a tag that already exists on the remote, a version that is not
 after the newest release tag, a commit that is not on main, and a version PyPI
 already carries. That last one matters most: PyPI rejects a duplicate at the
-very end of a publish run, after everything else has already happened.
+very end of a publish run, after everything else has already happened. The
+distribution is `git-worktrees`; PyPI's `worktrees` belongs to somebody else.
 
 `/release-notes:prepare` writes the `CHANGELOG.md` entry on the release branch,
-so the notes are reviewed in the same pull request as the version bump. It
-comes from the release-tools marketplace:
+so the notes are reviewed in the same pull request as the version bump. Both
+commands come from the release-tools marketplace:
 
 ```console
 claude plugin marketplace add releasetools/agent-plugins --scope project
+claude plugin install release@release-tools --scope project
 claude plugin install release-notes@release-tools --scope project
 ```
 
-`--scope project` declares it in this repository rather than in your own
-configuration, so the next person to release is offered the same plugin.
+`--scope project` declares them in this repository rather than in your own
+configuration, so the next person to release is offered the same plugins.
+`rt` has to be v0.4.0 or newer, which is where `version::bump` arrived.
 
-`publish.yml` reads that section back out for the GitHub release, and `build`
-refuses a tag whose version has no section, before anything is published.
-Nothing is generated from pull request titles.
+`publish.yml` reads that changelog section back out for the GitHub release,
+and `build` refuses a tag whose version has no section, before anything is
+published. Nothing is generated from pull request titles.
 
 By hand it is the same four commands:
 

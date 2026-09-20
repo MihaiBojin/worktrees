@@ -1,0 +1,23 @@
+# How this repository releases, read by every releasetools tool.
+#
+# Conventions: https://github.com/releasetools/conventions
+#
+# One project: the distribution is `git-worktrees`, which is not the name of
+# this repository and not the package anything imports. PyPI already holds a
+# `worktrees` belonging to somebody else, so the registry URL names the
+# distribution rather than either of the others.
+projects:
+  - path: ./
+    manifest: pyproject.toml
+    changelog: CHANGELOG.md
+    bump: uv version {version}
+
+release:
+  branch: main
+  # GitHub replays the author's commits unsigned on a rebase merge, and the
+  # `main` ruleset requires signed commits and linear history, so a squash is
+  # the only one it takes. It is signed by GitHub's web-flow key.
+  merge: squash
+  checks: tests.yml
+  publish: publish.yml
+  registry: https://pypi.org/pypi/git-worktrees/{version}/json
