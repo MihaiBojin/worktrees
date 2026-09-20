@@ -197,7 +197,7 @@ Four behaviours the field survey found nowhere else, of which three are here:
 
 | | state |
 | --- | --- |
-| a merged request as evidence, cross-checked against unpushed commits, with "no upstream" treated as unknown rather than zero | `forge.py` and `verdicts._forge_reason` |
+| a merged request as evidence, cross-checked against unpushed commits, with "no upstream" treated as unknown rather than zero, asked of the repository the command stands in and no other | `forge.py`, `forge.REDIRECTS` and `verdicts._forge_reason` |
 | a worktree belonging to another repository, which makes `git worktree list` return empty and so reads as "nothing is there" | `layout.owner_of`, reached from `gwa` |
 | the derived layout | `layout.destination` |
 | stash entries parked on a branch counting as work | **not needed.** The entry survives the removal and `git stash branch` recovers it, so there is nothing to keep. #39 names it instead |
