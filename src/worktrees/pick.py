@@ -69,6 +69,7 @@ def choose(
     show: Callable[[str], None],
     ask: Callable[[str], str] | None = None,
     outright: bool = True,
+    standing_in: Worktree | None = None,
 ) -> Worktree | None:
     """Ask which one, and None means cancelled.
 
@@ -76,6 +77,11 @@ def choose(
     that narrows to one has already said which, so it is. No query at all is
     a request to be shown the options, and being moved without being asked
     because there happened to be one other worktree is not that.
+
+    `standing_in` is shown above the numbered ones, marked `*` and carrying
+    no number. It is not somewhere to go, and a list that leaves it out shows
+    one row where `git worktree list` shows two, which reads as though
+    something went missing rather than as where you already are.
 
     A run whose stdin is not a terminal is refused rather than left to block:
     an agent or a pipe reaching a prompt would hang, and --json answers the
@@ -96,7 +102,17 @@ def choose(
             )
         ask = _prompt
 
-    width = max(len(wt.label) for wt in candidates)
+    listed = [*([standing_in] if standing_in is not None else []), *candidates]
+    width = max(len(wt.label) for wt in listed)
+    if standing_in is not None:
+        # Padded before it is painted, or the escape codes count as width and
+        # every column under it sits crooked.
+        mark = f"{'*':>3}"
+        show(
+            f"{render.err(mark, render.DIM)}  "
+            f"{render.err(standing_in.label.ljust(width), render.DIM)}  "
+            f"{render.err(standing_in.path, render.DIM)}"
+        )
     for i, wt in enumerate(candidates, 1):
         show(
             f"{render.err(f'{i:>3}', render.DIM)}  "

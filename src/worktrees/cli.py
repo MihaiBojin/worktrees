@@ -193,7 +193,15 @@ def _assess(
         judge(only, head, head_branch, ignored, ask_forge=ask_forge)
         if judge
         else verdicts.assess(
-            records, only, head, head_branch, ignored, ask_forge=ask_forge
+            records,
+            only,
+            head,
+            head_branch,
+            ignored,
+            ask_forge=ask_forge,
+            # `gws` and `gwp` report; `gwr` acts, and takes this list as its
+            # candidates, so it asks through `judge` and gets it without.
+            include_main=True,
         )
     )
     return rows, verdicts.stale(records), head, head_branch
@@ -247,16 +255,15 @@ def run_status(args: argparse.Namespace) -> int:
         )
         return 0
 
-    if not rows:
-        print("no worktrees besides the main checkout")
-    else:
-        print(_verdict_table(rows))
+    print(_verdict_table(rows))
 
     if args.quiet:
         return 0
 
     print()
     print(_counted(rows))
+    if len(rows) < 2:
+        _err("no worktrees besides the main checkout; gwa NAME makes one")
     if stale:
         _err(
             f"{len(stale)} stale record(s) for directories that are gone; "
@@ -300,13 +307,13 @@ def run_prune(args: argparse.Namespace) -> int:
         # command that would have printed it.
         if args.json:
             print(json.dumps({"removed": [], "failed": 0}, indent=2))
-        elif not rows:
-            print("no worktrees besides the main checkout")
         else:
             print(_verdict_table(rows))
             if not args.quiet:
                 print()
                 print(f"nothing to remove; {_counted(rows)}")
+                if len(rows) < 2:
+                    _err("no worktrees besides the main checkout; gwa NAME makes one")
         return 0
 
     if unknown and not args.quiet:
@@ -663,8 +670,14 @@ def run_list(args: argparse.Namespace) -> int:
         return 0
 
     # A query that narrows to one has said which. No query has not, even
-    # when the repository holds exactly one other worktree.
-    chosen = pick.choose(elsewhere, _err, outright=bool(args.query))
+    # when the repository holds exactly one other worktree. The one you are
+    # standing in is shown above them, marked and unnumbered.
+    chosen = pick.choose(
+        elsewhere,
+        _err,
+        outright=bool(args.query),
+        standing_in=next((w for w in found if _same(w.path, here)), None),
+    )
     if chosen is None:
         _err("nothing picked")
         return 0

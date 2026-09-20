@@ -74,6 +74,7 @@ def assess(
     repo: str | os.PathLike[str] | None = None,
     here: str | None = None,
     ask_forge: bool = False,
+    include_main: bool = False,
 ) -> list[Verdict]:
     """Every worktree, in the order `git worktree remove` would refuse them.
 
@@ -83,6 +84,11 @@ def assess(
     `here` is the checkout the caller is standing in, which is kept rather
     than proposed. Pass "" to judge it like any other: `gwr` is asked for one
     by name and steps out of it first, where a listing has no way to.
+
+    `include_main` puts the main checkout in the list, kept and never
+    proposed. A listing leaving it out shows one row where `git worktree
+    list` shows two, and reads as though something went missing. `gwr` takes
+    the list as its candidates, so it asks for the list without it.
     """
     main = R.main_worktree(repo)
     if here is None:
@@ -91,9 +97,25 @@ def assess(
 
     out: list[Verdict] = []
     for wt in records:
-        if "bare" in wt.flags or "prunable" in wt.flags or wt.path == main:
+        if "bare" in wt.flags or "prunable" in wt.flags:
             continue
         if only and wt.branch != only:
+            continue
+        if wt.path == main:
+            # Said before the standing-in rule below, because which one is
+            # the main checkout is the more useful of the two facts and the
+            # only one that is true from anywhere.
+            if include_main:
+                out.append(
+                    Verdict(
+                        KEEP,
+                        wt.branch,
+                        wt.path,
+                        "it is the main checkout, and never removable",
+                        0,
+                        wt.sha,
+                    )
+                )
             continue
 
         def say(verdict: str, why: str, ignored: int = 0, wt: R.Worktree = wt) -> None:

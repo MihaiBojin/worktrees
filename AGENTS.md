@@ -156,10 +156,14 @@ Two more about what is in the list at all:
   the one a finished branch leaves you in, so leaving it out leaves out the
   only answer that is always right. `main` finds it whatever branch it stands
   on, because its label carries the word, once.
-- The worktree you are standing in is listed and never offered. Picking it is
-  the one answer that takes you nowhere, and a picker whose single candidate
-  is where you already are prints nothing at all, which reads as a broken
-  command.
+- The worktree you are standing in is shown and never offered. It carries a
+  `*` rather than a number, because picking it is the one answer that takes
+  you nowhere. Leaving it out of the list entirely is worse: the list then
+  shows fewer rows than `git worktree list` does, and reads as though
+  something went missing rather than as where you already are. The main
+  checkout is in `gws` and `gwp` for the same reason, kept and never
+  proposed, and out of `gwr`'s candidates because `git worktree remove`
+  refuses it whatever flag it is given.
 
 `--json` and `--list` answer the same question without any of this, and an
 agent uses those.
