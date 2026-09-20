@@ -9,6 +9,7 @@ its name.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from pathlib import Path
 
 from . import repo as R
@@ -27,6 +28,42 @@ def destination(name: str, main: str) -> Path:
     `.worktrees/feat/oauth/<repo>` rather than colliding with `.worktrees/feat`.
     """
     return worktrees_root(main) / name / Path(main).name
+
+
+def neighbours(main: str, ours: Iterable[str]) -> int:
+    """How many worktrees under the shared root belong to somebody else.
+
+    Repositories side by side share one `.worktrees` root, a directory each,
+    and every command here answers for one of them. Standing in a repository
+    with one worktree you can see six directories, and nothing says the other
+    five are a sibling's.
+
+    No git call: a worktree carries a `.git` file, so a directory holding one
+    is somebody's and a directory holding none is a leftover. The walk stops
+    descending the moment it finds one, because a branch name with slashes
+    nests and the repository name always goes last.
+    """
+    root = worktrees_root(main)
+    if not root.is_dir():
+        return 0
+    mine = {Path(p).resolve() for p in ours}
+    found = 0
+    stack = [root]
+    while stack:
+        for entry in _subdirectories(stack.pop()):
+            if (entry / ".git").exists():
+                found += entry.resolve() not in mine
+            else:
+                stack.append(entry)
+    return found
+
+
+def _subdirectories(path: Path) -> list[Path]:
+    """Its directories, or none when it cannot be read."""
+    try:
+        return [child for child in path.iterdir() if child.is_dir()]
+    except OSError:  # pragma: no cover
+        return []
 
 
 def owner_of(candidate: str, repo: str | os.PathLike[str] | None = None) -> str:

@@ -419,3 +419,43 @@ def test_add_says_nothing_when_the_parents_were_already_there(world) -> None:
     with pytest.raises(GitError):
         W.add("feat/oauth", fetch=False, warn=said.append)
     assert not [line for line in said if "empty" in line], said
+
+
+# --------------------------------------------------------------------------
+# the worktrees root is shared between repositories side by side
+# --------------------------------------------------------------------------
+
+
+def test_a_siblings_worktree_is_counted_and_ours_is_not(world) -> None:
+    ours = world.worktree("mine")
+    world.sibling("other", "theirs")
+    assert layout.neighbours(str(world.repo), [str(world.repo), str(ours)]) == 1
+
+
+def test_an_empty_leftover_directory_is_not_a_neighbour(world) -> None:
+    """A directory holding no `.git` is nobody's worktree."""
+    ours = world.worktree("mine")
+    (world.parent / ".worktrees" / "leftover").mkdir()
+    assert layout.neighbours(str(world.repo), [str(world.repo), str(ours)]) == 0
+
+
+def test_a_neighbour_is_found_under_a_branch_name_with_slashes(world) -> None:
+    """The walk stops descending at the first `.git`, and a slash nests."""
+    ours = world.worktree("mine")
+    world.sibling("other", "feat/oauth")
+    assert layout.neighbours(str(world.repo), [str(world.repo), str(ours)]) == 1
+
+
+def test_counting_the_neighbours_asks_git_nothing(world) -> None:
+    """`gws` counts them on every run, so it walks rather than spawning."""
+    from worktrees.git import options
+
+    ours = world.worktree("mine")
+    world.sibling("other", "theirs")
+    before = len(options.log)
+    assert layout.neighbours(str(world.repo), [str(world.repo), str(ours)]) == 1
+    assert len(options.log) == before
+
+
+def test_no_worktrees_root_is_no_neighbours(world) -> None:
+    assert layout.neighbours(str(world.repo), [str(world.repo)]) == 0

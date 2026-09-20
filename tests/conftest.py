@@ -87,6 +87,22 @@ class World:
         self.git("worktree", "add", "--quiet", "-b", branch, str(path), base)
         return path
 
+    def sibling(self, name: str, branch: str) -> Path:
+        """A second repository beside this one, with a worktree of its own.
+
+        The repository name goes last in the derived layout, so repositories
+        side by side share `<PARENT>/.worktrees` without colliding.
+        """
+        other = self.root / name
+        self.git("init", "--quiet", "-b", "main", str(other))
+        self.commit("README", at=other)
+        path = self.parent / ".worktrees" / branch / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.git(
+            "worktree", "add", "--quiet", "-b", branch, str(path), "main", at=other
+        )
+        return path
+
 
 def env_for(world: World) -> dict[str, str]:
     """What a driven test hands the console script it runs.

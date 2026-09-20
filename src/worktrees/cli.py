@@ -146,7 +146,7 @@ def _assess(
     args: argparse.Namespace,
     judge: Callable[..., list[verdicts.Verdict]] | None = None,
     ask_forge: bool | None = None,
-) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str]:
+) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
     """Fetch, resolve the head branch, and judge every worktree.
 
     The one path every command takes, so `prune` can only ever act on what
@@ -210,7 +210,7 @@ def _assess(
             include_main=True,
         )
     )
-    return rows, verdicts.stale(records), head, head_branch
+    return rows, verdicts.stale(records), head, head_branch, records
 
 
 # --------------------------------------------------------------------------
@@ -222,16 +222,22 @@ def run_status(args: argparse.Namespace) -> int:
     """Say what is here. Nothing in this path removes anything."""
     import json
 
-    from . import prune, verdicts
+    from . import layout, prune, verdicts
     from .git import options
 
     options.verbose = args.verbose
     if args.explain:
         return _explain()
 
-    rows, stale, head, _ = _assess(args)
+    rows, stale, head, _, records = _assess(args)
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
+
+    # Every repository beside this one shares the same `.worktrees` root, and
+    # nothing else says which of the directories there are somebody else's.
+    # git lists the main checkout first, so records[0] is it.
+    main = records[0].path if records else ""
+    others = layout.neighbours(main, [w.path for w in records]) if main else 0
 
     if args.json:
         print(
@@ -239,6 +245,11 @@ def run_status(args: argparse.Namespace) -> int:
                 {
                     "head": head,
                     "stale": [w.path for w in stale],
+                    # How many worktrees under the shared root are a
+                    # sibling repository's. Nothing here reads or removes
+                    # them; a caller counting directories needs to know
+                    # they are not all this repository's.
+                    "neighbours": others,
                     # `ignored` and `sha` are fields rather than facts to
                     # parse back out of `why`. A caller deciding whether to
                     # pass --delete-ignored wants the count, not a sentence
@@ -275,6 +286,9 @@ def run_status(args: argparse.Namespace) -> int:
             f"{len(stale)} stale record(s) for directories that are gone; "
             "gwp clears them"
         )
+    if others:
+        root = layout.worktrees_root(main)
+        _err(f"{others} worktree(s) under {root} belong to another repository")
     if unknown:
         names = ", ".join(v.label for v in unknown)
         _err(f"unclear, and gwp does not touch these: {names}")
@@ -304,7 +318,7 @@ def run_prune(args: argparse.Namespace) -> int:
     # neither command may propose removing one.
     prune.worktree_prune()
 
-    rows, _, _, _ = _assess(args)
+    rows, _, _, _, _ = _assess(args)
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
 
@@ -737,7 +751,9 @@ def run_remove(args: argparse.Namespace) -> int:
     # The picker shows a path and a branch and no verdict, so nothing before
     # the answer needs the forge. Scanning without it turns one round trip per
     # worktree into at most one for the whole command.
-    rows, _, head, head_branch = _assess(args, judge=wt_mod.removable, ask_forge=False)
+    rows, _, head, head_branch, _ = _assess(
+        args, judge=wt_mod.removable, ask_forge=False
+    )
     found = pick.matches(
         args.query, [R.Worktree(v.path, "", v.branch, frozenset()) for v in rows]
     )
