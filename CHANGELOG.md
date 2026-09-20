@@ -17,6 +17,38 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.3.1 - 2026-09-20
+
+`gws` and `gwp` list the main checkout, and `gwl`'s picker shows the
+worktree you are standing in. Both listings used to leave those rows out, so
+a repository with the main checkout and one worktree showed one row where
+`git worktree list` shows two, which reads as though something went missing
+rather than as where you already are.
+
+The main checkout is `keep`, with `it is the main checkout, and never
+removable`. Nothing proposes it, and `git worktree remove` answers
+`fatal: '<path>' is a main working tree` whatever flag it is given, so `gwr`
+still does not offer it.
+
+The one you are standing in carries a `*` rather than a number:
+
+```
+  *  cleanup                           /home/you/git/.worktrees/cleanup/repo
+  1  docs-ship-with-the-change (main)  /home/you/git/repo
+which? [1-1, or blank to cancel]
+```
+
+Two things move with those rows. The counts include the main checkout, so a
+repository with one linked worktree reads `1 removable, 1 kept, 0 unclear`
+where it read `1 removable, 0 kept, 0 unclear`, and `gws --json` and
+`gwp --json` carry the extra verdict. A caller filtering on
+`verdict == "remove"` is unaffected; one reading `verdicts[0]` gets the main
+checkout now.
+
+`no worktrees besides the main checkout` is on stderr rather than stdout, and
+says `; gwa NAME makes one`. The table is always on stdout now, so stdout is
+never that sentence instead.
+
 ## 0.3.0 - 2026-09-20
 
 `gwl` with no query asks which worktree rather than moving you to one.
