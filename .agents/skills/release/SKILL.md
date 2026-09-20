@@ -86,15 +86,18 @@ tagged and nothing published.
 ## 4. Merge, then wait for main
 
 ```bash
-gh pr merge --rebase --delete-branch
+gh pr merge --squash --delete-branch
 git switch main && git pull --ff-only
 rt github::await_workflow "$(git rev-parse HEAD)" tests.yml
 ```
 
-`--rebase` keeps the commit message rather than replacing it with the pull
-request title.
+`--squash`, because the `main` ruleset requires signed commits and linear
+history: GitHub cannot sign the commits a rebase merge writes and refuses it
+with `Base branch requires signed commits`, and a merge commit is off. A
+squash is signed by GitHub's web-flow key, which is expected here and not
+something to route around. The subject becomes `Release <version> (#NN)`.
 
-The wait matters. A rebase onto a main that moved is a tree neither the
+The wait matters. A squash onto a main that moved is a tree neither the
 branch nor main has tested, and the tag must only ever land on a commit
 already proved green. `github::await_workflow` blocks until `tests.yml` finishes
 on that commit and exits non-zero if it failed.
@@ -113,7 +116,14 @@ gh run watch "$(gh run list --workflow publish.yml --limit 1 --json databaseId -
 
 Pushing the tag is the release. `publish.yml` re-checks the tag against
 `pyproject.toml`, that the commit is on `main`, and the tests, then builds
-once and uploads to TestPyPI before PyPI.
+once, installs the wheel it built and uploads it to PyPI. There is no
+TestPyPI upload here; `testpypi.yml` published this commit when the merge put
+it on `main`.
+
+`release` needs that upload alone, so the GitHub release appears while
+`verify` is still installing from PyPI. A red `verify` under a green
+`publish` means the index has not caught up, not that the version is
+missing.
 
 Report the PyPI URL and the GitHub release URL when it finishes.
 
