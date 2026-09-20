@@ -174,3 +174,48 @@ def test_gwr_offers_nothing_it_then_refuses_to_match(world) -> None:
             stdin=subprocess.DEVNULL,
         )
         assert "no worktree matches" not in p.stderr, (name, p.stderr)
+
+
+# --------------------------------------------------------------------------
+# one row a line, whatever the filesystem allows in a path
+# --------------------------------------------------------------------------
+
+
+def _at(world, path: Path, branch: str) -> None:
+    """A worktree somewhere `gwa` would never put one."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    world.git("worktree", "add", "--quiet", "-b", branch, str(path), "main")
+
+
+@pytest.mark.parametrize("entry", ["gwl", "gwr"])
+def test_a_path_holding_a_newline_is_not_offered(world, entry: str) -> None:
+    """Both shells split records on the newline, so such a row arrives as
+    two and its tail becomes a candidate of its own."""
+    _at(world, world.parent / ".worktrees" / "fine" / "repo", "fine")
+    _at(world, world.root / "we\nird", "odd")
+
+    p = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            "--complete",
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=env_for(world),
+    )
+    assert p.returncode == 0, p.stderr
+    rows = p.stdout.splitlines()
+    assert all("\t" in row for row in rows), rows
+    assert "fine" in [row.split("\t")[0] for row in rows]
+    assert "odd" not in [row.split("\t")[0] for row in rows]
+    assert "ird" not in p.stdout
+
+
+def test_a_path_holding_a_tab_is_still_offered(world) -> None:
+    """A row is split at its first tab, so a later one is description."""
+    _at(world, world.root / "ta\tbbed", "tabbed")
+    rows = _complete("gwl", world)
+    assert "tabbed" in rows

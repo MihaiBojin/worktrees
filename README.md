@@ -134,6 +134,12 @@ subcommand and shorthand, `gwl --complete` prints every worktree, and both
 shells narrow what those return, so the matching stays in one place and a
 command added to the table needs no edit in either shell.
 
+One row a line, `label<TAB>path`. A worktree whose path holds a newline is
+left out of that listing, because both shells would read it as two rows and
+offer the tail as a worktree of its own. `gwa` cannot make such a path, since
+it derives from a branch name and git refuses a newline in a ref, and the
+worktree is still reachable by name or path.
+
 Neither manager puts a binary on `$PATH`, which is why the two installs stay
 separate.
 
