@@ -185,6 +185,11 @@ commits an upstream has not got, because a request speaks for what reached
 it and nothing about what never did. `--no-forge` decides from git alone, and
 so does a run whose fetch just failed.
 
+The question goes to the repository the command is standing in and nowhere
+else. `GH_REPO` and `GITLAB_REPO` beat that directory, so both are dropped
+before `gh` or `glab` runs; everything else in the environment, the token
+included, is passed through.
+
 A record left behind by a directory somebody deleted by hand is nobody's
 verdict. `gws` names how many there are; clearing them is `git worktree prune`,
 which mutates, so `gwp` is what runs it.

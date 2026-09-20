@@ -49,6 +49,14 @@ def available() -> str:
     return ""
 
 
+# `gh` reads `GH_REPO` and `glab` reads `GITLAB_REPO`, and either beats the
+# directory the CLI is run in. A variable left in a shell would send every
+# question to a repository nobody here consulted, and branch names repeat
+# across repositories: a merged request found under the wrong one reads as
+# proof and deletes a branch.
+REDIRECTS = ("GH_REPO", "GITLAB_REPO")
+
+
 def request_for(
     branch: str,
     repo: str | os.PathLike[str] | None = None,
@@ -107,6 +115,7 @@ def request_for(
             text=True,
             check=False,
             cwd=os.fspath(repo) if repo else None,
+            env={k: v for k, v in os.environ.items() if k not in REDIRECTS},
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired):

@@ -252,3 +252,51 @@ def test_a_reachable_remote_leaves_the_forge_asked(world, tmp_path) -> None:
     assert p.returncode == 0, p.stderr
     assert "could not be fetched" not in p.stderr
     assert marker.exists()
+
+
+# --------------------------------------------------------------------------
+# the question goes to the repository the command is standing in
+# --------------------------------------------------------------------------
+
+
+def _reports_env(tmp_path: Path, tool: str, variable: str, seen: Path) -> Path:
+    """A forge CLI that writes down whether the redirect reached it."""
+    bin_dir = tmp_path / f"{tool}-bin"
+    bin_dir.mkdir(exist_ok=True)
+    exe = bin_dir / tool
+    exe.write_text(
+        f'#!/bin/sh\nprintf "%s" "${{{variable}-unset}}" > {seen}\nprintf "[]\\n"\n'
+    )
+    exe.chmod(0o755)
+    return bin_dir
+
+
+@pytest.mark.parametrize(
+    ("tool", "variable"), [("gh", "GH_REPO"), ("glab", "GITLAB_REPO")]
+)
+def test_a_stray_variable_cannot_redirect_the_question(
+    tmp_path, monkeypatch, tool: str, variable: str
+) -> None:
+    """Either variable beats the directory the CLI runs in, and a merged
+    request found in the wrong repository reads here as proof."""
+    seen = tmp_path / "seen"
+    bin_dir = _reports_env(tmp_path, tool, variable, seen)
+    # Only this directory, so `available` finds the tool under test and not
+    # the real one beside it.
+    monkeypatch.setenv("PATH", str(bin_dir))
+    monkeypatch.setenv(variable, "someone/else")
+
+    assert forge.request_for("any-branch") is None
+    assert seen.read_text() == "unset"
+
+
+def test_the_rest_of_the_environment_reaches_the_forge(tmp_path, monkeypatch) -> None:
+    """The control. Scrubbing two names must not hand gh an empty
+    environment: its token and its config path live there."""
+    seen = tmp_path / "seen"
+    bin_dir = _reports_env(tmp_path, "gh", "GH_TOKEN", seen)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    monkeypatch.setenv("GH_TOKEN", "kept")
+
+    assert forge.request_for("any-branch") is None
+    assert seen.read_text() == "kept"
