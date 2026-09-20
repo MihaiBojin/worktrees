@@ -211,6 +211,37 @@ def test_every_printed_sha_is_a_commit(world) -> None:
     assert prune.restore_line("no-such-branch") == ""
 
 
+# git rejects a space and a control character in a branch name, and permits
+# `$`, a backtick, `;` and `>`. Unquoted, this one redirects: the shell writes
+# `pwned` and passes git a branch called `weird`.
+HOSTILE = "weird>pwned"
+
+
+def test_the_restore_line_is_safe_to_paste(world) -> None:
+    """The other half of A2. The line exists to be pasted into a shell."""
+    world.git("branch", HOSTILE, "main")
+    sha = world.git("rev-parse", f"refs/heads/{HOSTILE}")
+    line = prune.restore_line(HOSTILE)
+    assert line == f"git branch '{HOSTILE}' {sha}"
+
+    world.git("branch", "--delete", "--force", HOSTILE)
+    subprocess.run(["bash", "-c", line], cwd=world.repo, check=True)
+    assert world.git("rev-parse", f"refs/heads/{HOSTILE}") == sha
+    assert not (world.repo / "pwned").exists()
+
+
+def test_the_switch_hint_is_safe_to_paste(world) -> None:
+    """`gwnb` refusing a name it already has prints the same kind of line,
+    built from a name somebody typed."""
+    from worktrees import new_branch
+
+    world.git("branch", HOSTILE, "main")
+    with pytest.raises(new_branch.Refusal) as caught:
+        new_branch.create(HOSTILE, fetch=False)
+    hint = str(caught.value).split("; ", 1)[1]
+    assert hint == f"git switch '{HOSTILE}' checks it out"
+
+
 # --------------------------------------------------------------------------
 # Gate 2: the head branch survives whatever the verdict says
 # --------------------------------------------------------------------------
