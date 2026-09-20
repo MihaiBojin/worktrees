@@ -676,3 +676,23 @@ def test_a_stash_on_another_branch_is_not_named(world) -> None:
     p = run(world, "gwp", "--no-fetch", "--no-forge", "-y")
     assert p.returncode == 0, p.stderr
     assert "was made on this branch" not in p.stderr
+
+
+def test_list_with_no_query_prompts_on_a_terminal(world) -> None:
+    """One other worktree, and it still asks, because nothing said which.
+
+    The prompt is the whole point: `gwl` with no argument means show me the
+    options, and one option is still an option rather than a destination.
+    """
+    world.worktree("one")
+    code, out = run_on_a_terminal(world, "gwl", answer="1\n")
+    assert code == 0, out
+    assert "which? [1-1, or blank to cancel]" in out
+    assert "one" in out
+
+
+def test_list_with_no_query_takes_blank_as_cancelled(world) -> None:
+    world.worktree("one")
+    code, out = run_on_a_terminal(world, "gwl", answer="\n")
+    assert code == 0, out
+    assert "nothing picked" in out

@@ -287,16 +287,17 @@ $ gwl --list
 ```
 
 It never offers that one. Picking it is the one answer that cannot take you
-anywhere, and a picker whose single candidate is where you already are prints
-nothing at all, which reads as a broken command. So two worktrees and no query
-is not a question, and asking for the one you are in says so and stays put:
+anywhere, and asking for the one you are in says so and stays put:
 
 ```console
 $ gwl dirty          # standing in dirty-work
 already in dirty-work
 ```
 
-With more than one worth offering it asks, numbered:
+A query that narrows to one takes it outright. No query does not, even when
+the repository holds exactly one other worktree: `gwl` with no argument means
+show me the options, and being moved without being asked is not that. So it
+asks, numbered, however many there are:
 
 ```console
 $ gwl                # standing in the main checkout
