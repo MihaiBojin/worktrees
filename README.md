@@ -481,7 +481,9 @@ is refused with them: it deletes refs without `-d` appearing at all.
 The Python, the tests and the release procedure are in
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). The rules the code follows are in
 [AGENTS.md](AGENTS.md). What changed in each release is in
-[CHANGELOG.md](CHANGELOG.md).
+[CHANGELOG.md](CHANGELOG.md). What was decided and what must not break,
+including the alternatives that were closed, is in
+[docs/REFERENCE.md](docs/REFERENCE.md).
 
 ## Licence
 
