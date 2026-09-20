@@ -68,8 +68,21 @@ def run_with_a_terminal_on_stdout(
     return proc.returncode, b"".join(chunks).decode().replace("\r\n", "\n")
 
 
+def run_on_a_terminal_at(
+    world, at: Path, entry: str, *args: str, answer: str
+) -> tuple[int, str]:
+    """The same, from a directory that is not the main checkout."""
+    return _on_a_terminal(world, at, entry, *args, answer=answer)
+
+
 def run_on_a_terminal(world, entry: str, *args: str, answer: str) -> tuple[int, str]:
     """The same, with a real tty on stdin, so the prompt is reachable."""
+    return _on_a_terminal(world, world.repo, entry, *args, answer=answer)
+
+
+def _on_a_terminal(
+    world, at: Path, entry: str, *args: str, answer: str
+) -> tuple[int, str]:
     parent, child = pty.openpty()
     proc = subprocess.Popen(
         [
@@ -78,7 +91,7 @@ def run_on_a_terminal(world, entry: str, *args: str, answer: str) -> tuple[int, 
             f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
             *args,
         ],
-        cwd=str(world.repo),
+        cwd=str(at),
         stdin=child,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -113,16 +126,19 @@ def test_status_leaves_a_removable_worktree_alone(world) -> None:
     p = run(world, "gws", "--no-fetch")
     assert p.returncode == 0, p.stderr
     assert "remove" in p.stdout
-    assert "1 removable, 0 kept, 0 unclear" in p.stdout
+    assert "1 removable, 1 kept, 0 unclear" in p.stdout  # the main checkout
     assert "gwp removes the 1 marked removable" in p.stderr
     assert wt.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/done")
 
 
 def test_status_says_when_there_is_nothing(world) -> None:
+    """The main checkout is still a row, so the table shows what
+    `git worktree list` shows and the hint says what is missing."""
     p = run(world, "gws", "--no-fetch")
     assert p.returncode == 0, p.stderr
-    assert "no worktrees besides the main checkout" in p.stdout
+    assert "it is the main checkout" in p.stdout
+    assert "no worktrees besides the main checkout; gwa NAME makes one" in p.stderr
 
 
 def test_status_json_is_data_on_stdout(world) -> None:
@@ -131,7 +147,9 @@ def test_status_json_is_data_on_stdout(world) -> None:
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
     assert payload["head"] == "refs/heads/main"
-    assert payload["verdicts"][0]["verdict"] == "remove"
+    rows = {v["branch"]: v for v in payload["verdicts"]}
+    assert rows["done"]["verdict"] == "remove"
+    assert rows["main"]["why"] == "it is the main checkout, and never removable"
     assert payload["stale"] == []
 
 
@@ -147,9 +165,11 @@ def test_json_carries_the_ignored_count_as_a_number(world) -> None:
 
     p = run(world, "gws", "--no-fetch", "--no-forge", "--json")
     assert p.returncode == 0, p.stderr
-    row = json.loads(p.stdout)["verdicts"][0]
+    rows = {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
+    row = rows["holds-secrets"]
     assert row["ignored"] == 1
     assert row["verdict"] == "keep"
+    assert rows["main"]["ignored"] == 0
     # and the sentence still says it, for the person reading the table
     assert "1 ignored path(s)" in row["why"]
 
@@ -312,7 +332,8 @@ def test_prune_clears_a_stale_record(world) -> None:
 def test_prune_says_so_when_there_is_nothing(world) -> None:
     p = run(world, "gwp", "--no-fetch", "--yes")
     assert p.returncode == 0, p.stderr
-    assert "no worktrees besides the main checkout" in p.stdout
+    assert "it is the main checkout" in p.stdout
+    assert "no worktrees besides the main checkout; gwa NAME makes one" in p.stderr
 
 
 def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
@@ -324,7 +345,7 @@ def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
     assert p.returncode == 0, p.stderr
     assert "busy" in p.stdout
     assert "it has uncommitted changes" in p.stdout
-    assert "nothing to remove; 0 removable, 1 kept, 0 unclear" in p.stdout
+    assert "nothing to remove; 0 removable, 2 kept, 0 unclear" in p.stdout
     assert "gws" not in p.stdout
 
 
@@ -390,7 +411,7 @@ def test_the_cli_name_takes_a_subcommand(world) -> None:
     world.worktree("done")
     p = run(world, "main", "status", "--no-fetch", "--json")
     assert p.returncode == 0, p.stderr
-    assert json.loads(p.stdout)["verdicts"][0]["branch"] == "done"
+    assert "done" in {v["branch"] for v in json.loads(p.stdout)["verdicts"]}
 
 
 def test_the_cli_name_with_no_argument_prints_help(world) -> None:
@@ -437,7 +458,7 @@ def test_every_shorthand_reaches_the_same_command(world, spelling: str) -> None:
     world.worktree("done")
     p = run(world, "main", spelling, "--no-fetch", "--json")
     assert p.returncode == 0, p.stderr
-    assert json.loads(p.stdout)["verdicts"][0]["branch"] == "done"
+    assert "done" in {v["branch"] for v in json.loads(p.stdout)["verdicts"]}
 
 
 @pytest.mark.parametrize(
@@ -560,7 +581,7 @@ def test_json_is_never_coloured_even_on_a_terminal(world) -> None:
     code, out = run_with_a_terminal_on_stdout(world, "gws", "--no-fetch", "--json")
     assert code == 0, out
     assert "[" not in out
-    assert json.loads(out)["verdicts"][0]["branch"] == "done"
+    assert "done" in {v["branch"] for v in json.loads(out)["verdicts"]}
 
 
 def test_no_color_turns_it_off_on_a_terminal(world) -> None:
@@ -696,3 +717,45 @@ def test_list_with_no_query_takes_blank_as_cancelled(world) -> None:
     code, out = run_on_a_terminal(world, "gwl", answer="\n")
     assert code == 0, out
     assert "nothing picked" in out
+
+
+def test_status_lists_the_main_checkout_and_never_proposes_it(world) -> None:
+    """A listing that leaves it out shows one row where `git worktree list`
+    shows two, which reads as though something went missing."""
+    world.worktree("done")
+    p = run(world, "gws", "--no-fetch", "--no-forge")
+    assert p.returncode == 0, p.stderr
+    assert "it is the main checkout, and never removable" in p.stdout
+    assert p.stdout.count("keep") == 1
+    assert "1 removable, 1 kept, 0 unclear" in p.stdout
+    rows = {
+        v["branch"]: v
+        for v in json.loads(
+            run(world, "gws", "--no-fetch", "--no-forge", "--json").stdout
+        )["verdicts"]
+    }
+    assert set(rows) == {"main", "done"}
+    assert rows["main"]["verdict"] == "keep"
+
+
+def test_remove_is_never_offered_the_main_checkout(world) -> None:
+    """`gwr` takes the same list as its candidates, and `git worktree remove`
+    answers `fatal: '<path>' is a main working tree` whatever flag it is
+    given, so offering it would propose something certain to be refused.
+    """
+    world.worktree("done")
+    p = run(world, "gwr", "--no-fetch", "--complete")
+    assert p.returncode == 0, p.stderr
+    assert "main" not in p.stdout
+    assert "done" in p.stdout
+
+
+def test_list_shows_the_worktree_you_are_standing_in_unnumbered(world) -> None:
+    """Marked, above the ones you can go to, and carrying no number: it is
+    where you are rather than somewhere to go."""
+    wt = world.worktree("cleanup")
+    code, out = run_on_a_terminal_at(world, wt, "gwl", answer="\n")
+    assert code == 0, out
+    assert "  *  cleanup" in out
+    assert "  1  main" in out
+    assert "which? [1-1, or blank to cancel]" in out

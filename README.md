@@ -142,17 +142,21 @@ separate.
 ```console
 $ gws
 VERDICT  BRANCH         WHY                                                                                PATH
+keep     main           it is the main checkout, and never removable                                       /home/you/git/repo
 keep     dirty-work     it has uncommitted changes                                                         /home/you/git/.worktrees/dirty-work/repo
 keep     holds-secrets  merged, but holds 2 ignored path(s); pass --delete-ignored                         /home/you/git/.worktrees/holds-secrets/repo
 unknown  never-pushed   not merged into origin/main, and no upstream says whether its commits were pushed  /home/you/git/.worktrees/never-pushed/repo
 remove   squash-merged  squash-merged                                                                      /home/you/git/.worktrees/squash-merged/repo
 
-1 removable, 2 kept, 1 unclear
+1 removable, 3 kept, 1 unclear
 unclear, and gwp does not touch these: never-pushed
 gwp removes the 1 marked removable
 ```
 
-Rows come in `git worktree list` order. Paths are absolute wherever this
+Rows come in `git worktree list` order, the main checkout first. It is there
+so the table shows what `git worktree list` shows; nothing proposes it, and
+`git worktree remove` answers `fatal: '<path>' is a main working tree`
+whatever flag it is given. Paths are absolute wherever this
 prints one, so a row can be pasted into the next command. The table and the
 count are on stdout; the two lines after them are on stderr.
 
@@ -300,12 +304,17 @@ show me the options, and being moved without being asked is not that. So it
 asks, numbered, however many there are:
 
 ```console
-$ gwl                # standing in the main checkout
-  1  dirty-work     /home/you/git/.worktrees/dirty-work/repo
-  2  holds-secrets  /home/you/git/.worktrees/holds-secrets/repo
-  3  never-pushed   /home/you/git/.worktrees/never-pushed/repo
+$ gwl                # standing in never-pushed
+  *  never-pushed    /home/you/git/.worktrees/never-pushed/repo
+  1  main            /home/you/git/repo
+  2  dirty-work      /home/you/git/.worktrees/dirty-work/repo
+  3  holds-secrets   /home/you/git/.worktrees/holds-secrets/repo
 which? [1-3, or blank to cancel]
 ```
+
+The one you are standing in is marked `*` and carries no number. It is where
+you are rather than somewhere to go, and a list without it shows three rows
+where `git worktree list` shows four.
 
 Matching is substring first and then subsequence, so `tst` finds `add-tests`,
 and a substring hit always outranks a loose one. Without a terminal `gwl`
