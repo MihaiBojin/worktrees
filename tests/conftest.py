@@ -9,6 +9,7 @@ the first commit and every assertion after that is meaningless.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,33 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+SRC = str(Path(__file__).resolve().parents[1] / "src")
+
+
+def _path() -> str:
+    """The PATH a driven test runs under, with this machine's git first.
+
+    `/usr/bin` came first for a long time, which on macOS is Apple's stub
+    rather than the git a person here runs. It re-execs the real binary, so
+    every call paid for it twice, and after an Xcode update it answers every
+    command with exit 69 until somebody accepts a licence. CI never saw
+    either, because on Linux that path is a real git.
+
+    Still a list rather than `os.environ["PATH"]`: a test inherits no more of
+    the machine than it needs.
+    """
+    found = shutil.which("git")
+    first = [str(Path(found).parent)] if found else []
+    rest = [
+        d
+        for d in ("/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin")
+        if d not in first
+    ]
+    return os.pathsep.join([*first, *rest])
+
+
+PATH = _path()
 
 # Fixed dates make the first commit's sha a constant, so a test may assert on
 # a literal one.
@@ -58,6 +86,22 @@ class World:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.git("worktree", "add", "--quiet", "-b", branch, str(path), base)
         return path
+
+
+def env_for(world: World) -> dict[str, str]:
+    """What a driven test hands the console script it runs.
+
+    One copy. There were five, and the PATH inside them had to be wrong five
+    times before it was noticed once.
+    """
+    return {
+        "PATH": PATH,
+        "PYTHONPATH": SRC,
+        "HOME": str(world.root),
+        "GIT_CONFIG_GLOBAL": str(world.root / "gitconfig"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        **ENV,
+    }
 
 
 @pytest.fixture

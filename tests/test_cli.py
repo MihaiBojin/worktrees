@@ -11,23 +11,11 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import env_for
 
 from worktrees import prune
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
-
-
-def _env(world) -> dict[str, str]:
-    from conftest import ENV
-
-    return {
-        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-        "PYTHONPATH": SRC,
-        "HOME": str(world.root),
-        "GIT_CONFIG_GLOBAL": str(world.root / "gitconfig"),
-        "GIT_CONFIG_NOSYSTEM": "1",
-        **ENV,
-    }
 
 
 def run(world, entry: str, *args: str, at: Path | None = None):
@@ -41,7 +29,7 @@ def run(world, entry: str, *args: str, at: Path | None = None):
         cwd=str(at or world.repo),
         capture_output=True,
         text=True,
-        env=_env(world),
+        env=env_for(world),
     )
 
 
@@ -62,7 +50,7 @@ def run_with_a_terminal_on_stdout(
         stdout=child,
         stderr=subprocess.DEVNULL,
         text=True,
-        env={**_env(world), "TERM": "xterm-256color", **(env_extra or {})},
+        env={**env_for(world), "TERM": "xterm-256color", **(env_extra or {})},
     )
     os.close(child)
     chunks: list[bytes] = []
@@ -95,7 +83,7 @@ def run_on_a_terminal(world, entry: str, *args: str, answer: str) -> tuple[int, 
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        env=_env(world),
+        env=env_for(world),
     )
     os.close(child)
     os.write(parent, answer.encode())

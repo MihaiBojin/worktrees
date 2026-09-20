@@ -14,22 +14,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import PATH, env_for
 
 from worktrees.cli import _CANONICAL, _COMMANDS
-
-
-def _env(world) -> dict[str, str]:
-    from conftest import ENV
-
-    return {
-        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-        "PYTHONPATH": SRC,
-        "HOME": str(world.root),
-        "GIT_CONFIG_GLOBAL": str(world.root / "gitconfig"),
-        "GIT_CONFIG_NOSYSTEM": "1",
-        **ENV,
-    }
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = str(ROOT / "src")
@@ -49,7 +36,7 @@ def _help(entry: str) -> str:
         ],
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": SRC, "COLUMNS": "200"},
+        env={"PATH": PATH, "PYTHONPATH": SRC, "COLUMNS": "200"},
     )
     return p.stdout
 
@@ -105,7 +92,7 @@ def test_complete_lists_every_command_and_shorthand(world) -> None:
         cwd=str(world.repo),
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": SRC},
+        env=env_for(world),
     )
     assert p.returncode == 0, p.stderr
     offered = {line.split("\t")[0] for line in p.stdout.splitlines()}
@@ -126,7 +113,7 @@ def test_complete_lists_the_worktree_you_are_standing_in(world) -> None:
         cwd=str(here),
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": SRC},
+        env=env_for(world),
     )
     assert p.returncode == 0, p.stderr
     offered = {line.split("\t")[0] for line in p.stdout.splitlines()}
@@ -144,7 +131,7 @@ def _complete(entry: str, world, at=None) -> list[str]:
         cwd=str(at or world.repo),
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": SRC},
+        env=env_for(world),
     )
     assert p.returncode == 0, p.stderr
     return [line.split("\t")[0] for line in p.stdout.splitlines()]
@@ -183,7 +170,7 @@ def test_gwr_offers_nothing_it_then_refuses_to_match(world) -> None:
             cwd=str(world.repo),
             capture_output=True,
             text=True,
-            env=_env(world),
+            env=env_for(world),
             stdin=subprocess.DEVNULL,
         )
         assert "no worktree matches" not in p.stderr, (name, p.stderr)

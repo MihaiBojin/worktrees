@@ -9,25 +9,13 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from conftest import env_for
 
 from worktrees import rotate as R_
 from worktrees.new_branch import Refusal
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 TODAY = date.today().isoformat()
-
-
-def _env(world) -> dict[str, str]:
-    from conftest import ENV
-
-    return {
-        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-        "PYTHONPATH": SRC,
-        "HOME": str(world.root),
-        "GIT_CONFIG_GLOBAL": str(world.root / "gitconfig"),
-        "GIT_CONFIG_NOSYSTEM": "1",
-        **ENV,
-    }
 
 
 def gwrot(world, *args: str) -> subprocess.CompletedProcess[str]:
@@ -41,7 +29,7 @@ def gwrot(world, *args: str) -> subprocess.CompletedProcess[str]:
         cwd=str(world.repo),
         capture_output=True,
         text=True,
-        env=_env(world),
+        env=env_for(world),
     )
 
 

@@ -8,24 +8,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import env_for
 
 from worktrees import new_branch
 from worktrees.git import Refused, guard
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
-
-
-def _env(world) -> dict[str, str]:
-    from conftest import ENV
-
-    return {
-        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-        "PYTHONPATH": SRC,
-        "HOME": str(world.root),
-        "GIT_CONFIG_GLOBAL": str(world.root / "gitconfig"),
-        "GIT_CONFIG_NOSYSTEM": "1",
-        **ENV,
-    }
 
 
 def gwnb(world, *args: str) -> subprocess.CompletedProcess[str]:
@@ -39,7 +27,7 @@ def gwnb(world, *args: str) -> subprocess.CompletedProcess[str]:
         cwd=str(world.repo),
         capture_output=True,
         text=True,
-        env=_env(world),
+        env=env_for(world),
     )
 
 
@@ -166,7 +154,7 @@ def test_the_usage_line_names_what_was_typed(world) -> None:
         cwd=str(world.repo),
         capture_output=True,
         text=True,
-        env=_env(world),
+        env=env_for(world),
     )
     assert p.returncode == 2
     assert p.stderr.strip() == "usage: worktrees new-branch NAME"
