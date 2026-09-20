@@ -28,7 +28,7 @@ permissions:
 jobs:
   snapshot:
     name: Publish a snapshot
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Binds this job to the trusted publisher registered for `testpypi`.
     environment: testpypi
     permissions:
@@ -47,6 +47,7 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
+          cache-suffix: ${{ github.workflow }}-${{ github.job }}
 
       # Epoch seconds rather than the run number: a re-run repeats the number
       # and TestPyPI refuses the duplicate, while the clock has moved on.
