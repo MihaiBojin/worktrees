@@ -70,6 +70,21 @@ def _counted(rows: list[verdicts.Verdict]) -> str:
     )
 
 
+def _offerable(path: str) -> bool:
+    """Can this path be one line of `--complete` output?
+
+    The protocol is one row a line, `label<TAB>path`, and both shells split
+    records on the newline. So a path holding one arrives as two rows and its
+    tail becomes a candidate of its own. A tab is fine: both split a row at
+    the first one, so a tab inside the path lands in the description.
+
+    A filename may hold any byte but NUL and `/`. Nothing here makes such a
+    path, since `gwa` derives it from a branch name and git refuses a newline
+    in a ref, so this only ever skips a worktree added by hand.
+    """
+    return "\n" not in path
+
+
 def _explain() -> int:
     """Every git command the program can issue."""
     from .git import RULES, commands
@@ -638,11 +653,12 @@ def run_list(args: argparse.Namespace) -> int:
     rows = [w for w in R.worktrees() if "bare" not in w.flags]
 
     if args.complete:
-        # Every one of them, the current included: the shell does the
-        # narrowing, and a completion that hides a candidate is worse than one
-        # that offers a useless one.
+        # Every one of them the protocol can carry, the current included: the
+        # shell does the narrowing, and a completion that hides a candidate is
+        # worse than one that offers a useless one.
         for w in rows:
-            print(f"{w.label}\t{w.path}")
+            if _offerable(w.path):
+                print(f"{w.label}\t{w.path}")
         return 0
 
     found = pick.matches(args.query, rows)
@@ -744,7 +760,7 @@ def run_remove(args: argparse.Namespace) -> int:
         # finished is what gwr works out after you pick one, not what decides
         # whether its name can be typed. No fetch either, so TAB stays fast.
         for w in R.worktrees():
-            if "bare" not in w.flags and not w.main:
+            if "bare" not in w.flags and not w.main and _offerable(w.path):
                 print(f"{w.label}\t{w.path}")
         return 0
 
