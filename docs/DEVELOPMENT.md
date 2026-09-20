@@ -24,7 +24,9 @@ invisible to it, so CI is the first thing to format a file you just wrote.
 
 
 The rules this code follows, and the reasoning behind them, are in
-[AGENTS.md](../AGENTS.md). This file is what to run.
+[AGENTS.md](../AGENTS.md). What was decided, what must not break and which
+failure classes have a test are in [REFERENCE.md](REFERENCE.md). This file is
+what to run.
 
 ## Layout
 
