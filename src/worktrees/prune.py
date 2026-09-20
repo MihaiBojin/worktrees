@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -67,6 +68,10 @@ def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str
     The sha is checked to be a commit. The bug's signature is a correctly
     shaped restore line carrying the wrong sha, so the check is on the object
     and not on the sentence.
+
+    The name is quoted, because this line exists to be pasted and git permits
+    `$`, a backtick and `;` in a branch name. `shlex.quote` writes POSIX
+    single quotes, which bash, zsh and fish all read the same way.
     """
     if not branch:
         return ""
@@ -77,7 +82,7 @@ def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str
     kind = object_type(text, repo=repo)
     if not kind or kind.out.strip() != "commit":
         return ""
-    return f"git branch {branch} {text}"
+    return f"git branch {shlex.quote(branch)} {text}"
 
 
 def stashes_on(branch: str, entries: list[str]) -> list[str]:

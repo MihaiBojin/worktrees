@@ -8,6 +8,7 @@ to be rebased afterwards.
 from __future__ import annotations
 
 import os
+import shlex
 
 from . import repo as R
 from .git import git
@@ -61,7 +62,9 @@ def create(
     if R.ref_exists(f"refs/heads/{name}", repo=repo):
         # Native git, so the message names a command that exists for somebody
         # who installed the package without the shell plugin.
-        raise Refusal(f"{name} is already a branch; git switch {name} checks it out")
+        raise Refusal(
+            f"{name} is already a branch; git switch {shlex.quote(name)} checks it out"
+        )
 
     remote = R.remote(repo=repo)
     online = fetch

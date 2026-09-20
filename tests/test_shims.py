@@ -265,3 +265,31 @@ def test_the_zsh_shim_stays_put_when_the_output_is_not_a_directory(tmp_path) -> 
     assert code == 0, out
     assert "/nowhere" not in out
     assert "no such file or directory" not in out.lower()
+
+
+# --------------------------------------------------------------------------
+# a line printed to be pasted lands in whichever shell the reader has
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+def test_a_restore_line_means_the_same_in_every_shell(world, shell: str) -> None:
+    """`shlex.quote` writes POSIX single quotes, which fish reads literally
+    too, so `gwp` prints one line rather than one per shell."""
+    from worktrees import prune
+
+    name = "weird>pwned"  # unquoted, the shell redirects and git gets `weird`
+    world.git("branch", name, "main")
+    sha = world.git("rev-parse", f"refs/heads/{name}")
+    line = prune.restore_line(name)
+    world.git("branch", "--delete", "--force", name)
+
+    binary = shutil.which(shell)
+    if not binary:  # pragma: no cover
+        _missing(shell)
+    no_config = "--no-config" if shell == "fish" else "-f"
+    argv = [binary, no_config, "-c", line]
+    proc = subprocess.run(argv, cwd=world.repo, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    assert world.git("rev-parse", f"refs/heads/{name}") == sha
+    assert not (world.repo / "pwned").exists()

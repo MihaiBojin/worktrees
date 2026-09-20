@@ -221,6 +221,7 @@ involved.
 | A5 | tag `foo` and branch `tags/foo` | held, `unknown` | none |
 | A6 | branch named a full 40-hex sha | held: judged `squash-merged`, and the restore line carries the branch's own sha | none |
 | A7 | tag `feature` outside the head branch, branch `feature` merged | held: reaped, reason `merged` | none. `test_a_tag_cannot_answer_for_a_branch` runs A1's direction only |
+| A8 | branch `weird>pwned`, a name a shell redirects on | held: the restore line and the `gwnb` hint quote the name, and bash, zsh and fish read the quotes alike | `test_the_restore_line_is_safe_to_paste`, `test_a_restore_line_means_the_same_in_every_shell` |
 
 A7 is the class running the other way. A suite that only asserts "never delete
 unmerged work" passes while it holds.
