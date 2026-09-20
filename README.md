@@ -149,6 +149,7 @@ unknown  never-pushed   not merged into origin/main, and no upstream says whethe
 remove   squash-merged  squash-merged                                                                      /home/you/git/.worktrees/squash-merged/repo
 
 1 removable, 3 kept, 1 unclear
+2 worktree(s) under /home/you/git/.worktrees belong to another repository
 unclear, and gwp does not touch these: never-pushed
 gwp removes the 1 marked removable
 ```
@@ -158,7 +159,13 @@ so the table shows what `git worktree list` shows; nothing proposes it, and
 `git worktree remove` answers `fatal: '<path>' is a main working tree`
 whatever flag it is given. Paths are absolute wherever this
 prints one, so a row can be pasted into the next command. The table and the
-count are on stdout; the two lines after them are on stderr.
+count are on stdout; everything after them is on stderr.
+
+Every repository in the same parent directory keeps its worktrees under that
+one `.worktrees` root, so some of the directories in there are a sibling's.
+`gws` counts those and says so, because nothing else does. No command here
+reads or removes them, and the count comes from walking the root rather than
+from asking git.
 
 On a terminal the verdict carries its own colour, `remove` green, `keep` blue
 and `unknown` yellow, with the branch in bold and the path dimmed. That

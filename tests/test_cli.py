@@ -197,6 +197,25 @@ def test_status_names_a_stale_record_rather_than_clearing_it(world) -> None:
     assert "gone" in world.git("worktree", "list", "--porcelain")
 
 
+def test_status_counts_the_worktrees_belonging_to_a_sibling(world) -> None:
+    """One `.worktrees` root serves every repository beside it, and nothing
+    else says so: the directories there are not all this repository's."""
+    world.worktree("mine")
+    world.sibling("other", "theirs")
+    p = run(world, "gws", "--no-fetch", "--no-forge")
+    assert p.returncode == 0, p.stderr
+    root = world.parent / ".worktrees"
+    assert f"1 worktree(s) under {root} belong to another repository" in p.stderr
+    assert "theirs" not in p.stdout
+
+
+def test_status_says_nothing_when_the_root_is_all_ours(world) -> None:
+    world.worktree("mine")
+    p = run(world, "gws", "--no-fetch", "--no-forge")
+    assert p.returncode == 0, p.stderr
+    assert "another repository" not in p.stderr
+
+
 # --------------------------------------------------------------------------
 # gwp removes exactly what gws marks removable
 # --------------------------------------------------------------------------

@@ -63,7 +63,9 @@ Four rules the CLI does not break:
 - Worktrees live at `<PARENT>/.worktrees/<NAME>/<REPO>`, derived rather than
   configured, so two independently-invoked tools cannot disagree about a
   location neither can be told. A branch name with slashes nests, and the
-  repository name goes last, so `auth/oauth` cannot collide with `auth`.
+  repository name goes last, so `auth/oauth` cannot collide with `auth` and
+  repositories side by side share one root. `gws` counts what in that root is
+  a sibling's, since the layout alone gives a reader no way to tell.
 - Every git command the program can run is one decorated spec, written the way
   you would type it, and all 35 of them register in one list. A guard reads the
   resolved argv inside the wrapper, so no call site can assemble its way past a
