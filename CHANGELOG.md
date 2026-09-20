@@ -17,6 +17,33 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.4.0 - 2026-09-21
+
+### Security
+
+Forge queries ignore `GH_REPO` and `GITLAB_REPO`, so a merged request in
+another repository cannot authorize removal here.
+
+Printed branch restoration commands and `gwnb` checkout hints quote branch
+names so shell metacharacters are treated as part of the name.
+
+### Added
+
+`gws` reports how many worktrees under the shared `.worktrees` directory
+belong to other repositories, with the count in `gws --json` as `neighbours`.
+
+### Fixed
+
+After a failed fetch, worktree assessments use local refs and skip forge
+queries.
+
+`gwl` and `gwr` shell completions omit paths containing newlines, which
+cannot fit their one-row-per-line format; those worktrees remain reachable
+by name or path.
+
+Pressing Ctrl-C at a worktree selection or removal prompt exits with code
+130 and no traceback. No worktree is selected or removed.
+
 ## 0.3.1 - 2026-09-20
 
 `gws` and `gwp` list the main checkout, and `gwl`'s picker shows the
