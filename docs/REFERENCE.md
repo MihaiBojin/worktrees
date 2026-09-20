@@ -9,10 +9,9 @@ alternatives they closed, the invariants that hold whatever the code is
 written in, the failure classes each has a test for, and the measurements
 behind the choices.
 
-It descends from [origin#4](https://github.com/MihaiBojin/origin/issues/4), written on 2026-09-07 against a bash
-CLI and two shell plugins that no longer exist, by way of
-[origin#6](https://github.com/MihaiBojin/origin/issues/6). Section 10 maps that first issue's sections onto this
-one.
+It descends from an issue written on 2026-09-07 against a bash CLI and two
+shell plugins that no longer exist. That issue's repository is deleted, so
+what is here is the whole of it that still holds.
 
 ## 1. What exists today
 
@@ -124,11 +123,11 @@ Language, distribution, packaging.
 
 ### 3.2 Settled differently from the record that preceded this
 
-Each was settled in [origin#4](https://github.com/MihaiBojin/origin/issues/4) and is settled the other way here.
-The third column is the reason, in the present tense, so nobody re-derives
-the first.
+Each was settled one way in the issue this descends from and is settled the
+other way here. The third column is the reason, in the present tense, so
+nobody re-derives the first.
 
-| origin#4 said | here | why |
+| it said | here | why |
 | --- | --- | --- |
 | A branch is deleted only on git's own proof, and `branch -D` is refused absolutely | a branch is deleted by `git update-ref -d <ref> <sha>` against the sha the verdict was formed on | `git branch -d` reads history, a squash merge leaves none, and it inverts on exactly the case this tool exists for. `branch -D` stays refused, and so does `update-ref -d` with an absent, empty or abbreviated old value: git reads the empty string as "no old value" and takes the branch at exit 0 |
 | Configuration is `git config git-worktree-plugin.*` and nothing else | there is no configuration | one implementation cannot disagree with itself, so a key that only reconciles two of them has nothing left to do. `git-worktree-plugin.forge`, `.remote` and `.headBranch` are gone with the shells that read them |
@@ -430,25 +429,6 @@ retention rule and a deletion rule before it is a good idea.
 Codex manages worktrees and gives nothing to override where they go. On
 codex-cli 0.154.0, `--worktree` runs the session in a new managed git worktree,
 there is no `worktree` subcommand, and `~/.codex/worktrees` does not exist. The
-`codex worktree list|path|remove|prune` design [origin#4](https://github.com/MihaiBojin/origin/issues/4) recorded
-never shipped. Until there is a hook, a Codex session's worktree is somewhere this
+`codex worktree list|path|remove|prune` design that issue recorded never
+shipped. Until there is a hook, a Codex session's worktree is somewhere this
 tool does not know about.
-
-## 10. Concordance to #4
-
-[origin#4](https://github.com/MihaiBojin/origin/issues/4) is closed and nothing cites it any more. Its sections map
-onto this file as follows.
-
-| origin#4 | here |
-| --- | --- |
-| §1, three implementations and their counts | §1. Two of the three are deleted |
-| §2, the contract | §2. The configuration rule reversed |
-| §3.1, settled | §3.1 for what carried, §3.2 for what did not |
-| §3.2, withdrawn or false | §3.3 |
-| §4, the two gates and what must not break | §4, both gates held |
-| §5, the A and B failure classes | §5, with B4 and B5 retired and B6 open |
-| §6, how it is tested | §6. The Go fixture rules became pytest rules |
-| §7, measurements | §7. All of the figures are new |
-| §8, seven milestones in `docs/plan/` | retired at 90e5108. §8 is today's list |
-| §9, agent client surfaces | §9, re-checked |
-| §10, the concordance to its own item numbers | not carried. [origin#1](https://github.com/MihaiBojin/origin/issues/1) and [origin#2](https://github.com/MihaiBojin/origin/issues/2) are closed |
