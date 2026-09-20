@@ -36,7 +36,7 @@ jobs:
   # byte-for-byte what was tested and installed here.
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       # Reading another workflow's runs. Without it the tests guard below
@@ -56,6 +56,7 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
+          cache-suffix: ${{ github.workflow }}-${{ github.job }}
 
       - name: Install the release tools
         uses: releasetools/cli@v0
@@ -126,7 +127,7 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: build
     # Binds this job to the trusted publisher registered for `pypi`. Add a
     # required reviewer on this environment for a manual gate before anything
@@ -144,6 +145,7 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
+          cache-suffix: ${{ github.workflow }}-${{ github.job }}
 
       - name: Download distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -162,7 +164,7 @@ jobs:
   # PyPI is slow rather than that the version is not out.
   verify:
     name: Verify it installs from PyPI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: publish
     permissions:
       contents: read
@@ -178,13 +180,14 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
+          cache-suffix: ${{ github.workflow }}-${{ github.job }}
 
       - name: Verify it installs from PyPI
         run: scripts/verify-publish.bash --prod
 
   release:
     name: Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: publish
     permissions:
       contents: write

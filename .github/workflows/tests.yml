@@ -23,7 +23,7 @@ concurrency:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -33,6 +33,7 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
+          cache-suffix: ${{ github.workflow }}-${{ github.job }}
 
       - name: Install dependencies
         run: uv sync --all-extras --locked
@@ -44,7 +45,7 @@ jobs:
 
   test:
     name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       # One version failing is a fact about that version, so let the others
       # finish and say which.
@@ -66,6 +67,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+          cache-suffix: ${{ github.workflow }}-${{ github.job }}
 
       - name: Install dependencies
         # --locked fails the run on a stale uv.lock, rather than quietly
