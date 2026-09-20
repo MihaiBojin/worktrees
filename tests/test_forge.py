@@ -171,7 +171,7 @@ def test_request_for_reads_the_first_row(world, with_forge) -> None:
 
 
 def test_the_cli_offers_no_forge(world) -> None:
-    from conftest import ENV
+    from conftest import env_for
 
     proc = subprocess.run(
         [
@@ -183,13 +183,6 @@ def test_the_cli_offers_no_forge(world) -> None:
         cwd=str(world.repo),
         capture_output=True,
         text=True,
-        env={
-            "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-            "PYTHONPATH": SRC,
-            "HOME": str(world.root),
-            "GIT_CONFIG_GLOBAL": str(world.root / "gitconfig"),
-            "GIT_CONFIG_NOSYSTEM": "1",
-            **ENV,
-        },
+        env=env_for(world),
     )
     assert "--no-forge" in proc.stdout

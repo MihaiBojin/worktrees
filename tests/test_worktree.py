@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import env_for
 
 from worktrees import layout, pick
 from worktrees import worktree as W
@@ -16,19 +17,6 @@ from worktrees.new_branch import Refusal
 from worktrees.repo import Worktree
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
-
-
-def _env(world) -> dict[str, str]:
-    from conftest import ENV
-
-    return {
-        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-        "PYTHONPATH": SRC,
-        "HOME": str(world.root),
-        "GIT_CONFIG_GLOBAL": str(world.root / "gitconfig"),
-        "GIT_CONFIG_NOSYSTEM": "1",
-        **ENV,
-    }
 
 
 def run(world, entry: str, *args: str, at: Path | None = None):
@@ -42,7 +30,7 @@ def run(world, entry: str, *args: str, at: Path | None = None):
         cwd=str(at or world.repo),
         capture_output=True,
         text=True,
-        env=_env(world),
+        env=env_for(world),
     )
 
 
