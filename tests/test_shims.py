@@ -235,3 +235,33 @@ def test_a_real_terminal_is_not_required(tmp_path) -> None:
         out += chunk
     os.waitpid(pid, 0)
     assert str(target.resolve()) in out.decode(errors="replace")
+
+
+def test_the_fish_shim_stays_put_when_the_output_is_not_a_directory(tmp_path) -> None:
+    """`--json` and `--list` print on the same stream a destination arrives
+    on. The shim cannot tell them apart by looking, so it asks whether what
+    it has is somewhere to go.
+    """
+    payload = '{"path": "/nowhere", "branch": "x"}'
+    bin_dir = _fake(tmp_path, "gwa", f"#!/bin/sh\nprintf '%s\\n' '{payload}'\n")
+    code, out = _run_fish(bin_dir, "cd /; gwa --json; pwd")
+    assert code == 0, out
+    assert "/nowhere" not in out
+    assert "does not exist" not in out
+
+
+def test_the_fish_shim_stays_put_on_a_multi_line_listing(tmp_path) -> None:
+    listing = "* main   /one\\n  other  /two"
+    bin_dir = _fake(tmp_path, "gwa", f"#!/bin/sh\nprintf '%s\\n' '{listing}'\n")
+    code, out = _run_fish(bin_dir, "cd /; gwa --list; pwd")
+    assert code == 0, out
+    assert "does not exist" not in out
+
+
+def test_the_zsh_shim_stays_put_when_the_output_is_not_a_directory(tmp_path) -> None:
+    payload = '{"path": "/nowhere", "branch": "x"}'
+    bin_dir = _fake(tmp_path, "gwa", f"#!/bin/sh\nprintf '%s\\n' '{payload}'\n")
+    code, out = _run_zsh(bin_dir, "cd /; gwa --json; pwd")
+    assert code == 0, out
+    assert "/nowhere" not in out
+    assert "no such file or directory" not in out.lower()
