@@ -28,9 +28,9 @@ readonly NAME VERSION
 
 echo "Verifying $NAME==$VERSION from $WHICH..." >&2
 
-# --isolated and a throwaway cache, so a local build of the same version cannot answer for
-# the index. --index-strategy unsafe-best-match because TestPyPI carries none of the
-# dependencies.
+# --isolated ignores installed tools. --no-cache gives each attempt a fresh cache,
+# so an earlier index response cannot hide the published version on later attempts.
+# --index-strategy unsafe-best-match because TestPyPI carries none of the dependencies.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -53,7 +53,8 @@ delay="$BASE"
 while :; do
     attempt=$((attempt + 1))
 
-    if REPORTED="$(UV_CACHE_DIR="$TMP/cache" uv tool run \
+    if REPORTED="$(uv tool run \
+        --no-cache \
         --isolated \
         --index "$INDEX" \
         --index-strategy unsafe-best-match \
