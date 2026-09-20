@@ -246,6 +246,19 @@ below `0.2.4`, so TestPyPI's newest snapshot is what it serves, and a plain
 number, because a re-run repeats that number and the duplicate upload is
 refused.
 
+A snapshot version is not SemVer, deliberately. SemVer allows three numeric
+components and has no `post` segment, so `0.2.3.post1789247568` is outside its
+grammar. The spellings that satisfy both describe something else: a
+pre-release of the next version, `0.2.4-dev.<epoch>`, names a release nobody
+has decided and hides the snapshot from a plain `pip install`, and
+`0.2.3-post<epoch>` is a pre-release to SemVer, ordered *below* `0.2.3`, which
+is backwards. That last one also survives nowhere: `uv version` rewrites it to
+`0.2.3.post<epoch>` on the way into `pyproject.toml`, and hatchling normalises
+it again on the way into the wheel, so the wheel, the index and `gw version`
+all show the PEP 440 form whatever was typed. Snapshots are never tagged,
+never released and never in the changelog, and PEP 440 is what the index
+enforces.
+
 The suite is not run again there. `tests.yml` runs it on the same commit, and
 a snapshot a test would have caught costs one number on a test index.
 
