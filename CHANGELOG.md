@@ -17,6 +17,10 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.4.2 - 2026-09-22
+
+CLI behavior is unchanged from 0.4.1.
+
 ## 0.4.1 - 2026-09-21
 
 CLI behavior is unchanged from 0.4.0.
