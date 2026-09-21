@@ -300,10 +300,10 @@ regions. `git merge-tree` reports a conflict, and a diff cannot tell that
 from real work left over. There is no content probe that answers this.
 
 So the forge answers it, asked last because it costs a round trip and only
-where git already failed. A merged request is cross-checked against
-`unpushed_count`: it speaks for what reached it, never for commits nobody
-pushed, and no upstream at all stays `unknown` rather than becoming zero.
-`--no-forge` keeps a run offline.
+where git already failed. A merged request with a configured upstream that
+Git reports as `[gone]` permits pruning, subject to the worktree protections.
+When the upstream exists, `unpushed_count` checks for local commits it lacks.
+No upstream configured stays `unknown`. `--no-forge` keeps a run offline.
 
 ## Three verdicts, and the third is not a softer second
 

@@ -17,6 +17,14 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.4.3 - 2026-09-22
+
+### Fixed
+
+`gwp` can prune a branch whose pull request is merged and whose configured
+upstream is gone. Branches with no upstream configured remain unknown.
+Forge-confirmed branches with ignored files require `--delete-ignored`.
+
 ## 0.4.2 - 2026-09-22
 
 CLI behavior is unchanged from 0.4.1.
