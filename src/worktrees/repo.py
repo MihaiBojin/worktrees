@@ -59,6 +59,11 @@ def upstream_of(branch: str) -> None:
     """The upstream a branch tracks. Failure means unknown, not none."""
 
 
+@git("for-each-ref --format=%(upstream:track) refs/heads/$branch")
+def upstream_tracking(branch: str) -> None:
+    """Tracking status, including [gone] for a missing configured upstream."""
+
+
 @git("rev-list --count $a..$b", ok=(0, 128))
 def count_between(a: str, b: str) -> None:
     """How many commits b has that a does not."""

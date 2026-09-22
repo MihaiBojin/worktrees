@@ -185,11 +185,9 @@ def _forge_reason(
     Returns (reason, verdict), or ("", "") when the forge said nothing and
     the content probes keep the answer.
 
-    A merged request speaks for what was pushed. Commits an upstream has not
-    got were never in it, and a branch with no upstream at all leaves that
-    unknown rather than zero: branches made here do not track, so "no
-    upstream" is the normal state for exactly the ones this would otherwise
-    reap.
+    A merged request with a missing configured upstream permits pruning.
+    An existing upstream is checked for unpushed commits. A branch with no
+    tracking configuration stays unknown.
     """
     request = forge.request_for(branch, repo=repo)
     if request is None or request.state not in ("MERGED", "CLOSED"):
@@ -198,6 +196,18 @@ def _forge_reason(
     lower = request.state.lower()
     unpushed = R.unpushed_count(branch, repo=repo)
     if unpushed is None:
+        if R.upstream_tracking(branch, repo=repo).out.strip() == "[gone]":
+            if request.state == "MERGED":
+                return (
+                    f"its {request.noun} #{request.number} is merged "
+                    "and its upstream is gone",
+                    "",
+                )
+            return (
+                f"its {request.noun} is {lower}, but its upstream is gone; "
+                "cannot check for unpushed commits",
+                UNKNOWN,
+            )
         return (
             f"its {request.noun} is {lower}, but the branch has no upstream "
             "to have been pushed to",
@@ -209,4 +219,4 @@ def _forge_reason(
             "are not in it",
             KEEP,
         )
-    return f"its {request.noun} #{request.number} is {lower}", REMOVE
+    return f"its {request.noun} #{request.number} is {lower}", ""

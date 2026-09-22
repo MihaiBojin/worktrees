@@ -94,6 +94,22 @@ def test_a_merged_request_cannot_speak_for_unpushed_commits(world, with_forge) -
     assert "1 commit(s) here are not in it" in row.why
 
 
+@pytest.mark.parametrize("delete_ignored", [False, True])
+def test_a_merged_request_with_an_existing_upstream_checks_ignored_files(
+    world, with_forge, delete_ignored
+):
+    with_forge([{"number": 12, "state": "MERGED"}])
+    wt = world.worktree("stacked")
+    world.commit(".gitignore", "cache\n", at=wt)
+    _push(world, "stacked", wt)
+    (wt / "cache").write_text("keep\n")
+    rows = verdicts.assess(
+        R.worktrees(), "", "refs/heads/main", "main", delete_ignored, ask_forge=True
+    )
+    row = next(v for v in rows if v.branch == "stacked")
+    assert row.verdict == (verdicts.REMOVE if delete_ignored else verdicts.KEEP)
+
+
 def test_no_upstream_is_unknown_rather_than_zero(world, with_forge) -> None:
     """Branches made here do not track, so this is the normal state for
     exactly the ones a merged request would otherwise reap."""
@@ -107,6 +123,88 @@ def test_no_upstream_is_unknown_rather_than_zero(world, with_forge) -> None:
     row = next(v for v in rows if v.branch == "stacked")
     assert row.verdict == verdicts.UNKNOWN
     assert "no upstream" in row.why
+
+
+@pytest.fixture
+def gone_upstream(world):
+    wt = world.worktree("stacked")
+    sha = world.commit("s.txt", "s\n", at=wt)
+    _push(world, "stacked", wt)
+    world.git(
+        "update-ref", "-d", "refs/heads/stacked", sha, at=world.root / "stacked.git"
+    )
+    world.git("fetch", "--prune", "origin")
+    assert world.git("config", "--get", "branch.stacked.merge") == "refs/heads/stacked"
+    assert not R.upstream_of("stacked")
+    assert R.unpushed_count("stacked") is None
+    return wt
+
+
+@pytest.mark.parametrize("state", ["MERGED", "CLOSED", "OPEN", None])
+def test_a_gone_upstream_requires_a_merged_request(
+    world, with_forge, gone_upstream, state
+):
+    with_forge([{"number": 12, "state": state}] if state else [])
+    rows = verdicts.assess(
+        R.worktrees(), "", "refs/heads/main", "main", False, ask_forge=True
+    )
+    row = next(v for v in rows if v.branch == "stacked")
+    assert row.verdict == (verdicts.REMOVE if state == "MERGED" else verdicts.UNKNOWN)
+    if state == "MERGED":
+        assert row.why == "its pull request #12 is merged and its upstream is gone"
+    elif state == "CLOSED":
+        assert "upstream is gone" in row.why
+
+
+@pytest.mark.parametrize("protection", ["dirty", "ignored", "locked", "current"])
+def test_a_merged_request_with_a_gone_upstream_keeps_worktree_protections(
+    world, with_forge, gone_upstream, protection
+):
+    with_forge([{"number": 12, "state": "MERGED"}])
+    if protection == "dirty":
+        (gone_upstream / "s.txt").write_text("unfinished\n")
+    elif protection == "ignored":
+        world.git("config", "core.excludesFile", str(world.root / "ignore"))
+        (world.root / "ignore").write_text("cache\n")
+        (gone_upstream / "cache").write_text("keep\n")
+    elif protection == "locked":
+        world.git("worktree", "lock", str(gone_upstream))
+    rows = verdicts.assess(
+        R.worktrees(),
+        "",
+        "refs/heads/main",
+        "main",
+        False,
+        here=str(gone_upstream) if protection == "current" else "",
+        ask_forge=True,
+    )
+    row = next(v for v in rows if v.branch == "stacked")
+    assert row.verdict == verdicts.KEEP
+
+
+def test_prune_removes_a_merged_branch_with_a_gone_upstream(
+    world, with_forge, gone_upstream
+):
+    bin_dir = with_forge([{"number": 12, "state": "MERGED"}])
+    env = env_for(world)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gwp; raise SystemExit(gwp())",
+            "--no-fetch",
+            "--yes",
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert not gone_upstream.exists()
+    assert not R.ref_exists("refs/heads/stacked")
+    assert world.repo.exists()
 
 
 def test_an_open_request_decides_nothing(world, with_forge) -> None:

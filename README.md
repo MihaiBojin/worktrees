@@ -197,10 +197,12 @@ Where git cannot tell, the forge is asked. A branch merged as part of a
 stack is that case: its changes reach the head branch across several
 squashes, so the intermediate state it holds differs from the final one in
 the same regions, and a diff cannot separate a stale branch from one with
-work left. A merged pull request settles it, cross-checked against the
-commits an upstream has not got, because a request speaks for what reached
-it and nothing about what never did. `--no-forge` decides from git alone, and
-so does a run whose fetch just failed.
+work left. A merged pull request with a configured upstream that is gone
+makes the branch eligible for pruning. When the upstream still exists,
+unpushed commits keep the branch. A branch with no upstream configured
+stays `unknown`. Worktree protections still apply, including the check for
+ignored files. `--no-forge` decides from git alone, and so does a run whose
+fetch just failed.
 
 The question goes to the repository the command is standing in and nowhere
 else. `GH_REPO` and `GITLAB_REPO` beat that directory, so both are dropped

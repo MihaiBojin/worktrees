@@ -6,9 +6,9 @@ state it holds differs from the final one in the same regions, so a stale
 branch whose work is upstream and a branch with real work left look exactly
 alike to a diff.
 
-The forge knows. It is asked last, because it costs a round trip and because
-it can be wrong about work pushed after the merge, which is why the answer is
-cross-checked against the commits an upstream has not got.
+The forge is asked after the content checks. An existing upstream is checked
+for unpushed commits. A merged request with a missing configured upstream
+permits pruning, subject to the worktree protections.
 """
 
 from __future__ import annotations
