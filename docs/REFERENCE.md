@@ -134,7 +134,7 @@ nobody re-derives the first.
 | A branch is deleted only on git's own proof, and `branch -D` is refused absolutely | a branch is deleted by `git update-ref -d <ref> <sha>` against the sha the verdict was formed on | `git branch -d` reads history, a squash merge leaves none, and it inverts on exactly the case this tool exists for. `branch -D` stays refused, and so does `update-ref -d` with an absent, empty or abbreviated old value: git reads the empty string as "no old value" and takes the branch at exit 0 |
 | Configuration is `git config git-worktree-plugin.*` and nothing else | there is no configuration | one implementation cannot disagree with itself, so a key that only reconciles two of them has nothing left to do. `git-worktree-plugin.forge`, `.remote` and `.headBranch` are gone with the shells that read them |
 | The CLI prints candidates and the shim runs fzf | the CLI runs the picker and the shim only reads a path | dropping fzf removes the spawn, the tty rules around it and the fallback branch a machine without it needs |
-| Go, once the command surface stops moving | Python | the surface did not stop moving, and the case for Go was made against a bash CLI with a shell shim around it. Python costs 67 ms an invocation, paid once per command a person types, and buys a standard library that answers every question this asks with no dependency and no build |
+| Go, once the command surface stops moving | Python | the surface did not stop moving, and the case for Go was made against a bash CLI with a shell shim around it. Python costs 28 ms an invocation on 3.11 and 41 ms on 3.14, paid once per command a person types, and buys a standard library that answers every question this asks with no dependency and no build |
 | Completions are generated from the CLI's own flag declarations | completion files are written by hand and hold their own command's flags; candidates come from `--complete` | `tests/test_completions.py` diffs the flags against `--help` in both directions for both shells, so a renamed flag fails there rather than going quiet |
 | Every command takes `--json` on one envelope carrying `schema`, `command`, `ok`, `refusals`, `losing` and `result` | every command but `gwh` takes `--json`, and each prints the shape its own answer has | no envelope, no `schema` field, and no version on the payload |
 | `--force` retires into `--remove-unfinished-checkout` and `--remove-detached-checkout`, and `--keep-branch` opts out of a branch delete | `gwr --force` removes the checkout and keeps the branch | the worktree was in the way, the work was not. There is one flag and it names one outcome |
@@ -322,23 +322,30 @@ where uv's builds link all but two into the executable, and on macOS each
 `dlopen` pays a code-signature check, which reads as an 8 ms CPython
 regression and is not one.
 
-Where it stood on 2026-09-12, against `45ba3f2` on an Apple silicon Mac, 50
+Where it stood on 2026-09-22, against `3b7b937` on an Apple silicon Mac, 50
 runs each:
 
 | | 3.11.13 | 3.12.14 | 3.13.15 | 3.14.7 |
 | --- | --- | --- | --- | --- |
-| the interpreter alone | 22.8 ms | 24.3 ms | 25.1 ms | 25.7 ms |
-| `gw version` | 30.5 ms | 33.4 ms | 32.7 ms | 43.1 ms |
-| `/bin/echo`, for scale | 3.2 ms | 3.3 ms | 3.0 ms | 3.1 ms |
+| the interpreter alone | 17.5 ms | 18.2 ms | 19.7 ms | 19.9 ms |
+| `gw version` | 28.2 ms | 30.7 ms | 30.7 ms | 41.5 ms |
+| `/bin/echo`, for scale | 2.7 ms | 2.7 ms | 2.8 ms | 2.6 ms |
 
-3.14 is the outlier and argparse is why. Constructing the first
-`ArgumentParser` pulls 33 modules there against 10 on 3.13, because 3.14
-colours its help: `_colorize` brings `annotationlib`, `ast`, `dis`,
-`inspect`, `dataclasses`, `tokenize` and `compression.zstd` with it. That is
-10.6 ms on the first construction and 0.14 ms on every one after. It also
-undoes part of what keeping `dataclasses` and `inspect` off the import path
-bought: on 3.14 both are loaded by the time `gw version` has printed, and on
-3.13 neither is.
+3.14 is the outlier by 11 ms and argparse is why. Constructing the first
+`ArgumentParser` pulls 27 modules there that 3.13 never loads, worth 10.5 ms,
+because 3.14 colours its help: `_colorize` costs 3.3 ms on its own and brings
+`inspect`, `_ast`, `dis`, `tokenize`, `compression.zstd`, `dataclasses` and
+`annotationlib` with it. It also undoes part of what keeping `dataclasses`
+and `inspect` off the import path bought: on 3.14 both are loaded by the time
+`gw version` has printed, and on 3.13 neither is.
+
+Subtract the interpreter and the program's share is 10.7, 12.5, 11.0 and
+21.6 ms, against import totals of 13.9, 16.2, 16.7 and 26.3 ms: the four
+columns rise together, and 3.14's extra 24 modules are the whole of its
+extra. That is only visible because the trace runs a command. `-X importtime`
+on a bare `import worktrees.cli` sees none of it, since the parser is built
+when a command runs, and a table taken that way says 3.14 imports one module
+more than 3.13 and nothing is wrong.
 
 ### How many git calls, which is a count rather than a clock
 
@@ -389,7 +396,8 @@ version in the wheel (#38), the stash named before its branch goes
 (#39), one `git status` per worktree (#40), fish and zsh
 in CI (#41), the guard's rules as data (#42) and `shutil`
 imported where it is used (#43). §1, §6 and §7 are measured against
-`a37af6e` and have not been taken again since.
+`a37af6e`, and §7's timings were taken again on 2026-09-22 against
+`3b7b937`.
 
 Recorded and not planned:
 
