@@ -50,6 +50,10 @@ COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+#: The command `import_table` traces, which is the first one timed.
+TRACED: tuple[str, ...] = COMMANDS[0][1]
+
+
 def supported_pythons() -> list[str]:
     """The versions pyproject.toml declares, so there is one list to keep."""
     data = tomllib.loads((ROOT / "pyproject.toml").read_text())
@@ -91,14 +95,33 @@ def wall_ms(argv: list[str], runs: int) -> float:
 
 
 def import_table(python: Path) -> list[dict[str, Any]]:
-    """Every module `-X importtime` names, with its own cost and its children's.
+    """Every module `-X importtime` names while a command runs.
 
     `cumulative` includes children, so the rows do not add up to the total
     and the two columns answer different questions: `self` says what a module
     costs, `cumulative` says what importing it costs.
+
+    A command rather than a bare `import worktrees.cli`, because argparse
+    builds its parser when one runs, and on 3.14 that is what pulls
+    `_colorize` and the 26 modules behind it: 9.5 ms that an import alone
+    never reaches. A table built from the import was blind to the largest
+    difference between two interpreters, while sitting next to timings that
+    included it.
+
+    The console script is a shebang line this cannot pass `-X` to, so the
+    entry point is called the way that script calls it.
     """
+    entry, *rest = TRACED
+    code = (
+        f"import sys; sys.argv = {[entry, *rest]!r}\n"
+        f"from worktrees.cli import {entry}\n"
+        "try:\n"
+        f"    {entry}()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+    )
     proc = subprocess.run(
-        [str(python), "-X", "importtime", "-c", "import worktrees.cli"],
+        [str(python), "-X", "importtime", "-c", code],
         capture_output=True,
         text=True,
         check=False,
@@ -253,9 +276,11 @@ def to_markdown(data: dict[str, Any], top: int) -> str:
         "$ uv run scripts/benchmark.py --markdown --from b.json > docs/BENCHMARK.md",
         "```",
         "",
-        "The JSON keeps every module `-X importtime` named. This is one view of",
-        "it, and a question about a module missing below is a filter rather",
-        "than another run.",
+        "The JSON keeps every module `-X importtime` named while "
+        f"`{' '.join(TRACED)}` runs,",
+        "which is a command rather than a bare import because argparse builds its",
+        "parser when one runs. This is one view of it, and a question about a",
+        "module missing below is a filter rather than another run.",
         "",
         f"Measured {data['measured_at']} against `{data['commit']}`, version "
         f"{data['version']}, on {data['machine']['platform']}. "
