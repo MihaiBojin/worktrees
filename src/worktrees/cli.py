@@ -635,9 +635,10 @@ def run_list(args: argparse.Namespace) -> int:
     """Pick a worktree to stand in, the main checkout included.
 
     The main checkout is where a finished branch leaves you, so leaving it out
-    of the list is leaving out the only destination that is always there. The
-    one you are standing in is listed and never offered: picking it is the one
-    answer that cannot take you anywhere.
+    of the list is leaving out the only destination that is always there, and
+    it is offered even from inside it. Any other worktree you are standing in
+    is listed and never offered: picking it is the one answer that cannot take
+    you anywhere.
     """
     import json
 
@@ -694,24 +695,26 @@ def run_list(args: argparse.Namespace) -> int:
             )
         return 0
 
-    elsewhere = [w for w in found if not _same(w.path, here)]
-    if not elsewhere:
-        if not found:
-            _err("no worktree matches")
-            return 1
-        if len(rows) < 2:
-            _err("this is the only worktree; gwa NAME makes another")
-            return 1
+    if not found:
+        _err("no worktree matches")
+        return 1
+    if len(rows) < 2:
+        _err("this is the only worktree; gwa NAME makes another")
+        return 1
+    # The main checkout is offered even to somebody standing in it: from a
+    # subdirectory it is the way back to the top. Any other worktree you
+    # stand in is shown above the rest, marked and unnumbered.
+    offered = [w for w in found if w.main or not _same(w.path, here)]
+    if not offered:
         _err(f"already in {render.err(found[0].label, BOLD)}")
         return 0
 
     # A query that narrows to one has said which. No query has not, even
-    # when the repository holds exactly one other worktree. The one you are
-    # standing in is shown above them, marked and unnumbered.
+    # when the repository holds exactly one other worktree.
     chosen = pick.choose(
-        elsewhere,
+        offered,
         outright=bool(args.query),
-        shown=[("*", w) for w in found if _same(w.path, here)],
+        shown=[("*", w) for w in found if w not in offered],
     )
     if chosen is None:
         _err("nothing picked")

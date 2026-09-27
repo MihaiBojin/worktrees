@@ -739,7 +739,7 @@ def test_list_with_no_query_prompts_on_a_terminal(world) -> None:
     world.worktree("one")
     code, out = run_on_a_terminal(world, "gwl", answer="1\n")
     assert code == 0, out
-    assert "which? [up/down and enter, 1-1, or esc to cancel]" in out
+    assert "which? [up/down and enter, 1-2, or esc to cancel]" in out
     assert "one" in out
 
 
@@ -753,7 +753,7 @@ def test_list_with_no_query_takes_esc_as_cancelled(world) -> None:
 def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
     world.worktree("one")
     two = world.worktree("two")
-    code, out = run_on_a_terminal(world, "gwl", answer="\x1b[B\r")
+    code, out = run_on_a_terminal(world, "gwl", answer="\x1b[B\x1b[B\r")
     assert code == 0, out
     assert out.rstrip().endswith(str(two)), out
 
@@ -763,7 +763,7 @@ def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
     [
         (entry, (*prefix, *flags), prompt)
         for command, flags, prompt in (
-            ("list", (), "which? [up/down and enter, 1-2, or esc to cancel] "),
+            ("list", (), "which? [up/down and enter, 1-3, or esc to cancel] "),
             (
                 "remove",
                 ("--no-fetch", "--no-forge"),

@@ -340,9 +340,11 @@ which? [up/down and enter, 1-3, or esc to cancel]
 Up and down move the highlight, enter takes it, a digit takes that row
 outright, and esc cancels.
 
-The one you are standing in is marked `*` and carries no number. It is where
-you are rather than somewhere to go, and a list without it shows three rows
-where `git worktree list` shows four.
+A linked worktree you are standing in is marked `*` and carries no number.
+It is where you are rather than somewhere to go, and a list without it shows
+three rows where `git worktree list` shows four. The main checkout is always
+numbered, even when you are inside it: from a subdirectory, picking it takes
+you back to the top.
 
 Matching is substring first and then subsequence, so `tst` finds `add-tests`,
 and a substring hit always outranks a loose one. Without a terminal `gwl`

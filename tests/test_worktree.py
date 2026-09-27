@@ -154,9 +154,18 @@ def test_list_with_no_query_asks_even_for_one_other_worktree(world) -> None:
     world.worktree("one")
     p = run(world, "gwl")
     assert p.returncode == 3, p.stdout
-    assert "1 worktree to choose from and this is not a terminal" in p.stderr
+    assert "2 worktrees to choose from and this is not a terminal" in p.stderr
     assert "--list or --json" in p.stderr
     assert p.stdout == ""
+
+
+def test_list_offers_main_to_somebody_standing_in_it(world) -> None:
+    """From a subdirectory of the main checkout, `gwl main` is the way back."""
+    world.worktree("one")
+    (world.repo / "sub").mkdir()
+    p = run(world, "gwl", "main", at=world.repo / "sub")
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.strip() == str(world.repo)
 
 
 def test_list_with_a_query_still_takes_the_one_match_outright(world) -> None:
