@@ -120,17 +120,33 @@ external picker.
 
 The set is small. Across the repositories this was written for, the largest
 number of linked worktrees in one is four. A fuzzy finder is the wrong
-instrument at that size, and a numbered prompt reads faster:
+instrument at that size, and a list moved through with the arrow keys reads
+faster:
 
 ```
-  1  fix-parser     /home/you/git/.worktrees/fix-parser/repo
+> 1  fix-parser     /home/you/git/.worktrees/fix-parser/repo
   2  add-tests      /home/you/git/.worktrees/add-tests/repo
-which? [1-2, or blank to cancel]
+which? [up/down and enter, 1-2, or esc to cancel]
 ```
 
-Dropping `fzf` is less code, not more. It removes the spawn, the tty rules
-around it, and the fallback branch a machine without `fzf` would otherwise
-need.
+Up and down move the highlight and wrap, enter takes it, a digit takes that
+row outright, and esc or ctrl-d cancels. The terminal goes into cbreak mode
+through the stdlib's `termios`, so ctrl-c still raises `KeyboardInterrupt`.
+Both switches use `TCSANOW`: `TCSAFLUSH` discards keys typed before the list
+appears, and `TCSADRAIN` blocks on an echo queue nothing reads, which is how
+the pty tests hang.
+
+The list is redrawn in place when stderr is a terminal that can move its
+cursor. On `TERM=dumb`, or a stderr that is not a terminal, it is printed
+once and each move prints the row it lands on, so nothing writes a cursor
+code where it would show up as text.
+
+A query that is exactly one worktree's branch or path is that worktree
+alone. `gwr one` beside `one-more` is not a question, and neither is
+`gwr "$(gwl two)"`.
+
+Dropping `fzf` is less code, not more. It removes the spawn and the fallback
+branch a machine without `fzf` would otherwise need.
 
 Matching is substring first, then subsequence, which is the one idea worth
 taking from `fzf`: the query's letters appearing in order, ranked by how
@@ -156,14 +172,16 @@ Two more about what is in the list at all:
   the one a finished branch leaves you in, so leaving it out leaves out the
   only answer that is always right. `main` finds it whatever branch it stands
   on, because its label carries the word, once.
-- The worktree you are standing in is shown and never offered. It carries a
-  `*` rather than a number, because picking it is the one answer that takes
-  you nowhere. Leaving it out of the list entirely is worse: the list then
-  shows fewer rows than `git worktree list` does, and reads as though
-  something went missing rather than as where you already are. The main
-  checkout is in `gws` and `gwp` for the same reason, kept and never
-  proposed, and out of `gwr`'s candidates because `git worktree remove`
-  refuses it whatever flag it is given.
+- In `gwl`, the worktree you are standing in is shown and never offered. It
+  carries a `*` rather than a number and the highlight skips it, because
+  picking it is the one answer that takes you nowhere. Leaving it out of the
+  list entirely is worse: the list then shows fewer rows than `git worktree
+  list` does, and reads as though something went missing rather than as
+  where you already are.
+- In `gwr`, the main checkout is shown dimmed and unnumbered, because `git
+  worktree remove` refuses it whatever flag it is given, and the highlight
+  starts on the worktree you are standing in. `gws` and `gwp` keep the main
+  checkout in their lists for the same reason, and never propose it.
 
 `--json` and `--list` answer the same question without any of this, and an
 agent uses those.

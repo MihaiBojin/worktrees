@@ -710,9 +710,8 @@ def run_list(args: argparse.Namespace) -> int:
     # standing in is shown above them, marked and unnumbered.
     chosen = pick.choose(
         elsewhere,
-        _err,
         outright=bool(args.query),
-        standing_in=next((w for w in found if _same(w.path, here)), None),
+        shown=[("*", w) for w in found if _same(w.path, here)],
     )
     if chosen is None:
         _err("nothing picked")
@@ -767,7 +766,7 @@ def run_remove(args: argparse.Namespace) -> int:
     # The picker shows a path and a branch and no verdict, so nothing before
     # the answer needs the forge. Scanning without it turns one round trip per
     # worktree into at most one for the whole command.
-    rows, _, head, head_branch, _ = _assess(
+    rows, _, head, head_branch, records = _assess(
         args, judge=wt_mod.removable, ask_forge=False
     )
     found = pick.matches(
@@ -784,8 +783,19 @@ def run_remove(args: argparse.Namespace) -> int:
         )
         return 1
 
+    # The main checkout is listed and never offered: `git worktree remove`
+    # refuses it whatever flag it is given. The worktree you stand in is
+    # highlighted first, since it is the one you most likely came to remove.
+    here = R.toplevel().out.strip()
+    offered = [R.Worktree(v.path, "", v.branch, frozenset()) for v in candidates]
     picked = pick.choose(
-        [R.Worktree(v.path, "", v.branch, frozenset()) for v in candidates], _err
+        offered,
+        shown=[
+            ("*" if _same(w.path, here) else "", w)
+            for w in records
+            if w.main and not args.query
+        ],
+        at=next((w for w in offered if _same(w.path, here)), None),
     )
     if picked is None:
         _err("nothing picked")

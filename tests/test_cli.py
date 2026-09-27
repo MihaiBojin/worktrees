@@ -739,15 +739,23 @@ def test_list_with_no_query_prompts_on_a_terminal(world) -> None:
     world.worktree("one")
     code, out = run_on_a_terminal(world, "gwl", answer="1\n")
     assert code == 0, out
-    assert "which? [1-1, or blank to cancel]" in out
+    assert "which? [up/down and enter, 1-1, or esc to cancel]" in out
     assert "one" in out
 
 
-def test_list_with_no_query_takes_blank_as_cancelled(world) -> None:
+def test_list_with_no_query_takes_esc_as_cancelled(world) -> None:
     world.worktree("one")
-    code, out = run_on_a_terminal(world, "gwl", answer="\n")
+    code, out = run_on_a_terminal(world, "gwl", answer="\x1b")
     assert code == 0, out
     assert "nothing picked" in out
+
+
+def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
+    world.worktree("one")
+    two = world.worktree("two")
+    code, out = run_on_a_terminal(world, "gwl", answer="\x1b[B\r")
+    assert code == 0, out
+    assert out.rstrip().endswith(str(two)), out
 
 
 @pytest.mark.parametrize(
@@ -755,11 +763,11 @@ def test_list_with_no_query_takes_blank_as_cancelled(world) -> None:
     [
         (entry, (*prefix, *flags), prompt)
         for command, flags, prompt in (
-            ("list", (), "which? [1-2, or blank to cancel] "),
+            ("list", (), "which? [up/down and enter, 1-2, or esc to cancel] "),
             (
                 "remove",
                 ("--no-fetch", "--no-forge"),
-                "which? [1-2, or blank to cancel] ",
+                "which? [up/down and enter, 1-2, or esc to cancel] ",
             ),
             (
                 "remove",
@@ -865,8 +873,23 @@ def test_list_shows_the_worktree_you_are_standing_in_unnumbered(world) -> None:
     """Marked, above the ones you can go to, and carrying no number: it is
     where you are rather than somewhere to go."""
     wt = world.worktree("cleanup")
-    code, out = run_on_a_terminal_at(world, wt, "gwl", answer="\n")
+    code, out = run_on_a_terminal_at(world, wt, "gwl", answer="\x1b")
     assert code == 0, out
     assert "  *  cleanup" in out
-    assert "  1  main" in out
-    assert "which? [1-1, or blank to cancel]" in out
+    assert "> 1  main" in out
+    assert "which? [up/down and enter, 1-1, or esc to cancel]" in out
+
+
+def test_remove_starts_on_the_worktree_you_stand_in_and_lists_main_unnumbered(
+    world,
+) -> None:
+    world.worktree("one")
+    two = world.worktree("two")
+    code, out = run_on_a_terminal_at(
+        world, two, "gwr", "--no-fetch", "--no-forge", answer="\x1b"
+    )
+    assert code == 0, out
+    assert "  1  one" in out
+    assert "> 2  two" in out
+    assert any(line.startswith("     main ") for line in out.splitlines()), out
+    assert "nothing picked" in out

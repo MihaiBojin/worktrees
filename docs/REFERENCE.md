@@ -50,7 +50,7 @@ One CLI holds the behaviour. Everything else is a thin caller.
 
 | consumer | what it gets | what it must never need |
 | --- | --- | --- |
-| a person at a terminal | nine `gw`-prefixed names and `gw` itself, a numbered picker, colour, `cd` | to know a Python package is under it |
+| a person at a terminal | nine `gw`-prefixed names and `gw` itself, an arrow-key picker, colour, `cd` | to know a Python package is under it |
 | a shell | one path on stdout, `--complete` for candidates | to hold a candidate, a rank or a format string |
 | an agent | `--json` on every command but `gwh`, and refusals on stderr | to parse a table meant for a person |
 
@@ -111,7 +111,7 @@ Output and machine surface.
 | Padding runs on the text and painting after it | the other order counts an escape sequence as width, and every column under a coloured cell sits crooked by the length of the code | `render.table` |
 | Help asked for goes to stdout at exit 0; a usage printed because the invocation was wrong goes to stderr at exit 2 | `--help \| less` on an empty screen is the failure this avoids | argparse, plus the hand-written `usage:` lines |
 | Completions hold no candidate of their own | `gw --complete`, `gwl --complete` and `gwr --complete` print name and description, tab separated, which fish reads directly and zsh splits for `_describe` | a command added to the table needs no edit in either shell |
-| The picker is Python's, and there is no fzf | the largest number of linked worktrees in one repository here is four, and at that size a numbered prompt reads faster and costs no spawn, no tty rules and no absent-fzf fallback | `pick.py`, about twenty lines of substring-then-subsequence matching |
+| The picker is Python's, and there is no fzf | the largest number of linked worktrees in one repository here is four, and at that size a list moved through with the arrow keys reads faster and costs no spawn and no absent-fzf fallback | `pick.py`, about twenty lines of substring-then-subsequence matching |
 | No terminal, no prompt | an agent or a pipe reaching a prompt would hang forever holding the repository's worktrees | `pick.choose` and `prune.confirm` both refuse and name the flag that answers without one |
 
 Language, distribution, packaging.

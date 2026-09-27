@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
@@ -214,15 +215,49 @@ def test_the_picker_prefers_a_substring_to_a_subsequence() -> None:
     assert [w.branch for w in pick.matches("toast", rows)] == ["toast"]
 
 
-def test_a_blank_answer_cancels_the_pick() -> None:
+def test_the_pick_moves_with_the_arrows_and_cancels_on_esc() -> None:
     rows = [
         Worktree("/w/a", "a", "a", frozenset()),
         Worktree("/w/b", "a", "b", frozenset()),
     ]
-    assert pick.choose(rows, lambda _: None, ask=lambda _: "\n") is None
-    picked = pick.choose(rows, lambda _: None, ask=lambda _: "2")
-    assert picked is not None
-    assert picked.path == "/w/b"
+    assert pick.choose(rows, keys=iter([pick.CANCEL])) is None
+    assert pick.choose(rows, keys=iter([pick.PICK])) == rows[0]
+    assert pick.choose(rows, keys=iter([pick.DOWN, pick.PICK])) == rows[1]
+    assert pick.choose(rows, keys=iter([pick.UP, pick.PICK])) == rows[1]
+    assert pick.choose(rows, keys=iter(["2"])) == rows[1]
+    assert pick.choose(rows, keys=iter([pick.PICK]), at=rows[1]) == rows[1]
+
+
+def test_an_exact_name_or_path_is_that_worktree_alone() -> None:
+    """`gwr one` with `one-more` beside it is not a question."""
+    rows = [
+        Worktree("/w/one", "a", "one", frozenset()),
+        Worktree("/w/one-more", "a", "one-more", frozenset()),
+    ]
+    assert pick.matches("one", rows) == [rows[0]]
+    assert pick.matches("/w/one", rows) == [rows[0]]
+    assert pick.matches("on", rows) == rows
+
+
+class _Tty(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+@pytest.mark.parametrize("term,redraws", [("xterm", True), ("dumb", False)])
+def test_the_pick_redraws_in_place_only_where_the_cursor_moves(
+    monkeypatch, term, redraws
+) -> None:
+    rows = [
+        Worktree("/w/a", "a", "a", frozenset()),
+        Worktree("/w/b", "a", "b", frozenset()),
+    ]
+    err = _Tty()
+    monkeypatch.setattr(sys, "stderr", err)
+    monkeypatch.setenv("TERM", term)
+    assert pick.choose(rows, keys=iter([pick.DOWN, pick.PICK])) == rows[1]
+    assert ("\033[2A" in err.getvalue()) is redraws
+    assert ("\033[" in err.getvalue()) is redraws
 
 
 # --------------------------------------------------------------------------

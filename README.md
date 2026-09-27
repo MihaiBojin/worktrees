@@ -285,7 +285,7 @@ name goes last, so `auth/oauth` cannot collide with `auth`.
 $ gwa fix-parser          # creates it and lands you in it
 $ gwl parse               # one match takes it outright
 $ gwm parser-v2           # renames the branch and moves the checkout
-$ gwr                     # removes the one you are standing in
+$ gwr                     # asks which, starting on the one you are in
 ```
 
 Each prints one destination on stdout, which is what the shell function
@@ -326,16 +326,19 @@ already in dirty-work
 A query that narrows to one takes it outright. No query does not, even when
 the repository holds exactly one other worktree: `gwl` with no argument means
 show me the options, and being moved without being asked is not that. So it
-asks, numbered, however many there are:
+asks, however many there are:
 
 ```console
 $ gwl                # standing in never-pushed
   *  never-pushed    /home/you/git/.worktrees/never-pushed/repo
-  1  main            /home/you/git/repo
+> 1  main            /home/you/git/repo
   2  dirty-work      /home/you/git/.worktrees/dirty-work/repo
   3  holds-secrets   /home/you/git/.worktrees/holds-secrets/repo
-which? [1-3, or blank to cancel]
+which? [up/down and enter, 1-3, or esc to cancel]
 ```
+
+Up and down move the highlight, enter takes it, a digit takes that row
+outright, and esc cancels.
 
 The one you are standing in is marked `*` and carries no number. It is where
 you are rather than somewhere to go, and a list without it shows three rows
@@ -344,6 +347,11 @@ where `git worktree list` shows four.
 Matching is substring first and then subsequence, so `tst` finds `add-tests`,
 and a substring hit always outranks a loose one. Without a terminal `gwl`
 refuses at exit 3 and names `--list` and `--json`.
+
+`gwr` lists the main checkout dimmed and unnumbered, since git will not
+remove it, and starts the highlight on the worktree you are standing in. A
+name or path that is exactly one worktree's, as `gwl --list` and `gwl` print
+them, takes that one without asking which.
 
 `gwr` refuses a branch that is not finished and says why, the same verdict
 `gws` prints. `--force` removes the checkout and keeps the branch: the
