@@ -893,3 +893,14 @@ def test_remove_starts_on_the_worktree_you_stand_in_and_lists_main_unnumbered(
     assert "> 2  two" in out
     assert any(line.startswith("     main ") for line in out.splitlines()), out
     assert "nothing picked" in out
+
+
+def test_remove_lists_main_unnumbered_under_a_query_too(world) -> None:
+    world.worktree("one")
+    world.worktree("two")
+    code, out = run_on_a_terminal(
+        world, "gwr", "--no-fetch", "--no-forge", "o", answer="\x1b"
+    )
+    assert code == 0, out
+    assert any(line.startswith("  *  main ") for line in out.splitlines()), out
+    assert "nothing picked" in out

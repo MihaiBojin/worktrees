@@ -790,11 +790,7 @@ def run_remove(args: argparse.Namespace) -> int:
     offered = [R.Worktree(v.path, "", v.branch, frozenset()) for v in candidates]
     picked = pick.choose(
         offered,
-        shown=[
-            ("*" if _same(w.path, here) else "", w)
-            for w in records
-            if w.main and not args.query
-        ],
+        shown=[("*" if _same(w.path, here) else "", w) for w in records if w.main],
         at=next((w for w in offered if _same(w.path, here)), None),
     )
     if picked is None:
