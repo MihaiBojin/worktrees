@@ -895,6 +895,30 @@ def test_remove_starts_on_the_worktree_you_stand_in_and_lists_main_unnumbered(
     assert "nothing picked" in out
 
 
+def test_remove_asks_before_deleting_ignored_files_on_a_terminal(world) -> None:
+    """The refusal becomes a question, and every ignored path is named first."""
+    (world.repo / ".gitignore").write_text(".env\n")
+    world.git("add", "--", ".gitignore")
+    world.git("commit", "--quiet", "-m", "ignore")
+    wt = world.worktree("holds")
+    (wt / ".env").write_text("SECRET=1\n")
+
+    code, out = run_on_a_terminal(
+        world, "gwr", "holds", "--no-fetch", "--no-forge", answer="n\n"
+    )
+    assert code == 0, out
+    assert "holds 1 ignored path(s); they go with it" in out
+    assert ".env" in out
+    assert "nothing removed" in out
+    assert wt.exists()
+
+    code, out = run_on_a_terminal(
+        world, "gwr", "holds", "--no-fetch", "--no-forge", answer="y\n"
+    )
+    assert code == 0, out
+    assert not wt.exists()
+
+
 def test_remove_lists_main_unnumbered_under_a_query_too(world) -> None:
     world.worktree("one")
     world.worktree("two")

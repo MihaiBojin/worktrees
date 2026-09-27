@@ -367,6 +367,10 @@ $ gwr holds-secrets
 holds-secrets is finished: squash-merged, but holds 2 ignored path(s); pass --delete-ignored
 ```
 
+At a terminal, and without `--yes`, `gwr` asks instead: it names every
+ignored path and removes the worktree on a `y`. `--yes` never answers that
+question, so a script still needs `--delete-ignored`.
+
 `--force` is not the answer to that one. It deletes those files just the same,
 since `git worktree remove` takes the whole directory, and it keeps a branch
 whose work already landed. Every ignored path is named before anything is

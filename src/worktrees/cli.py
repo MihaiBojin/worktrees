@@ -810,6 +810,24 @@ def run_remove(args: argparse.Namespace) -> int:
         if judged:
             chosen = judged[0]
 
+    if (
+        chosen.verdict != prune.REMOVE
+        and chosen.ignored
+        and not args.force
+        and not args.yes
+        and sys.stdin.isatty()
+    ):
+        # Somebody at a terminal can consent to what --delete-ignored would
+        # have. The plan below names every path before the question, and
+        # --yes never stands in for that consent.
+        _err(
+            f"{render.err(chosen.label, BOLD)} is finished, but holds "
+            f"{chosen.ignored} ignored path(s); they go with it"
+        )
+        chosen = prune.Verdict(
+            prune.REMOVE, chosen.branch, chosen.path, chosen.why, 0, chosen.sha
+        )
+
     if chosen.verdict != prune.REMOVE and not args.force:
         # A finished branch held back by ignored files is not an unfinished
         # branch. Saying so would contradict the reason printed beside it,
