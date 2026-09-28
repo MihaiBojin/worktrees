@@ -17,7 +17,7 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
-## 0.5.0 - 2026-09-28
+## 0.5.0 - 2026-09-29
 
 ### Added
 
@@ -28,6 +28,29 @@ exact names, offers a selector when no names are supplied, and supports
 changed paths, or a merged GitHub PR or GitLab MR tied to its exact tip.
 The command protects checked-out branches, rechecks refs before deletion,
 and prints the command to restore each branch.
+
+`gwr!` runs `gwr --delete-ignored` in fish and zsh, permitting removal of
+ignored files while retaining the command's checks and directory change.
+Update the fish or zsh plugin to install this shortcut.
+
+### Changed
+
+`gwl` and `gwr` pick with the arrow keys from a table of worktree, branch and
+path: enter takes the highlighted row, a digit takes that row, and esc
+cancels. `gwl` offers the main checkout even from inside it. `gwr` shows
+the main checkout dimmed, starts on the worktree you stand in, and at a
+terminal asks for confirmation when a branch is unfinished (keeping the
+branch) or holds ignored files. An exact branch or path selects that
+worktree alone.
+
+`gwl --list` prints the same columns and is never coloured. `gws` and `gwp`
+print BRANCH, PATH, VERDICT, WHY. The `gwa`, `gwl`, `gwm` and `gwr` shell
+functions print `--list` and `--json` output.
+
+`gws`, `gwp` and `gwr` show a spinner naming the check in progress and judge
+worktrees in parallel. Every command that fetches reuses a fetch under 10
+minutes old, and forge answers that cannot change yet are kept; the README
+lists each case. `--force-refresh` fetches and asks again.
 
 ## 0.4.3 - 2026-09-22
 
