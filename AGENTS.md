@@ -29,11 +29,13 @@ prompt and from a script unless the function is a pure adapter.
 
 The rule: **a function exists only for a command that must change the caller's
 directory, it carries the same name as the binary, and its body does nothing but
-call `command <name>` and `cd` to what that prints, when that is a directory.**
+call `command <name>` and `cd` to what that prints, when that is a directory,
+and print it otherwise.**
 
 The last clause is not a hedge. `--json` and `--list` print what was asked for
-on the same stream a destination arrives on, and a shim that cannot tell them
-apart tries to `cd` into a JSON object. `fish -c 'gwl --json'` reaches the
+on the same stream a destination arrives on. A shim that cannot tell them
+apart tries to `cd` into a JSON object, and one that only refuses to prints
+nothing at all. `fish -c 'gwl --json'` reaches the
 function too, so this is the agent path as much as the human one.
 
 | | changes directory | ships as |
@@ -60,6 +62,7 @@ function gwa --wraps gwa
     set -l code $pipestatus[1]
     test $code -eq 0; or return $code
     test -n "$dest"; or return 0
+    test -d "$dest"; or begin; printf '%s\n' $dest; return 0; end
     cd -- $dest
 end
 ```
@@ -126,17 +129,34 @@ external picker.
 
 The set is small. Across the repositories this was written for, the largest
 number of linked worktrees in one is four. A fuzzy finder is the wrong
-instrument at that size, and a numbered prompt reads faster:
+instrument at that size, and a list moved through with the arrow keys reads
+faster:
 
 ```
-  1  fix-parser     /home/you/git/.worktrees/fix-parser/repo
-  2  add-tests      /home/you/git/.worktrees/add-tests/repo
-which? [1-2, or blank to cancel]
+  #  WORKTREE    BRANCH      PATH
+> 1  fix-parser  fix-parser  /home/you/git/.worktrees/fix-parser/repo
+  2  add-tests   add-tests   /home/you/git/.worktrees/add-tests/repo
+which? [up/down and enter, 1-2, or esc to cancel]
 ```
 
-Dropping `fzf` is less code, not more. It removes the spawn, the tty rules
-around it, and the fallback branch a machine without `fzf` would otherwise
-need.
+Up and down move the highlight and wrap, enter takes it, a digit takes that
+row outright, and esc or ctrl-d cancels. The terminal goes into cbreak mode
+through the stdlib's `termios`, so ctrl-c still raises `KeyboardInterrupt`.
+Both switches use `TCSANOW`: `TCSAFLUSH` discards keys typed before the list
+appears, and `TCSADRAIN` blocks on an echo queue nothing reads, which is how
+the pty tests hang.
+
+The list is redrawn in place when stderr is a terminal that can move its
+cursor. On `TERM=dumb`, or a stderr that is not a terminal, it is printed
+once and each move prints the row it lands on, so nothing writes a cursor
+code where it would show up as text.
+
+A query that is exactly one worktree's branch or path is that worktree
+alone. `gwr one` beside `one-more` is not a question, and neither is
+`gwr "$(gwl two)"`.
+
+Dropping `fzf` is less code, not more. It removes the spawn and the fallback
+branch a machine without `fzf` would otherwise need.
 
 Matching is substring first, then subsequence, which is the one idea worth
 taking from `fzf`: the query's letters appearing in order, ranked by how
@@ -162,14 +182,18 @@ Two more about what is in the list at all:
   the one a finished branch leaves you in, so leaving it out leaves out the
   only answer that is always right. `main` finds it whatever branch it stands
   on, because its label carries the word, once.
-- The worktree you are standing in is shown and never offered. It carries a
-  `*` rather than a number, because picking it is the one answer that takes
-  you nowhere. Leaving it out of the list entirely is worse: the list then
-  shows fewer rows than `git worktree list` does, and reads as though
-  something went missing rather than as where you already are. The main
-  checkout is in `gws` and `gwp` for the same reason, kept and never
-  proposed, and out of `gwr`'s candidates because `git worktree remove`
-  refuses it whatever flag it is given.
+- In `gwl`, a linked worktree you are standing in is shown and never
+  offered. It carries a `*` rather than a number and the highlight skips it,
+  because picking it is the one answer that takes you nowhere. Leaving it
+  out of the list entirely is worse: the list then shows fewer rows than
+  `git worktree list` does, and reads as though something went missing
+  rather than as where you already are. The main checkout is offered even
+  from inside it, with a `*` after its name, since from a subdirectory it is
+  the way back to the top.
+- In `gwr`, the main checkout is shown dimmed and unnumbered, because `git
+  worktree remove` refuses it whatever flag it is given, and the highlight
+  starts on the worktree you are standing in. `gws` and `gwp` keep the main
+  checkout in their lists for the same reason, and never propose it.
 
 `--json` and `--list` answer the same question without any of this, and an
 agent uses those.
@@ -211,9 +235,40 @@ stdout carries the path `cd $(gwa x)` reads and the JSON `jq` parses, so a
 redirect, a pipe, a non-empty `NO_COLOR`, or `TERM=dumb` mean the bytes go out
 as they would have without the module. `NO_COLOR=` is not a request to turn it
 off: that is the no-color.org rule, and it is why `supported` tests the value
-and not the key. `--json` is never painted at all:
-the colour is applied at the call site that formats a table, and the JSON
-paths do not pass through one.
+and not the key. `--json` and `gwl --list` are never painted at all, even
+on a terminal: both are what a script reads. The colour is applied at the
+call site that formats a table, and neither path passes a code to one.
+
+`progress.py` draws a spinner on stderr and one line saying what is being
+checked, while `gws`, `gwp` and `gwr` fetch and judge. It runs only when
+stderr is a terminal that can clear a line, and never under `-q` or `-v`,
+since the verbose log writes to the line it redraws. Anything else printed on
+stderr while it spins goes through `progress.line`, which clears the spinner
+first.
+
+## A recent fetch, and a forge answer that cannot change, are reused
+
+The README's "What is reused, and for how long" table lists every case and
+its lifetime. It is the one copy: the constants are `cli._FRESH`,
+`forge._IDLE_FOR` and `forge._PUSHED_FOR`, and a change to one changes that
+table in the same commit.
+
+The fetch is most of what an assessment costs: about 1.1 s of a 1.9 s `gws`
+here, 750 ms of it the SSH handshake. `_should_fetch` decides for all eight
+commands that fetch. FETCH_HEAD is written per worktree, so
+`repo.fetched_at` reads every copy.
+
+An open request is reused only when it cannot merge until its author pushes;
+`forge._idle` holds that rule. Anything that could merge it on its own, or
+soon, means asking every time. No request on a pushed branch lasts a minute
+because a push is how a request gets opened, and from here it is usually
+the next step. A forge that fails to answer is never kept: `_ask` returns a
+`NONE` request for an empty answer and None for no answer, and only the
+first is cached.
+
+The per-worktree checks run on eight threads. Each is independent, and the
+time goes waiting on git and on `gh`, one round trip per branch git cannot
+settle.
 
 ## Every git command is one spec
 

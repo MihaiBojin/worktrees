@@ -9,6 +9,7 @@ done
 
 _arguments -s \
     '--no-fetch[use the refs already here]' \
+    '--force-refresh[fetch even when the last fetch is under 10 minutes old]' \
     '--no-forge[never ask GitHub or GitLab]' \
     '--json[verdicts and evidence as data]' \
     '(-q --quiet)'{-q,--quiet}'[omit the summary]' \

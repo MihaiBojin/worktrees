@@ -16,6 +16,8 @@ complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcomman
 complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from status delete' \
     -l no-fetch -d 'use the refs already here'
 complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from status delete' \
+    -l force-refresh -d 'fetch even when the last fetch is under 10 minutes old'
+complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from status delete' \
     -l no-forge -d 'never ask GitHub or GitLab'
 complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from delete' \
     -l all -d 'assess all local branches for deletion'

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -153,9 +155,18 @@ def test_list_with_no_query_asks_even_for_one_other_worktree(world) -> None:
     world.worktree("one")
     p = run(world, "gwl")
     assert p.returncode == 3, p.stdout
-    assert "1 worktree to choose from and this is not a terminal" in p.stderr
+    assert "2 worktrees to choose from and this is not a terminal" in p.stderr
     assert "--list or --json" in p.stderr
     assert p.stdout == ""
+
+
+def test_list_offers_main_to_somebody_standing_in_it(world) -> None:
+    """From a subdirectory of the main checkout, `gwl main` is the way back."""
+    world.worktree("one")
+    (world.repo / "sub").mkdir()
+    p = run(world, "gwl", "main", at=world.repo / "sub")
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.strip() == str(world.repo)
 
 
 def test_list_with_a_query_still_takes_the_one_match_outright(world) -> None:
@@ -169,7 +180,9 @@ def test_list_marks_the_one_you_stand_in(world) -> None:
     wt = world.worktree("one")
     p = run(world, "gwl", "--list", at=wt)
     assert p.returncode == 0, p.stderr
-    marks = {ln[1:].split()[0]: ln[0] for ln in p.stdout.splitlines()}
+    head, *body = p.stdout.splitlines()
+    assert head.split() == ["WORKTREE", "BRANCH", "PATH"]
+    marks = {ln[3:].split()[1]: ln[0] for ln in body}
     assert marks == {"main": " ", "one": "*"}
 
 
@@ -214,15 +227,55 @@ def test_the_picker_prefers_a_substring_to_a_subsequence() -> None:
     assert [w.branch for w in pick.matches("toast", rows)] == ["toast"]
 
 
-def test_a_blank_answer_cancels_the_pick() -> None:
+def test_the_pick_moves_with_the_arrows_and_cancels_on_esc() -> None:
     rows = [
         Worktree("/w/a", "a", "a", frozenset()),
         Worktree("/w/b", "a", "b", frozenset()),
     ]
-    assert pick.choose(rows, lambda _: None, ask=lambda _: "\n") is None
-    picked = pick.choose(rows, lambda _: None, ask=lambda _: "2")
-    assert picked is not None
-    assert picked.path == "/w/b"
+    assert pick.choose(rows, keys=iter([pick.CANCEL])) is None
+    assert pick.choose(rows, keys=iter([pick.PICK])) == rows[0]
+    assert pick.choose(rows, keys=iter([pick.DOWN, pick.PICK])) == rows[1]
+    assert pick.choose(rows, keys=iter([pick.UP, pick.PICK])) == rows[1]
+    assert pick.choose(rows, keys=iter(["2"])) == rows[1]
+    assert pick.choose(rows, keys=iter([pick.PICK]), at=rows[1]) == rows[1]
+
+
+def test_a_worktree_is_named_by_its_directory_under_the_root() -> None:
+    assert layout.name_of("/g/.worktrees/fix-parser/repo") == "fix-parser"
+    assert layout.name_of("/g/.worktrees/feat/oauth/repo") == "feat/oauth"
+    assert layout.name_of("/g/repo") == "repo"
+
+
+def test_an_exact_name_or_path_is_that_worktree_alone() -> None:
+    """`gwr one` with `one-more` beside it is not a question."""
+    rows = [
+        Worktree("/w/one", "a", "one", frozenset()),
+        Worktree("/w/one-more", "a", "one-more", frozenset()),
+    ]
+    assert pick.matches("one", rows) == [rows[0]]
+    assert pick.matches("/w/one", rows) == [rows[0]]
+    assert pick.matches("on", rows) == rows
+
+
+class _Tty(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+@pytest.mark.parametrize("term,redraws", [("xterm", True), ("dumb", False)])
+def test_the_pick_redraws_in_place_only_where_the_cursor_moves(
+    monkeypatch, term, redraws
+) -> None:
+    rows = [
+        Worktree("/w/a", "a", "a", frozenset()),
+        Worktree("/w/b", "a", "b", frozenset()),
+    ]
+    err = _Tty()
+    monkeypatch.setattr(sys, "stderr", err)
+    monkeypatch.setenv("TERM", term)
+    assert pick.choose(rows, keys=iter([pick.DOWN, pick.PICK])) == rows[1]
+    assert ("\033[2A" in err.getvalue()) is redraws
+    assert ("\033[" in err.getvalue()) is redraws
 
 
 # --------------------------------------------------------------------------
@@ -459,3 +512,31 @@ def test_counting_the_neighbours_asks_git_nothing(world) -> None:
 
 def test_no_worktrees_root_is_no_neighbours(world) -> None:
     assert layout.neighbours(str(world.repo), [str(world.repo)]) == 0
+
+
+def test_the_spinner_says_what_is_being_checked_and_clears_its_line(
+    monkeypatch,
+) -> None:
+    from worktrees import progress
+
+    err = _Tty()
+    monkeypatch.setattr(sys, "stderr", err)
+    monkeypatch.setenv("TERM", "xterm")
+    with progress.running():
+        progress.say("one: reading its status")
+        time.sleep(0.35)
+    out = err.getvalue()
+    assert "one: reading its status" in out
+    assert out.endswith("\r\033[2K")
+
+
+def test_the_spinner_stays_off_where_it_cannot_clear_a_line(monkeypatch) -> None:
+    from worktrees import progress
+
+    err = _Tty()
+    monkeypatch.setattr(sys, "stderr", err)
+    monkeypatch.setenv("TERM", "dumb")
+    with progress.running():
+        progress.say("x")
+        time.sleep(0.25)
+    assert err.getvalue() == ""

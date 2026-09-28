@@ -161,12 +161,12 @@ separate.
 
 ```console
 $ gws
-VERDICT  BRANCH         WHY                                                                                PATH
-keep     main           it is the main checkout, and never removable                                       /home/you/git/repo
-keep     dirty-work     it has uncommitted changes                                                         /home/you/git/.worktrees/dirty-work/repo
-keep     holds-secrets  merged, but holds 2 ignored path(s); pass --delete-ignored                         /home/you/git/.worktrees/holds-secrets/repo
-unknown  never-pushed   not merged into origin/main, and no upstream says whether its commits were pushed  /home/you/git/.worktrees/never-pushed/repo
-remove   squash-merged  squash-merged                                                                      /home/you/git/.worktrees/squash-merged/repo
+BRANCH         PATH                                         VERDICT  WHY
+main           /home/you/git/repo                           keep     it is the main checkout, and never removable
+dirty-work     /home/you/git/.worktrees/dirty-work/repo     keep     it has uncommitted changes
+holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     merged, but holds 2 ignored path(s); pass --delete-ignored
+never-pushed   /home/you/git/.worktrees/never-pushed/repo   unknown  not merged into origin/main, and no upstream says whether its commits were pushed
+squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   squash-merged
 
 1 removable, 3 kept, 1 unclear
 2 worktree(s) under /home/you/git/.worktrees belong to another repository
@@ -272,10 +272,10 @@ away:
 
 ```console
 $ gwp
-VERDICT  BRANCH         WHY                                                                         PATH
-keep     dirty-work     it has uncommitted changes                                                  /home/you/git/.worktrees/dirty-work/repo
-keep     holds-secrets  squash-merged, but holds 2 ignored path(s); pass --delete-ignored           /home/you/git/.worktrees/holds-secrets/repo
-unknown  never-pushed   not merged into main, and no upstream says whether its commits were pushed  /home/you/git/.worktrees/never-pushed/repo
+BRANCH         PATH                                         VERDICT  WHY
+dirty-work     /home/you/git/.worktrees/dirty-work/repo     keep     it has uncommitted changes
+holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     squash-merged, but holds 2 ignored path(s); pass --delete-ignored
+never-pushed   /home/you/git/.worktrees/never-pushed/repo   unknown  not merged into main, and no upstream says whether its commits were pushed
 
 nothing to remove; 0 removable, 2 kept, 1 unclear
 ```
@@ -295,7 +295,7 @@ name goes last, so `auth/oauth` cannot collide with `auth`.
 $ gwa fix-parser          # creates it and lands you in it
 $ gwl parse               # one match takes it outright
 $ gwm parser-v2           # renames the branch and moves the checkout
-$ gwr                     # removes the one you are standing in
+$ gwr                     # asks which, starting on the one you are in
 ```
 
 Each prints one destination on stdout, which is what the shell function
@@ -319,10 +319,11 @@ whatever branch it stands on, and `--list` marks the one you are in:
 
 ```console
 $ gwl --list
-  main           /home/you/git/repo
-  dirty-work     /home/you/git/.worktrees/dirty-work/repo
-  holds-secrets  /home/you/git/.worktrees/holds-secrets/repo
-* never-pushed   /home/you/git/.worktrees/never-pushed/repo
+   WORKTREE       BRANCH         PATH
+   repo           main           /home/you/git/repo
+   dirty-work     dirty-work     /home/you/git/.worktrees/dirty-work/repo
+   holds-secrets  holds-secrets  /home/you/git/.worktrees/holds-secrets/repo
+*  never-pushed   never-pushed   /home/you/git/.worktrees/never-pushed/repo
 ```
 
 It never offers that one. Picking it is the one answer that cannot take you
@@ -336,28 +337,42 @@ already in dirty-work
 A query that narrows to one takes it outright. No query does not, even when
 the repository holds exactly one other worktree: `gwl` with no argument means
 show me the options, and being moved without being asked is not that. So it
-asks, numbered, however many there are:
+asks, however many there are:
 
 ```console
 $ gwl                # standing in never-pushed
-  *  never-pushed    /home/you/git/.worktrees/never-pushed/repo
-  1  main            /home/you/git/repo
-  2  dirty-work      /home/you/git/.worktrees/dirty-work/repo
-  3  holds-secrets   /home/you/git/.worktrees/holds-secrets/repo
-which? [1-3, or blank to cancel]
+  #  WORKTREE       BRANCH         PATH
+  *  never-pushed   never-pushed   /home/you/git/.worktrees/never-pushed/repo
+> 1  repo           main           /home/you/git/repo
+  2  dirty-work     dirty-work     /home/you/git/.worktrees/dirty-work/repo
+  3  holds-secrets  holds-secrets  /home/you/git/.worktrees/holds-secrets/repo
+which? [up/down and enter, 1-3, or esc to cancel]
 ```
 
-The one you are standing in is marked `*` and carries no number. It is where
-you are rather than somewhere to go, and a list without it shows three rows
-where `git worktree list` shows four.
+WORKTREE is the directory under `.worktrees`, or the main checkout's own
+directory name. It parts from BRANCH when somebody switches branch inside a
+worktree. Up and down move the highlight, enter takes it, a digit takes that
+row outright, and esc cancels.
+
+A linked worktree you are standing in is marked `*` and carries no number.
+It is where you are rather than somewhere to go, and a list without it shows
+three rows where `git worktree list` shows four. The main checkout is always
+numbered, even when you are inside it, and carries a `*` after its name
+then: from a subdirectory, picking it takes you back to the top.
 
 Matching is substring first and then subsequence, so `tst` finds `add-tests`,
 and a substring hit always outranks a loose one. Without a terminal `gwl`
 refuses at exit 3 and names `--list` and `--json`.
 
-`gwr` refuses a branch that is not finished and says why, the same verdict
-`gws` prints. `--force` removes the checkout and keeps the branch: the
-worktree was in the way, the work was not.
+`gwr` lists the main checkout dimmed and unnumbered, since git will not
+remove it, and starts the highlight on the worktree you are standing in. A
+name or path that is exactly one worktree's, as `gwl --list` and `gwl` print
+them, takes that one without asking which.
+
+`gwr` says why a branch is not finished, the same verdict `gws` prints. At a
+terminal it then asks whether to remove the checkout anyway, and keeps the
+branch: the worktree was in the way, the work was not. `--force` is the same
+answer without the question, and `--yes` on its own refuses.
 
 A finished branch whose worktree holds ignored files is refused too, and named
 as finished, because it is:
@@ -366,6 +381,10 @@ as finished, because it is:
 $ gwr holds-secrets
 holds-secrets is finished: squash-merged, but holds 2 ignored path(s); pass --delete-ignored
 ```
+
+At a terminal, and without `--yes`, `gwr` asks instead: it names every
+ignored path and removes the worktree on a `y`. `--yes` never answers that
+question, so a script still needs `--delete-ignored`.
 
 `--force` is not the answer to that one. It deletes those files just the same,
 since `git worktree remove` takes the whole directory, and it keeps a branch
@@ -454,14 +473,41 @@ print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
 
 | | |
 | --- | --- |
-| `gws` | `--branch NAME`, `--no-fetch`, `--delete-ignored`, `--no-forge` |
-| `gwp` | those four, and `-y` |
-| `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--no-forge`, `-y` |
-| `gwa`, `gwnb`, `gwrot` | `--no-fetch` |
+| `gws` | `--branch NAME`, `--no-fetch`, `--force-refresh`, `--delete-ignored`, `--no-forge` |
+| `gwp` | those five, and `-y` |
+| `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--force-refresh`, `--no-forge`, `-y` |
+| `gwa`, `gwnb`, `gwrot` | `--no-fetch`, `--force-refresh` |
+| `gwbs` | `--no-fetch`, `--force-refresh`, `--no-forge` |
+| `gwbd` | those three, `--all`, `--dry-run` and `-y` |
 | `gwl` | `-l` |
 | `gwm`, `gwh` | none |
 
 `gw <command> --help` prints one command's own list.
+
+While `gws`, `gwp` and `gwr` fetch and judge, a spinner on stderr names the
+branch and the check in progress.
+
+### What is reused, and for how long
+
+A fetch and a question to the forge are most of what a run costs, so an answer
+that is still true is reused. `--force-refresh` fetches and asks again whatever
+is kept, and `--no-fetch` never fetches.
+
+| what | when | reused for |
+| --- | --- | --- |
+| a fetch, by `gws`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwnb`, `gwrot` | from any worktree of the repository | 10 minutes; the command says how old it is |
+| a request, merged or closed | on the commit it was asked about | until `--force-refresh` |
+| a request, open | a draft, a conflict, or on GitLab a needed rebase, with no auto-merge and no check running | 10 minutes |
+| a request, open | auto-merge or merge-when-pipeline-succeeds set | never |
+| a request, open | a check still running or pending | never |
+| a request, open | the forge calls it mergeable, or cannot say | never |
+| no request | the branch has no upstream | 10 minutes |
+| no request | the branch has an upstream | 1 minute |
+| no answer | `gh`/`glab` missing, not signed in, failing or timing out | never |
+
+Forge answers live in `git-worktrees-forge.json` in the repository's common git
+directory, filed under the branch and its commit. A new commit on the branch is
+a new question, so nothing kept outlives the commit it was given for.
 
 A remote that cannot be reached is not fatal anywhere. The fetch fails, the
 command says so on stderr, and it answers from the refs already here, which is
@@ -473,7 +519,8 @@ forge asked.
 Data goes to stdout and diagnostics to stderr, the prompt included, so `--json`
 is parseable in every mode. Colour is decided per stream and only for a
 terminal, so a redirect, a pipe, a non-empty `NO_COLOR` or `TERM=dumb` give the
-bytes a pipe would have got, `--json` included. `NO_COLOR=` is not a request to
+bytes a pipe would have got. `--json` and `gwl --list` are never coloured, even
+on a terminal. `NO_COLOR=` is not a request to
 turn it off, which is the no-color.org rule.
 
 Every command is a console script, so a script reaches it with no shell loaded

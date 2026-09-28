@@ -61,15 +61,18 @@ class Run:
 class Options:
     """Set once by the CLI, read by every call."""
 
-    __slots__ = ("log", "verbose")
+    __slots__ = ("log", "refresh", "verbose")
 
     verbose: bool
+    # --force-refresh: ask the network again rather than reuse an answer.
+    refresh: bool
     # Every argv issued, in order. A test asserts on this; nothing else reads
     # it, so it costs a list append.
     log: list[Argv]
 
     def __init__(self, verbose: bool = False, log: list[Argv] | None = None) -> None:
         self.verbose = verbose
+        self.refresh = False
         self.log = [] if log is None else log
 
 

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import __version__, render
+from . import __version__, progress, render
 from .errors import GitError, Refused
-from .render import BLUE, BOLD, DIM, GREEN, RED, YELLOW, Cell, Row, table
+from .render import BLUE, BOLD, CYAN, DIM, GREEN, RED, YELLOW, Cell, Row, table
 
 if TYPE_CHECKING:  # names used in annotations, which never run
     from . import repo as R
@@ -19,7 +20,7 @@ if TYPE_CHECKING:  # names used in annotations, which never run
 
 
 def _err(text: str) -> None:
-    print(text, file=sys.stderr)
+    progress.line(text)
 
 
 def _same(a: str, b: str) -> bool:
@@ -39,17 +40,17 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
         verdicts.UNKNOWN: YELLOW,
     }
     head: Row = (
-        Cell("VERDICT", DIM),
-        Cell("BRANCH", DIM),
-        Cell("WHY", DIM),
-        Cell("PATH", DIM),
+        Cell("BRANCH", BOLD),
+        Cell("PATH", BOLD),
+        Cell("VERDICT", BOLD),
+        Cell("WHY", BOLD),
     )
     body: list[Row] = [
         (
-            Cell(v.verdict, code.get(v.verdict, "")),
-            Cell(v.label, BOLD),
-            Cell(v.why),
+            Cell(v.label, CYAN),
             Cell(v.path, DIM),
+            Cell(v.verdict, code.get(v.verdict, "")),
+            Cell(v.why),
         )
         for v in rows
     ]
@@ -129,6 +130,11 @@ def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
     p.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="fetch and ask the forge again, whatever is kept",
+    )
+    p.add_argument(
         "--delete-ignored",
         action="store_true",
         help="count a worktree holding gitignored files as removable; nothing "
@@ -157,10 +163,43 @@ class _Stop(Exception):
         self.code = code
 
 
+# A fetch younger than this is used as it stands; --force-refresh fetches.
+_FRESH = 10 * 60
+
+
+def _should_fetch(args: argparse.Namespace) -> bool:
+    """Not under --no-fetch, and not when any worktree fetched under 30
+    minutes ago, unless --force-refresh. A fetch is most of what a run costs,
+    and refs a few minutes old answer the same questions."""
+    from . import repo as R
+
+    if args.no_fetch:
+        return False
+    fetched = None if args.force_refresh else R.fetched_at()
+    if fetched is None or time.time() - fetched >= _FRESH:
+        return True
+    if not args.quiet:
+        _err(
+            f"fetched {int((time.time() - fetched) // 60)} min ago; using those "
+            "refs (--force-refresh fetches now)"
+        )
+    return False
+
+
 def _assess(
     args: argparse.Namespace,
     judge: Callable[..., list[verdicts.Verdict]] | None = None,
     ask_forge: bool | None = None,
+) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
+    """`_judge_all`, with a spinner on stderr saying what it is checking."""
+    with progress.running(not args.quiet and not args.verbose):
+        return _judge_all(args, judge, ask_forge)
+
+
+def _judge_all(
+    args: argparse.Namespace,
+    judge: Callable[..., list[verdicts.Verdict]] | None,
+    ask_forge: bool | None,
 ) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
     """Fetch, resolve the head branch, and judge every worktree.
 
@@ -170,7 +209,9 @@ def _assess(
     """
     from . import repo as R
     from . import verdicts
+    from .git import options
 
+    options.refresh = args.force_refresh
     head, head_branch, _ = _assessment_head(args)
 
     only = getattr(args, "branch", "")
@@ -205,11 +246,14 @@ def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
     from . import repo as R
 
     remote = R.remote()
-    online = not args.no_fetch
+    # A skipped fetch still leaves the forge asked: it is what settles a
+    # stacked branch, and it is not what the fetch refreshed.
+    online = _should_fetch(args) if remote else not args.no_fetch
     if online:
         # An unreachable remote is not a reason to refuse to answer. It lands
         # where --no-fetch already goes, and says so, and the head-branch
         # ladder is told not to spend a second round trip on the same remote.
+        progress.say(f"fetching {remote}")
         if remote and not R.fetch(remote):
             online = False
             # The forge is reached over the network the fetch just failed on,
@@ -225,6 +269,7 @@ def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
     elif not args.quiet:
         _err("using the refs already here; they may be stale (--no-fetch)")
 
+    progress.say("finding the head branch")
     head, warning = R.head_ref(remote, online=online)
     if warning and not args.quiet:
         _err(warning)
@@ -403,6 +448,11 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--no-fetch", action="store_true", help="branch off what is already here"
     )
+    p.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="fetch even when the last fetch is under 10 minutes old",
+    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
     p.add_argument(
@@ -434,7 +484,7 @@ def run_new_branch(args: argparse.Namespace) -> int:
         _err("branching from what is already here; refs may be stale (--no-fetch)")
 
     try:
-        started = new_branch.create(args.name, fetch=not args.no_fetch, warn=warn)
+        started = new_branch.create(args.name, fetch=_should_fetch(args), warn=warn)
     except new_branch.Refusal as exc:
         _err(render.err(str(exc), RED))
         return 1
@@ -463,6 +513,11 @@ def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--no-fetch", action="store_true", help="work from what is already here"
     )
+    p.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="fetch even when the last fetch is under 10 minutes old",
+    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
     p.add_argument(
@@ -490,7 +545,7 @@ def run_rotate(args: argparse.Namespace) -> int:
         _err("working from what is already here; refs may be stale (--no-fetch)")
 
     try:
-        result = rotate_mod.rotate(fetch=not args.no_fetch, warn=warn)
+        result = rotate_mod.rotate(fetch=_should_fetch(args), warn=warn)
     except new_branch.Refusal as exc:
         _err(render.err(str(exc), RED))
         return 1
@@ -547,6 +602,11 @@ def _add_add_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--no-fetch", action="store_true", help="branch from what is already here"
     )
+    p.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="fetch even when the last fetch is under 10 minutes old",
+    )
     _add_cd_flags(p)
 
 
@@ -584,6 +644,11 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
         help="also delete its gitignored files; nothing restores them",
     )
     p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
+    p.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="fetch and ask the forge again, whatever is kept",
+    )
     p.add_argument(
         "--no-forge",
         action="store_true",
@@ -630,7 +695,7 @@ def run_add(args: argparse.Namespace) -> int:
 
     warn = None if args.quiet else _err
     try:
-        landed = wt_mod.add(args.name, args.base, fetch=not args.no_fetch, warn=warn)
+        landed = wt_mod.add(args.name, args.base, fetch=_should_fetch(args), warn=warn)
     except new_branch.Refusal as exc:
         _err(render.err(str(exc), RED))
         return 1
@@ -644,13 +709,14 @@ def run_list(args: argparse.Namespace) -> int:
     """Pick a worktree to stand in, the main checkout included.
 
     The main checkout is where a finished branch leaves you, so leaving it out
-    of the list is leaving out the only destination that is always there. The
-    one you are standing in is listed and never offered: picking it is the one
-    answer that cannot take you anywhere.
+    of the list is leaving out the only destination that is always there, and
+    it is offered even from inside it. Any other worktree you are standing in
+    is listed and never offered: picking it is the one answer that cannot take
+    you anywhere.
     """
     import json
 
-    from . import pick
+    from . import layout, pick
     from . import repo as R
     from .git import options
 
@@ -694,34 +760,42 @@ def run_list(args: argparse.Namespace) -> int:
         if not found:
             _err("no worktree matches")
             return 1
-        width = max(len(w.label) for w in found)
-        for w in found:
-            mark = render.out("*", GREEN) if _same(w.path, here) else " "
-            print(
-                f"{mark} {render.out(w.label.ljust(width), BOLD)}  "
-                f"{render.out(w.path, DIM)}"
+        # The picker's columns, without its numbers: `*` marks where you are.
+        # Never coloured: like --json, it is what a script reads.
+        head: Row = ("", "WORKTREE", "BRANCH", "PATH")
+        body: list[Row] = [
+            (
+                "*" if _same(w.path, here) else "",
+                layout.name_of(w.path),
+                w.label,
+                w.path,
             )
+            for w in found
+        ]
+        print(table([head, *body]))
         return 0
 
-    elsewhere = [w for w in found if not _same(w.path, here)]
-    if not elsewhere:
-        if not found:
-            _err("no worktree matches")
-            return 1
-        if len(rows) < 2:
-            _err("this is the only worktree; gwa NAME makes another")
-            return 1
+    if not found:
+        _err("no worktree matches")
+        return 1
+    if len(rows) < 2:
+        _err("this is the only worktree; gwa NAME makes another")
+        return 1
+    # The main checkout is offered even to somebody standing in it: from a
+    # subdirectory it is the way back to the top. Any other worktree you
+    # stand in is shown above the rest, marked and unnumbered.
+    offered = [w for w in found if w.main or not _same(w.path, here)]
+    if not offered:
         _err(f"already in {render.err(found[0].label, BOLD)}")
         return 0
 
     # A query that narrows to one has said which. No query has not, even
-    # when the repository holds exactly one other worktree. The one you are
-    # standing in is shown above them, marked and unnumbered.
+    # when the repository holds exactly one other worktree.
     chosen = pick.choose(
-        elsewhere,
-        _err,
+        offered,
         outright=bool(args.query),
-        standing_in=next((w for w in found if _same(w.path, here)), None),
+        shown=[("*", w) for w in found if w not in offered],
+        here=next((w for w in offered if _same(w.path, here)), None),
     )
     if chosen is None:
         _err("nothing picked")
@@ -776,7 +850,7 @@ def run_remove(args: argparse.Namespace) -> int:
     # The picker shows a path and a branch and no verdict, so nothing before
     # the answer needs the forge. Scanning without it turns one round trip per
     # worktree into at most one for the whole command.
-    rows, _, head, head_branch, _ = _assess(
+    rows, _, head, head_branch, records = _assess(
         args, judge=wt_mod.removable, ask_forge=False
     )
     found = pick.matches(
@@ -793,8 +867,15 @@ def run_remove(args: argparse.Namespace) -> int:
         )
         return 1
 
+    # The main checkout is listed and never offered: `git worktree remove`
+    # refuses it whatever flag it is given. The worktree you stand in is
+    # highlighted first, since it is the one you most likely came to remove.
+    here = R.toplevel().out.strip()
+    offered = [R.Worktree(v.path, "", v.branch, frozenset()) for v in candidates]
     picked = pick.choose(
-        [R.Worktree(v.path, "", v.branch, frozenset()) for v in candidates], _err
+        offered,
+        shown=[("*" if _same(w.path, here) else "", w) for w in records if w.main],
+        at=next((w for w in offered if _same(w.path, here)), None),
     )
     if picked is None:
         _err("nothing picked")
@@ -804,11 +885,30 @@ def run_remove(args: argparse.Namespace) -> int:
     # Now that there is one branch, the forge is worth a question: it is the
     # only thing that settles a branch merged as part of a stack.
     if chosen.verdict != prune.REMOVE and not args.no_forge:
-        judged = wt_mod.removable(
-            chosen.branch, head, head_branch, args.delete_ignored, ask_forge=True
-        )
+        with progress.running(not args.quiet and not args.verbose):
+            judged = wt_mod.removable(
+                chosen.branch, head, head_branch, args.delete_ignored, ask_forge=True
+            )
         if judged:
             chosen = judged[0]
+
+    if (
+        chosen.verdict != prune.REMOVE
+        and chosen.ignored
+        and not args.force
+        and not args.yes
+        and sys.stdin.isatty()
+    ):
+        # Somebody at a terminal can consent to what --delete-ignored would
+        # have. The plan below names every path before the question, and
+        # --yes never stands in for that consent.
+        _err(
+            f"{render.err(chosen.label, BOLD)} is finished, but holds "
+            f"{chosen.ignored} ignored path(s); they go with it"
+        )
+        chosen = prune.Verdict(
+            prune.REMOVE, chosen.branch, chosen.path, chosen.why, 0, chosen.sha
+        )
 
     if chosen.verdict != prune.REMOVE and not args.force:
         # A finished branch held back by ignored files is not an unfinished
@@ -820,9 +920,14 @@ def run_remove(args: argparse.Namespace) -> int:
             f"{render.err(chosen.label, BOLD)} {state}: "
             f"{render.err(chosen.why, YELLOW)}"
         )
-        if not chosen.ignored:
+        if chosen.ignored:
+            return 1
+        if args.yes or not sys.stdin.isatty():
             _err("pass --force to remove the worktree anyway; the branch is kept")
-        return 1
+            return 1
+        # Somebody at a terminal is asked instead, the way --force would have
+        # answered: the checkout goes and the branch stays.
+        _err("removing the worktree keeps the branch")
 
     prune.plan([chosen], _err)
     if not args.yes and not prune.confirm(1):

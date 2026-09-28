@@ -1,4 +1,4 @@
-# Create a worktree and change into it.
+# gwa NAME [BASE]: create a worktree for branch NAME and cd into it.
 #
 # The binary prints one destination, or the data `--json` and `--list` were
 # asked for, on the same stream. `$(...)` strips only
@@ -7,8 +7,8 @@
 local dest
 dest="$(command gwa "$@")" || return
 [[ -n $dest ]] || return 0
-# A directory or nothing. --json and --list print what was asked for on the
-# same stream a destination arrives on, and the shim cannot tell one from the
-# other by looking; it can ask whether it is somewhere to go.
-[[ -d $dest ]] || return 0
+# A directory is somewhere to go, and anything else is what --json or
+# --list was asked for, arriving on the same stream. The shim cannot tell
+# them apart by looking, so it asks, and prints what is not a directory.
+[[ -d $dest ]] || { print -r -- "$dest"; return 0; }
 cd -- "$dest"

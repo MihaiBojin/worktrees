@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import pty
+import re
 import select
 import signal
 import subprocess
@@ -739,15 +740,23 @@ def test_list_with_no_query_prompts_on_a_terminal(world) -> None:
     world.worktree("one")
     code, out = run_on_a_terminal(world, "gwl", answer="1\n")
     assert code == 0, out
-    assert "which? [1-1, or blank to cancel]" in out
+    assert "which? [up/down and enter, 1-2, or esc to cancel]" in out
     assert "one" in out
 
 
-def test_list_with_no_query_takes_blank_as_cancelled(world) -> None:
+def test_list_with_no_query_takes_esc_as_cancelled(world) -> None:
     world.worktree("one")
-    code, out = run_on_a_terminal(world, "gwl", answer="\n")
+    code, out = run_on_a_terminal(world, "gwl", answer="\x1b")
     assert code == 0, out
     assert "nothing picked" in out
+
+
+def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
+    world.worktree("one")
+    two = world.worktree("two")
+    code, out = run_on_a_terminal(world, "gwl", answer="\x1b[B\x1b[B\r")
+    assert code == 0, out
+    assert out.rstrip().endswith(str(two)), out
 
 
 @pytest.mark.parametrize(
@@ -755,11 +764,11 @@ def test_list_with_no_query_takes_blank_as_cancelled(world) -> None:
     [
         (entry, (*prefix, *flags), prompt)
         for command, flags, prompt in (
-            ("list", (), "which? [1-2, or blank to cancel] "),
+            ("list", (), "which? [up/down and enter, 1-3, or esc to cancel] "),
             (
                 "remove",
                 ("--no-fetch", "--no-forge"),
-                "which? [1-2, or blank to cancel] ",
+                "which? [up/down and enter, 1-2, or esc to cancel] ",
             ),
             (
                 "remove",
@@ -865,8 +874,118 @@ def test_list_shows_the_worktree_you_are_standing_in_unnumbered(world) -> None:
     """Marked, above the ones you can go to, and carrying no number: it is
     where you are rather than somewhere to go."""
     wt = world.worktree("cleanup")
-    code, out = run_on_a_terminal_at(world, wt, "gwl", answer="\n")
+    code, out = run_on_a_terminal_at(world, wt, "gwl", answer="\x1b")
     assert code == 0, out
-    assert "  *  cleanup" in out
-    assert "  1  main" in out
-    assert "which? [1-1, or blank to cancel]" in out
+    assert re.search(r"^\s+#\s+WORKTREE\s+BRANCH\s+PATH$", out, re.M), out
+    assert re.search(r"^  \*\s+cleanup\s+cleanup\s", out, re.M), out
+    assert re.search(r"^> 1\s+repo\s+main\s", out, re.M), out
+    assert "which? [up/down and enter, 1-1, or esc to cancel]" in out
+
+
+def test_remove_starts_on_the_worktree_you_stand_in_and_lists_main_unnumbered(
+    world,
+) -> None:
+    world.worktree("one")
+    two = world.worktree("two")
+    code, out = run_on_a_terminal_at(
+        world, two, "gwr", "--no-fetch", "--no-forge", answer="\x1b"
+    )
+    assert code == 0, out
+    assert "  1  one" in out
+    assert "> 2  two" in out
+    assert re.search(r"^ {5}repo\s+main\s", out, re.M), out
+    assert "nothing picked" in out
+
+
+def test_remove_asks_before_deleting_ignored_files_on_a_terminal(world) -> None:
+    """The refusal becomes a question, and every ignored path is named first."""
+    (world.repo / ".gitignore").write_text(".env\n")
+    world.git("add", "--", ".gitignore")
+    world.git("commit", "--quiet", "-m", "ignore")
+    wt = world.worktree("holds")
+    (wt / ".env").write_text("SECRET=1\n")
+
+    code, out = run_on_a_terminal(
+        world, "gwr", "holds", "--no-fetch", "--no-forge", answer="n\n"
+    )
+    assert code == 0, out
+    assert "holds 1 ignored path(s); they go with it" in out
+    assert ".env" in out
+    assert "nothing removed" in out
+    assert wt.exists()
+
+    code, out = run_on_a_terminal(
+        world, "gwr", "holds", "--no-fetch", "--no-forge", answer="y\n"
+    )
+    assert code == 0, out
+    assert not wt.exists()
+
+
+def test_remove_asks_before_removing_an_unfinished_worktree_and_keeps_the_branch(
+    world,
+) -> None:
+    wt = world.worktree("busy")
+    world.commit("b.txt", "b\n", at=wt)
+    code, out = run_on_a_terminal(
+        world, "gwr", "busy", "--no-fetch", "--no-forge", answer="n\n"
+    )
+    assert code == 0, out
+    assert "is not finished" in out
+    assert "removing the worktree keeps the branch" in out
+    assert wt.exists()
+
+    code, out = run_on_a_terminal(
+        world, "gwr", "busy", "--no-fetch", "--no-forge", answer="y\n"
+    )
+    assert code == 0, out
+    assert not wt.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/busy")
+
+
+def test_list_marks_main_when_you_stand_in_it(world) -> None:
+    world.worktree("one")
+    code, out = run_on_a_terminal(world, "gwl", answer="\x1b")
+    assert code == 0, out
+    assert re.search(r"^> 1\s+repo\s+main \*\s", out, re.M), out
+    assert re.search(r"^  2\s+one\s+one\s", out, re.M), out
+
+
+def test_remove_lists_main_unnumbered_under_a_query_too(world) -> None:
+    world.worktree("one")
+    world.worktree("two")
+    code, out = run_on_a_terminal(
+        world, "gwr", "--no-fetch", "--no-forge", "o", answer="\x1b"
+    )
+    assert code == 0, out
+    assert re.search(r"^  \*\s+repo\s+main\s", out, re.M), out
+    assert "nothing picked" in out
+
+
+def test_list_is_never_coloured_even_on_a_terminal(world) -> None:
+    """--list, like --json, is what a script reads."""
+    world.worktree("one")
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.chdir(world.repo)
+        os.execve(
+            sys.executable,
+            [
+                sys.executable,
+                "-c",
+                "from worktrees.cli import gwl; raise SystemExit(gwl())",
+                "--list",
+            ],
+            {**env_for(world), "TERM": "xterm"},
+        )
+    out = b""
+    while True:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+    os.waitpid(pid, 0)
+    assert b"WORKTREE" in out
+    assert b"\x1b[" not in out

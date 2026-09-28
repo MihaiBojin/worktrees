@@ -79,6 +79,17 @@ def common_dir() -> None:
     """The repository directory every worktree of it shares."""
 
 
+def fetched_at(repo: str | os.PathLike[str] | None = None) -> float | None:
+    """When any worktree of this repository last fetched, or None.
+
+    FETCH_HEAD is written per worktree, so a fetch from a neighbour counts
+    only when every worktree's copy is read.
+    """
+    common = Path(common_dir(repo=repo).out.strip())
+    heads = [common / "FETCH_HEAD", *common.glob("worktrees/*/FETCH_HEAD")]
+    return max((p.stat().st_mtime for p in heads if p.exists()), default=None)
+
+
 # --no-optional-locks is a git global, so it goes before the subcommand, which
 # a spec shows and a tuple hides. Without it a listing writes another
 # worktree's index and contends with a `git add` there.

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import forge
+from . import forge, progress
 from . import repo as R
 from .merged import merged_reason
 
@@ -95,90 +96,79 @@ def assess(
         here = R.toplevel(repo=repo).out.strip()
     head_name = R.ref_name(head)
 
-    out: list[Verdict] = []
-    for wt in records:
+    def judge(wt: R.Worktree) -> Verdict | None:
+        def say(verdict: str, why: str, ignored: int = 0) -> Verdict:
+            return Verdict(verdict, wt.branch, wt.path, why, ignored, wt.sha)
+
         if "bare" in wt.flags or "prunable" in wt.flags:
-            continue
+            return None
         if only and wt.branch != only:
-            continue
+            return None
         if wt.path == main:
             # Said before the standing-in rule below, because which one is
             # the main checkout is the more useful of the two facts and the
             # only one that is true from anywhere.
             if include_main:
-                out.append(
-                    Verdict(
-                        KEEP,
-                        wt.branch,
-                        wt.path,
-                        "it is the main checkout, and never removable",
-                        0,
-                        wt.sha,
-                    )
-                )
-            continue
-
-        def say(verdict: str, why: str, ignored: int = 0, wt: R.Worktree = wt) -> None:
-            out.append(Verdict(verdict, wt.branch, wt.path, why, ignored, wt.sha))
+                return say(KEEP, "it is the main checkout, and never removable")
+            return None
 
         if here and Path(wt.path).resolve() == Path(here).resolve():
-            say(KEEP, "you are standing in it")
-            continue
+            return say(KEEP, "you are standing in it")
         if "locked" in wt.flags:
-            say(KEEP, "it is locked")
-            continue
+            return say(KEEP, "it is locked")
         if wt.branch and wt.branch == head_branch:
-            say(KEEP, "it is the head branch")
-            continue
+            return say(KEEP, "it is the head branch")
         # One read, both answers. Asking again further down was half of
         # every assessment's git calls.
+        progress.say(f"{wt.label}: reading its status")
         status = R.status_of(wt.path)
         if status.dirty:
-            say(KEEP, "it has uncommitted changes")
-            continue
+            return say(KEEP, "it has uncommitted changes")
 
         if not wt.branch:
             # Detached: finished when some ref already reaches the commit,
             # which is the question `git worktree remove` asks of one.
             if R.refs_containing(wt.sha, repo=repo).out.strip():
-                say(REMOVE, "its commit is reached by a ref")
-            else:
-                say(UNKNOWN, f"no ref reaches {wt.sha}")
-            continue
+                return say(REMOVE, "its commit is reached by a ref")
+            return say(UNKNOWN, f"no ref reaches {wt.sha}")
 
+        progress.say(f"{wt.label}: is it merged into {head_name}?")
         reason = merged_reason(wt.branch, head, repo=repo)
         if not reason and ask_forge:
-            reason, verdict = _forge_reason(wt.branch, repo=repo)
+            progress.say(f"{wt.label}: asking the forge for its pull request")
+            reason, verdict = _forge_reason(wt.branch, wt.sha, repo=repo)
             if verdict:
-                say(verdict, reason)
-                continue
+                return say(verdict, reason)
         if not reason:
+            progress.say(f"{wt.label}: were its commits pushed?")
             if R.unpushed_count(wt.branch, repo=repo) is None:
-                say(
+                return say(
                     UNKNOWN,
                     f"not merged into {head_name}, and no upstream says whether "
                     "its commits were pushed",
                 )
-            else:
-                say(KEEP, f"not merged into {head_name}")
-            continue
+            return say(KEEP, f"not merged into {head_name}")
 
         ignored = status.ignored
         if ignored and not delete_ignored:
-            say(
+            return say(
                 KEEP,
                 f"{reason}, but holds {len(ignored)} ignored path(s); "
                 "pass --delete-ignored",
                 len(ignored),
             )
-            continue
 
-        say(REMOVE, reason)
-    return out
+        return say(REMOVE, reason)
+
+    # Each worktree is judged on its own, and most of the time goes waiting
+    # on git and on the forge, one round trip per branch git cannot settle.
+    # Threads overlap the waits; map keeps git's order.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        return [v for v in pool.map(judge, records) if v is not None]
 
 
 def _forge_reason(
-    branch: str, repo: str | os.PathLike[str] | None = None
+    branch: str, sha: str = "", repo: str | os.PathLike[str] | None = None
 ) -> tuple[str, str]:
     """What the forge says, cross-checked against what it cannot see.
 
@@ -189,7 +179,7 @@ def _forge_reason(
     An existing upstream is checked for unpushed commits. A branch with no
     tracking configuration stays unknown.
     """
-    request = forge.request_for(branch, repo=repo)
+    request = forge.request_for(branch, repo=repo, sha=sha)
     if request is None or request.state not in ("MERGED", "CLOSED"):
         return "", ""
 

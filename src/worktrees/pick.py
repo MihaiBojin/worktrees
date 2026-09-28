@@ -1,16 +1,21 @@
 """Choosing one worktree out of the handful this repository has.
 
 No fzf. The largest number of linked worktrees in one repository here is
-four, and at that size a numbered prompt reads faster than a fuzzy finder
-and costs no dependency, no spawn, no tty rules and no absent-fzf fallback.
+four, and at that size a list moved through with the arrow keys reads
+faster than a fuzzy finder and costs no dependency, no spawn and no
+absent-fzf fallback.
 """
 
 from __future__ import annotations
 
+import os
+import select
 import sys
-from collections.abc import Callable, Sequence
+import termios
+import tty
+from collections.abc import Iterator, Sequence
 
-from . import render
+from . import layout, render
 from .git import Refused
 from .repo import Worktree
 
@@ -37,8 +42,10 @@ def subsequence(query: str, text: str) -> tuple[int, int] | None:
 def matches(query: str, worktrees: Sequence[Worktree]) -> list[Worktree]:
     """Substring first, then subsequence, each group in its own order.
 
-    A substring hit always beats a subsequence one, so typing more of a name
-    never moves it down the list.
+    A query that is exactly one worktree's name or path is that worktree
+    alone, so `one` does not also offer `one-more`. Otherwise a substring hit
+    always beats a subsequence one, so typing more of a name never moves it
+    down the list.
 
     Substring looks at the branch and the path; subsequence looks at the
     branch alone. Every path here contains `.worktrees`, which supplies a
@@ -47,6 +54,9 @@ def matches(query: str, worktrees: Sequence[Worktree]) -> list[Worktree]:
     """
     if not query:
         return list(worktrees)
+    exactly = [wt for wt in worktrees if query in (wt.label, wt.branch, wt.path)]
+    if len(exactly) == 1:
+        return exactly
     q = query.lower()
     exact: list[tuple[int, Worktree]] = []
     loose: list[tuple[int, Worktree]] = []
@@ -64,24 +74,34 @@ def matches(query: str, worktrees: Sequence[Worktree]) -> list[Worktree]:
     return [wt for _, wt in exact] + [wt for _, wt in loose]
 
 
+UP, DOWN, PICK, CANCEL = "up", "down", "pick", "cancel"
+
+
 def choose(
     candidates: Sequence[Worktree],
-    show: Callable[[str], None],
-    ask: Callable[[str], str] | None = None,
+    keys: Iterator[str] | None = None,
     outright: bool = True,
-    standing_in: Worktree | None = None,
+    shown: Sequence[tuple[str, Worktree]] = (),
+    at: Worktree | None = None,
+    here: Worktree | None = None,
 ) -> Worktree | None:
     """Ask which one, and None means cancelled.
+
+    The arrow keys move the highlight and enter takes it; a digit takes that
+    row outright; esc or ctrl-d cancels. `keys` is those presses by name,
+    and a test passes them rather than a terminal.
 
     `outright` says whether one candidate is taken without asking. A query
     that narrows to one has already said which, so it is. No query at all is
     a request to be shown the options, and being moved without being asked
     because there happened to be one other worktree is not that.
 
-    `standing_in` is shown above the numbered ones, marked `*` and carrying
-    no number. It is not somewhere to go, and a list that leaves it out shows
-    one row where `git worktree list` shows two, which reads as though
-    something went missing rather than as where you already are.
+    `shown` are drawn dimmed above the numbered ones, each after its mark,
+    and the highlight never lands on them: the worktree `gwl` stands in, the
+    main checkout `gwr` cannot remove. A list that leaves them out shows
+    fewer rows than `git worktree list`, which reads as though something went
+    missing. `at` is the candidate highlighted first, and `here` is one that
+    can be picked and is also where you stand, marked `*` after its name.
 
     A run whose stdin is not a terminal is refused rather than left to block:
     an agent or a pipe reaching a prompt would hang, and --json answers the
@@ -91,44 +111,132 @@ def choose(
         return None
     if outright and len(candidates) == 1:
         return candidates[0]
+    first = candidates.index(at) if at in candidates else 0
+    if keys is not None:
+        return _select(candidates, keys, shown, first, here)
 
-    if ask is None:
-        if not sys.stdin.isatty():
-            count = len(candidates)
-            noun = "worktree" if count == 1 else "worktrees"
-            raise Refused(
-                f"{count} {noun} to choose from and this is not a terminal; "
-                "narrow the query, or use --list or --json"
-            )
-        ask = _prompt
-
-    listed = [*([standing_in] if standing_in is not None else []), *candidates]
-    width = max(len(wt.label) for wt in listed)
-    if standing_in is not None:
-        # Padded before it is painted, or the escape codes count as width and
-        # every column under it sits crooked.
-        mark = f"{'*':>3}"
-        show(
-            f"{render.err(mark, render.DIM)}  "
-            f"{render.err(standing_in.label.ljust(width), render.DIM)}  "
-            f"{render.err(standing_in.path, render.DIM)}"
+    if not sys.stdin.isatty():
+        count = len(candidates)
+        noun = "worktree" if count == 1 else "worktrees"
+        raise Refused(
+            f"{count} {noun} to choose from and this is not a terminal; "
+            "narrow the query, or use --list or --json"
         )
-    for i, wt in enumerate(candidates, 1):
-        show(
-            f"{render.err(f'{i:>3}', render.DIM)}  "
-            f"{render.err(wt.label.ljust(width), render.BOLD)}  "
-            f"{render.err(wt.path, render.DIM)}"
-        )
-    answer = ask(f"which? [1-{len(candidates)}, or blank to cancel] ").strip()
-    if not answer:
-        return None
-    if not answer.isdigit() or not 1 <= int(answer) <= len(candidates):
-        raise Refused(f"{answer} is not one of 1 to {len(candidates)}")
-    return candidates[int(answer) - 1]
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    # cbreak rather than raw: keys arrive one at a time and unechoed, and
+    # ctrl-c still raises KeyboardInterrupt. TCSANOW, because the default
+    # TCSAFLUSH throws away whatever was typed before the list appeared.
+    tty.setcbreak(fd, termios.TCSANOW)
+    try:
+        return _select(candidates, _keys(fd), shown, first, here)
+    finally:
+        termios.tcsetattr(fd, termios.TCSANOW, saved)
 
 
-def _prompt(text: str) -> str:
-    """The question on stderr, the answer from stdin, so stdout stays data."""
-    sys.stderr.write(text)
-    sys.stderr.flush()
-    return sys.stdin.readline()
+def _select(
+    candidates: Sequence[Worktree],
+    keys: Iterator[str],
+    shown: Sequence[tuple[str, Worktree]],
+    at: int,
+    here: Worktree | None,
+) -> Worktree | None:
+    """Draw the list on stderr, follow the keys, and return the pick.
+
+    On a terminal that can move its cursor, every key redraws the list in
+    place. Anywhere else, a dumb terminal or a stderr that is not one, the
+    list is printed once and each move prints the row it lands on.
+    """
+    prompt = f"which? [up/down and enter, 1-{len(candidates)}, or esc to cancel] "
+    redraw = sys.stderr.isatty() and os.environ.get("TERM") != "dumb"
+
+    def cells(mark: str, wt: Worktree) -> list[str]:
+        branch = wt.label + (" *" if wt is here else "")
+        return [mark, layout.name_of(wt.path), branch, wt.path]
+
+    header = [f"{'#':>3}", "WORKTREE", "BRANCH", "PATH"]
+    fixed = [header, *(cells(f"{m:>3}", wt) for m, wt in shown)]
+    widths = [
+        max(len(c[i]) for c in [*fixed, *(cells("", w) for w in candidates)])
+        for i in range(3)
+    ]
+
+    def line(texts: list[str], codes: list[str]) -> str:
+        # Padded before it is painted, or the escape codes count as width
+        # and every column under them sits crooked.
+        padded = [t.ljust(w) for t, w in zip(texts, widths, strict=False)]
+        padded.append(texts[-1])
+        return "  ".join(render.err(t, c) for t, c in zip(padded, codes, strict=True))
+
+    def row(i: int) -> str:
+        mark = f"{'>' if i == at else ' '}{i + 1:>2}"
+        if i == at:
+            codes = [
+                render.BOLD,
+                render.BOLD + render.REVERSE,
+                render.CYAN + render.REVERSE,
+                render.DIM,
+            ]
+        else:
+            codes = [render.DIM, render.BOLD, render.CYAN, render.DIM]
+        return line(cells(mark, candidates[i]), codes)
+
+    # The rows that cannot be picked stay grey, their worktree name bold.
+    above = [line(header, [render.BOLD] * 4)]
+    above += [
+        line(texts, [render.DIM, render.BOLD + render.DIM, render.DIM, render.DIM])
+        for texts in fixed[1:]
+    ]
+    clear = "\033[2K" if redraw else ""
+    lines = [*above, *(row(i) for i in range(len(candidates)))]
+    sys.stderr.write("".join(f"{clear}{line}\n" for line in lines) + prompt)
+    while True:
+        sys.stderr.flush()
+        key = next(keys, CANCEL)
+        if key in (PICK, CANCEL) or key.isdigit():
+            sys.stderr.write("\n")
+            sys.stderr.flush()
+        if key == PICK:
+            return candidates[at]
+        if key == CANCEL:
+            return None
+        if key.isdigit() and 1 <= int(key) <= len(candidates):
+            return candidates[int(key) - 1]
+        if key.isdigit():
+            raise Refused(f"{key} is not one of 1 to {len(candidates)}")
+        if key not in (UP, DOWN):
+            continue
+        at = (at + (1 if key == DOWN else -1)) % len(candidates)
+        if redraw:
+            # The cursor rests at the end of the prompt, so climb back over
+            # the numbered rows and clear each line before writing it again.
+            lines = [row(i) for i in range(len(candidates))]
+            frame = "".join(f"{clear}{line}\n" for line in lines)
+            sys.stderr.write(f"\r\033[{len(lines)}A{frame}{clear}{prompt}")
+        else:
+            sys.stderr.write(f"\n{row(at)}\n{prompt}")
+
+
+def _keys(fd: int) -> Iterator[str]:
+    """Key presses by name, read one byte at a time from a cbreak terminal.
+
+    An arrow is `ESC [ A` or, in a terminal's application mode, `ESC O A`.
+    An esc on its own is a cancel, told apart by nothing following it within
+    50ms: a terminal writes the whole arrow sequence at once.
+    """
+    arrows = {b"A": UP, b"B": DOWN}
+    while True:
+        byte = os.read(fd, 1)
+        if byte in (b"", b"\x04"):
+            yield CANCEL
+        elif byte in (b"\r", b"\n"):
+            yield PICK
+        elif byte.isdigit():
+            yield byte.decode()
+        elif byte == b"\x1b":
+            if not select.select([fd], [], [], 0.05)[0]:
+                yield CANCEL
+            elif os.read(fd, 1) in (b"[", b"O"):
+                key = arrows.get(os.read(fd, 1))
+                if key is not None:
+                    yield key

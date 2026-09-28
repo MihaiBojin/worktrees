@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -398,3 +399,235 @@ def test_the_rest_of_the_environment_reaches_the_forge(tmp_path, monkeypatch) ->
 
     assert forge.request_for("any-branch") is None
     assert seen.read_text() == "kept"
+
+
+# --------------------------------------------------------------------------
+# a fetch under 10 minutes old is used as it stands
+# --------------------------------------------------------------------------
+
+
+def _with_origin(world) -> None:
+    bare = world.root / "origin.git"
+    subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
+    world.git("remote", "add", "origin", str(bare))
+    world.git("push", "--quiet", "origin", "main")
+
+
+def _gws_args(world, *args: str):
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gws; raise SystemExit(gws())",
+            *args,
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=env_for(world),
+    )
+
+
+def test_a_recent_fetch_is_not_repeated(world) -> None:
+    _with_origin(world)
+    first = _gws_args(world, "--no-forge")
+    assert first.returncode == 0, first.stderr
+    assert "fetched" not in first.stderr
+
+    second = _gws_args(world, "--no-forge", "-v")
+    assert second.returncode == 0, second.stderr
+    assert "fetched 0 min ago; using those refs" in second.stderr
+    assert "+ git fetch" not in second.stderr
+
+
+def test_force_refresh_fetches_whatever_the_age(world) -> None:
+    _with_origin(world)
+    _gws_args(world, "--no-forge")
+    p = _gws_args(world, "--no-forge", "--force-refresh", "-v")
+    assert p.returncode == 0, p.stderr
+    assert "+ git fetch --prune origin" in p.stderr
+
+
+def test_a_fetch_over_10_minutes_old_is_repeated(world) -> None:
+    _with_origin(world)
+    _gws_args(world, "--no-forge")
+    head = Path(world.git("rev-parse", "--git-path", "FETCH_HEAD").strip())
+    head = head if head.is_absolute() else world.repo / head
+    old = time.time() - 11 * 60
+    os.utime(head, (old, old))
+    p = _gws_args(world, "--no-forge", "-v")
+    assert "+ git fetch --prune origin" in p.stderr
+
+
+def test_gwa_reuses_a_fetch_another_command_made(world) -> None:
+    _with_origin(world)
+    _gws_args(world, "--no-forge")
+    p = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gwa; raise SystemExit(gwa())",
+            "fresh",
+            "-v",
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=env_for(world),
+    )
+    assert p.returncode == 0, p.stderr
+    assert "fetched 0 min ago; using those refs" in p.stderr
+    assert "+ git fetch" not in p.stderr
+
+
+# --------------------------------------------------------------------------
+# an answer that cannot change on its own is kept
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "row,idle",
+    [
+        ({"mergeable": "MERGEABLE", "statusCheckRollup": []}, False),
+        ({"mergeable": "UNKNOWN", "statusCheckRollup": []}, False),
+        ({"mergeable": "CONFLICTING", "statusCheckRollup": []}, True),
+        ({"mergeable": "MERGEABLE", "isDraft": True}, True),
+        (
+            {
+                "mergeable": "CONFLICTING",
+                "statusCheckRollup": [{"status": "IN_PROGRESS"}],
+            },
+            False,
+        ),
+        (
+            {"mergeable": "CONFLICTING", "statusCheckRollup": [{"state": "PENDING"}]},
+            False,
+        ),
+        ({"isDraft": True, "autoMergeRequest": {"mergeMethod": "SQUASH"}}, False),
+        ({"detailed_merge_status": "conflict"}, True),
+        ({"detailed_merge_status": "draft_status"}, True),
+        ({"detailed_merge_status": "need_rebase"}, True),
+        ({"detailed_merge_status": "mergeable"}, False),
+        ({"detailed_merge_status": "ci_still_running"}, False),
+        ({"detailed_merge_status": "checking"}, False),
+        (
+            {"detailed_merge_status": "conflict", "merge_when_pipeline_succeeds": True},
+            False,
+        ),
+    ],
+)
+def test_an_open_request_is_idle_only_when_it_cannot_merge_on_its_own(
+    row, idle
+) -> None:
+    assert forge._idle(row) is idle
+
+
+def _counting_gh(tmp_path: Path, rows: list[dict]) -> tuple[Path, Path]:
+    bin_dir = tmp_path / "counting-bin"
+    bin_dir.mkdir(exist_ok=True)
+    calls = tmp_path / "calls"
+    payload = json.dumps(rows).replace("'", "'\\''")
+    exe = bin_dir / "gh"
+    exe.write_text(f"#!/bin/sh\necho x >> {calls}\nprintf '%s\\n' '{payload}'\n")
+    exe.chmod(0o755)
+    return bin_dir, calls
+
+
+def _asked(calls: Path) -> int:
+    return len(calls.read_text().splitlines()) if calls.exists() else 0
+
+
+@pytest.mark.parametrize(
+    "row,kept",
+    [
+        ({"number": 3, "state": "MERGED"}, True),
+        ({"number": 3, "state": "CLOSED"}, True),
+        ({"number": 3, "state": "OPEN", "isDraft": True}, True),
+        ({"number": 3, "state": "OPEN", "mergeable": "MERGEABLE"}, False),
+    ],
+)
+def test_the_forge_is_asked_once_for_an_answer_that_cannot_change(
+    world, tmp_path, monkeypatch, row, kept
+) -> None:
+    bin_dir, calls = _counting_gh(tmp_path, [row])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    for _ in range(2):
+        got = forge.request_for("b", sha="a" * 40)
+        assert got is not None
+        assert got.state == row["state"]
+    assert _asked(calls) == (1 if kept else 2)
+
+
+def test_force_refresh_asks_the_forge_again(world, tmp_path, monkeypatch) -> None:
+    bin_dir, calls = _counting_gh(tmp_path, [{"number": 3, "state": "MERGED"}])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    forge.request_for("b", sha="a" * 40)
+    monkeypatch.setattr(forge.options, "refresh", True)
+    forge.request_for("b", sha="a" * 40)
+    assert _asked(calls) == 2
+
+
+def test_a_new_commit_asks_the_forge_again(world, tmp_path, monkeypatch) -> None:
+    bin_dir, calls = _counting_gh(tmp_path, [{"number": 3, "state": "CLOSED"}])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    forge.request_for("b", sha="a" * 40)
+    forge.request_for("b", sha="b" * 40)
+    assert _asked(calls) == 2
+
+
+def test_an_idle_open_answer_lasts_10_minutes(world, tmp_path, monkeypatch) -> None:
+    row = {"number": 3, "state": "OPEN", "mergeable": "CONFLICTING"}
+    bin_dir, calls = _counting_gh(tmp_path, [row])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    forge.request_for("b", sha="a" * 40)
+    later = time.time() + 11 * 60
+    monkeypatch.setattr(forge.time, "time", lambda: later)
+    forge.request_for("b", sha="a" * 40)
+    assert _asked(calls) == 2
+
+
+def test_no_request_on_a_local_branch_lasts_10_minutes(
+    world, tmp_path, monkeypatch
+) -> None:
+    bin_dir, calls = _counting_gh(tmp_path, [])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    world.git("branch", "local-only", "main")
+    assert forge.request_for("local-only", sha="a" * 40) is None
+    now = time.time()
+    monkeypatch.setattr(forge.time, "time", lambda: now + 9 * 60)
+    assert forge.request_for("local-only", sha="a" * 40) is None
+    assert _asked(calls) == 1
+    monkeypatch.setattr(forge.time, "time", lambda: now + 11 * 60)
+    forge.request_for("local-only", sha="a" * 40)
+    assert _asked(calls) == 2
+
+
+def test_no_request_on_a_pushed_branch_lasts_a_minute(
+    world, tmp_path, monkeypatch
+) -> None:
+    """A push is how a request gets opened, so the answer goes stale fast."""
+    bin_dir, calls = _counting_gh(tmp_path, [])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    world.git("branch", "pushed", "main")
+    world.git("branch", "--quiet", "--set-upstream-to=main", "pushed")
+    forge.request_for("pushed", sha="a" * 40)
+    now = time.time()
+    monkeypatch.setattr(forge.time, "time", lambda: now + 30)
+    forge.request_for("pushed", sha="a" * 40)
+    assert _asked(calls) == 1
+    monkeypatch.setattr(forge.time, "time", lambda: now + 61)
+    forge.request_for("pushed", sha="a" * 40)
+    assert _asked(calls) == 2
+
+
+def test_a_forge_that_fails_is_not_kept(world, tmp_path, monkeypatch) -> None:
+    """No answer is not the answer "no request"."""
+    bin_dir = tmp_path / "failing-bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    (bin_dir / "gh").write_text(f"#!/bin/sh\necho x >> {calls}\nexit 1\n")
+    (bin_dir / "gh").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    forge.request_for("b", sha="a" * 40)
+    forge.request_for("b", sha="a" * 40)
+    assert _asked(calls) == 2

@@ -4,6 +4,7 @@ complete -c gwp -f
 
 complete -c gwp -l branch -d 'consider only that branch'
 complete -c gwp -l no-fetch -d 'use the refs already here'
+complete -c gwp -l force-refresh -d 'fetch and ask the forge again, whatever is kept'
 complete -c gwp -l delete-ignored -d 'count gitignored files as removable'
 complete -c gwp -l no-forge -d 'decide from git alone; never ask the forge'
 complete -c gwp -s y -l yes -d 'do not ask before removing'
