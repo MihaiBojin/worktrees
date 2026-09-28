@@ -154,7 +154,7 @@ def test_the_fish_shim_lands_the_caller_in_the_printed_directory(tmp_path) -> No
     target = tmp_path / "landing"
     target.mkdir()
     bin_dir = _fake(tmp_path, "gwa", f'#!/bin/sh\nprintf "%s\\n" "{target}"\n')
-    code, out = _run_fish(bin_dir, "gwa; pwd")
+    code, out = _run_fish(bin_dir, "gwa >/dev/null; pwd")
     assert code == 0, out
     assert str(target.resolve()) in out
 
@@ -225,7 +225,7 @@ def test_the_zsh_shim_lands_the_caller_in_the_printed_directory(tmp_path) -> Non
     target = tmp_path / "landing-zsh"
     target.mkdir()
     bin_dir = _fake(tmp_path, "gwa", f'#!/bin/sh\nprintf "%s\\n" "{target}"\n')
-    code, out = _run_zsh(bin_dir, "gwa; pwd")
+    code, out = _run_zsh(bin_dir, "gwa >/dev/null; pwd")
     assert code == 0, out
     assert str(target.resolve()) in out
 
