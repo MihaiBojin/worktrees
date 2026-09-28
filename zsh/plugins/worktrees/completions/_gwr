@@ -1,4 +1,4 @@
-#compdef gwr
+#compdef gwr gwr!
 
 # Flags as `gwr --help` lists them.
 

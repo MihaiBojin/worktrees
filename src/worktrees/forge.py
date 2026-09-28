@@ -230,6 +230,26 @@ def _ask(branch: str, repo: str | os.PathLike[str] | None) -> Request | None:
         ]
         noun = "merge request"
 
+    rows = query(argv, repo)
+    if rows is None:
+        return None
+    if not rows:
+        return Request(0, _NONE, noun)
+
+    row = rows[0]
+    number = row.get("number") or row.get("iid") or 0
+    state = str(row.get("state", "")).upper()
+    # GitLab says `opened`; everything below compares against GitHub's words.
+    state = "OPEN" if state == "OPENED" else state
+    return Request(int(number), state, noun, state == "OPEN" and _idle(row))
+
+
+def query(
+    argv: list[str], repo: str | os.PathLike[str] | None = None
+) -> list[dict] | None:
+    """Read a forge response, with repository redirects removed."""
+    import json
+
     options.log.append(tuple(argv))
     if options.verbose:
         import shlex
@@ -256,12 +276,6 @@ def _ask(branch: str, repo: str | os.PathLike[str] | None) -> Request | None:
         rows = json.loads(proc.stdout or "[]")
     except json.JSONDecodeError:
         return None
-    if not rows:
-        return Request(0, _NONE, noun)
-
-    row = rows[0]
-    number = row.get("number") or row.get("iid") or 0
-    state = str(row.get("state", "")).upper()
-    # GitLab says `opened`; everything below compares against GitHub's words.
-    state = "OPEN" if state == "OPENED" else state
-    return Request(int(number), state, noun, state == "OPEN" and _idle(row))
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        return None
+    return rows

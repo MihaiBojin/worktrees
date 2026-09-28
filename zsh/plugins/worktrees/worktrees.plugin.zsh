@@ -1,4 +1,5 @@
-# The four commands that change the caller's directory.
+# The four commands that change the caller's directory, and gwr!, which is
+# gwr --delete-ignored.
 #
 # Everything else here is a console script and needs nothing: gws, gwp, gwnb
 # and gwrot answer the same from a prompt and from a script. A binary cannot
@@ -11,4 +12,4 @@
 0="${${(M)0:#/*}:-$PWD/$0}"
 
 fpath+=("${0:h}/functions" "${0:h}/completions")
-autoload -Uz gwa gwl gwm gwr
+autoload -Uz gwa gwl gwm gwr 'gwr!'

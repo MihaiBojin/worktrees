@@ -26,6 +26,26 @@ _gw() {
             (( $#subs )) && _describe -t commands 'gw command' descs subs
             ;;
         rest)
+            if [[ ${words[1]} == branch ]]; then
+                _arguments -C '1:action:->branch' '*:: :->branch_args'
+                case $state in
+                    branch)
+                        local -a actions descriptions
+                        for line in ${(f)"$(command gw branch --complete 2>/dev/null)"}; do
+                            actions+=( ${line%%$'\t'*} )
+                            descriptions+=( "${line%%$'\t'*}:${line#*$'\t'}" )
+                        done
+                        _describe -t commands 'branch command' descriptions actions
+                        ;;
+                    branch_args)
+                        case ${words[1]} in
+                            status) _gwbs ;;
+                            delete) _gwbd ;;
+                        esac
+                        ;;
+                esac
+                return
+            fi
             # gwl and gwr do not offer the same set: the main checkout is
             # one gwl can take you to and one gwr can never remove.
             local source=

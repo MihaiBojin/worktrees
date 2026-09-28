@@ -1,0 +1,19 @@
+#compdef gwbs
+
+local -a names descriptions
+local line
+for line in ${(f)"$(command gwbs --complete 2>/dev/null)"}; do
+    names+=( ${line%%$'\t'*} )
+    descriptions+=( "${line%%$'\t'*}:${line#*$'\t'}" )
+done
+
+_arguments -s \
+    '--no-fetch[use the refs already here]' \
+    '--force-refresh[fetch even when the last fetch is under 10 minutes old]' \
+    '--no-forge[never ask GitHub or GitLab]' \
+    '--json[verdicts and evidence as data]' \
+    '(-q --quiet)'{-q,--quiet}'[omit the summary]' \
+    '(-v --verbose)'{-v,--verbose}'[print every command]' \
+    '--explain[print every git command and exit]' \
+    '(-h --help)'{-h,--help}'[show the help and exit]' \
+    '*:branch:{_describe -t branches branch descriptions names}'

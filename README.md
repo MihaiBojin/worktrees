@@ -5,18 +5,21 @@
 
 Git worktree commands that refuse to lose work.
 
-`gws`, `gwp`, `gwnb`, `gwrot` and `gwh` answer a question and print it. `gwa`,
-`gwl`, `gwm` and `gwr` land you somewhere, and each of those needs a shell
-function, because a binary cannot change its caller's directory.
+`gws`, `gwp`, `gwbs`, `gwbd`, `gwnb`, `gwrot`, and `gwh` run as console
+scripts. `gwa`, `gwl`, `gwm`, and `gwr` change the caller's directory and need
+a shell function of the same name.
 
 | | |
 | --- | --- |
 | `gws` | say which worktrees are finished, and why. Removes nothing, and has no flag that could |
 | `gwp` | remove the ones `gws` marks removable, having asked first |
+| `gwbs [NAME ...]` | assess local branches, including those without worktrees |
+| `gwbd [NAME ...]` | delete branches proved finished, with confirmation and undo commands |
 | `gwa NAME [BASE]` | create a worktree for `NAME` and land you in it |
 | `gwl [QUERY]` | pick one of this repository's worktrees and land you in it |
 | `gwm NEW` | rename this worktree's branch and move the checkout to match |
 | `gwr [QUERY]` | remove a worktree whose branch is finished, and the branch |
+| `gwr! [QUERY]` | `gwr --delete-ignored`, a shell function in fish and zsh |
 | `gwnb NAME` | alpha. Fetch, then branch `NAME` off the head branch and check it out |
 | `gwrot` | alpha. Start the next branch after this one, or catch the head branch up |
 | `gwh` | print that table, with every name each command answers to |
@@ -28,6 +31,8 @@ function, because a binary cannot change its caller's directory.
 | --- | --- |
 | `gws` | `gw status`, `st`, `s` |
 | `gwp` | `gw prune`, `p` |
+| `gwbs` | `gw branch status` |
+| `gwbd` | `gw branch delete` |
 | `gwa` | `gw add`, `a` |
 | `gwl` | `gw list`, `ls`, `l` |
 | `gwm` | `gw move`, `mv`, `m` |
@@ -37,6 +42,11 @@ function, because a binary cannot change its caller's directory.
 | `gwh` | `gw help`, `h`, and `gw` with no subcommand |
 
 `worktrees` is the same program under its long name.
+
+The command reference covers [branch status](docs/commands/branch-status.md)
+and [branch delete](docs/commands/branch-delete.md), including content proofs,
+GitHub and GitLab merge evidence, selection, and recovery. `gwbd` with no
+arguments opens a selector; `gwbd --all --dry-run` previews every branch.
 
 Ctrl-C interrupts a running command with exit code 130 and no traceback.
 At a selection or removal prompt, it cancels without choosing or removing
@@ -95,7 +105,7 @@ Python 3.11 or newer, and no dependencies. The standard library answers every
 question this asks, so an invocation pays for the interpreter and nothing
 else.
 
-That is the whole install for `gws`, `gwp`, `gwnb`, `gwrot` and `gwh`. The
+That installs `gws`, `gwp`, `gwbs`, `gwbd`, `gwnb`, `gwrot`, and `gwh`. The
 four that land you somewhere need a shell function too, and every command has
 a completion, both of which arrive through a plugin manager.
 
@@ -106,7 +116,7 @@ fisher install MihaiBojin/worktrees
 ```
 
 Fisher copies `functions/` and `completions/` from the repository root, so the
-four functions and ten completions land together. Nothing has to be sourced.
+five functions and ten completions land together. Nothing has to be sourced.
 
 ### zsh
 
@@ -117,7 +127,7 @@ MihaiBojin/worktrees path:zsh/plugins/worktrees   # in zsh_plugins.txt
 ```
 
 The plugin puts its own `functions/` and `completions/` on `fpath` and
-autoloads the four. Completion needs `compinit`, which most zsh setups already
+autoloads the five. Completion needs `compinit`, which most zsh setups already
 run; without one, add it after the plugin loads:
 
 ```zsh
@@ -381,6 +391,10 @@ since `git worktree remove` takes the whole directory, and it keeps a branch
 whose work already landed. Every ignored path is named before anything is
 deleted, under `--delete-ignored` and under `--force` alike.
 
+`gwr!` is `gwr --delete-ignored`, for when the ignored files are ones you meant
+to lose. It is a shell function in fish and zsh, not a console script, and it
+calls the `gwr` function so you still land where `gwr` says.
+
 ## gwnb and gwrot (alpha)
 
 Both are alpha and both start branches rather than worktrees. See the note
@@ -463,6 +477,8 @@ print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
 | `gwp` | those five, and `-y` |
 | `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--force-refresh`, `--no-forge`, `-y` |
 | `gwa`, `gwnb`, `gwrot` | `--no-fetch`, `--force-refresh` |
+| `gwbs` | `--no-fetch`, `--force-refresh`, `--no-forge` |
+| `gwbd` | those three, `--all`, `--dry-run` and `-y` |
 | `gwl` | `-l` |
 | `gwm`, `gwh` | none |
 
@@ -479,7 +495,7 @@ is kept, and `--no-fetch` never fetches.
 
 | what | when | reused for |
 | --- | --- | --- |
-| a fetch, by `gws`, `gwp`, `gwr`, `gwa`, `gwnb`, `gwrot` | from any worktree of the repository | 10 minutes; the command says how old it is |
+| a fetch, by `gws`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwnb`, `gwrot` | from any worktree of the repository | 10 minutes; the command says how old it is |
 | a request, merged or closed | on the commit it was asked about | until `--force-refresh` |
 | a request, open | a draft, a conflict, or on GitLab a needed rebase, with no auto-merge and no check running | 10 minutes |
 | a request, open | auto-merge or merge-when-pipeline-succeeds set | never |
