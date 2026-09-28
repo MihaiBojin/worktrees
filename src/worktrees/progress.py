@@ -15,7 +15,7 @@ from contextlib import contextmanager
 
 from . import render
 
-_FRAMES = "|/-\\"
+_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 _text = ""
 _lock = threading.Lock()
 _active = False

@@ -241,9 +241,10 @@ first.
 ## A fetch under 30 minutes old is used as it stands
 
 The fetch is most of what an assessment costs: about 1.1 s of a 1.9 s `gws`
-here, 750 ms of it the SSH handshake. So `gws`, `gwp` and `gwr` skip it when
-any worktree's `FETCH_HEAD` is younger than 30 minutes, say so on stderr, and
-still ask the forge. `--force-refresh` fetches whatever the age. FETCH_HEAD is
+here, 750 ms of it the SSH handshake. So every command that fetches skips it when
+any worktree's `FETCH_HEAD` is younger than 30 minutes and says so on
+stderr; `gws`, `gwp` and `gwr` still ask the forge. `_should_fetch` decides
+for all six. `--force-refresh` fetches whatever the age. FETCH_HEAD is
 written per worktree, so `repo.fetched_at` reads every copy.
 
 The per-worktree checks run on eight threads. Each is independent, and the

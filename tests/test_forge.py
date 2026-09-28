@@ -457,3 +457,24 @@ def test_a_fetch_over_30_minutes_old_is_repeated(world) -> None:
     os.utime(head, (old, old))
     p = _gws_args(world, "--no-forge", "-v")
     assert "+ git fetch --prune origin" in p.stderr
+
+
+def test_gwa_reuses_a_fetch_another_command_made(world) -> None:
+    _with_origin(world)
+    _gws_args(world, "--no-forge")
+    p = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gwa; raise SystemExit(gwa())",
+            "fresh",
+            "-v",
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=env_for(world),
+    )
+    assert p.returncode == 0, p.stderr
+    assert "fetched 0 min ago; using those refs" in p.stderr
+    assert "+ git fetch" not in p.stderr

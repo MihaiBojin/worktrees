@@ -462,13 +462,13 @@ print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
 | `gws` | `--branch NAME`, `--no-fetch`, `--force-refresh`, `--delete-ignored`, `--no-forge` |
 | `gwp` | those five, and `-y` |
 | `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--force-refresh`, `--no-forge`, `-y` |
-| `gwa`, `gwnb`, `gwrot` | `--no-fetch` |
+| `gwa`, `gwnb`, `gwrot` | `--no-fetch`, `--force-refresh` |
 | `gwl` | `-l` |
 | `gwm`, `gwh` | none |
 
 `gw <command> --help` prints one command's own list.
 
-`gws`, `gwp` and `gwr` fetch at most once every 30 minutes. A fetch younger
+Every command that fetches does so at most once every 30 minutes. A fetch younger
 than that, from any worktree of the repository, is used as it stands, and the
 command says how old it is. `--force-refresh` fetches anyway. While they fetch
 and judge, a spinner on stderr names the branch and the check in progress.

@@ -167,6 +167,25 @@ class _Stop(Exception):
 _FRESH = 30 * 60
 
 
+def _should_fetch(args: argparse.Namespace) -> bool:
+    """Not under --no-fetch, and not when any worktree fetched under 30
+    minutes ago, unless --force-refresh. A fetch is most of what a run costs,
+    and refs a few minutes old answer the same questions."""
+    from . import repo as R
+
+    if args.no_fetch:
+        return False
+    fetched = None if args.force_refresh else R.fetched_at()
+    if fetched is None or time.time() - fetched >= _FRESH:
+        return True
+    if not args.quiet:
+        _err(
+            f"fetched {int((time.time() - fetched) // 60)} min ago; using those "
+            "refs (--force-refresh fetches now)"
+        )
+    return False
+
+
 def _assess(
     args: argparse.Namespace,
     judge: Callable[..., list[verdicts.Verdict]] | None = None,
@@ -192,20 +211,10 @@ def _judge_all(
     from . import verdicts
 
     remote = R.remote()
-    online = not args.no_fetch
-    fetched = R.fetched_at() if online and remote else None
-    age = time.time() - fetched if fetched is not None else None
-    if age is not None and age < _FRESH and not args.force_refresh:
-        # A fetch is most of what a run costs, and refs a few minutes old
-        # answer the same questions. The forge is still asked: it is what
-        # settles a stacked branch, and it is not what the fetch refreshed.
-        online = False
-        if not args.quiet:
-            _err(
-                f"fetched {int(age // 60)} min ago; using those refs "
-                "(--force-refresh fetches now)"
-            )
-    elif online:
+    # A skipped fetch still leaves the forge asked: it is what settles a
+    # stacked branch, and it is not what the fetch refreshed.
+    online = _should_fetch(args) if remote else not args.no_fetch
+    if online:
         # An unreachable remote is not a reason to refuse to answer. It lands
         # where --no-fetch already goes, and says so, and the head-branch
         # ladder is told not to spend a second round trip on the same remote.
@@ -428,6 +437,11 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--no-fetch", action="store_true", help="branch off what is already here"
     )
+    p.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="fetch even when the last fetch is under 30 minutes old",
+    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
     p.add_argument(
@@ -459,7 +473,7 @@ def run_new_branch(args: argparse.Namespace) -> int:
         _err("branching from what is already here; refs may be stale (--no-fetch)")
 
     try:
-        started = new_branch.create(args.name, fetch=not args.no_fetch, warn=warn)
+        started = new_branch.create(args.name, fetch=_should_fetch(args), warn=warn)
     except new_branch.Refusal as exc:
         _err(render.err(str(exc), RED))
         return 1
@@ -488,6 +502,11 @@ def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--no-fetch", action="store_true", help="work from what is already here"
     )
+    p.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="fetch even when the last fetch is under 30 minutes old",
+    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
     p.add_argument(
@@ -515,7 +534,7 @@ def run_rotate(args: argparse.Namespace) -> int:
         _err("working from what is already here; refs may be stale (--no-fetch)")
 
     try:
-        result = rotate_mod.rotate(fetch=not args.no_fetch, warn=warn)
+        result = rotate_mod.rotate(fetch=_should_fetch(args), warn=warn)
     except new_branch.Refusal as exc:
         _err(render.err(str(exc), RED))
         return 1
@@ -571,6 +590,11 @@ def _add_add_flags(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         "--no-fetch", action="store_true", help="branch from what is already here"
+    )
+    p.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="fetch even when the last fetch is under 30 minutes old",
     )
     _add_cd_flags(p)
 
@@ -660,7 +684,7 @@ def run_add(args: argparse.Namespace) -> int:
 
     warn = None if args.quiet else _err
     try:
-        landed = wt_mod.add(args.name, args.base, fetch=not args.no_fetch, warn=warn)
+        landed = wt_mod.add(args.name, args.base, fetch=_should_fetch(args), warn=warn)
     except new_branch.Refusal as exc:
         _err(render.err(str(exc), RED))
         return 1

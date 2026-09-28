@@ -4,6 +4,7 @@
 
 _arguments -s \
     '--no-fetch[work from what is already here]' \
+    '--force-refresh[fetch even when the last fetch is under 30 minutes old]' \
     '--json[the result as data]' \
     '(-q --quiet)'{-q,--quiet}'[say nothing on success]' \
     '(-v --verbose)'{-v,--verbose}'[print every git command]' \

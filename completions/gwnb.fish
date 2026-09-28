@@ -3,6 +3,7 @@
 complete -c gwnb -f
 
 complete -c gwnb -l no-fetch -d 'branch off what is already here'
+complete -c gwnb -l force-refresh -d 'fetch even when the last fetch is under 30 minutes old'
 
 complete -c gwnb -l json -d 'the result as data'
 complete -c gwnb -s q -l quiet -d 'say nothing on success'
