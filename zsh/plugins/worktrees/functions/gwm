@@ -1,4 +1,4 @@
-# cd to where gwm lands you.
+# gwm NEW: rename this worktree's branch to NEW, move it to match, and cd there.
 #
 # The binary prints one destination, or the data `--json` and `--list` were
 # asked for, on the same stream. `$(...)` strips only

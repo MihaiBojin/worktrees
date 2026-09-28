@@ -1,4 +1,4 @@
-# cd to where gwa lands you.
+# gwa NAME [BASE]: create a worktree for branch NAME and cd into it.
 #
 # The binary prints one destination, or the data `--json` and `--list` were
 # asked for, on the same stream. `$(...)` strips only
