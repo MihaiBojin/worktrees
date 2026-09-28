@@ -151,12 +151,12 @@ separate.
 
 ```console
 $ gws
-VERDICT  BRANCH         WHY                                                                                PATH
-keep     main           it is the main checkout, and never removable                                       /home/you/git/repo
-keep     dirty-work     it has uncommitted changes                                                         /home/you/git/.worktrees/dirty-work/repo
-keep     holds-secrets  merged, but holds 2 ignored path(s); pass --delete-ignored                         /home/you/git/.worktrees/holds-secrets/repo
-unknown  never-pushed   not merged into origin/main, and no upstream says whether its commits were pushed  /home/you/git/.worktrees/never-pushed/repo
-remove   squash-merged  squash-merged                                                                      /home/you/git/.worktrees/squash-merged/repo
+BRANCH         PATH                                         VERDICT  WHY
+main           /home/you/git/repo                           keep     it is the main checkout, and never removable
+dirty-work     /home/you/git/.worktrees/dirty-work/repo     keep     it has uncommitted changes
+holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     merged, but holds 2 ignored path(s); pass --delete-ignored
+never-pushed   /home/you/git/.worktrees/never-pushed/repo   unknown  not merged into origin/main, and no upstream says whether its commits were pushed
+squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   squash-merged
 
 1 removable, 3 kept, 1 unclear
 2 worktree(s) under /home/you/git/.worktrees belong to another repository
@@ -262,10 +262,10 @@ away:
 
 ```console
 $ gwp
-VERDICT  BRANCH         WHY                                                                         PATH
-keep     dirty-work     it has uncommitted changes                                                  /home/you/git/.worktrees/dirty-work/repo
-keep     holds-secrets  squash-merged, but holds 2 ignored path(s); pass --delete-ignored           /home/you/git/.worktrees/holds-secrets/repo
-unknown  never-pushed   not merged into main, and no upstream says whether its commits were pushed  /home/you/git/.worktrees/never-pushed/repo
+BRANCH         PATH                                         VERDICT  WHY
+dirty-work     /home/you/git/.worktrees/dirty-work/repo     keep     it has uncommitted changes
+holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     squash-merged, but holds 2 ignored path(s); pass --delete-ignored
+never-pushed   /home/you/git/.worktrees/never-pushed/repo   unknown  not merged into main, and no upstream says whether its commits were pushed
 
 nothing to remove; 0 removable, 2 kept, 1 unclear
 ```
@@ -309,10 +309,11 @@ whatever branch it stands on, and `--list` marks the one you are in:
 
 ```console
 $ gwl --list
-  main           /home/you/git/repo
-  dirty-work     /home/you/git/.worktrees/dirty-work/repo
-  holds-secrets  /home/you/git/.worktrees/holds-secrets/repo
-* never-pushed   /home/you/git/.worktrees/never-pushed/repo
+   WORKTREE       BRANCH         PATH
+   repo           main           /home/you/git/repo
+   dirty-work     dirty-work     /home/you/git/.worktrees/dirty-work/repo
+   holds-secrets  holds-secrets  /home/you/git/.worktrees/holds-secrets/repo
+*  never-pushed   never-pushed   /home/you/git/.worktrees/never-pushed/repo
 ```
 
 It never offers that one. Picking it is the one answer that cannot take you

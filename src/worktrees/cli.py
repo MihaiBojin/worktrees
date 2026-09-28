@@ -39,17 +39,17 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
         verdicts.UNKNOWN: YELLOW,
     }
     head: Row = (
-        Cell("VERDICT", DIM),
         Cell("BRANCH", DIM),
-        Cell("WHY", DIM),
         Cell("PATH", DIM),
+        Cell("VERDICT", DIM),
+        Cell("WHY", DIM),
     )
     body: list[Row] = [
         (
-            Cell(v.verdict, code.get(v.verdict, "")),
             Cell(v.label, BOLD),
-            Cell(v.why),
             Cell(v.path, DIM),
+            Cell(v.verdict, code.get(v.verdict, "")),
+            Cell(v.why),
         )
         for v in rows
     ]
@@ -642,7 +642,7 @@ def run_list(args: argparse.Namespace) -> int:
     """
     import json
 
-    from . import pick
+    from . import layout, pick
     from . import repo as R
     from .git import options
 
@@ -686,13 +686,18 @@ def run_list(args: argparse.Namespace) -> int:
         if not found:
             _err("no worktree matches")
             return 1
-        width = max(len(w.label) for w in found)
-        for w in found:
-            mark = render.out("*", GREEN) if _same(w.path, here) else " "
-            print(
-                f"{mark} {render.out(w.label.ljust(width), BOLD)}  "
-                f"{render.out(w.path, DIM)}"
+        # The picker's columns, without its numbers: `*` marks where you are.
+        head: Row = (Cell(""), *(Cell(h, DIM) for h in ("WORKTREE", "BRANCH", "PATH")))
+        body: list[Row] = [
+            (
+                Cell("*" if _same(w.path, here) else "", GREEN),
+                Cell(layout.name_of(w.path)),
+                Cell(w.label, BOLD),
+                Cell(w.path, DIM),
             )
+            for w in found
+        ]
+        print(table([head, *body]))
         return 0
 
     if not found:

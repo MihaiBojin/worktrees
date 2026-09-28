@@ -179,7 +179,9 @@ def test_list_marks_the_one_you_stand_in(world) -> None:
     wt = world.worktree("one")
     p = run(world, "gwl", "--list", at=wt)
     assert p.returncode == 0, p.stderr
-    marks = {ln[1:].split()[0]: ln[0] for ln in p.stdout.splitlines()}
+    head, *body = p.stdout.splitlines()
+    assert head.split() == ["WORKTREE", "BRANCH", "PATH"]
+    marks = {ln[3:].split()[1]: ln[0] for ln in body}
     assert marks == {"main": " ", "one": "*"}
 
 
