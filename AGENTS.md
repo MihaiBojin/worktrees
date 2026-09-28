@@ -227,9 +227,28 @@ stdout carries the path `cd $(gwa x)` reads and the JSON `jq` parses, so a
 redirect, a pipe, a non-empty `NO_COLOR`, or `TERM=dumb` mean the bytes go out
 as they would have without the module. `NO_COLOR=` is not a request to turn it
 off: that is the no-color.org rule, and it is why `supported` tests the value
-and not the key. `--json` is never painted at all:
-the colour is applied at the call site that formats a table, and the JSON
-paths do not pass through one.
+and not the key. `--json` and `gwl --list` are never painted at all, even
+on a terminal: both are what a script reads. The colour is applied at the
+call site that formats a table, and neither path passes a code to one.
+
+`progress.py` draws a spinner on stderr and one line saying what is being
+checked, while `gws`, `gwp` and `gwr` fetch and judge. It runs only when
+stderr is a terminal that can clear a line, and never under `-q` or `-v`,
+since the verbose log writes to the line it redraws. Anything else printed on
+stderr while it spins goes through `progress.line`, which clears the spinner
+first.
+
+## A fetch under 30 minutes old is used as it stands
+
+The fetch is most of what an assessment costs: about 1.1 s of a 1.9 s `gws`
+here, 750 ms of it the SSH handshake. So `gws`, `gwp` and `gwr` skip it when
+any worktree's `FETCH_HEAD` is younger than 30 minutes, say so on stderr, and
+still ask the forge. `--force-refresh` fetches whatever the age. FETCH_HEAD is
+written per worktree, so `repo.fetched_at` reads every copy.
+
+The per-worktree checks run on eight threads. Each is independent, and the
+time goes waiting on git and on `gh`, one round trip per branch git cannot
+settle.
 
 ## Every git command is one spec
 

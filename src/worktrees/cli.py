@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import __version__, render
+from . import __version__, progress, render
 from .errors import GitError, Refused
 from .render import BLUE, BOLD, CYAN, DIM, GREEN, RED, YELLOW, Cell, Row, table
 
@@ -19,7 +20,7 @@ if TYPE_CHECKING:  # names used in annotations, which never run
 
 
 def _err(text: str) -> None:
-    print(text, file=sys.stderr)
+    progress.line(text)
 
 
 def _same(a: str, b: str) -> bool:
@@ -39,14 +40,14 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
         verdicts.UNKNOWN: YELLOW,
     }
     head: Row = (
-        Cell("BRANCH", DIM),
-        Cell("PATH", DIM),
-        Cell("VERDICT", DIM),
-        Cell("WHY", DIM),
+        Cell("BRANCH", BOLD),
+        Cell("PATH", BOLD),
+        Cell("VERDICT", BOLD),
+        Cell("WHY", BOLD),
     )
     body: list[Row] = [
         (
-            Cell(v.label, BOLD),
+            Cell(v.label, CYAN),
             Cell(v.path, DIM),
             Cell(v.verdict, code.get(v.verdict, "")),
             Cell(v.why),
@@ -129,6 +130,11 @@ def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
     p.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="fetch even when the last fetch is under 30 minutes old",
+    )
+    p.add_argument(
         "--delete-ignored",
         action="store_true",
         help="count a worktree holding gitignored files as removable; nothing "
@@ -157,10 +163,24 @@ class _Stop(Exception):
         self.code = code
 
 
+# A fetch younger than this is used as it stands; --force-refresh fetches.
+_FRESH = 30 * 60
+
+
 def _assess(
     args: argparse.Namespace,
     judge: Callable[..., list[verdicts.Verdict]] | None = None,
     ask_forge: bool | None = None,
+) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
+    """`_judge_all`, with a spinner on stderr saying what it is checking."""
+    with progress.running(not args.quiet and not args.verbose):
+        return _judge_all(args, judge, ask_forge)
+
+
+def _judge_all(
+    args: argparse.Namespace,
+    judge: Callable[..., list[verdicts.Verdict]] | None,
+    ask_forge: bool | None,
 ) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
     """Fetch, resolve the head branch, and judge every worktree.
 
@@ -173,10 +193,23 @@ def _assess(
 
     remote = R.remote()
     online = not args.no_fetch
-    if online:
+    fetched = R.fetched_at() if online and remote else None
+    age = time.time() - fetched if fetched is not None else None
+    if age is not None and age < _FRESH and not args.force_refresh:
+        # A fetch is most of what a run costs, and refs a few minutes old
+        # answer the same questions. The forge is still asked: it is what
+        # settles a stacked branch, and it is not what the fetch refreshed.
+        online = False
+        if not args.quiet:
+            _err(
+                f"fetched {int(age // 60)} min ago; using those refs "
+                "(--force-refresh fetches now)"
+            )
+    elif online:
         # An unreachable remote is not a reason to refuse to answer. It lands
         # where --no-fetch already goes, and says so, and the head-branch
         # ladder is told not to spend a second round trip on the same remote.
+        progress.say(f"fetching {remote}")
         if remote and not R.fetch(remote):
             online = False
             # The forge is reached over the network the fetch just failed on,
@@ -192,6 +225,7 @@ def _assess(
     elif not args.quiet:
         _err("using the refs already here; they may be stale (--no-fetch)")
 
+    progress.say("finding the head branch")
     head, warning = R.head_ref(remote, online=online)
     if warning and not args.quiet:
         _err(warning)
@@ -576,6 +610,11 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
     p.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="fetch even when the last fetch is under 30 minutes old",
+    )
+    p.add_argument(
         "--no-forge",
         action="store_true",
         help="decide from git alone; never ask the forge",
@@ -687,13 +726,14 @@ def run_list(args: argparse.Namespace) -> int:
             _err("no worktree matches")
             return 1
         # The picker's columns, without its numbers: `*` marks where you are.
-        head: Row = (Cell(""), *(Cell(h, BOLD) for h in ("WORKTREE", "BRANCH", "PATH")))
+        # Never coloured: like --json, it is what a script reads.
+        head: Row = ("", "WORKTREE", "BRANCH", "PATH")
         body: list[Row] = [
             (
-                Cell("*" if _same(w.path, here) else "", GREEN),
-                Cell(layout.name_of(w.path), BOLD),
-                Cell(w.label, CYAN),
-                Cell(w.path, DIM),
+                "*" if _same(w.path, here) else "",
+                layout.name_of(w.path),
+                w.label,
+                w.path,
             )
             for w in found
         ]
@@ -810,9 +850,10 @@ def run_remove(args: argparse.Namespace) -> int:
     # Now that there is one branch, the forge is worth a question: it is the
     # only thing that settles a branch merged as part of a stack.
     if chosen.verdict != prune.REMOVE and not args.no_forge:
-        judged = wt_mod.removable(
-            chosen.branch, head, head_branch, args.delete_ignored, ask_forge=True
-        )
+        with progress.running(not args.quiet and not args.verbose):
+            judged = wt_mod.removable(
+                chosen.branch, head, head_branch, args.delete_ignored, ask_forge=True
+            )
         if judged:
             chosen = judged[0]
 

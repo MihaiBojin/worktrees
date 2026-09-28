@@ -959,3 +959,33 @@ def test_remove_lists_main_unnumbered_under_a_query_too(world) -> None:
     assert code == 0, out
     assert re.search(r"^  \*\s+repo\s+main\s", out, re.M), out
     assert "nothing picked" in out
+
+
+def test_list_is_never_coloured_even_on_a_terminal(world) -> None:
+    """--list, like --json, is what a script reads."""
+    world.worktree("one")
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.chdir(world.repo)
+        os.execve(
+            sys.executable,
+            [
+                sys.executable,
+                "-c",
+                "from worktrees.cli import gwl; raise SystemExit(gwl())",
+                "--list",
+            ],
+            {**env_for(world), "TERM": "xterm"},
+        )
+    out = b""
+    while True:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+    os.waitpid(pid, 0)
+    assert b"WORKTREE" in out
+    assert b"\x1b[" not in out

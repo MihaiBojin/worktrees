@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -398,3 +399,61 @@ def test_the_rest_of_the_environment_reaches_the_forge(tmp_path, monkeypatch) ->
 
     assert forge.request_for("any-branch") is None
     assert seen.read_text() == "kept"
+
+
+# --------------------------------------------------------------------------
+# a fetch under 30 minutes old is used as it stands
+# --------------------------------------------------------------------------
+
+
+def _with_origin(world) -> None:
+    bare = world.root / "origin.git"
+    subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
+    world.git("remote", "add", "origin", str(bare))
+    world.git("push", "--quiet", "origin", "main")
+
+
+def _gws_args(world, *args: str):
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gws; raise SystemExit(gws())",
+            *args,
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=env_for(world),
+    )
+
+
+def test_a_recent_fetch_is_not_repeated(world) -> None:
+    _with_origin(world)
+    first = _gws_args(world, "--no-forge")
+    assert first.returncode == 0, first.stderr
+    assert "fetched" not in first.stderr
+
+    second = _gws_args(world, "--no-forge", "-v")
+    assert second.returncode == 0, second.stderr
+    assert "fetched 0 min ago; using those refs" in second.stderr
+    assert "+ git fetch" not in second.stderr
+
+
+def test_force_refresh_fetches_whatever_the_age(world) -> None:
+    _with_origin(world)
+    _gws_args(world, "--no-forge")
+    p = _gws_args(world, "--no-forge", "--force-refresh", "-v")
+    assert p.returncode == 0, p.stderr
+    assert "+ git fetch --prune origin" in p.stderr
+
+
+def test_a_fetch_over_30_minutes_old_is_repeated(world) -> None:
+    _with_origin(world)
+    _gws_args(world, "--no-forge")
+    head = Path(world.git("rev-parse", "--git-path", "FETCH_HEAD").strip())
+    head = head if head.is_absolute() else world.repo / head
+    old = time.time() - 31 * 60
+    os.utime(head, (old, old))
+    p = _gws_args(world, "--no-forge", "-v")
+    assert "+ git fetch --prune origin" in p.stderr

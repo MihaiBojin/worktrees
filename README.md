@@ -459,14 +459,19 @@ print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
 
 | | |
 | --- | --- |
-| `gws` | `--branch NAME`, `--no-fetch`, `--delete-ignored`, `--no-forge` |
-| `gwp` | those four, and `-y` |
-| `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--no-forge`, `-y` |
+| `gws` | `--branch NAME`, `--no-fetch`, `--force-refresh`, `--delete-ignored`, `--no-forge` |
+| `gwp` | those five, and `-y` |
+| `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--force-refresh`, `--no-forge`, `-y` |
 | `gwa`, `gwnb`, `gwrot` | `--no-fetch` |
 | `gwl` | `-l` |
 | `gwm`, `gwh` | none |
 
 `gw <command> --help` prints one command's own list.
+
+`gws`, `gwp` and `gwr` fetch at most once every 30 minutes. A fetch younger
+than that, from any worktree of the repository, is used as it stands, and the
+command says how old it is. `--force-refresh` fetches anyway. While they fetch
+and judge, a spinner on stderr names the branch and the check in progress.
 
 A remote that cannot be reached is not fatal anywhere. The fetch fails, the
 command says so on stderr, and it answers from the refs already here, which is
@@ -478,7 +483,8 @@ forge asked.
 Data goes to stdout and diagnostics to stderr, the prompt included, so `--json`
 is parseable in every mode. Colour is decided per stream and only for a
 terminal, so a redirect, a pipe, a non-empty `NO_COLOR` or `TERM=dumb` give the
-bytes a pipe would have got, `--json` included. `NO_COLOR=` is not a request to
+bytes a pipe would have got. `--json` and `gwl --list` are never coloured, even
+on a terminal. `NO_COLOR=` is not a request to
 turn it off, which is the no-color.org rule.
 
 Every command is a console script, so a script reaches it with no shell loaded

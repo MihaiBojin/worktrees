@@ -6,6 +6,7 @@ import io
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -511,3 +512,31 @@ def test_counting_the_neighbours_asks_git_nothing(world) -> None:
 
 def test_no_worktrees_root_is_no_neighbours(world) -> None:
     assert layout.neighbours(str(world.repo), [str(world.repo)]) == 0
+
+
+def test_the_spinner_says_what_is_being_checked_and_clears_its_line(
+    monkeypatch,
+) -> None:
+    from worktrees import progress
+
+    err = _Tty()
+    monkeypatch.setattr(sys, "stderr", err)
+    monkeypatch.setenv("TERM", "xterm")
+    with progress.running():
+        progress.say("one: reading its status")
+        time.sleep(0.35)
+    out = err.getvalue()
+    assert "one: reading its status" in out
+    assert out.endswith("\r\033[2K")
+
+
+def test_the_spinner_stays_off_where_it_cannot_clear_a_line(monkeypatch) -> None:
+    from worktrees import progress
+
+    err = _Tty()
+    monkeypatch.setattr(sys, "stderr", err)
+    monkeypatch.setenv("TERM", "dumb")
+    with progress.running():
+        progress.say("x")
+        time.sleep(0.25)
+    assert err.getvalue() == ""
