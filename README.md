@@ -19,6 +19,7 @@ a shell function of the same name.
 | `gwl [QUERY]` | pick one of this repository's worktrees and land you in it |
 | `gwm NEW` | rename this worktree's branch and move the checkout to match |
 | `gwr [QUERY]` | remove a worktree whose branch is finished, and the branch |
+| `gwr! [QUERY]` | `gwr --delete-ignored`, a shell function in fish and zsh |
 | `gwnb NAME` | alpha. Fetch, then branch `NAME` off the head branch and check it out |
 | `gwrot` | alpha. Start the next branch after this one, or catch the head branch up |
 | `gwh` | print that table, with every name each command answers to |
@@ -115,7 +116,7 @@ fisher install MihaiBojin/worktrees
 ```
 
 Fisher copies `functions/` and `completions/` from the repository root, so the
-four functions and ten completions land together. Nothing has to be sourced.
+five functions and ten completions land together. Nothing has to be sourced.
 
 ### zsh
 
@@ -126,7 +127,7 @@ MihaiBojin/worktrees path:zsh/plugins/worktrees   # in zsh_plugins.txt
 ```
 
 The plugin puts its own `functions/` and `completions/` on `fpath` and
-autoloads the four. Completion needs `compinit`, which most zsh setups already
+autoloads the five. Completion needs `compinit`, which most zsh setups already
 run; without one, add it after the plugin loads:
 
 ```zsh
@@ -370,6 +371,10 @@ holds-secrets is finished: squash-merged, but holds 2 ignored path(s); pass --de
 since `git worktree remove` takes the whole directory, and it keeps a branch
 whose work already landed. Every ignored path is named before anything is
 deleted, under `--delete-ignored` and under `--force` alike.
+
+`gwr!` is `gwr --delete-ignored`, for when the ignored files are ones you meant
+to lose. It is a shell function in fish and zsh, not a console script, and it
+calls the `gwr` function so you still land where `gwr` says.
 
 ## gwnb and gwrot (alpha)
 
