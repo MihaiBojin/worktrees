@@ -171,13 +171,22 @@ def _select(
     def row(i: int) -> str:
         mark = f"{'>' if i == at else ' '}{i + 1:>2}"
         if i == at:
-            codes = [render.BOLD, render.REVERSE, render.REVERSE, render.DIM]
+            codes = [
+                render.BOLD,
+                render.BOLD + render.REVERSE,
+                render.CYAN + render.REVERSE,
+                render.DIM,
+            ]
         else:
-            codes = [render.DIM, render.BOLD, "", render.DIM]
+            codes = [render.DIM, render.BOLD, render.CYAN, render.DIM]
         return line(cells(mark, candidates[i]), codes)
 
-    above = [line(header, [render.DIM] * 4)]
-    above += [line(texts, [render.DIM] * 4) for texts in fixed[1:]]
+    # The rows that cannot be picked stay grey, their worktree name bold.
+    above = [line(header, [render.BOLD] * 4)]
+    above += [
+        line(texts, [render.DIM, render.BOLD + render.DIM, render.DIM, render.DIM])
+        for texts in fixed[1:]
+    ]
     clear = "\033[2K" if redraw else ""
     lines = [*above, *(row(i) for i in range(len(candidates)))]
     sys.stderr.write("".join(f"{clear}{line}\n" for line in lines) + prompt)

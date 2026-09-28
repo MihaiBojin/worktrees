@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from . import __version__, render
 from .errors import GitError, Refused
-from .render import BLUE, BOLD, DIM, GREEN, RED, YELLOW, Cell, Row, table
+from .render import BLUE, BOLD, CYAN, DIM, GREEN, RED, YELLOW, Cell, Row, table
 
 if TYPE_CHECKING:  # names used in annotations, which never run
     from . import repo as R
@@ -687,12 +687,12 @@ def run_list(args: argparse.Namespace) -> int:
             _err("no worktree matches")
             return 1
         # The picker's columns, without its numbers: `*` marks where you are.
-        head: Row = (Cell(""), *(Cell(h, DIM) for h in ("WORKTREE", "BRANCH", "PATH")))
+        head: Row = (Cell(""), *(Cell(h, BOLD) for h in ("WORKTREE", "BRANCH", "PATH")))
         body: list[Row] = [
             (
                 Cell("*" if _same(w.path, here) else "", GREEN),
-                Cell(layout.name_of(w.path)),
-                Cell(w.label, BOLD),
+                Cell(layout.name_of(w.path), BOLD),
+                Cell(w.label, CYAN),
                 Cell(w.path, DIM),
             )
             for w in found
