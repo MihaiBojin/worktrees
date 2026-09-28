@@ -1,4 +1,4 @@
-# cd to where gwa lands you.
+# Create a worktree and change into it.
 #
 # The binary prints one destination, or the data `--json` and `--list` were
 # asked for, on the same stream. `$(...)` strips only

@@ -1,3 +1,4 @@
+# Remove a worktree whose branch is finished.
 function gwr --wraps gwr --description 'cd to where gwr lands you'
     # The binary prints one destination, or the data `--json` and `--list`
     # were asked for, on the same stream. `string collect`

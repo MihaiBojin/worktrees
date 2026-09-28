@@ -1,3 +1,4 @@
+# Rename the current branch and move its worktree to match.
 function gwm --wraps gwm --description 'cd to where gwm lands you'
     # The binary prints one destination, or the data `--json` and `--list`
     # were asked for, on the same stream. `string collect`

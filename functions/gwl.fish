@@ -1,3 +1,4 @@
+# Select a worktree and change into it.
 function gwl --wraps gwl --description 'cd to where gwl lands you'
     # The binary prints one destination, or the data `--json` and `--list`
     # were asked for, on the same stream. `string collect`
