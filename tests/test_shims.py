@@ -19,6 +19,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 CD_COMMANDS = ("gwa", "gwl", "gwm", "gwr")
+# A shortcut calls a shim with its flags fixed, and nothing else.
+SHORTCUTS = {"gwr!": "gwr --delete-ignored"}
 
 
 def scripts() -> dict[str, str]:
@@ -30,15 +32,38 @@ def test_every_shim_names_a_console_script() -> None:
     reports nothing; it just stops working."""
     declared = scripts()
     for f in sorted((ROOT / "functions").glob("*.fish")):
-        assert f.stem in declared, f"{f.name} has no console script"
+        assert f.stem in declared or f.stem in SHORTCUTS, (
+            f"{f.name} has no console script"
+        )
     for f in sorted((ROOT / "zsh/plugins/worktrees/functions").iterdir()):
-        assert f.name in declared, f"{f} has no console script"
+        assert f.name in declared or f.name in SHORTCUTS, f"{f} has no console script"
 
 
 def test_the_two_dialects_ship_the_same_names() -> None:
     fish = {f.stem for f in (ROOT / "functions").glob("*.fish")}
     zsh = {f.name for f in (ROOT / "zsh/plugins/worktrees/functions").iterdir()}
-    assert fish == zsh == set(CD_COMMANDS)
+    assert fish == zsh == set(CD_COMMANDS) | set(SHORTCUTS)
+
+
+@pytest.mark.parametrize("name", SHORTCUTS)
+def test_a_shortcut_is_one_call_to_a_shim(name: str) -> None:
+    """Through the shim, not `command`, so the caller still lands where the
+    binary says. Anything more is logic, and logic belongs in the CLI."""
+    call = SHORTCUTS[name]
+    assert call.split()[0] in CD_COMMANDS
+    for path, line in (
+        (ROOT / "functions" / f"{name}.fish", f"{call} $argv"),
+        (ROOT / "zsh/plugins/worktrees/functions" / name, f'{call} "$@"'),
+    ):
+        code = [
+            stripped
+            for stripped in (raw.strip() for raw in path.read_text().splitlines())
+            if stripped
+            and not stripped.startswith("#")
+            and not stripped.startswith("function ")
+            and stripped != "end"
+        ]
+        assert code == [line], path
 
 
 @pytest.mark.parametrize("name", CD_COMMANDS)
@@ -161,6 +186,26 @@ def test_the_fish_shim_stays_put_on_empty_output(tmp_path) -> None:
     assert out.strip().endswith("/")
 
 
+def test_the_fish_shortcut_lands_where_gwr_says_with_the_flag(tmp_path) -> None:
+    """stdout goes to /dev/null, so only `pwd` can print the target: a
+    shortcut that skipped the shim would print it and stay put."""
+    target = tmp_path / "landing-bang"
+    target.mkdir()
+    seen = tmp_path / "argv"
+    bin_dir = _fake(
+        tmp_path, "gwr", f'#!/bin/sh\necho "$@" > "{seen}"\nprintf "%s\\n" "{target}"\n'
+    )
+    fns = ROOT / "functions"
+    code, out = _run_fish(
+        bin_dir,
+        f"source {fns / 'gwr.fish'}; source '{fns / 'gwr!.fish'}'; "
+        "gwr! x >/dev/null; pwd",
+    )
+    assert code == 0, out
+    assert str(target.resolve()) in out
+    assert seen.read_text().split() == ["--delete-ignored", "x"]
+
+
 def _run_zsh(bin_dir: Path, line: str) -> tuple[int, str]:
     zsh = shutil.which("zsh")
     if not zsh:  # pragma: no cover
@@ -168,7 +213,7 @@ def _run_zsh(bin_dir: Path, line: str) -> tuple[int, str]:
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
     fns = ROOT / "zsh/plugins/worktrees/functions"
     proc = subprocess.run(
-        [zsh, "-f", "-c", f"fpath=({fns} $fpath); autoload -Uz gwa; {line}"],
+        [zsh, "-f", "-c", f"fpath=({fns} $fpath); autoload -Uz gwa gwr 'gwr!'; {line}"],
         capture_output=True,
         text=True,
         env=env,
@@ -183,6 +228,19 @@ def test_the_zsh_shim_lands_the_caller_in_the_printed_directory(tmp_path) -> Non
     code, out = _run_zsh(bin_dir, "gwa; pwd")
     assert code == 0, out
     assert str(target.resolve()) in out
+
+
+def test_the_zsh_shortcut_lands_where_gwr_says_with_the_flag(tmp_path) -> None:
+    target = tmp_path / "landing-bang-zsh"
+    target.mkdir()
+    seen = tmp_path / "argv"
+    bin_dir = _fake(
+        tmp_path, "gwr", f'#!/bin/sh\necho "$@" > "{seen}"\nprintf "%s\\n" "{target}"\n'
+    )
+    code, out = _run_zsh(bin_dir, "gwr! x >/dev/null; pwd")
+    assert code == 0, out
+    assert str(target.resolve()) in out
+    assert seen.read_text().split() == ["--delete-ignored", "x"]
 
 
 def test_the_zsh_shim_returns_the_binarys_exit_code(tmp_path) -> None:
