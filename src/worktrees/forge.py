@@ -42,9 +42,17 @@ class Request:
         self.idle = idle
 
 
-# How long an open request that nothing is about to merge is taken as read.
-# A merged or closed one stays that way, so its answer does not expire.
-_OPEN_FOR = 30 * 60
+# How long an answer is taken as read, in seconds. A merged or closed request
+# stays that way, so its answer does not expire. An open one that nothing is
+# about to merge, or no request on a branch that is only here, lasts half an
+# hour. No request on a pushed branch lasts a minute: a push is how a request
+# gets opened, and one opened from here is usually the next thing that
+# happens.
+_IDLE_FOR = 30 * 60
+_PUSHED_FOR = 60
+# What `_ask` returns when the forge answered and there is no request, as
+# against None for every way of not getting an answer at all.
+_NONE = "NONE"
 _lock = threading.Lock()
 
 
@@ -90,15 +98,17 @@ def _cached(branch: str, sha: str, path: Path) -> Request | None:
         entry = json.loads(path.read_text()).get(branch)
     except (OSError, ValueError, AttributeError):
         return None
-    if not isinstance(entry, dict) or entry.get("sha") != sha:
+    if not isinstance(entry, dict) or entry.get("sha") != sha or "for" not in entry:
         return None
-    state = entry.get("state")
-    if state == "OPEN" and time.time() - float(entry.get("at", 0)) >= _OPEN_FOR:
+    lasts = entry.get("for")
+    if lasts is not None and time.time() - float(entry.get("at", 0)) >= lasts:
         return None
-    return Request(int(entry["number"]), str(state), str(entry["noun"]), True)
+    return Request(int(entry["number"]), str(entry["state"]), str(entry["noun"]), True)
 
 
-def _remember(branch: str, sha: str, request: Request, path: Path) -> None:
+def _remember(
+    branch: str, sha: str, request: Request, lasts: float | None, path: Path
+) -> None:
     with _lock:
         try:
             entries = json.loads(path.read_text())
@@ -112,6 +122,7 @@ def _remember(branch: str, sha: str, request: Request, path: Path) -> None:
             "state": request.state,
             "noun": request.noun,
             "at": time.time(),
+            "for": lasts,
         }
         # A cache that cannot be written costs a round trip, not an answer.
         with contextlib.suppress(OSError):
@@ -152,24 +163,37 @@ def request_for(
     remote, no request. The caller treats that as "the forge said nothing"
     rather than as "no".
 
-    Given the branch's sha, an answer that cannot change on its own is kept
-    in the repository's common directory under that sha: merged and closed
-    for good, an idle open one for 30 minutes. --force-refresh asks anyway.
+    Given the branch's sha, an answer is kept in the repository's common
+    directory under that sha for as long as `_lasts` says. --force-refresh
+    asks anyway.
     """
     path = _cache_file(repo) if sha else None
+    request = None
     if path is not None and not options.refresh:
-        cached = _cached(branch, sha, path)
-        if cached is not None:
-            return cached
+        request = _cached(branch, sha, path)
+    if request is None:
+        request = _ask(branch, repo)
+        if path is not None:
+            lasts = _lasts(branch, request, repo)
+            if request is not None and lasts != 0:
+                _remember(branch, sha, request, lasts, path)
+    return None if request is None or request.state == _NONE else request
 
-    request = _ask(branch, repo)
-    if (
-        path is not None
-        and request is not None
-        and (request.state in ("MERGED", "CLOSED") or request.idle)
-    ):
-        _remember(branch, sha, request, path)
-    return request
+
+def _lasts(
+    branch: str, request: Request | None, repo: str | os.PathLike[str] | None
+) -> float | None:
+    """Seconds an answer is kept, None for good, and 0 for not at all."""
+    if request is None:
+        return 0
+    if request.state in ("MERGED", "CLOSED"):
+        return None
+    if request.state == _NONE:
+        from . import repo as R
+
+        pushed = bool(R.upstream_of(branch, repo=repo).out.strip())
+        return _PUSHED_FOR if pushed else _IDLE_FOR
+    return _IDLE_FOR if request.idle else 0
 
 
 def _ask(branch: str, repo: str | os.PathLike[str] | None) -> Request | None:
@@ -233,7 +257,7 @@ def _ask(branch: str, repo: str | os.PathLike[str] | None) -> Request | None:
     except json.JSONDecodeError:
         return None
     if not rows:
-        return None
+        return Request(0, _NONE, noun)
 
     row = rows[0]
     number = row.get("number") or row.get("iid") or 0

@@ -254,7 +254,10 @@ when it cannot merge until its author pushes: a draft, a conflict, or on
 GitLab a needed rebase. Auto-merge, a running check, or a forge calling it
 mergeable, or unable to say, means it is asked every time. `forge._idle`
 holds that rule. A push changes the sha, so a kept answer never outlives
-the commit it was given for. No request at all is not kept.
+the commit it was given for. No request at all is kept for 30 minutes on a
+branch with no upstream, and for one minute on a branch with one: a push is
+how a request gets opened, and from here it is usually the next step. A
+forge that fails to answer is never kept.
 
 The per-worktree checks run on eight threads. Each is independent, and the
 time goes waiting on git and on `gh`, one round trip per branch git cannot

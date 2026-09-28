@@ -584,3 +584,50 @@ def test_an_idle_open_answer_lasts_30_minutes(world, tmp_path, monkeypatch) -> N
     monkeypatch.setattr(forge.time, "time", lambda: later)
     forge.request_for("b", sha="a" * 40)
     assert _asked(calls) == 2
+
+
+def test_no_request_on_a_local_branch_lasts_30_minutes(
+    world, tmp_path, monkeypatch
+) -> None:
+    bin_dir, calls = _counting_gh(tmp_path, [])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    world.git("branch", "local-only", "main")
+    assert forge.request_for("local-only", sha="a" * 40) is None
+    now = time.time()
+    monkeypatch.setattr(forge.time, "time", lambda: now + 29 * 60)
+    assert forge.request_for("local-only", sha="a" * 40) is None
+    assert _asked(calls) == 1
+    monkeypatch.setattr(forge.time, "time", lambda: now + 31 * 60)
+    forge.request_for("local-only", sha="a" * 40)
+    assert _asked(calls) == 2
+
+
+def test_no_request_on_a_pushed_branch_lasts_a_minute(
+    world, tmp_path, monkeypatch
+) -> None:
+    """A push is how a request gets opened, so the answer goes stale fast."""
+    bin_dir, calls = _counting_gh(tmp_path, [])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    world.git("branch", "pushed", "main")
+    world.git("branch", "--quiet", "--set-upstream-to=main", "pushed")
+    forge.request_for("pushed", sha="a" * 40)
+    now = time.time()
+    monkeypatch.setattr(forge.time, "time", lambda: now + 30)
+    forge.request_for("pushed", sha="a" * 40)
+    assert _asked(calls) == 1
+    monkeypatch.setattr(forge.time, "time", lambda: now + 61)
+    forge.request_for("pushed", sha="a" * 40)
+    assert _asked(calls) == 2
+
+
+def test_a_forge_that_fails_is_not_kept(world, tmp_path, monkeypatch) -> None:
+    """No answer is not the answer "no request"."""
+    bin_dir = tmp_path / "failing-bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    (bin_dir / "gh").write_text(f"#!/bin/sh\necho x >> {calls}\nexit 1\n")
+    (bin_dir / "gh").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    forge.request_for("b", sha="a" * 40)
+    forge.request_for("b", sha="a" * 40)
+    assert _asked(calls) == 2
