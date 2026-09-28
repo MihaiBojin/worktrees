@@ -67,8 +67,6 @@ def request_for(
     remote, no request. The caller treats that as "the forge said nothing"
     rather than as "no".
     """
-    import json
-
     tool = available()
     if not tool:
         return None
@@ -101,6 +99,22 @@ def request_for(
         ]
         noun = "merge request"
 
+    rows = query(argv, repo)
+    if not rows:
+        return None
+
+    row = rows[0]
+    number = row.get("number") or row.get("iid") or 0
+    state = str(row.get("state", "")).upper()
+    return Request(int(number), state, noun)
+
+
+def query(
+    argv: list[str], repo: str | os.PathLike[str] | None = None
+) -> list[dict] | None:
+    """Read a forge response, with repository redirects removed."""
+    import json
+
     options.log.append(tuple(argv))
     if options.verbose:
         import shlex
@@ -127,10 +141,6 @@ def request_for(
         rows = json.loads(proc.stdout or "[]")
     except json.JSONDecodeError:
         return None
-    if not rows:
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         return None
-
-    row = rows[0]
-    number = row.get("number") or row.get("iid") or 0
-    state = str(row.get("state", "")).upper()
-    return Request(int(number), state, noun)
+    return rows

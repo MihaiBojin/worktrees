@@ -35,7 +35,7 @@ def is_ancestor(ref: str, head: str) -> None:
     """Non-zero means 'no', not 'broken'."""
 
 
-@git("merge-base $a $b", ok=(0, 128))
+@git("merge-base $a $b", ok=(0, 1, 128))
 def merge_base(a: str, b: str) -> None:
     """The commit two refs last had in common."""
 
@@ -63,7 +63,13 @@ def squash_merged(
     Replay the branch's tree as a single commit on the merge base and let
     `git cherry` say whether that patch is upstream. A leading '-' means it is.
     """
-    ref = f"refs/heads/{branch}"
+    return squash_matches(f"refs/heads/{branch}", head, repo=repo)
+
+
+def squash_matches(
+    ref: str, head: str, repo: str | os.PathLike[str] | None = None
+) -> bool:
+    """Compare a pinned commit's combined patch with the head branch."""
 
     tree = tree_of(ref, repo=repo)
     if not tree or not tree.out.strip():
@@ -86,6 +92,28 @@ def squash_merged(
     verdict = cherry(head, synth.out.strip(), repo=repo)
     lines = verdict.lines if verdict else []
     return bool(lines) and lines[0].startswith("-")
+
+
+@git("merge-base --all $a $b", ok=(0, 1))
+def merge_bases(a: str, b: str) -> None:
+    """Every best common ancestor; none for unrelated histories."""
+
+
+@git("diff-tree --no-commit-id --no-ext-diff --no-renames -r --name-only -z $a $b --")
+def changed_paths(a: str, b: str) -> None:
+    """Paths whose objects or modes differ between two commits."""
+
+
+def content_matches(
+    tip: str, head: str, repo: str | os.PathLike[str] | None = None
+) -> bool:
+    """Every path the branch changes has its final state on the head branch."""
+    bases = merge_bases(tip, head, repo=repo).lines
+    if len(bases) != 1:
+        return False
+    touched = set(changed_paths(bases[0], tip, repo=repo).out.split("\0")) - {""}
+    different = set(changed_paths(tip, head, repo=repo).out.split("\0")) - {""}
+    return touched.isdisjoint(different)
 
 
 def merged_reason(

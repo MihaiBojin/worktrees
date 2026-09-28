@@ -171,6 +171,39 @@ def _assess(
     from . import repo as R
     from . import verdicts
 
+    head, head_branch, _ = _assessment_head(args)
+
+    only = getattr(args, "branch", "")
+    ignored = getattr(args, "delete_ignored", False)
+    records = R.worktrees()
+    # The forge is asked last and only where git could not tell. It costs a
+    # round trip, and a branch merged as part of a stack is the one case
+    # content cannot answer: its changes reach the head branch across several
+    # squashes, so a stale intermediate and real work look alike to a diff.
+    if ask_forge is None:
+        ask_forge = not getattr(args, "no_forge", False)
+    rows = (
+        judge(only, head, head_branch, ignored, ask_forge=ask_forge)
+        if judge
+        else verdicts.assess(
+            records,
+            only,
+            head,
+            head_branch,
+            ignored,
+            ask_forge=ask_forge,
+            # `gws` and `gwp` report; `gwr` acts, and takes this list as its
+            # candidates, so it asks through `judge` and gets it without.
+            include_main=True,
+        )
+    )
+    return rows, verdicts.stale(records), head, head_branch, records
+
+
+def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
+    """Resolve the shared assessment target and report offline operation."""
+    from . import repo as R
+
     remote = R.remote()
     online = not args.no_fetch
     if online:
@@ -201,31 +234,7 @@ def _assess(
     if remote:
         head_branch = head_branch.removeprefix(remote + "/")
 
-    only = getattr(args, "branch", "")
-    ignored = getattr(args, "delete_ignored", False)
-    records = R.worktrees()
-    # The forge is asked last and only where git could not tell. It costs a
-    # round trip, and a branch merged as part of a stack is the one case
-    # content cannot answer: its changes reach the head branch across several
-    # squashes, so a stale intermediate and real work look alike to a diff.
-    if ask_forge is None:
-        ask_forge = not getattr(args, "no_forge", False)
-    rows = (
-        judge(only, head, head_branch, ignored, ask_forge=ask_forge)
-        if judge
-        else verdicts.assess(
-            records,
-            only,
-            head,
-            head_branch,
-            ignored,
-            ask_forge=ask_forge,
-            # `gws` and `gwp` report; `gwr` acts, and takes this list as its
-            # candidates, so it asks through `judge` and gets it without.
-            include_main=True,
-        )
-    )
-    return rows, verdicts.stale(records), head, head_branch, records
+    return head, head_branch, remote
 
 
 # --------------------------------------------------------------------------
@@ -862,7 +871,7 @@ def run_help(args: argparse.Namespace) -> int:
     print()
 
     rows: list[Row] = [(Cell("COMMAND", DIM), Cell("GW", DIM), Cell("DOES", DIM))]
-    for name, c in _COMMANDS.items():
+    for name, c in command_rows():
         spelled = f"gw {name}"
         if c.aliases:
             spelled += " (" + ", ".join(c.aliases) + ")"
@@ -878,7 +887,7 @@ def run_help(args: argparse.Namespace) -> int:
     print(table(rows))
     print()
 
-    lands = [c.binary for c in _COMMANDS.values() if c.lands]
+    lands = [c.binary for _, c in command_rows() if c.lands]
     print(
         f"{_listed(lands)} change the directory you are "
         "standing in.\nA binary cannot do that, so each needs the shell function "
@@ -888,9 +897,7 @@ def run_help(args: argparse.Namespace) -> int:
     # Which commands take the common flags is the table's answer, not a second
     # list here: a row with no flags takes none, and saying so in prose is how
     # a help text comes to promise a flag the program refuses.
-    bare = [
-        c.binary or f"gw {name}" for name, c in _COMMANDS.items() if c.flags is None
-    ]
+    bare = [c.binary or f"gw {name}" for name, c in command_rows() if c.flags is None]
     scope = f"every command but {_listed(bare)}" if bare else "every command"
     print(
         "gwnb and gwrot start branches rather than worktrees. Both are alpha "
@@ -925,6 +932,52 @@ def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "-y", "--yes", action="store_true", help="do not ask before removing"
     )
+
+
+def _add_branch_status_flags(p: argparse.ArgumentParser) -> None:
+    from .branch_cli import status_flags
+
+    status_flags(p)
+
+
+def _add_branch_delete_flags(p: argparse.ArgumentParser) -> None:
+    from .branch_cli import delete_flags
+
+    delete_flags(p)
+
+
+def _add_branch_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
+    subs = p.add_subparsers(dest="branch_command")
+    for name, command in _BRANCH_COMMANDS.items():
+        child = subs.add_parser(name, help=command.about)
+        if command.flags:
+            command.flags(child)
+
+
+def run_branch_status(args: argparse.Namespace) -> int:
+    from .branch_cli import status
+
+    return status(args)
+
+
+def run_branch_delete(args: argparse.Namespace) -> int:
+    from .branch_cli import delete
+
+    return delete(args)
+
+
+def run_branch(args: argparse.Namespace) -> int:
+    if args.branch_command:
+        return _BRANCH_COMMANDS[args.branch_command].run(args)
+    if args.complete:
+        for name, command in _BRANCH_COMMANDS.items():
+            print(f"{name}\t{command.about}")
+        return 0
+    p = _parser(args.prog, "Assess and delete local branches.")
+    _add_branch_flags(p)
+    p.print_help()
+    return 0
 
 
 class _Command:
@@ -964,7 +1017,28 @@ class _Command:
         self.lands = lands
 
 
+_BRANCH_COMMANDS: dict[str, _Command] = {
+    "status": _Command(
+        run_branch_status,
+        _add_branch_status_flags,
+        "which branches are finished, and why",
+        "gwbs",
+        usage="[NAME ...]",
+    ),
+    "delete": _Command(
+        run_branch_delete,
+        _add_branch_delete_flags,
+        "delete local branches proved finished",
+        "gwbd",
+        usage="[NAME ...]",
+    ),
+}
+
+
 _COMMANDS: dict[str, _Command] = {
+    "branch": _Command(
+        run_branch, _add_branch_flags, "assess and delete local branches"
+    ),
     "status": _Command(
         run_status,
         _add_assess_flags,
@@ -1049,6 +1123,13 @@ _COMMANDS: dict[str, _Command] = {
 }
 
 
+def command_rows() -> list[tuple[str, _Command]]:
+    """Every executable command with its full subcommand path."""
+    return [
+        (name, command) for name, command in _COMMANDS.items() if name != "branch"
+    ] + [(f"branch {name}", command) for name, command in _BRANCH_COMMANDS.items()]
+
+
 def _canonical() -> dict[str, str]:
     """Every name and shorthand, mapped to the command it runs.
 
@@ -1099,6 +1180,20 @@ def gwp(argv: list[str] | None = None) -> int:
     p = _parser("gwp", _PRUNE_HELP)
     _add_prune_flags(p)
     return _dispatch(p, argv, run_prune)
+
+
+def gwbs(argv: list[str] | None = None) -> int:
+    command = _BRANCH_COMMANDS["status"]
+    p = _parser(command.binary, command.about)
+    _add_branch_status_flags(p)
+    return _dispatch(p, argv, command.run)
+
+
+def gwbd(argv: list[str] | None = None) -> int:
+    command = _BRANCH_COMMANDS["delete"]
+    p = _parser(command.binary, command.about)
+    _add_branch_delete_flags(p)
+    return _dispatch(p, argv, command.run)
 
 
 def gwnb(argv: list[str] | None = None) -> int:
@@ -1228,11 +1323,9 @@ def _dispatch(
 ) -> int:
     render.setup()
     raw = sys.argv[1:] if argv is None else argv
-    # Before parsing, so it is refused rather than absorbed. A flag meaning
-    # "do not act" on a command that already asks is a no-op wearing the
-    # clothes of a safety feature, and somebody will one day read it as the
-    # reason a sweep was safe.
-    if "--dry-run" in raw:
+    # Worktree previews use status; branch deletion also has --dry-run.
+    branch_delete = run is run_branch_delete or raw[:2] == ["branch", "delete"]
+    if "--dry-run" in raw and not branch_delete:
         _err("there is no --dry-run: gws reports, and gwp asks before removing")
         return 2
     args = p.parse_args(raw)

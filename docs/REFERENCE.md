@@ -35,14 +35,18 @@ What is here:
 | the fish half | `functions/`, `completions/`, `conf.d/` |
 | the zsh half | `zsh/plugins/worktrees/` |
 
-Eleven console scripts: `gws`, `gwp`, `gwa`, `gwl`, `gwm`, `gwr`, `gwnb`,
-`gwrot`, `gwh`, `gw` and `worktrees`. Four of them ship a shell function of
+Thirteen console scripts: `gws`, `gwp`, `gwbs`, `gwbd`, `gwa`, `gwl`, `gwm`,
+`gwr`, `gwnb`, `gwrot`, `gwh`, `gw`, and `worktrees`. Four ship a shell function of
 the same name, one per shell, because a binary cannot `cd` its caller.
 
 The distribution is `git-worktrees` on PyPI, installed with
 `uv tool install`. The shell half arrives separately, through Fisher for fish
 and Antidote for zsh, because neither plugin manager puts a binary on `$PATH`.
 Python 3.11 or newer, and no runtime dependencies.
+
+The command reference documents [branch status](commands/branch-status.md)
+and [branch delete](commands/branch-delete.md), including their evidence and
+recovery contracts.
 
 ## 2. The contract
 
@@ -95,9 +99,9 @@ Flags and commands.
 | what | why | where |
 | --- | --- | --- |
 | `gws` reports and `gwp` acts, under one function that returns the set | what one prints and the other removes cannot drift | `prune.removable` |
-| There is no `--dry-run`, and passing it is refused before the parser sees it | a flag meaning "do not act" on a command that already asks is a no-op wearing the clothes of a safety feature, and somebody will cite it as the reason a sweep was safe | `cli._dispatch` |
+| `gwbd --dry-run` assesses branches without deleting them; worktree commands use `gws` for assessment | the branch selector and batch deletion share one preview | `branch_cli.delete`, `cli._dispatch` |
 | `gwp` with nothing removable prints the verdict table | the reason each worktree stayed is the answer to the question, and naming another command puts it one round trip away | `cli.run_prune` |
-| One row per command carries its function, flags, description, shorthands and whether it lands you somewhere | `gws`, `gw status`, `gw st` and `gw s` reach one function because the row says so, and `gwh` prints the row rather than a second list | `cli._COMMANDS`, and `_canonical()` raises at import when two rows claim one name |
+| One row per command carries its function, flags, description, aliases, and directory behaviour | help and dispatch read the same rows | `cli._COMMANDS`, `cli._BRANCH_COMMANDS`, and `cli.command_rows()` |
 | The head-branch ladder tries `refs/remotes/<remote>/<b>` before `refs/heads/<b>` and returns a full ref | returning a bare name is what lets a tag named `origin/main` answer for the head branch | `repo.full_ref`, `repo.head_ref` |
 | `gwa` and `gwnb` fetch the whole remote with `--prune` rather than the base branch alone | base-only fetching forks a second divergent branch where the remote already had one, and the network cost is the round trip rather than the ref count | `repo.fetch` |
 | Branches this tool starts do not track the head branch | a branch off `refs/remotes/<remote>/main` that tracked it would take it as its upstream, and `git push` would target the head branch | `--no-track` on `worktree_add` and `switch_create` |

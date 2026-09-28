@@ -231,7 +231,14 @@ RULES: tuple[Rule, ...] = (
         lambda head, rest: (
             head == "update-ref"
             and _has(rest, "-d", "--stdin")
-            and not (len(rest) == 3 and rest[0] == "-d" and _full_sha(rest[2]))
+            and not (
+                (len(rest) == 3 and rest[0] == "-d" and _full_sha(rest[2]))
+                or (
+                    len(rest) == 4
+                    and rest[:2] == ["--no-deref", "-d"]
+                    and _full_sha(rest[3])
+                )
+            )
         ),
         phrase="`git update-ref` deleting a ref without naming the full sha it "
         "must still hold",

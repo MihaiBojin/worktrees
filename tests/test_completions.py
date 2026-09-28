@@ -8,22 +8,27 @@ diffed against `--help` in both directions.
 
 from __future__ import annotations
 
+import os
+import pty
 import re
+import select
+import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 from conftest import PATH, env_for
 
-from worktrees.cli import _CANONICAL, _COMMANDS
+from worktrees.cli import _CANONICAL, command_rows
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = str(ROOT / "src")
 FISH = ROOT / "completions"
 ZSH = ROOT / "zsh" / "plugins" / "worktrees" / "completions"
 
-BINARIES = sorted(c.binary for c in _COMMANDS.values() if c.binary)
+BINARIES = sorted(c.binary for _, c in command_rows() if c.binary)
 
 
 def _help(entry: str) -> str:
@@ -219,3 +224,55 @@ def test_a_path_holding_a_tab_is_still_offered(world) -> None:
     _at(world, world.root / "ta\tbbed", "tabbed")
     rows = _complete("gwl", world)
     assert "tabbed" in rows
+
+
+@pytest.mark.skipif(not shutil.which("zsh"), reason="zsh is not installed")
+@pytest.mark.parametrize("prefix", ["gw branch delete --dry", "gwbd --dry"])
+def test_zsh_completes_branch_flags_without_errors(world, prefix) -> None:
+    bin_dir = world.root / "bin"
+    bin_dir.mkdir()
+    for entry in ("gw", "gwbs", "gwbd"):
+        wrapper = bin_dir / entry
+        wrapper.write_text(
+            f"#!{sys.executable}\nfrom worktrees.cli import {entry}\n"
+            f"raise SystemExit({entry}())\n"
+        )
+        wrapper.chmod(0o755)
+    env = env_for(world)
+    env.update(PATH=f"{bin_dir}:{env['PATH']}", TERM="xterm", ZDOTDIR=str(world.root))
+    parent, child = pty.openpty()
+    process = subprocess.Popen(
+        ["zsh", "-f"],
+        stdin=child,
+        stdout=child,
+        stderr=child,
+        cwd=world.repo,
+        env=env,
+    )
+    os.close(child)
+
+    def read_until(needle: bytes) -> bytes:
+        output = bytearray()
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if select.select([parent], [], [], 0.1)[0]:
+                output.extend(os.read(parent, 65536))
+                if needle in output:
+                    return bytes(output)
+        pytest.fail(f"zsh did not print {needle!r}: {bytes(output)!r}")
+
+    try:
+        setup = (
+            f"fpath=({ZSH} $fpath); autoload -Uz compinit; "
+            "compinit -D; PS1='REA''DY> '\n"
+        )
+        os.write(parent, setup.encode())
+        read_until(b"READY> ")
+        os.write(parent, (prefix + "\t").encode())
+        output = read_until(b"--dry-run")
+        assert b"bad option" not in output, output
+        assert b"command not found" not in output, output
+    finally:
+        process.kill()
+        process.wait(timeout=5)
+        os.close(parent)

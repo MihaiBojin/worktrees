@@ -38,7 +38,7 @@ function too, so this is the agent path as much as the human one.
 
 | | changes directory | ships as |
 | --- | --- | --- |
-| `gws`, `gwp`, `gwnb`, `gwrot`, `gwh` | no | a console script, and nothing else |
+| `gws`, `gwp`, `gwbs`, `gwbd`, `gwnb`, `gwrot`, `gwh` | no | a console script, and nothing else |
 | a command that lands you somewhere | yes | a console script, plus a function of the same name |
 
 A binary cannot `cd` its caller. That is the only thing shell code is here for,
@@ -170,7 +170,9 @@ agent uses those.
 
 ## One row per command, under every name it answers to
 
-`_COMMANDS` in `cli.py` is the table. A row carries the function, the flags,
+`_COMMANDS` in `cli.py` holds the top-level commands; `_BRANCH_COMMANDS`
+holds `branch status` and `branch delete`. `command_rows()` lists the
+executable commands for help and completion checks. A row carries the function, the flags,
 the one-line description, the console script, the argument shape, the
 shorthands and whether the command changes the caller's directory. `gws`,
 `gw status`, `gw st` and `gw s` reach the same function because that row says
@@ -288,6 +290,18 @@ moment `update-ref` was added, and nothing failed.
 one: a test reads the verbose log and asserts it.
 
 ## Content cannot settle a stacked branch
+
+Branch assessment is documented in `docs/commands/branch-status.md`, and
+deletion in `docs/commands/branch-delete.md`. `gwbs` assesses local refs,
+including branches without worktrees. `gwbd` rechecks its verdicts after
+confirmation and deletes refs with the full expected SHA and `--no-deref`.
+
+The branch content check compares every path changed from the merge base to
+the tip with the current head tree, including modes and deletions. It can
+prove a re-imported change even when the head branch has unrelated edits.
+Forge evidence must match the source tip, source repository, and target
+branch, with a merge commit contained in the head branch. A closed unmerged
+request is never proof. These branch checks do not change worktree verdicts.
 
 `merged_reason` answers by content: an ancestor, or a patch already upstream.
 That works for a branch squashed whole into one commit and fails for one
