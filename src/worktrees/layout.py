@@ -30,6 +30,20 @@ def destination(name: str, main: str) -> Path:
     return worktrees_root(main) / name / Path(main).name
 
 
+def name_of(path: str) -> str:
+    """What `destination` was given for a worktree at `path`.
+
+    The directories between `.worktrees` and the repository name, so
+    `.worktrees/feat/oauth/<repo>` is `feat/oauth`. A checkout anywhere else,
+    the main one included, is its directory's name.
+    """
+    parts = Path(path).parts
+    if ".worktrees" in parts[:-2]:
+        i = len(parts) - 1 - parts[::-1].index(".worktrees")
+        return "/".join(parts[i + 1 : -1])
+    return Path(path).name
+
+
 def neighbours(main: str, ours: Iterable[str]) -> int:
     """How many worktrees under the shared root belong to somebody else.
 

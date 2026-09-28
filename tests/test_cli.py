@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import pty
+import re
 import select
 import signal
 import subprocess
@@ -875,8 +876,9 @@ def test_list_shows_the_worktree_you_are_standing_in_unnumbered(world) -> None:
     wt = world.worktree("cleanup")
     code, out = run_on_a_terminal_at(world, wt, "gwl", answer="\x1b")
     assert code == 0, out
-    assert "  *  cleanup" in out
-    assert "> 1  main" in out
+    assert re.search(r"^\s+#\s+WORKTREE\s+BRANCH\s+PATH$", out, re.M), out
+    assert re.search(r"^  \*\s+cleanup\s+cleanup\s", out, re.M), out
+    assert re.search(r"^> 1\s+repo\s+main\s", out, re.M), out
     assert "which? [up/down and enter, 1-1, or esc to cancel]" in out
 
 
@@ -891,7 +893,7 @@ def test_remove_starts_on_the_worktree_you_stand_in_and_lists_main_unnumbered(
     assert code == 0, out
     assert "  1  one" in out
     assert "> 2  two" in out
-    assert any(line.startswith("     main ") for line in out.splitlines()), out
+    assert re.search(r"^ {5}repo\s+main\s", out, re.M), out
     assert "nothing picked" in out
 
 
@@ -944,8 +946,8 @@ def test_list_marks_main_when_you_stand_in_it(world) -> None:
     world.worktree("one")
     code, out = run_on_a_terminal(world, "gwl", answer="\x1b")
     assert code == 0, out
-    assert "> 1  main *" in out
-    assert "  2  one   " in out
+    assert re.search(r"^> 1\s+repo\s+main \*\s", out, re.M), out
+    assert re.search(r"^  2\s+one\s+one\s", out, re.M), out
 
 
 def test_remove_lists_main_unnumbered_under_a_query_too(world) -> None:
@@ -955,5 +957,5 @@ def test_remove_lists_main_unnumbered_under_a_query_too(world) -> None:
         world, "gwr", "--no-fetch", "--no-forge", "o", answer="\x1b"
     )
     assert code == 0, out
-    assert any(line.startswith("  *  main ") for line in out.splitlines()), out
+    assert re.search(r"^  \*\s+repo\s+main\s", out, re.M), out
     assert "nothing picked" in out

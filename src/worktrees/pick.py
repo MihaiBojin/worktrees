@@ -15,7 +15,7 @@ import termios
 import tty
 from collections.abc import Iterator, Sequence
 
-from . import render
+from . import layout, render
 from .git import Refused
 from .repo import Worktree
 
@@ -147,29 +147,37 @@ def _select(
     place. Anywhere else, a dumb terminal or a stderr that is not one, the
     list is printed once and each move prints the row it lands on.
     """
-    names = {id(wt): wt.label + (" *" if wt is here else "") for wt in candidates}
-    width = max(len(name) for name in [*names.values(), *(w.label for _, w in shown)])
     prompt = f"which? [up/down and enter, 1-{len(candidates)}, or esc to cancel] "
     redraw = sys.stderr.isatty() and os.environ.get("TERM") != "dumb"
 
-    def row(i: int) -> str:
-        wt = candidates[i]
-        mark = f"{'>' if i == at else ' '}{i + 1:>2}"
-        style = render.REVERSE if i == at else render.BOLD
-        return (
-            f"{render.err(mark, render.BOLD if i == at else render.DIM)}  "
-            f"{render.err(names[id(wt)].ljust(width), style)}  "
-            f"{render.err(wt.path, render.DIM)}"
-        )
+    def cells(mark: str, wt: Worktree) -> list[str]:
+        branch = wt.label + (" *" if wt is here else "")
+        return [mark, layout.name_of(wt.path), branch, wt.path]
 
-    # Padded before it is painted, or the escape codes count as width and
-    # every column under them sits crooked.
-    above = [
-        f"{render.err(f'{mark:>3}', render.DIM)}  "
-        f"{render.err(wt.label.ljust(width), render.DIM)}  "
-        f"{render.err(wt.path, render.DIM)}"
-        for mark, wt in shown
+    header = [f"{'#':>3}", "WORKTREE", "BRANCH", "PATH"]
+    fixed = [header, *(cells(f"{m:>3}", wt) for m, wt in shown)]
+    widths = [
+        max(len(c[i]) for c in [*fixed, *(cells("", w) for w in candidates)])
+        for i in range(3)
     ]
+
+    def line(texts: list[str], codes: list[str]) -> str:
+        # Padded before it is painted, or the escape codes count as width
+        # and every column under them sits crooked.
+        padded = [t.ljust(w) for t, w in zip(texts, widths, strict=False)]
+        padded.append(texts[-1])
+        return "  ".join(render.err(t, c) for t, c in zip(padded, codes, strict=True))
+
+    def row(i: int) -> str:
+        mark = f"{'>' if i == at else ' '}{i + 1:>2}"
+        if i == at:
+            codes = [render.BOLD, render.REVERSE, render.REVERSE, render.DIM]
+        else:
+            codes = [render.DIM, render.BOLD, "", render.DIM]
+        return line(cells(mark, candidates[i]), codes)
+
+    above = [line(header, [render.DIM] * 4)]
+    above += [line(texts, [render.DIM] * 4) for texts in fixed[1:]]
     clear = "\033[2K" if redraw else ""
     lines = [*above, *(row(i) for i in range(len(candidates)))]
     sys.stderr.write("".join(f"{clear}{line}\n" for line in lines) + prompt)

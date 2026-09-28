@@ -237,6 +237,12 @@ def test_the_pick_moves_with_the_arrows_and_cancels_on_esc() -> None:
     assert pick.choose(rows, keys=iter([pick.PICK]), at=rows[1]) == rows[1]
 
 
+def test_a_worktree_is_named_by_its_directory_under_the_root() -> None:
+    assert layout.name_of("/g/.worktrees/fix-parser/repo") == "fix-parser"
+    assert layout.name_of("/g/.worktrees/feat/oauth/repo") == "feat/oauth"
+    assert layout.name_of("/g/repo") == "repo"
+
+
 def test_an_exact_name_or_path_is_that_worktree_alone() -> None:
     """`gwr one` with `one-more` beside it is not a question."""
     rows = [

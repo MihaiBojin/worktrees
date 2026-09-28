@@ -124,8 +124,9 @@ instrument at that size, and a list moved through with the arrow keys reads
 faster:
 
 ```
-> 1  fix-parser     /home/you/git/.worktrees/fix-parser/repo
-  2  add-tests      /home/you/git/.worktrees/add-tests/repo
+  #  WORKTREE    BRANCH      PATH
+> 1  fix-parser  fix-parser  /home/you/git/.worktrees/fix-parser/repo
+  2  add-tests   add-tests   /home/you/git/.worktrees/add-tests/repo
 which? [up/down and enter, 1-2, or esc to cancel]
 ```
 

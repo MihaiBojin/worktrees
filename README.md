@@ -330,15 +330,18 @@ asks, however many there are:
 
 ```console
 $ gwl                # standing in never-pushed
-  *  never-pushed    /home/you/git/.worktrees/never-pushed/repo
-> 1  main            /home/you/git/repo
-  2  dirty-work      /home/you/git/.worktrees/dirty-work/repo
-  3  holds-secrets   /home/you/git/.worktrees/holds-secrets/repo
+  #  WORKTREE       BRANCH         PATH
+  *  never-pushed   never-pushed   /home/you/git/.worktrees/never-pushed/repo
+> 1  repo           main           /home/you/git/repo
+  2  dirty-work     dirty-work     /home/you/git/.worktrees/dirty-work/repo
+  3  holds-secrets  holds-secrets  /home/you/git/.worktrees/holds-secrets/repo
 which? [up/down and enter, 1-3, or esc to cancel]
 ```
 
-Up and down move the highlight, enter takes it, a digit takes that row
-outright, and esc cancels.
+WORKTREE is the directory under `.worktrees`, or the main checkout's own
+directory name. It parts from BRANCH when somebody switches branch inside a
+worktree. Up and down move the highlight, enter takes it, a digit takes that
+row outright, and esc cancels.
 
 A linked worktree you are standing in is marked `*` and carries no number.
 It is where you are rather than somewhere to go, and a list without it shows
