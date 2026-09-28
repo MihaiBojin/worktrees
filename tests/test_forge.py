@@ -402,7 +402,7 @@ def test_the_rest_of_the_environment_reaches_the_forge(tmp_path, monkeypatch) ->
 
 
 # --------------------------------------------------------------------------
-# a fetch under 30 minutes old is used as it stands
+# a fetch under 10 minutes old is used as it stands
 # --------------------------------------------------------------------------
 
 
@@ -448,12 +448,12 @@ def test_force_refresh_fetches_whatever_the_age(world) -> None:
     assert "+ git fetch --prune origin" in p.stderr
 
 
-def test_a_fetch_over_30_minutes_old_is_repeated(world) -> None:
+def test_a_fetch_over_10_minutes_old_is_repeated(world) -> None:
     _with_origin(world)
     _gws_args(world, "--no-forge")
     head = Path(world.git("rev-parse", "--git-path", "FETCH_HEAD").strip())
     head = head if head.is_absolute() else world.repo / head
-    old = time.time() - 31 * 60
+    old = time.time() - 11 * 60
     os.utime(head, (old, old))
     p = _gws_args(world, "--no-forge", "-v")
     assert "+ git fetch --prune origin" in p.stderr
@@ -575,18 +575,18 @@ def test_a_new_commit_asks_the_forge_again(world, tmp_path, monkeypatch) -> None
     assert _asked(calls) == 2
 
 
-def test_an_idle_open_answer_lasts_30_minutes(world, tmp_path, monkeypatch) -> None:
+def test_an_idle_open_answer_lasts_10_minutes(world, tmp_path, monkeypatch) -> None:
     row = {"number": 3, "state": "OPEN", "mergeable": "CONFLICTING"}
     bin_dir, calls = _counting_gh(tmp_path, [row])
     monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
     forge.request_for("b", sha="a" * 40)
-    later = time.time() + 31 * 60
+    later = time.time() + 11 * 60
     monkeypatch.setattr(forge.time, "time", lambda: later)
     forge.request_for("b", sha="a" * 40)
     assert _asked(calls) == 2
 
 
-def test_no_request_on_a_local_branch_lasts_30_minutes(
+def test_no_request_on_a_local_branch_lasts_10_minutes(
     world, tmp_path, monkeypatch
 ) -> None:
     bin_dir, calls = _counting_gh(tmp_path, [])
@@ -594,10 +594,10 @@ def test_no_request_on_a_local_branch_lasts_30_minutes(
     world.git("branch", "local-only", "main")
     assert forge.request_for("local-only", sha="a" * 40) is None
     now = time.time()
-    monkeypatch.setattr(forge.time, "time", lambda: now + 29 * 60)
+    monkeypatch.setattr(forge.time, "time", lambda: now + 9 * 60)
     assert forge.request_for("local-only", sha="a" * 40) is None
     assert _asked(calls) == 1
-    monkeypatch.setattr(forge.time, "time", lambda: now + 31 * 60)
+    monkeypatch.setattr(forge.time, "time", lambda: now + 11 * 60)
     forge.request_for("local-only", sha="a" * 40)
     assert _asked(calls) == 2
 

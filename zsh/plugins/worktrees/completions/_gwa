@@ -4,7 +4,7 @@
 
 _arguments -s \
     '--no-fetch[branch from what is already here]' \
-    '--force-refresh[fetch even when the last fetch is under 30 minutes old]' \
+    '--force-refresh[fetch even when the last fetch is under 10 minutes old]' \
     '--json[the result as data]' \
     '(-q --quiet)'{-q,--quiet}'[the path alone]' \
     '(-v --verbose)'{-v,--verbose}'[print every git command]' \

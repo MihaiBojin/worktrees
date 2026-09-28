@@ -3,7 +3,7 @@
 complete -c gwa -f
 
 complete -c gwa -l no-fetch -d 'branch from what is already here'
-complete -c gwa -l force-refresh -d 'fetch even when the last fetch is under 30 minutes old'
+complete -c gwa -l force-refresh -d 'fetch even when the last fetch is under 10 minutes old'
 
 complete -c gwa -l json -d 'the result as data'
 complete -c gwa -s q -l quiet -d 'the path alone'

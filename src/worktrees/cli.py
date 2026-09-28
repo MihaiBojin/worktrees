@@ -164,7 +164,7 @@ class _Stop(Exception):
 
 
 # A fetch younger than this is used as it stands; --force-refresh fetches.
-_FRESH = 30 * 60
+_FRESH = 10 * 60
 
 
 def _should_fetch(args: argparse.Namespace) -> bool:
@@ -442,7 +442,7 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--force-refresh",
         action="store_true",
-        help="fetch even when the last fetch is under 30 minutes old",
+        help="fetch even when the last fetch is under 10 minutes old",
     )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
@@ -507,7 +507,7 @@ def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--force-refresh",
         action="store_true",
-        help="fetch even when the last fetch is under 30 minutes old",
+        help="fetch even when the last fetch is under 10 minutes old",
     )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
@@ -596,7 +596,7 @@ def _add_add_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--force-refresh",
         action="store_true",
-        help="fetch even when the last fetch is under 30 minutes old",
+        help="fetch even when the last fetch is under 10 minutes old",
     )
     _add_cd_flags(p)
 

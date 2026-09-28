@@ -238,26 +238,25 @@ since the verbose log writes to the line it redraws. Anything else printed on
 stderr while it spins goes through `progress.line`, which clears the spinner
 first.
 
-## A fetch under 30 minutes old is used as it stands
+## A recent fetch, and a forge answer that cannot change, are reused
+
+The README's "What is reused, and for how long" table lists every case and
+its lifetime. It is the one copy: the constants are `cli._FRESH`,
+`forge._IDLE_FOR` and `forge._PUSHED_FOR`, and a change to one changes that
+table in the same commit.
 
 The fetch is most of what an assessment costs: about 1.1 s of a 1.9 s `gws`
-here, 750 ms of it the SSH handshake. So every command that fetches skips it when
-any worktree's `FETCH_HEAD` is younger than 30 minutes and says so on
-stderr; `gws`, `gwp` and `gwr` still ask the forge. `_should_fetch` decides
-for all six. `--force-refresh` fetches whatever the age. FETCH_HEAD is
-written per worktree, so `repo.fetched_at` reads every copy.
+here, 750 ms of it the SSH handshake. `_should_fetch` decides for all six
+commands that fetch. FETCH_HEAD is written per worktree, so
+`repo.fetched_at` reads every copy.
 
-The forge's answers are kept too, in `git-worktrees-forge.json` in the common
-git directory, under the branch and its sha. A merged or closed request is
-kept until `--force-refresh`. An open one is kept for 30 minutes, and only
-when it cannot merge until its author pushes: a draft, a conflict, or on
-GitLab a needed rebase. Auto-merge, a running check, or a forge calling it
-mergeable, or unable to say, means it is asked every time. `forge._idle`
-holds that rule. A push changes the sha, so a kept answer never outlives
-the commit it was given for. No request at all is kept for 30 minutes on a
-branch with no upstream, and for one minute on a branch with one: a push is
-how a request gets opened, and from here it is usually the next step. A
-forge that fails to answer is never kept.
+An open request is reused only when it cannot merge until its author pushes;
+`forge._idle` holds that rule. Anything that could merge it on its own, or
+soon, means asking every time. No request on a pushed branch lasts a minute
+because a push is how a request gets opened, and from here it is usually
+the next step. A forge that fails to answer is never kept: `_ask` returns a
+`NONE` request for an empty answer and None for no answer, and only the
+first is cached.
 
 The per-worktree checks run on eight threads. Each is independent, and the
 time goes waiting on git and on `gh`, one round trip per branch git cannot

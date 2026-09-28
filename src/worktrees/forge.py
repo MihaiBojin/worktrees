@@ -44,11 +44,11 @@ class Request:
 
 # How long an answer is taken as read, in seconds. A merged or closed request
 # stays that way, so its answer does not expire. An open one that nothing is
-# about to merge, or no request on a branch that is only here, lasts half an
-# hour. No request on a pushed branch lasts a minute: a push is how a request
+# about to merge, or no request on a branch that is only here, lasts ten
+# minutes. No request on a pushed branch lasts a minute: a push is how a request
 # gets opened, and one opened from here is usually the next thing that
 # happens.
-_IDLE_FOR = 30 * 60
+_IDLE_FOR = 10 * 60
 _PUSHED_FOR = 60
 # What `_ask` returns when the forge answered and there is no request, as
 # against None for every way of not getting an answer at all.

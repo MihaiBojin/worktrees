@@ -468,15 +468,30 @@ print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
 
 `gw <command> --help` prints one command's own list.
 
-Every command that fetches does so at most once every 30 minutes. A fetch younger
-than that, from any worktree of the repository, is used as it stands, and the
-command says how old it is. What the forge said about a merged or closed
-request is kept for that commit; an open one that cannot merge until its
-author pushes, such as a draft or a conflict, is kept for 30 minutes. No
-request at all is kept for 30 minutes on a branch that was never pushed and
-for one minute on one that was.
-`--force-refresh` fetches and asks again. While they fetch
-and judge, a spinner on stderr names the branch and the check in progress.
+While `gws`, `gwp` and `gwr` fetch and judge, a spinner on stderr names the
+branch and the check in progress.
+
+### What is reused, and for how long
+
+A fetch and a question to the forge are most of what a run costs, so an answer
+that is still true is reused. `--force-refresh` fetches and asks again whatever
+is kept, and `--no-fetch` never fetches.
+
+| what | when | reused for |
+| --- | --- | --- |
+| a fetch, by `gws`, `gwp`, `gwr`, `gwa`, `gwnb`, `gwrot` | from any worktree of the repository | 10 minutes; the command says how old it is |
+| a request, merged or closed | on the commit it was asked about | until `--force-refresh` |
+| a request, open | a draft, a conflict, or on GitLab a needed rebase, with no auto-merge and no check running | 10 minutes |
+| a request, open | auto-merge or merge-when-pipeline-succeeds set | never |
+| a request, open | a check still running or pending | never |
+| a request, open | the forge calls it mergeable, or cannot say | never |
+| no request | the branch has no upstream | 10 minutes |
+| no request | the branch has an upstream | 1 minute |
+| no answer | `gh`/`glab` missing, not signed in, failing or timing out | never |
+
+Forge answers live in `git-worktrees-forge.json` in the repository's common git
+directory, filed under the branch and its commit. A new commit on the branch is
+a new question, so nothing kept outlives the commit it was given for.
 
 A remote that cannot be reached is not fatal anywhere. The fetch fails, the
 command says so on stderr, and it answers from the refs already here, which is
