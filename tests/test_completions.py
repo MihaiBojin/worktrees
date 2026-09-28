@@ -262,9 +262,11 @@ def test_zsh_completes_branch_flags_without_errors(world, prefix) -> None:
         pytest.fail(f"zsh did not print {needle!r}: {bytes(output)!r}")
 
     try:
+        # Trust the test's completion sources even when CI directory
+        # permissions would make compinit ask for confirmation.
         setup = (
             f"fpath=({ZSH} $fpath); autoload -Uz compinit; "
-            "compinit -D; PS1='REA''DY> '\n"
+            "compinit -D -u; PS1='REA''DY> '\n"
         )
         os.write(parent, setup.encode())
         read_until(b"READY> ")
