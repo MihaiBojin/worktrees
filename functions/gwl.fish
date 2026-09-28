@@ -9,9 +9,9 @@ function gwl --wraps gwl --description 'cd to where gwl lands you'
     set -l code $pipestatus[1]
     test $code -eq 0; or return $code
     test -n "$dest"; or return 0
-    # A directory or nothing. --json and --list print what was asked for on
-    # the same stream a destination arrives on, and the shim cannot tell one
-    # from the other by looking; it can ask whether it is somewhere to go.
-    test -d "$dest"; or return 0
+    # A directory is somewhere to go, and anything else is what --json or
+    # --list was asked for, arriving on the same stream. The shim cannot tell
+    # them apart by looking, so it asks, and prints what is not a directory.
+    test -d "$dest"; or begin; printf '%s\n' $dest; return 0; end
     cd -- $dest
 end

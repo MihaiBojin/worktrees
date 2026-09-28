@@ -29,11 +29,13 @@ prompt and from a script unless the function is a pure adapter.
 
 The rule: **a function exists only for a command that must change the caller's
 directory, it carries the same name as the binary, and its body does nothing but
-call `command <name>` and `cd` to what that prints, when that is a directory.**
+call `command <name>` and `cd` to what that prints, when that is a directory,
+and print it otherwise.**
 
 The last clause is not a hedge. `--json` and `--list` print what was asked for
-on the same stream a destination arrives on, and a shim that cannot tell them
-apart tries to `cd` into a JSON object. `fish -c 'gwl --json'` reaches the
+on the same stream a destination arrives on. A shim that cannot tell them
+apart tries to `cd` into a JSON object, and one that only refuses to prints
+nothing at all. `fish -c 'gwl --json'` reaches the
 function too, so this is the agent path as much as the human one.
 
 | | changes directory | ships as |
@@ -60,6 +62,7 @@ function gwa --wraps gwa
     set -l code $pipestatus[1]
     test $code -eq 0; or return $code
     test -n "$dest"; or return 0
+    test -d "$dest"; or begin; printf '%s\n' $dest; return 0; end
     cd -- $dest
 end
 ```
