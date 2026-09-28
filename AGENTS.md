@@ -66,6 +66,12 @@ end
 
 `command` is what stops the function calling itself, in all three shells.
 
+One other kind of function exists: a shortcut, a banged name that calls a shim
+with its flags fixed and does nothing else. `gwr!` is `gwr --delete-ignored`.
+It calls the `gwr` function rather than `command gwr`, so the caller still
+lands where the binary says, and it has no console script of its own.
+`SHORTCUTS` in `tests/test_shims.py` lists them and holds each to one line.
+
 ## Two commands are alpha
 
 `gwnb` and `gwrot` start branches, not worktrees. `origin new-branch` and
