@@ -83,6 +83,7 @@ def choose(
     outright: bool = True,
     shown: Sequence[tuple[str, Worktree]] = (),
     at: Worktree | None = None,
+    here: Worktree | None = None,
 ) -> Worktree | None:
     """Ask which one, and None means cancelled.
 
@@ -99,7 +100,8 @@ def choose(
     and the highlight never lands on them: the worktree `gwl` stands in, the
     main checkout `gwr` cannot remove. A list that leaves them out shows
     fewer rows than `git worktree list`, which reads as though something went
-    missing. `at` is the candidate highlighted first.
+    missing. `at` is the candidate highlighted first, and `here` is one that
+    can be picked and is also where you stand, marked `*` after its name.
 
     A run whose stdin is not a terminal is refused rather than left to block:
     an agent or a pipe reaching a prompt would hang, and --json answers the
@@ -111,7 +113,7 @@ def choose(
         return candidates[0]
     first = candidates.index(at) if at in candidates else 0
     if keys is not None:
-        return _select(candidates, keys, shown, first)
+        return _select(candidates, keys, shown, first, here)
 
     if not sys.stdin.isatty():
         count = len(candidates)
@@ -127,7 +129,7 @@ def choose(
     # TCSAFLUSH throws away whatever was typed before the list appeared.
     tty.setcbreak(fd, termios.TCSANOW)
     try:
-        return _select(candidates, _keys(fd), shown, first)
+        return _select(candidates, _keys(fd), shown, first, here)
     finally:
         termios.tcsetattr(fd, termios.TCSANOW, saved)
 
@@ -137,6 +139,7 @@ def _select(
     keys: Iterator[str],
     shown: Sequence[tuple[str, Worktree]],
     at: int,
+    here: Worktree | None,
 ) -> Worktree | None:
     """Draw the list on stderr, follow the keys, and return the pick.
 
@@ -144,7 +147,8 @@ def _select(
     place. Anywhere else, a dumb terminal or a stderr that is not one, the
     list is printed once and each move prints the row it lands on.
     """
-    width = max(len(wt.label) for wt in [*candidates, *(w for _, w in shown)])
+    names = {id(wt): wt.label + (" *" if wt is here else "") for wt in candidates}
+    width = max(len(name) for name in [*names.values(), *(w.label for _, w in shown)])
     prompt = f"which? [up/down and enter, 1-{len(candidates)}, or esc to cancel] "
     redraw = sys.stderr.isatty() and os.environ.get("TERM") != "dumb"
 
@@ -154,7 +158,7 @@ def _select(
         style = render.REVERSE if i == at else render.BOLD
         return (
             f"{render.err(mark, render.BOLD if i == at else render.DIM)}  "
-            f"{render.err(wt.label.ljust(width), style)}  "
+            f"{render.err(names[id(wt)].ljust(width), style)}  "
             f"{render.err(wt.path, render.DIM)}"
         )
 

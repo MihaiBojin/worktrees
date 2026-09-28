@@ -715,6 +715,7 @@ def run_list(args: argparse.Namespace) -> int:
         offered,
         outright=bool(args.query),
         shown=[("*", w) for w in found if w not in offered],
+        here=next((w for w in offered if _same(w.path, here)), None),
     )
     if chosen is None:
         _err("nothing picked")
@@ -838,9 +839,14 @@ def run_remove(args: argparse.Namespace) -> int:
             f"{render.err(chosen.label, BOLD)} {state}: "
             f"{render.err(chosen.why, YELLOW)}"
         )
-        if not chosen.ignored:
+        if chosen.ignored:
+            return 1
+        if args.yes or not sys.stdin.isatty():
             _err("pass --force to remove the worktree anyway; the branch is kept")
-        return 1
+            return 1
+        # Somebody at a terminal is asked instead, the way --force would have
+        # answered: the checkout goes and the branch stays.
+        _err("removing the worktree keeps the branch")
 
     prune.plan([chosen], _err)
     if not args.yes and not prune.confirm(1):

@@ -178,7 +178,8 @@ Two more about what is in the list at all:
   out of the list entirely is worse: the list then shows fewer rows than
   `git worktree list` does, and reads as though something went missing
   rather than as where you already are. The main checkout is offered even
-  from inside it, since from a subdirectory it is the way back to the top.
+  from inside it, with a `*` after its name, since from a subdirectory it is
+  the way back to the top.
 - In `gwr`, the main checkout is shown dimmed and unnumbered, because `git
   worktree remove` refuses it whatever flag it is given, and the highlight
   starts on the worktree you are standing in. `gws` and `gwp` keep the main

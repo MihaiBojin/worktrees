@@ -343,8 +343,8 @@ outright, and esc cancels.
 A linked worktree you are standing in is marked `*` and carries no number.
 It is where you are rather than somewhere to go, and a list without it shows
 three rows where `git worktree list` shows four. The main checkout is always
-numbered, even when you are inside it: from a subdirectory, picking it takes
-you back to the top.
+numbered, even when you are inside it, and carries a `*` after its name
+then: from a subdirectory, picking it takes you back to the top.
 
 Matching is substring first and then subsequence, so `tst` finds `add-tests`,
 and a substring hit always outranks a loose one. Without a terminal `gwl`
@@ -355,9 +355,10 @@ remove it, and starts the highlight on the worktree you are standing in. A
 name or path that is exactly one worktree's, as `gwl --list` and `gwl` print
 them, takes that one without asking which.
 
-`gwr` refuses a branch that is not finished and says why, the same verdict
-`gws` prints. `--force` removes the checkout and keeps the branch: the
-worktree was in the way, the work was not.
+`gwr` says why a branch is not finished, the same verdict `gws` prints. At a
+terminal it then asks whether to remove the checkout anyway, and keeps the
+branch: the worktree was in the way, the work was not. `--force` is the same
+answer without the question, and `--yes` on its own refuses.
 
 A finished branch whose worktree holds ignored files is refused too, and named
 as finished, because it is:

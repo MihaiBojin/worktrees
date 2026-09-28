@@ -919,6 +919,35 @@ def test_remove_asks_before_deleting_ignored_files_on_a_terminal(world) -> None:
     assert not wt.exists()
 
 
+def test_remove_asks_before_removing_an_unfinished_worktree_and_keeps_the_branch(
+    world,
+) -> None:
+    wt = world.worktree("busy")
+    world.commit("b.txt", "b\n", at=wt)
+    code, out = run_on_a_terminal(
+        world, "gwr", "busy", "--no-fetch", "--no-forge", answer="n\n"
+    )
+    assert code == 0, out
+    assert "is not finished" in out
+    assert "removing the worktree keeps the branch" in out
+    assert wt.exists()
+
+    code, out = run_on_a_terminal(
+        world, "gwr", "busy", "--no-fetch", "--no-forge", answer="y\n"
+    )
+    assert code == 0, out
+    assert not wt.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/busy")
+
+
+def test_list_marks_main_when_you_stand_in_it(world) -> None:
+    world.worktree("one")
+    code, out = run_on_a_terminal(world, "gwl", answer="\x1b")
+    assert code == 0, out
+    assert "> 1  main *" in out
+    assert "  2  one   " in out
+
+
 def test_remove_lists_main_unnumbered_under_a_query_too(world) -> None:
     world.worktree("one")
     world.worktree("two")
