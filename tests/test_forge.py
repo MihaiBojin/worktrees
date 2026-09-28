@@ -440,6 +440,16 @@ def test_a_recent_fetch_is_not_repeated(world) -> None:
     assert "+ git fetch" not in second.stderr
 
 
+def test_a_reused_fetch_says_so_once(world) -> None:
+    """Not also the --no-fetch warning, for a flag nobody passed."""
+    _with_origin(world)
+    _gws_args(world, "--no-forge")
+    p = _gws_args(world, "--no-forge")
+    assert p.returncode == 0, p.stderr
+    assert "fetched 0 min ago; using those refs" in p.stderr
+    assert "--no-fetch" not in p.stderr
+
+
 def test_force_refresh_fetches_whatever_the_age(world) -> None:
     _with_origin(world)
     _gws_args(world, "--no-forge")

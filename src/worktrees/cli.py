@@ -266,7 +266,8 @@ def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
                     f"{remote} could not be fetched; judging from the refs "
                     "already here, and not asking the forge"
                 )
-    elif not args.quiet:
+    elif args.no_fetch and not args.quiet:
+        # A fetch reused because it is recent has already said so.
         _err("using the refs already here; they may be stale (--no-fetch)")
 
     progress.say("finding the head branch")
