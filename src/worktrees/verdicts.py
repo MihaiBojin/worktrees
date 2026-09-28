@@ -136,7 +136,7 @@ def assess(
         reason = merged_reason(wt.branch, head, repo=repo)
         if not reason and ask_forge:
             progress.say(f"{wt.label}: asking the forge for its pull request")
-            reason, verdict = _forge_reason(wt.branch, repo=repo)
+            reason, verdict = _forge_reason(wt.branch, wt.sha, repo=repo)
             if verdict:
                 return say(verdict, reason)
         if not reason:
@@ -168,7 +168,7 @@ def assess(
 
 
 def _forge_reason(
-    branch: str, repo: str | os.PathLike[str] | None = None
+    branch: str, sha: str = "", repo: str | os.PathLike[str] | None = None
 ) -> tuple[str, str]:
     """What the forge says, cross-checked against what it cannot see.
 
@@ -179,7 +179,7 @@ def _forge_reason(
     An existing upstream is checked for unpushed commits. A branch with no
     tracking configuration stays unknown.
     """
-    request = forge.request_for(branch, repo=repo)
+    request = forge.request_for(branch, repo=repo, sha=sha)
     if request is None or request.state not in ("MERGED", "CLOSED"):
         return "", ""
 

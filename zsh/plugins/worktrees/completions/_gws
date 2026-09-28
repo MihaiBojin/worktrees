@@ -5,7 +5,7 @@
 _arguments -s \
     '--branch[consider only that branch]:branch:' \
     '--no-fetch[use the refs already here]' \
-    '--force-refresh[fetch even when the last fetch is under 30 minutes old]' \
+    '--force-refresh[fetch and ask the forge again, whatever is kept]' \
     '--delete-ignored[count gitignored files as removable]' \
     '--no-forge[decide from git alone; never ask the forge]' \
     '--json[verdicts as data]' \

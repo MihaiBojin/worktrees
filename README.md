@@ -470,7 +470,10 @@ print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
 
 Every command that fetches does so at most once every 30 minutes. A fetch younger
 than that, from any worktree of the repository, is used as it stands, and the
-command says how old it is. `--force-refresh` fetches anyway. While they fetch
+command says how old it is. What the forge said about a merged or closed
+request is kept for that commit; an open one that cannot merge until its
+author pushes, such as a draft or a conflict, is kept for 30 minutes.
+`--force-refresh` fetches and asks again. While they fetch
 and judge, a spinner on stderr names the branch and the check in progress.
 
 A remote that cannot be reached is not fatal anywhere. The fetch fails, the

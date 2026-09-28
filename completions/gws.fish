@@ -4,7 +4,7 @@ complete -c gws -f
 
 complete -c gws -l branch -d 'consider only that branch'
 complete -c gws -l no-fetch -d 'use the refs already here'
-complete -c gws -l force-refresh -d 'fetch even when the last fetch is under 30 minutes old'
+complete -c gws -l force-refresh -d 'fetch and ask the forge again, whatever is kept'
 complete -c gws -l delete-ignored -d 'count gitignored files as removable'
 complete -c gws -l no-forge -d 'decide from git alone; never ask the forge'
 

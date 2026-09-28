@@ -247,6 +247,15 @@ stderr; `gws`, `gwp` and `gwr` still ask the forge. `_should_fetch` decides
 for all six. `--force-refresh` fetches whatever the age. FETCH_HEAD is
 written per worktree, so `repo.fetched_at` reads every copy.
 
+The forge's answers are kept too, in `git-worktrees-forge.json` in the common
+git directory, under the branch and its sha. A merged or closed request is
+kept until `--force-refresh`. An open one is kept for 30 minutes, and only
+when it cannot merge until its author pushes: a draft, a conflict, or on
+GitLab a needed rebase. Auto-merge, a running check, or a forge calling it
+mergeable, or unable to say, means it is asked every time. `forge._idle`
+holds that rule. A push changes the sha, so a kept answer never outlives
+the commit it was given for. No request at all is not kept.
+
 The per-worktree checks run on eight threads. Each is independent, and the
 time goes waiting on git and on `gh`, one round trip per branch git cannot
 settle.

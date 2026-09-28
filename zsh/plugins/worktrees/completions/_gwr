@@ -19,7 +19,7 @@ _arguments -s \
     '(-f --force)'{-f,--force}'[remove it even when unfinished]' \
     '--delete-ignored[also delete its gitignored files]' \
     '--no-fetch[use the refs already here]' \
-    '--force-refresh[fetch even when the last fetch is under 30 minutes old]' \
+    '--force-refresh[fetch and ask the forge again, whatever is kept]' \
     '--no-forge[decide from git alone; never ask the forge]' \
     '(-y --yes)'{-y,--yes}'[do not ask]' \
     '--json[the result as data]' \

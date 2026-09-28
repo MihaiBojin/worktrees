@@ -7,7 +7,7 @@ complete -c gwr -a '(command gwr --complete)'
 complete -c gwr -s f -l force -d 'remove it even when unfinished'
 complete -c gwr -l delete-ignored -d 'also delete its gitignored files'
 complete -c gwr -l no-fetch -d 'use the refs already here'
-complete -c gwr -l force-refresh -d 'fetch even when the last fetch is under 30 minutes old'
+complete -c gwr -l force-refresh -d 'fetch and ask the forge again, whatever is kept'
 complete -c gwr -l no-forge -d 'decide from git alone; never ask the forge'
 complete -c gwr -s y -l yes -d 'do not ask'
 

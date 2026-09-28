@@ -13,8 +13,13 @@ permits pruning, subject to the worktree protections.
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
 import subprocess
+import threading
+import time
+from pathlib import Path
 
 from .git import options
 
@@ -22,16 +27,95 @@ from .git import options
 class Request:
     """A pull or merge request for a branch."""
 
-    __slots__ = ("noun", "number", "state")
+    __slots__ = ("idle", "noun", "number", "state")
 
     number: int
     state: str  # MERGED, CLOSED, OPEN
     noun: str  # what that forge calls it
+    # Nothing can merge it without somebody acting first: see `_idle`.
+    idle: bool
 
-    def __init__(self, number: int, state: str, noun: str) -> None:
+    def __init__(self, number: int, state: str, noun: str, idle: bool = False) -> None:
         self.number = number
         self.state = state
         self.noun = noun
+        self.idle = idle
+
+
+# How long an open request that nothing is about to merge is taken as read.
+# A merged or closed one stays that way, so its answer does not expire.
+_OPEN_FOR = 30 * 60
+_lock = threading.Lock()
+
+
+def _idle(row: dict[str, object]) -> bool:
+    """Whether an open request can merge only after its author pushes.
+
+    Not idle: auto-merge or merge-when-pipeline-succeeds set, a check still
+    running, or a forge saying it is mergeable or cannot say. Idle: a draft,
+    a conflict, or on GitLab a needed rebase. A push changes the sha the
+    answer is kept under, so the answer lasts exactly as long as it is true.
+    """
+    if row.get("autoMergeRequest") or row.get("merge_when_pipeline_succeeds"):
+        return False
+    if "detailed_merge_status" in row:  # GitLab
+        return row.get("detailed_merge_status") in (
+            "draft_status",
+            "conflict",
+            "need_rebase",
+        )
+    checks = row.get("statusCheckRollup") or []
+    if not isinstance(checks, list):
+        return False
+    for check in checks:
+        if not isinstance(check, dict):
+            return False
+        # A check run reports `status`, a commit status reports `state`.
+        if check.get("status") not in (None, "COMPLETED"):
+            return False
+        if check.get("state") in ("PENDING", "EXPECTED"):
+            return False
+    return bool(row.get("isDraft")) or row.get("mergeable") == "CONFLICTING"
+
+
+def _cache_file(repo: str | os.PathLike[str] | None) -> Path | None:
+    from . import repo as R
+
+    common = R.common_dir(repo=repo).out.strip()
+    return Path(common) / "git-worktrees-forge.json" if common else None
+
+
+def _cached(branch: str, sha: str, path: Path) -> Request | None:
+    try:
+        entry = json.loads(path.read_text()).get(branch)
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(entry, dict) or entry.get("sha") != sha:
+        return None
+    state = entry.get("state")
+    if state == "OPEN" and time.time() - float(entry.get("at", 0)) >= _OPEN_FOR:
+        return None
+    return Request(int(entry["number"]), str(state), str(entry["noun"]), True)
+
+
+def _remember(branch: str, sha: str, request: Request, path: Path) -> None:
+    with _lock:
+        try:
+            entries = json.loads(path.read_text())
+        except (OSError, ValueError):
+            entries = {}
+        if not isinstance(entries, dict):
+            entries = {}
+        entries[branch] = {
+            "sha": sha,
+            "number": request.number,
+            "state": request.state,
+            "noun": request.noun,
+            "at": time.time(),
+        }
+        # A cache that cannot be written costs a round trip, not an answer.
+        with contextlib.suppress(OSError):
+            path.write_text(json.dumps(entries, indent=1, sort_keys=True))
 
 
 def available() -> str:
@@ -60,15 +144,36 @@ REDIRECTS = ("GH_REPO", "GITLAB_REPO")
 def request_for(
     branch: str,
     repo: str | os.PathLike[str] | None = None,
+    sha: str = "",
 ) -> Request | None:
     """The newest request whose head is this branch, or None.
 
     None covers every way of not knowing: no CLI, not authenticated, no
     remote, no request. The caller treats that as "the forge said nothing"
     rather than as "no".
-    """
-    import json
 
+    Given the branch's sha, an answer that cannot change on its own is kept
+    in the repository's common directory under that sha: merged and closed
+    for good, an idle open one for 30 minutes. --force-refresh asks anyway.
+    """
+    path = _cache_file(repo) if sha else None
+    if path is not None and not options.refresh:
+        cached = _cached(branch, sha, path)
+        if cached is not None:
+            return cached
+
+    request = _ask(branch, repo)
+    if (
+        path is not None
+        and request is not None
+        and (request.state in ("MERGED", "CLOSED") or request.idle)
+    ):
+        _remember(branch, sha, request, path)
+    return request
+
+
+def _ask(branch: str, repo: str | os.PathLike[str] | None) -> Request | None:
+    """The forge's own answer, from its CLI."""
     tool = available()
     if not tool:
         return None
@@ -85,7 +190,7 @@ def request_for(
             "--limit",
             "1",
             "--json",
-            "number,state",
+            "number,state,isDraft,mergeable,autoMergeRequest,statusCheckRollup",
         ]
         noun = "pull request"
     else:
@@ -133,4 +238,6 @@ def request_for(
     row = rows[0]
     number = row.get("number") or row.get("iid") or 0
     state = str(row.get("state", "")).upper()
-    return Request(int(number), state, noun)
+    # GitLab says `opened`; everything below compares against GitHub's words.
+    state = "OPEN" if state == "OPENED" else state
+    return Request(int(number), state, noun, state == "OPEN" and _idle(row))

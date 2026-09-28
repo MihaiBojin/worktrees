@@ -132,7 +132,7 @@ def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--force-refresh",
         action="store_true",
-        help="fetch even when the last fetch is under 30 minutes old",
+        help="fetch and ask the forge again, whatever is kept",
     )
     p.add_argument(
         "--delete-ignored",
@@ -209,7 +209,9 @@ def _judge_all(
     """
     from . import repo as R
     from . import verdicts
+    from .git import options
 
+    options.refresh = args.force_refresh
     remote = R.remote()
     # A skipped fetch still leaves the forge asked: it is what settles a
     # stacked branch, and it is not what the fetch refreshed.
@@ -636,7 +638,7 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--force-refresh",
         action="store_true",
-        help="fetch even when the last fetch is under 30 minutes old",
+        help="fetch and ask the forge again, whatever is kept",
     )
     p.add_argument(
         "--no-forge",

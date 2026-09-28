@@ -478,3 +478,109 @@ def test_gwa_reuses_a_fetch_another_command_made(world) -> None:
     assert p.returncode == 0, p.stderr
     assert "fetched 0 min ago; using those refs" in p.stderr
     assert "+ git fetch" not in p.stderr
+
+
+# --------------------------------------------------------------------------
+# an answer that cannot change on its own is kept
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "row,idle",
+    [
+        ({"mergeable": "MERGEABLE", "statusCheckRollup": []}, False),
+        ({"mergeable": "UNKNOWN", "statusCheckRollup": []}, False),
+        ({"mergeable": "CONFLICTING", "statusCheckRollup": []}, True),
+        ({"mergeable": "MERGEABLE", "isDraft": True}, True),
+        (
+            {
+                "mergeable": "CONFLICTING",
+                "statusCheckRollup": [{"status": "IN_PROGRESS"}],
+            },
+            False,
+        ),
+        (
+            {"mergeable": "CONFLICTING", "statusCheckRollup": [{"state": "PENDING"}]},
+            False,
+        ),
+        ({"isDraft": True, "autoMergeRequest": {"mergeMethod": "SQUASH"}}, False),
+        ({"detailed_merge_status": "conflict"}, True),
+        ({"detailed_merge_status": "draft_status"}, True),
+        ({"detailed_merge_status": "need_rebase"}, True),
+        ({"detailed_merge_status": "mergeable"}, False),
+        ({"detailed_merge_status": "ci_still_running"}, False),
+        ({"detailed_merge_status": "checking"}, False),
+        (
+            {"detailed_merge_status": "conflict", "merge_when_pipeline_succeeds": True},
+            False,
+        ),
+    ],
+)
+def test_an_open_request_is_idle_only_when_it_cannot_merge_on_its_own(
+    row, idle
+) -> None:
+    assert forge._idle(row) is idle
+
+
+def _counting_gh(tmp_path: Path, rows: list[dict]) -> tuple[Path, Path]:
+    bin_dir = tmp_path / "counting-bin"
+    bin_dir.mkdir(exist_ok=True)
+    calls = tmp_path / "calls"
+    payload = json.dumps(rows).replace("'", "'\\''")
+    exe = bin_dir / "gh"
+    exe.write_text(f"#!/bin/sh\necho x >> {calls}\nprintf '%s\\n' '{payload}'\n")
+    exe.chmod(0o755)
+    return bin_dir, calls
+
+
+def _asked(calls: Path) -> int:
+    return len(calls.read_text().splitlines()) if calls.exists() else 0
+
+
+@pytest.mark.parametrize(
+    "row,kept",
+    [
+        ({"number": 3, "state": "MERGED"}, True),
+        ({"number": 3, "state": "CLOSED"}, True),
+        ({"number": 3, "state": "OPEN", "isDraft": True}, True),
+        ({"number": 3, "state": "OPEN", "mergeable": "MERGEABLE"}, False),
+    ],
+)
+def test_the_forge_is_asked_once_for_an_answer_that_cannot_change(
+    world, tmp_path, monkeypatch, row, kept
+) -> None:
+    bin_dir, calls = _counting_gh(tmp_path, [row])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    for _ in range(2):
+        got = forge.request_for("b", sha="a" * 40)
+        assert got is not None
+        assert got.state == row["state"]
+    assert _asked(calls) == (1 if kept else 2)
+
+
+def test_force_refresh_asks_the_forge_again(world, tmp_path, monkeypatch) -> None:
+    bin_dir, calls = _counting_gh(tmp_path, [{"number": 3, "state": "MERGED"}])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    forge.request_for("b", sha="a" * 40)
+    monkeypatch.setattr(forge.options, "refresh", True)
+    forge.request_for("b", sha="a" * 40)
+    assert _asked(calls) == 2
+
+
+def test_a_new_commit_asks_the_forge_again(world, tmp_path, monkeypatch) -> None:
+    bin_dir, calls = _counting_gh(tmp_path, [{"number": 3, "state": "CLOSED"}])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    forge.request_for("b", sha="a" * 40)
+    forge.request_for("b", sha="b" * 40)
+    assert _asked(calls) == 2
+
+
+def test_an_idle_open_answer_lasts_30_minutes(world, tmp_path, monkeypatch) -> None:
+    row = {"number": 3, "state": "OPEN", "mergeable": "CONFLICTING"}
+    bin_dir, calls = _counting_gh(tmp_path, [row])
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    forge.request_for("b", sha="a" * 40)
+    later = time.time() + 31 * 60
+    monkeypatch.setattr(forge.time, "time", lambda: later)
+    forge.request_for("b", sha="a" * 40)
+    assert _asked(calls) == 2
