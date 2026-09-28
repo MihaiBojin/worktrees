@@ -24,7 +24,7 @@ def worktree_remove(path: str) -> None:
     """Drop a checkout. Refuses on its own when the worktree is dirty."""
 
 
-@git("update-ref -d $ref $sha", mutates=True)
+@git("update-ref --no-deref -d $ref $sha", mutates=True)
 def ref_delete(ref: str, sha: str) -> None:
     """Delete a branch ref, and only while it still holds $sha.
 

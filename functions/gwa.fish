@@ -1,3 +1,4 @@
+# Create a worktree and change into it.
 function gwa --wraps gwa --description 'cd to where gwa lands you'
     # The binary prints one destination, or the data `--json` and `--list`
     # were asked for, on the same stream. `string collect`

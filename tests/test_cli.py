@@ -398,7 +398,7 @@ def test_explain_lists_every_command_and_runs_none(world) -> None:
     p = run(world, "gws", "--explain")
     assert p.returncode == 0, p.stderr
     assert "git worktree list --porcelain -z" in p.stdout
-    assert "git update-ref -d $ref $sha" in p.stdout
+    assert "git update-ref --no-deref -d $ref $sha" in p.stdout
     assert "git branch -D" not in p.stdout
 
 
@@ -532,12 +532,12 @@ def test_every_command_is_installed_under_its_own_name() -> None:
 
     root = Path(__file__).resolve().parents[1]
     scripts = tomllib.loads((root / "pyproject.toml").read_text())["project"]["scripts"]
-    declared = {c.binary for c in cli._COMMANDS.values() if c.binary}
+    declared = {c.binary for _, c in cli.command_rows() if c.binary}
     assert declared <= set(scripts)
     # The two that take a subcommand are the only ones with no row of their own.
     assert set(scripts) - declared == {"gw", "worktrees"}
     # and version is the only row that installs nothing.
-    assert [n for n, c in cli._COMMANDS.items() if not c.binary] == ["version"]
+    assert [n for n, c in cli.command_rows() if not c.binary] == ["version"]
 
 
 # --------------------------------------------------------------------------
@@ -552,7 +552,7 @@ def test_help_names_every_command_and_every_shorthand(world, entry: str) -> None
     assert p.returncode == 0, p.stderr
     from worktrees import cli
 
-    for name, command in cli._COMMANDS.items():
+    for name, command in cli.command_rows():
         assert command.binary in p.stdout, name
         assert f"gw {name}" in p.stdout, name
         for alias in command.aliases:

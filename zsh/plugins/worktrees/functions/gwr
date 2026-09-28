@@ -1,4 +1,4 @@
-# cd to where gwr lands you.
+# Remove a worktree whose branch is finished.
 #
 # The binary prints one destination, or the data `--json` and `--list` were
 # asked for, on the same stream. `$(...)` strips only

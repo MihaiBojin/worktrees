@@ -1,3 +1,4 @@
-# gwr, deleting the worktree's gitignored files too. The gwr function rather
-# than `command gwr`, so the caller still lands where gwr says.
+# Remove a finished worktree, including its ignored files.
+# The gwr function rather than `command gwr`, so the caller still lands
+# where gwr says.
 gwr --delete-ignored "$@"

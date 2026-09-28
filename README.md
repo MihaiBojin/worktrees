@@ -5,14 +5,16 @@
 
 Git worktree commands that refuse to lose work.
 
-`gws`, `gwp`, `gwnb`, `gwrot` and `gwh` answer a question and print it. `gwa`,
-`gwl`, `gwm` and `gwr` land you somewhere, and each of those needs a shell
-function, because a binary cannot change its caller's directory.
+`gws`, `gwp`, `gwbs`, `gwbd`, `gwnb`, `gwrot`, and `gwh` run as console
+scripts. `gwa`, `gwl`, `gwm`, and `gwr` change the caller's directory and need
+a shell function of the same name.
 
 | | |
 | --- | --- |
 | `gws` | say which worktrees are finished, and why. Removes nothing, and has no flag that could |
 | `gwp` | remove the ones `gws` marks removable, having asked first |
+| `gwbs [NAME ...]` | assess local branches, including those without worktrees |
+| `gwbd [NAME ...]` | delete branches proved finished, with confirmation and undo commands |
 | `gwa NAME [BASE]` | create a worktree for `NAME` and land you in it |
 | `gwl [QUERY]` | pick one of this repository's worktrees and land you in it |
 | `gwm NEW` | rename this worktree's branch and move the checkout to match |
@@ -29,6 +31,8 @@ function, because a binary cannot change its caller's directory.
 | --- | --- |
 | `gws` | `gw status`, `st`, `s` |
 | `gwp` | `gw prune`, `p` |
+| `gwbs` | `gw branch status` |
+| `gwbd` | `gw branch delete` |
 | `gwa` | `gw add`, `a` |
 | `gwl` | `gw list`, `ls`, `l` |
 | `gwm` | `gw move`, `mv`, `m` |
@@ -38,6 +42,11 @@ function, because a binary cannot change its caller's directory.
 | `gwh` | `gw help`, `h`, and `gw` with no subcommand |
 
 `worktrees` is the same program under its long name.
+
+The command reference covers [branch status](docs/commands/branch-status.md)
+and [branch delete](docs/commands/branch-delete.md), including content proofs,
+GitHub and GitLab merge evidence, selection, and recovery. `gwbd` with no
+arguments opens a selector; `gwbd --all --dry-run` previews every branch.
 
 Ctrl-C interrupts a running command with exit code 130 and no traceback.
 At a selection or removal prompt, it cancels without choosing or removing
@@ -96,7 +105,7 @@ Python 3.11 or newer, and no dependencies. The standard library answers every
 question this asks, so an invocation pays for the interpreter and nothing
 else.
 
-That is the whole install for `gws`, `gwp`, `gwnb`, `gwrot` and `gwh`. The
+That installs `gws`, `gwp`, `gwbs`, `gwbd`, `gwnb`, `gwrot`, and `gwh`. The
 four that land you somewhere need a shell function too, and every command has
 a completion, both of which arrive through a plugin manager.
 

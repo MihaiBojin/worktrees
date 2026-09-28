@@ -17,6 +17,18 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.5.0 - 2026-09-28
+
+### Added
+
+Local branches can be assessed with `worktrees branch status` (`gwbs`)
+and deleted with `worktrees branch delete` (`gwbd`). Deletion accepts
+exact names, offers a selector when no names are supplied, and supports
+`--all` and `--dry-run`. A branch qualifies through Git history, matching
+changed paths, or a merged GitHub PR or GitLab MR tied to its exact tip.
+The command protects checked-out branches, rechecks refs before deletion,
+and prints the command to restore each branch.
+
 ## 0.4.3 - 2026-09-22
 
 ### Fixed
