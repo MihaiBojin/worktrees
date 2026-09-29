@@ -241,19 +241,25 @@ back, so the tree the tag names has already proved it uploads to an index and
 installs from one. The merge happens first and the irreversible step is last,
 so everything recoverable is already done by the time anything is published.
 
-`release` needs the upload and nothing else. `verify` installs the version
-from PyPI and runs what it installed, on its own, because an index serves what
-it has accepted after a delay it does not bound: 0.2.1 took longer than the
-script waited and a correct release went red. A red `verify` says PyPI is
-slow, not that the version is missing. It gives up after about 32 minutes.
+`publish` signs each distribution with `uvx pypi-attestations@0.0.30 sign`
+using the job's OIDC identity. `uv publish` uploads the resulting PEP 740
+attestations alongside the distributions.
+
+`release` needs the upload. `verify` installs the version from PyPI and runs
+what it installed, allowing about 32 minutes for the index to serve it. It
+then runs `uvx pypi-attestations@0.0.30 verify pypi` for each wheel and source
+distribution, checking the attestations against this GitHub repository.
+Either check can fail the verification job independently of the release.
 
 `workflow_dispatch` against a tag ref re-runs a release whose publish failed.
 
 ## Snapshots on TestPyPI
 
 `testpypi.yml` runs on every commit to `main`. It numbers the tree
-`<version>.post<epoch>`, builds it, uploads it to TestPyPI and installs it
-back from there.
+`<version>.post<epoch>`, builds it and signs each distribution with
+`uvx pypi-attestations@0.0.30 sign` using the job's OIDC identity. It uploads
+the distributions and their PEP 740 attestations to TestPyPI, then installs
+the snapshot back from there.
 
 `post` rather than `dev` because that is what the build is: made after
 `<version>` shipped. PEP 440 sorts `0.2.3.post1789247568` above `0.2.3` and
