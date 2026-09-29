@@ -17,6 +17,16 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.5.1 - 2026-09-29
+
+### Added
+
+The wheel and source distribution on PyPI carry PEP 740 attestations signed
+by the GitHub workflow that built them. PyPI shows the provenance on the
+release's page, and `uvx pypi-attestations verify pypi --repository
+https://github.com/MihaiBojin/worktrees pypi:<file>` checks a file against
+this repository before you install it.
+
 ## 0.5.0 - 2026-09-29
 
 ### Added
