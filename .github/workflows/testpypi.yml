@@ -59,6 +59,11 @@ jobs:
       - name: Build
         run: uv build
 
+      # Sign with this job's OIDC identity. uv uploads the attestations with
+      # their distributions.
+      - name: Attest
+        run: uvx pypi-attestations@0.0.30 sign dist/*
+
       - name: Publish
         # `always` rather than the default `automatic`: fail loudly if OIDC is
         # unavailable instead of quietly looking for a token.

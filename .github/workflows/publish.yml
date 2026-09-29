@@ -152,25 +152,23 @@ jobs:
           name: dist
           path: dist/
 
+      # Sign with this job's OIDC identity. uv uploads the attestations with
+      # their distributions.
+      - name: Attest
+        run: uvx pypi-attestations@0.0.30 sign dist/*
+
       - name: Publish
         run: uv publish --trusted-publishing always
 
-  # Uploaded and installable are two claims with two timings, so they are two
-  # jobs. An index serves what it has accepted only after a delay of its own
-  # choosing: 0.2.1 took longer than the script waited, and a release that had
-  # published correctly went red and had to be re-run by hand. This job holds
-  # the second claim, `release` needs only the first, and a red `verify` says
-  # PyPI is slow rather than that the version is not out.
+  # PyPI can take time to serve an accepted upload. Verification runs in a
+  # separate job so that delay does not block the GitHub release.
   verify:
-    name: Verify it installs from PyPI
+    name: Verify PyPI install and attestations
     runs-on: ubuntu-26.04
     needs: publish
     permissions:
       contents: read
     steps:
-      # The script reads the name and version from pyproject.toml through
-      # `uv version`, and installs from the index rather than from the
-      # artifact, so there is nothing to download here.
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -182,6 +180,21 @@ jobs:
 
       - name: Verify it installs from PyPI
         run: scripts/verify-publish.bash --prod
+
+      # The filenames identify the distributions to fetch from PyPI.
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: dist
+          path: dist/
+
+      # The install check waits for PyPI to serve the files.
+      - name: Verify attestations on PyPI
+        run: |
+          for f in dist/*.whl dist/*.tar.gz; do
+            uvx pypi-attestations@0.0.30 verify pypi \
+              --repository "https://github.com/$GITHUB_REPOSITORY" "pypi:${f#dist/}"
+          done
 
   release:
     name: Release
