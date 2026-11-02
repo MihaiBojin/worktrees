@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import shlex
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 
-from . import branch_forge, merged, prune
+from . import branch_forge, merged, progress, prune
 from . import repo as R
 from .git import GitError, Refused, git
 
@@ -53,7 +54,8 @@ def assess(
         if wt.branch:
             checked.setdefault(wt.branch, []).append(wt.path)
     rows = []
-    for name in dict.fromkeys(names or refs):
+    wanted = list(dict.fromkeys(names or refs))
+    for i, name in enumerate(wanted, 1):
         sha, symbolic = refs[name]
         row = Verdict(
             name, sha, "unknown", "no proof that its change is in the head branch"
@@ -67,33 +69,54 @@ def assess(
         elif symbolic:
             row.verdict, row.why = "keep", "it is a symbolic branch ref"
         else:
+            # One at a time, and each can cost a round trip to the forge, so
+            # the count says how far through a long list this is.
+            of = f" ({i} of {len(wanted)})" if len(wanted) > 1 else ""
+
+            def say(question: str, name: str = name, of: str = of) -> None:
+                progress.say(f"{name}: {question}{of}")
+
             try:
-                _judge(row, head_sha, head_branch, remote, ask_forge)
+                _judge(row, head_sha, head_branch, remote, ask_forge, say)
             except GitError as exc:
                 row.error, row.why = True, str(exc)
     return rows
 
 
 def _judge(
-    row: Verdict, head: str, head_branch: str, remote: str, ask_forge: bool
+    row: Verdict,
+    head: str,
+    head_branch: str,
+    remote: str,
+    ask_forge: bool,
+    say: Callable[[str], None],
 ) -> None:
-    for proof, why, check in (
-        ("ancestry", "its tip is an ancestor of the head branch", merged.is_ancestor),
+    for proof, why, question, check in (
+        (
+            "ancestry",
+            "its tip is an ancestor of the head branch",
+            f"is it merged into {head_branch}?",
+            merged.is_ancestor,
+        ),
         (
             "squash",
             "its tree or combined patch is already in the head branch",
+            f"was it squash-merged into {head_branch}?",
             merged.squash_matches,
         ),
         (
             "content",
             "every changed path matches the head branch",
+            f"does {head_branch} hold every path it changed?",
             merged.content_matches,
         ),
     ):
+        say(question)
         if check(row.sha, head):
             row.verdict, row.why, row.proof = "remove", why, proof
             return
     if ask_forge and remote:
+        say("asking the forge for its pull request")
         request = branch_forge.request_for(row.branch, remote)
         if request is not None:
             row.request = request.data()
