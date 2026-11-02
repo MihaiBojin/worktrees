@@ -113,7 +113,8 @@ fisher install MihaiBojin/worktrees
 ```
 
 Fisher copies `functions/` and `completions/` from the repository root, so the
-five functions and ten completions land together. Nothing has to be sourced.
+functions for `gwa`, `gwl`, `gwm`, `gwr` and `gwr!` land together with a
+completion for every command. Nothing has to be sourced.
 
 ### zsh
 
