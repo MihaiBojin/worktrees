@@ -106,22 +106,32 @@ That installs `gws`, `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`, and `gwh`. The
 four that land you somewhere need a shell function too, and every command has
 a completion, both of which arrive through a plugin manager.
 
+Install the plugin at the tag of the release `uv` installed. Without a tag
+both managers take `main`, which can be ahead of the last release, and the
+functions then call commands they were not tested against. `gwh` says which
+release the plugin here came from, and whether it is the same one.
+
 ### fish
 
 ```console
-fisher install MihaiBojin/worktrees
+fisher install MihaiBojin/worktrees@v0.6.0
 ```
 
-Fisher copies `functions/` and `completions/` from the repository root, so the
-functions for `gwa`, `gwl`, `gwm`, `gwr` and `gwr!` land together with a
-completion for every command. Nothing has to be sourced.
+Fisher copies `functions/`, `completions/` and `conf.d/` from the repository
+root, so the functions for `gwa`, `gwl`, `gwm`, `gwr` and `gwr!` land together
+with a completion for every command. Nothing has to be sourced.
+
+To change release, edit the tag on that line of
+`$__fish_config_dir/fish_plugins` and run `fisher update`. The same edit moves
+an install without a tag onto one; `fisher install` with a tag refuses while
+the untagged one holds the files.
 
 ### zsh
 
-Antidote takes a `path:` into the repository:
+Antidote takes a `path:` into the repository, and `branch:` takes a tag:
 
 ```
-MihaiBojin/worktrees path:zsh/plugins/worktrees   # in zsh_plugins.txt
+MihaiBojin/worktrees branch:v0.6.0 path:zsh/plugins/worktrees   # in zsh_plugins.txt
 ```
 
 The plugin puts its own `functions/` and `completions/` on `fpath` and
@@ -132,6 +142,19 @@ run; without one, add it after the plugin loads:
 autoload -Uz compinit && compinit
 ```
 
+Antidote checks a tag out only when it clones, and `antidote update` leaves a
+tag where it is. To change release, remove the clone, then edit the tag, then
+open a new shell, which clones it again at the new tag:
+
+```zsh
+antidote purge MihaiBojin/worktrees
+```
+
+The order matters. Antidote rebuilds its bundle only when `zsh_plugins.txt` is
+newer than the bundle, so a tag edited before the purge leaves a new shell
+with no plugin until the file changes again. The same three steps move a clone
+without a tag onto one.
+
 ### What the shell code does
 
 Each function runs `command <name>` and `cd`s to what it printed, provided
@@ -140,6 +163,16 @@ same stream a destination arrives on, so the shim asks whether what it has is
 somewhere to go and stays put when it is not. `gws`, `gwp`, `gwbc`, `gwrot` and `gwh`
 change no directory, so they ship as console scripts alone and answer the same
 from a prompt and from a script.
+
+Both plugins export `WORKTREES_PLUGIN_VERSION`, the release they came from,
+since the environment is all a binary sees of the shell that started it. `gwh`
+and `gw version` compare it with their own and say whether the two match,
+which is older, and what to run: `gwh` in its text, `gw version` on stderr, so
+its stdout stays the version alone for a script to read.
+
+A shell without the variable has no plugin loaded, or one older than the
+release that started exporting it, and nothing can tell those two apart. A
+bash started from fish or zsh inherits the variable without the functions.
 
 The completions hold no candidate of their own. `gw --complete` prints every
 subcommand and shorthand, `gwl --complete` prints every worktree, and both
@@ -470,7 +503,7 @@ their own and `gwbc` puts them on a branch.
 
 ```console
 $ gwh
-worktrees 0.5.1: git worktree commands that refuse to lose work
+worktrees 0.6.0: git worktree commands that refuse to lose work
 
 COMMAND          GW                 DOES
 gws              gw status (s, st)  which worktrees are finished, and why
@@ -485,6 +518,11 @@ gwh              gw help (h)        every command and alias, this list
 gwbc NAME        gw branch create   branch off the head branch
 gwbs [NAME ...]  gw branch status   which branches are finished, and why
 gwbd [NAME ...]  gw branch delete   delete local branches proved finished
+
+gwa, gwl, gwm and gwr change the directory you are standing in.
+A binary cannot do that, so each needs the shell function of the same name
+from the plugin; the rest need nothing but $PATH.
+The shell plugin here is 0.6.0, the same release as these commands.
 ```
 
 `gw help`, `gw h` and `gw` with no subcommand print the same thing. One table

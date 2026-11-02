@@ -10,7 +10,9 @@ projects:
   - path: ./
     manifest: pyproject.toml
     changelog: CHANGELOG.md
-    bump: uv version {version}
+    # `uv version` for pyproject.toml and uv.lock, then the copies the shell
+    # plugins and the README's install lines carry.
+    bump: python3 scripts/bump_version.py {version}
 
 release:
   branch: main

@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import os
 import pty
+import shlex
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import NoReturn
@@ -321,6 +323,40 @@ def test_the_zsh_shim_prints_output_that_is_not_a_directory(tmp_path) -> None:
     code, out = _run_zsh(bin_dir, "cd /; gwa --json; pwd")
     assert code == 0, out
     assert out.splitlines() == [payload, "/"], out
+
+
+@pytest.mark.parametrize(
+    ("shell", "plugin"),
+    [
+        ("fish", ROOT / "conf.d" / "worktrees.fish"),
+        ("zsh", ROOT / "zsh/plugins/worktrees/worktrees.plugin.zsh"),
+    ],
+)
+def test_each_plugin_tells_the_binary_its_release(shell: str, plugin: Path) -> None:
+    """Through the environment, so only an exported variable arrives: a fish
+    `set -g` or a bare zsh assignment stays in the shell, and the binary then
+    reports no plugin at all."""
+    binary = shutil.which(shell)
+    if not binary:  # pragma: no cover
+        _missing(shell)
+    gw = shlex.join(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gw; raise SystemExit(gw())",
+            "version",
+        ]
+    )
+    no_config = "--no-config" if shell == "fish" else "-f"
+    env = {k: v for k, v in os.environ.items() if k != "WORKTREES_PLUGIN_VERSION"}
+    proc = subprocess.run(
+        [binary, no_config, "-c", f"source {shlex.quote(str(plugin))}; {gw}"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "the same release as these commands" in proc.stderr, proc.stderr
 
 
 # --------------------------------------------------------------------------
