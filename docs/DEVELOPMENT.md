@@ -64,12 +64,14 @@ interpreter comes from uv. [docs/BENCHMARK.md](BENCHMARK.md) is the last run.
 
 ```console
 make local-install    # uv tool install --force --from . git-worktrees
-make install          # uv tool install --force git-worktrees
+make reset            # uv tool install --force git-worktrees
 ```
 
 `make local-install` installs the working copy in place of anything
-published, so `gws` on your `$PATH` is the code in front of you. `make
-install` puts the latest release from PyPI back.
+published, so `gws` on your `$PATH` is the code in front of you. `make reset`
+undoes it: the latest release from PyPI replaces the working copy, and a
+command only the working copy has, such as one renamed since that release,
+leaves `~/.local/bin` with it.
 
 The distribution is `git-worktrees` because PyPI already holds `worktrees`.
 The import package is `worktrees` and every console script keeps its own
