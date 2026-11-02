@@ -28,7 +28,7 @@ permissions:
 jobs:
   snapshot:
     name: Publish a snapshot
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     # Binds this job to the trusted publisher registered for `testpypi`.
     environment: testpypi
     permissions:
