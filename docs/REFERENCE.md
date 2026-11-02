@@ -309,6 +309,11 @@ and the assertions that drive a real shell turn their `pytest.skip` into a
 `pytest.fail` when `CI` is set. A skip is invisible in `pytest -q`, so a green
 run used to mean nothing about either shim.
 
+`codeql.yml` scans the Python source and the workflows on the same two runners,
+on every pull request, every push to `main` and weekly. GitHub's default code
+scanning setup stays off: it runs on `ubuntu-latest`, and nothing in the
+repository can pin it.
+
 ## 7. What an invocation costs
 
 [`BENCHMARK.md`](BENCHMARK.md) holds the figures and
