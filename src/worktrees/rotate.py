@@ -33,29 +33,52 @@ def log_oneline(range: str) -> None:
 
 
 class Rotated:
-    __slots__ = ("base", "branch", "sha", "stem")
+    __slots__ = ("ahead", "base", "branch", "previous", "previous_sha", "sha", "stem")
 
     branch: str
     stem: str
     base: str  # the full ref
     sha: str
+    previous: str  # the branch it was on, left as it was
+    previous_sha: str
+    ahead: int  # commits on `previous` that `base` lacks
 
-    def __init__(self, branch: str, stem: str, base: str, sha: str) -> None:
+    def __init__(
+        self,
+        branch: str,
+        stem: str,
+        base: str,
+        sha: str,
+        previous: str,
+        previous_sha: str,
+        ahead: int,
+    ) -> None:
         self.branch = branch
         self.stem = stem
         self.base = base
         self.sha = sha
+        self.previous = previous
+        self.previous_sha = previous_sha
+        self.ahead = ahead
 
 
 class CaughtUp:
-    __slots__ = ("at", "branch")
+    __slots__ = ("at", "branch", "count", "previous_sha", "sha")
 
     branch: str
     at: str  # the ref it now matches
+    previous_sha: str
+    sha: str
+    count: int  # commits the fast-forward brought in
 
-    def __init__(self, branch: str, at: str) -> None:
+    def __init__(
+        self, branch: str, at: str, previous_sha: str, sha: str, count: int
+    ) -> None:
         self.branch = branch
         self.at = at
+        self.previous_sha = previous_sha
+        self.sha = sha
+        self.count = count
 
 
 def stem(branch: str) -> str:
@@ -127,10 +150,31 @@ def rotate(
     if branch == head_name:
         return _catch_up(branch, base, repo=repo)
 
+    local = f"refs/heads/{branch}"
+    sha = _short(base, repo=repo)
+    ahead = _count(base, local, repo=repo)
+    if not ahead and not _count(local, base, repo=repo):
+        raise Refusal(
+            f"{branch} is already at {R.ref_name(base)} ({sha}) with no commits "
+            "of its own, so the next branch would be the same commit under "
+            "another name"
+        )
+
     chosen = next_name(stem(branch), remote, repo=repo)
-    sha = short_sha(base, repo=repo)
+    previous_sha = _short(local, repo=repo)
     switch_create(chosen, base, repo=repo)
-    return Rotated(chosen, stem(branch), base, sha.out.strip() if sha else "")
+    return Rotated(chosen, stem(branch), base, sha, branch, previous_sha, ahead)
+
+
+def _short(ref: str, repo: str | os.PathLike[str] | None = None) -> str:
+    sha = short_sha(ref, repo=repo)
+    return sha.out.strip() if sha else ""
+
+
+def _count(a: str, b: str, repo: str | os.PathLike[str] | None = None) -> int:
+    """Commits reachable from `b` and not from `a`."""
+    counted = R.count_between(a, b, repo=repo)
+    return int(counted.out.strip() or 0) if counted else 0
 
 
 def _catch_up(
@@ -141,8 +185,8 @@ def _catch_up(
     --ff-only refuses when the local copy is ahead, which is the answer: those
     commits are a change of their own and belong on a branch.
     """
-    ahead = R.count_between(base, f"refs/heads/{branch}", repo=repo)
-    count = int(ahead.out.strip() or 0) if ahead else 0
+    local = f"refs/heads/{branch}"
+    count = _count(base, local, repo=repo)
     if count:
         listed = log_oneline(f"{base}..refs/heads/{branch}", repo=repo)
         lines = "\n".join(f"  {line}" for line in listed.lines) if listed else ""
@@ -152,5 +196,14 @@ def _catch_up(
             "Those commits are a change of their own; "
             "'worktrees new-branch <name>' puts them on one."
         )
+    behind = _count(local, base, repo=repo)
+    previous_sha = _short(local, repo=repo)
+    if not behind:
+        raise Refusal(
+            f"{branch} is already at {R.ref_name(base)} ({previous_sha}); "
+            "there is nothing to catch up"
+        )
     merge_ff_only(base, repo=repo)
-    return CaughtUp(branch, R.ref_name(base))
+    return CaughtUp(
+        branch, R.ref_name(base), previous_sha, _short(local, repo=repo), behind
+    )
