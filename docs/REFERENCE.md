@@ -301,11 +301,11 @@ Rules that each have a failure behind them:
   what makes "no `branch -D` was issued" assertable. It only reaches
   in-process tests; a subprocess test asserts on output and on the filesystem.
 
-CI runs `ubuntu-latest` on Python 3.11, 3.12, 3.13 and 3.14, with `ruff` and
-`mypy` through `pre-commit` on 3.14. `uv sync --locked` fails the run on a
-stale `uv.lock` rather than resolving something the lock never described.
-Neither fish nor zsh is on that image, so `tests.yml` installs both and the
-assertions that drive a real shell turn their `pytest.skip` into a
+CI runs `ubuntu-24.04` and `ubuntu-26.04` on Python 3.11, 3.12, 3.13 and 3.14,
+with `ruff` and `mypy` through `pre-commit` on 3.14. `uv sync --locked` fails
+the run on a stale `uv.lock` rather than resolving something the lock never
+described. Neither fish nor zsh is on those images, so `tests.yml` installs both
+and the assertions that drive a real shell turn their `pytest.skip` into a
 `pytest.fail` when `CI` is set. A skip is invisible in `pytest -q`, so a green
 run used to mean nothing about either shim.
 

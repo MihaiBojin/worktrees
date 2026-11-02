@@ -22,8 +22,12 @@ concurrency:
 
 jobs:
   lint:
-    name: Lint
-    runs-on: ubuntu-26.04
+    name: Lint (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -33,7 +37,7 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-          cache-suffix: ${{ github.workflow }}-${{ github.job }}
+          cache-suffix: ${{ github.workflow }}-${{ github.job }}-${{ matrix.os }}
 
       - name: Install dependencies
         run: uv sync --all-extras --locked
@@ -44,13 +48,14 @@ jobs:
         run: uv run --no-sync pre-commit run --all-files --show-diff-on-failure
 
   test:
-    name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-26.04
+    name: Python ${{ matrix.python-version }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       # One version failing is a fact about that version, so let the others
       # finish and say which.
       fail-fast: false
       matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
         python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
@@ -67,7 +72,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
-          cache-suffix: ${{ github.workflow }}-${{ github.job }}
+          cache-suffix: ${{ github.workflow }}-${{ github.job }}-${{ matrix.os }}
 
       - name: Install dependencies
         # --locked fails the run on a stale uv.lock, rather than quietly
