@@ -111,6 +111,9 @@ both managers take `main`, which can be ahead of the last release, and the
 functions then call commands they were not tested against. `gwh` says which
 release the plugin here came from, and whether it is the same one.
 
+To upgrade, move both: `uv tool upgrade git-worktrees` for the commands, then
+the plugin's tag to the same release, as each manager below describes.
+
 ### fish
 
 ```console
