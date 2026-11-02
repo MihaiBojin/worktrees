@@ -73,6 +73,12 @@ def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str
     `$`, a backtick and `;` in a branch name. `shlex.quote` writes POSIX
     single quotes, which bash, zsh and fish all read the same way.
     """
+    sha = restore_sha(branch, repo=repo)
+    return f"git branch {shlex.quote(branch)} {sha}" if sha else ""
+
+
+def restore_sha(branch: str, repo: str | os.PathLike[str] | None = None) -> str:
+    """The commit `restore_line` names, or '' when none can be proved."""
     if not branch:
         return ""
     sha = sha_of(f"refs/heads/{branch}", repo=repo)
@@ -82,7 +88,7 @@ def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str
     kind = object_type(text, repo=repo)
     if not kind or kind.out.strip() != "commit":
         return ""
-    return f"git branch {shlex.quote(branch)} {text}"
+    return text
 
 
 def stashes_on(branch: str, entries: list[str]) -> list[str]:
@@ -116,10 +122,11 @@ def plan(
     """
     entries = stash_list(repo=repo).lines
     for v in go:
-        say(f"{render.err(v.label, render.BOLD)}  {render.err(v.path, render.DIM)}")
-        restore = restore_line(v.branch, repo=repo)
-        if restore:
-            say(render.err(f"  restore with: {restore}", render.DIM))
+        say(f"{render.branch(v.label)}  {render.err(v.path, render.DIM)}")
+        sha = restore_sha(v.branch, repo=repo)
+        if sha:
+            restore = render.restore(v.branch, sha)
+            say(f"  {render.err('restore with:', render.DIM)} {restore}")
         # A stash survives the branch it was made on: refs/stash pins its own
         # commits. What does not survive is the name in its subject, so say
         # which entry is about to start pointing at nothing.
@@ -160,7 +167,8 @@ def confirm(count: int, ask: Callable[[str], str] | None = None) -> bool:
                 "pass --yes to remove them"
             )
         ask = _prompt
-    return ask(f"remove {count} worktree(s)? [y/N] ").strip().lower() in ("y", "yes")
+    question = render.ask(f"remove {count} worktree(s)?", "[y/N]")
+    return ask(question).strip().lower() in ("y", "yes")
 
 
 def sweep(
@@ -180,7 +188,7 @@ def sweep(
         try:
             worktree_remove(v.path, repo=repo)
         except (GitError, Refused) as exc:
-            say(f"{v.label} kept: {exc}")
+            say(render.fail(f"{render.branch(v.label)} kept: {exc}"))
             failed += 1
             continue
 
@@ -190,7 +198,7 @@ def sweep(
             try:
                 ref_delete(f"refs/heads/{v.branch}", v.sha, repo=repo)
             except (GitError, Refused) as exc:
-                say(f"branch {v.branch} kept: {exc}")
+                say(render.fail(f"branch {render.branch(v.branch)} kept: {exc}"))
 
     worktree_prune(repo=repo)
     return failed

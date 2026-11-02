@@ -154,6 +154,7 @@ def test_unmerged_branch_is_not_deleted(world):
     assert p.returncode == 3, p.stderr
     assert json.loads(p.stdout)["removed"] == []
     assert world.git("rev-parse", "feature") == sha
+    assert "feature kept: " in p.stderr, "exit 3 with nothing said"
 
 
 @pytest.mark.parametrize("change", ["different", "mode", "deleted", "renamed"])

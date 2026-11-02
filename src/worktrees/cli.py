@@ -111,7 +111,7 @@ def _explain() -> int:
     """Every git command the program can issue."""
     from .git import RULES, commands
 
-    rows: list[Row] = [(Cell("", DIM), Cell("COMMAND", DIM), Cell("GIT", DIM))]
+    rows: list[Row] = [(Cell(""), Cell("COMMAND", BOLD), Cell("GIT", BOLD))]
     for c in commands():
         rows.append(
             (
@@ -432,12 +432,16 @@ def run_prune(args: argparse.Namespace) -> int:
                 print()
                 print(f"nothing to remove; {_counted(rows)}")
                 if len(rows) < 2:
-                    _err("no worktrees besides the main checkout; gwa NAME makes one")
+                    _err(
+                        render.note(
+                            "no worktrees besides the main checkout; gwa NAME makes one"
+                        )
+                    )
         return 0
 
     if unknown and not args.quiet:
-        names = ", ".join(v.label for v in unknown)
-        _err(f"unclear, and this does not touch them: {names}")
+        names = ", ".join(render.branch(v.label) for v in unknown)
+        _warn(f"unclear, and this does not touch them: {names}")
 
     # What goes, and what puts it back, before anything does. On stderr with
     # the rest of the diagnostics, so stdout carries the result alone;
@@ -447,7 +451,7 @@ def run_prune(args: argparse.Namespace) -> int:
     # A Refused from here goes to _dispatch, which exits 3 for every refusal.
     # No terminal is one condition, so it is one code wherever it is met.
     if not args.yes and not prune.confirm(len(go)):
-        _err("nothing removed")
+        _err(render.note("nothing removed"))
         return 0
 
     failed = prune.sweep(go, _err)
@@ -461,7 +465,8 @@ def run_prune(args: argparse.Namespace) -> int:
             )
         )
     else:
-        print(f"removed {len(go)} worktree(s)")
+        names = ", ".join(render.out(v.label, render.BRANCH) for v in go)
+        print(f"removed {len(go)} worktree(s): {names}")
     return 1 if failed else 0
 
 
@@ -505,7 +510,7 @@ def run_new_branch(args: argparse.Namespace) -> int:
     if not args.name:
         # The program the caller typed, so `worktrees branch create` does not
         # answer with the name of its own alias.
-        _err(f"usage: {args.prog} NAME")
+        _err(render.fail(f"usage: {args.prog} NAME"))
         return 2
 
     warn = None if args.quiet else _warn
@@ -527,8 +532,9 @@ def run_new_branch(args: argparse.Namespace) -> int:
         )
     elif not args.quiet:
         print(
-            f"{render.out(started.branch, BOLD)} from "
-            f"{R.ref_name(started.base)} at {started.sha}"
+            f"{render.out(started.branch, render.BRANCH)} from "
+            f"{render.out(R.ref_name(started.base), BLUE)} at "
+            f"{render.out(started.sha, YELLOW)}"
         )
     return 0
 
@@ -640,10 +646,15 @@ def _was_now(was: tuple[str, str, str], now: tuple[str, str, str]) -> str:
     """Where HEAD stood before and stands after: branch, sha and a note."""
     return table(
         [
-            (Cell("was", DIM), was[0], Cell(was[1], YELLOW), Cell(was[2], DIM)),
             (
-                Cell("now", DIM),
-                Cell(now[0], BOLD + GREEN),
+                Cell("was", DIM),
+                Cell(was[0], render.BRANCH),
+                Cell(was[1], YELLOW),
+                Cell(was[2], DIM),
+            ),
+            (
+                Cell("now", BOLD),
+                Cell(now[0], render.BRANCH),
                 Cell(now[1], YELLOW),
                 Cell(now[2], DIM),
             ),
@@ -768,7 +779,7 @@ def run_add(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
     if not args.name:
-        _err(f"usage: {args.prog} NAME [BASE]")
+        _err(render.fail(f"usage: {args.prog} NAME [BASE]"))
         return 2
 
     warn = None if args.quiet else _warn
@@ -779,7 +790,7 @@ def run_add(args: argparse.Namespace) -> int:
         return 1
     if not args.quiet and not args.json:
         made = "on a new branch" if landed.created else "on the branch already here"
-        _err(f"{render.branch(landed.branch)} {made}")
+        _err(render.note(f"{render.branch(landed.branch)} {made}"))
     return _landed(args, landed)
 
 
@@ -836,7 +847,7 @@ def run_list(args: argparse.Namespace) -> int:
 
     if args.list:
         if not found:
-            _err("no worktree matches")
+            _err(render.fail("no worktree matches"))
             return 1
         # The picker's columns, without its numbers: `*` marks where you are.
         # Never coloured: like --json, it is what a script reads.
@@ -854,17 +865,17 @@ def run_list(args: argparse.Namespace) -> int:
         return 0
 
     if not found:
-        _err("no worktree matches")
+        _err(render.fail("no worktree matches"))
         return 1
     if len(rows) < 2:
-        _err("this is the only worktree; gwa NAME makes another")
+        _err(render.fail("this is the only worktree; gwa NAME makes another"))
         return 1
     # The main checkout is offered even to somebody standing in it: from a
     # subdirectory it is the way back to the top. Any other worktree you
     # stand in is shown above the rest, marked and unnumbered.
     offered = [w for w in found if w.main or not _same(w.path, here)]
     if not offered:
-        _err(f"already in {render.err(found[0].label, BOLD)}")
+        _err(render.note(f"already in {render.branch(found[0].label)}"))
         return 0
 
     # Which repository this is, above the list, so nobody has to run
@@ -884,7 +895,7 @@ def run_list(args: argparse.Namespace) -> int:
         here=next((w for w in offered if _same(w.path, here)), None),
     )
     if chosen is None:
-        _err("nothing picked")
+        _err(render.note("nothing picked"))
         return 0
     print(chosen.path)
     return 0
@@ -899,7 +910,7 @@ def run_move(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
     if not args.name:
-        _err(f"usage: {args.prog} NEW")
+        _err(render.fail(f"usage: {args.prog} NEW"))
         return 2
 
     try:
@@ -908,7 +919,7 @@ def run_move(args: argparse.Namespace) -> int:
         _err(render.fail(str(exc)))
         return 1
     if not args.quiet and not args.json:
-        _err(f"renamed to {render.branch(landed.branch)}")
+        _err(render.note(f"renamed to {render.branch(landed.branch)}"))
     return _landed(args, landed)
 
 
@@ -947,9 +958,11 @@ def run_remove(args: argparse.Namespace) -> int:
 
     if not candidates:
         _err(
-            "no worktree matches"
-            if args.query
-            else "no worktrees besides the main checkout"
+            render.fail(
+                "no worktree matches"
+                if args.query
+                else "no worktrees besides the main checkout"
+            )
         )
         return 1
 
@@ -964,7 +977,7 @@ def run_remove(args: argparse.Namespace) -> int:
         at=next((w for w in offered if _same(w.path, here)), None),
     )
     if picked is None:
-        _err("nothing picked")
+        _err(render.note("nothing picked"))
         return 0
     chosen = by_path[picked.path]
 
@@ -988,8 +1001,8 @@ def run_remove(args: argparse.Namespace) -> int:
         # Somebody at a terminal can consent to what --delete-ignored would
         # have. The plan below names every path before the question, and
         # --yes never stands in for that consent.
-        _err(
-            f"{render.err(chosen.label, BOLD)} is finished, but holds "
+        _warn(
+            f"{render.branch(chosen.label)} is finished, but holds "
             f"{chosen.ignored} ignored path(s); they go with it"
         )
         chosen = prune.Verdict(
@@ -1002,22 +1015,25 @@ def run_remove(args: argparse.Namespace) -> int:
         # and --force is the wrong answer to it: it deletes those files just
         # the same, and keeps a branch whose work already landed.
         state = "is finished" if chosen.ignored else "is not finished"
-        _err(
-            f"{render.err(chosen.label, BOLD)} {state}: "
-            f"{render.err(chosen.why, YELLOW)}"
-        )
+        why = f"{render.branch(chosen.label)} {state}: {chosen.why}"
         if chosen.ignored:
+            _err(render.fail(why))
             return 1
         if args.yes or not sys.stdin.isatty():
-            _err("pass --force to remove the worktree anyway; the branch is kept")
+            _err(
+                render.fail(
+                    f"{why}\npass --force to remove the worktree anyway; "
+                    "the branch is kept"
+                )
+            )
             return 1
         # Somebody at a terminal is asked instead, the way --force would have
         # answered: the checkout goes and the branch stays.
-        _err("removing the worktree keeps the branch")
+        _warn(f"{why}\nremoving the worktree keeps the branch")
 
     prune.plan([chosen], _err)
     if not args.yes and not prune.confirm(1):
-        _err("nothing removed")
+        _err(render.note("nothing removed"))
         return 0
 
     keep_branch = chosen.verdict != prune.REMOVE
@@ -1029,7 +1045,7 @@ def run_remove(args: argparse.Namespace) -> int:
         _err,
     )
     if not args.quiet and not args.json:
-        _err(f"removed {render.err(chosen.label, BOLD)}")
+        _err(render.note(f"removed {render.branch(chosen.label)}"))
     if args.json:
         print(json.dumps({"removed": chosen.label, "path": destination}, indent=2))
         return 0
@@ -1466,12 +1482,14 @@ def _unknown_command(prog: str, typed: str) -> int:
     # so the run that made the typo pays for it and no other run does.
     import difflib
 
-    _err(f"{prog}: there is no command {typed!r}")
+    render.setup()  # reached before _dispatch, which does this for the rest
+    lines = [f"{prog}: there is no command {typed!r}"]
     pool = [*_CANONICAL, "--help"]
     near = difflib.get_close_matches(typed, pool, n=1)
     if near:
-        _err(f"the closest is: {prog} {near[0]}")
-    _err(f"{prog} help lists every command")
+        lines.append(f"the closest is: {prog} {near[0]}")
+    lines.append(f"{prog} help lists every command")
+    _err(render.fail("\n".join(lines)))
     return 2
 
 
@@ -1531,7 +1549,11 @@ def _dispatch(
     # Worktree previews use status; branch deletion also has --dry-run.
     branch_delete = run is run_branch_delete or raw[:2] == ["branch", "delete"]
     if "--dry-run" in raw and not branch_delete:
-        _err("there is no --dry-run: gws reports, and gwp asks before removing")
+        _err(
+            render.fail(
+                "there is no --dry-run: gws reports, and gwp asks before removing"
+            )
+        )
         return 2
     args = p.parse_args(raw)
     # argparse gives a subparser its own prog; rebuild it rather than reach
