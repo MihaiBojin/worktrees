@@ -17,6 +17,58 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.6.0 - 2026-11-02
+
+### Changed
+
+`gwnb` is now `gwbc`, and `gw new-branch` is now `gw branch create`. Update
+the fish or zsh plugin so the new name completes. `gwbc` and `gwrot` are no
+longer marked alpha.
+
+`gwrot` prints the branch it left and the one it is on now, each with its
+commit, and exits 1 when a rotation or catch-up would change nothing.
+
+On a terminal, every command colours its output the same way: errors red
+behind ✗, warnings behind !, notes behind →, branches bold magenta, refs
+blue, commits yellow, paths dim, and each verdict in one colour wherever it
+appears. Piped or redirected output, and any run with `NO_COLOR` set, stays
+plain.
+
+`gwl`, `gws`, `gwp` and `gwr` list the main checkout first, then the other
+worktrees from oldest to newest.
+
+`-v` prints each git and `gh` command after it runs, with what it printed and
+its exit code indented beneath it.
+
+`gwp` names the worktrees it removed.
+
+### Added
+
+`gws` and `gwbs` take `--only VERDICT`, repeatable, to show only the rows
+marked `remove`, `keep` or `unknown`, in the table and in `--json`. The counts
+under the table still cover every row. Both also take `-f` for
+`--force-refresh`.
+
+`gwrot -f` is short for `gwrot --force-refresh`.
+
+`gwbd` shows each branch's verdict in its selector and in the list it prints
+before asking, and a `--dry-run` ends by saying how many branches would go.
+
+`gwbs` and `gwbd` show a spinner on stderr while they judge, with a line
+naming the branch, the check in progress and how far through the list they
+are, such as `fix-parser: was it squash-merged into main? (4 of 18)`. `gwbd`
+keeps it running while it rechecks each branch before deleting it. It stays
+off when stderr is not a terminal, on `TERM=dumb`, and under `-q` or `-v`.
+
+`gwl` names each remote above the picker as host and path, such as
+`origin: github.com/org/repo`, for SSH and HTTPS remotes alike and without
+any user name or token the URL carries.
+
+### Fixed
+
+`gwbd` says why it kept each branch it was asked to delete, rather than
+exiting 3 with nothing printed.
+
 ## 0.5.1 - 2026-09-29
 
 ### Added
