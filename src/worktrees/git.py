@@ -403,8 +403,11 @@ def git(
                     )
                 )
             if proc.returncode not in accept:
+                # One colour for the whole command: painting the flags inside
+                # it and not the names reads as two kinds of thing.
+                command = render.command("git " + shlex.join(argv))
                 raise GitError(
-                    f"git {shlex.join(argv)} exited {proc.returncode}:\n"
+                    f"{command} exited {proc.returncode}:\n"
                     f"{proc.stderr.strip() or '(no output)'}"
                 )
             return Run(proc.returncode, proc.stdout, proc.stderr)

@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from . import layout
+from . import layout, render
 from . import repo as R
 from .git import GitError, Refused, git
 from .new_branch import Refusal, check_ref_format
@@ -64,7 +64,7 @@ def add(
 ) -> Landed:
     """Create a worktree for `name` and say where it is."""
     if not check_ref_format(name, repo=repo):
-        raise Refusal(f"{name} is not a valid branch name")
+        raise Refusal(f"{render.branch(name)} is not a valid branch name")
 
     main = R.main_worktree(repo)
     if not main:
@@ -73,7 +73,7 @@ def add(
 
     for wt in R.worktrees(repo):
         if wt.branch == name:
-            raise Refusal(f"{name} is already checked out at {wt.path}")
+            raise Refusal(f"{render.branch(name)} is already checked out at {wt.path}")
 
     if dest.exists():
         owner = layout.owner_of(str(dest), repo=repo)
@@ -86,7 +86,10 @@ def add(
     if fetch and remote and not R.fetch(remote, repo=repo):
         online = False
         if callable(warn):
-            warn(f"{remote} could not be fetched; branching from what is already here")
+            warn(
+                f"{render.ref(remote)} could not be fetched; branching from what "
+                "is already here"
+            )
 
     existing = bool(R.ref_exists(f"refs/heads/{name}", repo=repo))
     made = _first_absent(dest.parent, main)
@@ -158,7 +161,7 @@ def move(
     has to be told where to go.
     """
     if not check_ref_format(new, repo=repo):
-        raise Refusal(f"{new} is not a valid branch name")
+        raise Refusal(f"{render.branch(new)} is not a valid branch name")
 
     here = R.toplevel(repo=repo).out.strip()
     if not here:
@@ -174,9 +177,9 @@ def move(
     if not old:
         raise Refusal("HEAD is detached here, so there is no branch to rename")
     if old == new:
-        raise Refusal(f"this worktree is already on {new}")
+        raise Refusal(f"this worktree is already on {render.branch(new)}")
     if R.ref_exists(f"refs/heads/{new}", repo=repo):
-        raise Refusal(f"{new} is already a branch")
+        raise Refusal(f"{render.branch(new)} is already a branch")
 
     dest = layout.destination(new, main)
     if dest.exists():

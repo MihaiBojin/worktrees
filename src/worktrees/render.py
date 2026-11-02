@@ -28,6 +28,7 @@ RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 BLUE = "\033[34m"
+MAGENTA = "\033[35m"
 CYAN = "\033[36m"
 
 
@@ -64,16 +65,34 @@ def setup() -> None:
 
 
 class Cell:
-    """One cell. The width comes from the text, the code paints it after."""
+    """One cell. The width comes from the text, the code paints it after.
 
-    __slots__ = ("code", "text")
+    `Cell.of` builds one from pieces, each painted its own way, for a cell
+    such as `gwa NAME [BASE]` whose command and arguments differ.
+    """
+
+    __slots__ = ("code", "parts", "text")
 
     text: str
     code: str
+    parts: tuple[tuple[str, str], ...]
 
     def __init__(self, text: str, code: str = "") -> None:
         self.text = text
         self.code = code
+        self.parts = ()
+
+    @classmethod
+    def of(cls, *parts: tuple[str, str]) -> Cell:
+        cell = cls("".join(text for text, _ in parts))
+        cell.parts = parts
+        return cell
+
+    def painted(self, width: int) -> str:
+        if not self.parts:
+            return out(self.text.ljust(width), self.code)
+        pad = " " * (width - len(self.text))
+        return "".join(out(text, code) for text, code in self.parts) + pad
 
 
 Row = tuple["str | Cell", ...]
@@ -92,8 +111,8 @@ def table(rows: list[Row]) -> str:
     widths = [max(len(r[i].text) for r in grid) for i in range(len(grid[0]))]
     lines = []
     for row in grid:
-        cells = [out(c.text.ljust(widths[i]), c.code) for i, c in enumerate(row[:-1])]
-        lines.append("  ".join([*cells, out(row[-1].text, row[-1].code)]).rstrip())
+        cells = [c.painted(widths[i]) for i, c in enumerate(row[:-1])]
+        lines.append("  ".join([*cells, row[-1].painted(0)]).rstrip())
     return "\n".join(lines)
 
 
@@ -101,23 +120,55 @@ def table(rows: list[Row]) -> str:
 # messages on stderr
 # --------------------------------------------------------------------------
 
-# A quoted command, a flag, or a sha with at least one digit, so a word like
-# `deadbeef` in prose stays prose. Quoted first: a flag inside one stays part
-# of the command it belongs to.
+
+def branch(name: str) -> str:
+    """A local branch, in a message bound for stderr."""
+    return err(name, BOLD + MAGENTA)
+
+
+def ref(name: str) -> str:
+    """A remote, or a ref a branch is measured against: origin/main."""
+    return err(name, BLUE)
+
+
+def command(text: str) -> str:
+    """A command line quoted in a message: bold, as one piece, in whatever
+    colour the line around it has."""
+    return err(text, BOLD)
+
+
+# Text `branch`, `ref` or `command` already painted, left as it is; then a
+# quoted command, a flag, or a sha with at least one digit, so a word like
+# `deadbeef` in prose stays prose. Quoted before flag: a flag inside one stays
+# part of the command it belongs to. Commands and flags are bold rather than
+# a colour, so they read as part of the line they sit in: red in a failure.
 _TOKEN = re.compile(
-    r"(?P<quoted>'[^'\n]+')"
+    r"(?P<painted>\033\[[\d;]*m.*?\033\[0m)"
+    r"|(?P<quoted>'[^'\n]+')"
     r"|(?P<flag>(?<![\w-])--?[A-Za-z][\w-]*)"
     r"|(?P<sha>\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b)"
 )
-_TOKEN_CODE = {"quoted": CYAN, "flag": CYAN, "sha": YELLOW}
+_TOKEN_CODE = {"quoted": BOLD, "flag": BOLD, "sha": YELLOW}
 
 
 def _tokens(text: str) -> str:
-    return _TOKEN.sub(lambda m: err(m.group(), _TOKEN_CODE[m.lastgroup or ""]), text)
+    def paint(m: re.Match[str]) -> str:
+        if m.lastgroup == "painted":
+            return m.group()
+        return err(m.group(), _TOKEN_CODE[m.lastgroup or ""])
+
+    return _TOKEN.sub(paint, text)
 
 
-def _message(symbol: str, code: str, text: str) -> str:
-    """The symbol, the first line as the headline, any further lines dim.
+def _message(
+    symbol: str, code: str, text: str, base: str = "", detail: str = DIM
+) -> str:
+    """The symbol, the first line as the headline in `base`, any further
+    lines in `detail`.
+
+    A painted name inside the headline ends with a reset, so `base` is put
+    back after each one; without that, the words after a branch name lose
+    the line's colour.
 
     Plain text when stderr is not a terminal: the symbol is decoration, and a
     log or a pipe gets the words as they were.
@@ -125,14 +176,17 @@ def _message(symbol: str, code: str, text: str) -> str:
     if not err.on:
         return text
     head, *rest = text.split("\n")
-    lines = [f"{err(symbol, BOLD + code)} {_tokens(head)}"]
-    lines += [f"  {err(line, DIM)}" for line in rest]
+    head = _tokens(head)
+    if base:
+        head = base + head.replace(RESET, RESET + base) + RESET
+    lines = [f"{err(symbol, BOLD + code)} {head}"]
+    lines += [f"  {err(line, detail)}" for line in rest]
     return "\n".join(lines)
 
 
 def fail(text: str) -> str:
-    """Why nothing was done."""
-    return _message("✗", RED, text)
+    """Why nothing was done. Every line of it is red: it is the error."""
+    return _message("✗", RED, text, base=RED, detail=RED)
 
 
 def warn(text: str) -> str:

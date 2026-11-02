@@ -94,11 +94,19 @@ def test_a_message_is_its_own_words_when_stderr_is_not_a_terminal() -> None:
     assert render.note(text) == text
 
 
-def test_a_failure_leads_with_a_symbol_and_dims_its_detail(stderr_colour) -> None:
+def test_a_failure_leads_with_a_symbol_and_reddens_its_detail(stderr_colour) -> None:
     first, second = render.fail("x is at origin/main (1e177cf)\nwhy").split("\n")
-    assert first.startswith(f"{render.BOLD}{render.RED}✗{render.RESET} x is at")
+    assert first.startswith(
+        f"{render.BOLD}{render.RED}✗{render.RESET} {render.RED}x is at"
+    )
     assert f"{render.YELLOW}1e177cf{render.RESET}" in first
-    assert second == f"  {render.DIM}why{render.RESET}"
+    assert second == f"  {render.RED}why{render.RESET}"
+
+
+def test_a_warning_dims_its_detail(stderr_colour) -> None:
+    assert (
+        render.warn("stale\nwhy").split("\n")[1] == f"  {render.DIM}why{render.RESET}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -109,8 +117,8 @@ def test_a_failure_leads_with_a_symbol_and_dims_its_detail(stderr_colour) -> Non
         ("'worktrees new-branch --x' names one", "'worktrees new-branch --x'"),
     ],
 )
-def test_flags_and_quoted_commands_are_cyan(stderr_colour, text, painted) -> None:
-    assert f"{render.CYAN}{painted}{render.RESET}" in render.warn(text)
+def test_flags_and_quoted_commands_are_bold(stderr_colour, text, painted) -> None:
+    assert f"{render.BOLD}{painted}{render.RESET}" in render.warn(text)
 
 
 @pytest.mark.parametrize("word", ["fix-parser-2026-09-10_001", "deadbeef", "x-y"])
@@ -139,3 +147,32 @@ def test_a_long_trace_is_cut_and_says_how_much() -> None:
     lines = render.trace(["git", "x", "-z"], 0, out, "", failed=False).split("\n")
     assert lines[1] == "  line 0"
     assert lines[-2] == "  ... 5 more"
+
+
+def test_branches_and_refs_keep_their_own_colour(stderr_colour) -> None:
+    """Painted where the message is built; the sha and flag passes skip them."""
+    name = "fix-abc1234"
+    line = render.warn(
+        f"{render.branch(name)} is already at {render.ref('origin/main')}"
+    )
+    assert line.endswith(
+        f"{render.BOLD}{render.MAGENTA}{name}{render.RESET} is already at "
+        f"{render.BLUE}origin/main{render.RESET}"
+    )
+
+
+def test_a_command_in_a_message_is_one_colour(stderr_colour) -> None:
+    """Not cyan flags beside plain names."""
+    cmd = "git switch --create x-2026-11-02_001 --no-track refs/remotes/origin/main"
+    line = render.fail(f"{render.command(cmd)} exited 1:\nerror: no")
+    first = line.split("\n")[0]
+    assert f"{render.BOLD}{cmd}{render.RESET}{render.RED} exited 1:" in first
+
+
+def test_a_failure_stays_red_after_a_painted_name(stderr_colour) -> None:
+    """Each reset a name ends with puts the line's red back."""
+    line = render.fail(f"{render.branch('x')} is gone")
+    assert line.endswith(
+        f"{render.BOLD}{render.MAGENTA}x{render.RESET}{render.RED} is gone"
+        f"{render.RESET}"
+    )

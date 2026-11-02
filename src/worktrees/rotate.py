@@ -12,6 +12,7 @@ import os
 import re
 from datetime import date
 
+from . import render
 from . import repo as R
 from .git import git
 from .new_branch import Refusal, short_sha, switch_create
@@ -110,7 +111,9 @@ def next_name(
         if remote and R.ref_exists(f"refs/remotes/{remote}/{name}", repo=repo):
             continue
         return name
-    raise Refusal(f"every number from 001 to 999 is taken for {base_stem} on {day}")
+    raise Refusal(
+        f"every number from 001 to 999 is taken for {render.branch(base_stem)} on {day}"
+    )
 
 
 def rotate(
@@ -131,7 +134,10 @@ def rotate(
     if fetch and remote and not R.fetch(remote, repo=repo):
         online = False
         if callable(warn):
-            warn(f"{remote} could not be fetched; working from what is already here")
+            warn(
+                f"{render.ref(remote)} could not be fetched; working from what is "
+                "already here"
+            )
 
     base, warning = R.head_ref(remote, online=online, repo=repo)
     if warning and callable(warn):
@@ -155,7 +161,8 @@ def rotate(
     ahead = _count(base, local, repo=repo)
     if not ahead and not _count(local, base, repo=repo):
         raise Refusal(
-            f"{branch} is already at {R.ref_name(base)} ({sha}) with no commits "
+            f"{render.branch(branch)} is already at {render.ref(R.ref_name(base))} "
+            f"({sha}) with no commits "
             "of its own\nthe next branch would be the same commit under another "
             "name; commit to this one first"
         )
@@ -191,7 +198,8 @@ def _catch_up(
         listed = log_oneline(f"{base}..refs/heads/{branch}", repo=repo)
         lines = "\n".join(f"  {line}" for line in listed.lines) if listed else ""
         raise Refusal(
-            f"{branch} is {count} commit(s) ahead of {R.ref_name(base)}, so it "
+            f"{render.branch(branch)} is {count} commit(s) ahead of "
+            f"{render.ref(R.ref_name(base))}, so it "
             f"cannot be fast-forwarded:\n{lines}\n"
             "Those commits are a change of their own; "
             "'worktrees new-branch <name>' puts them on one."
@@ -200,7 +208,8 @@ def _catch_up(
     previous_sha = _short(local, repo=repo)
     if not behind:
         raise Refusal(
-            f"{branch} is already at {R.ref_name(base)} ({previous_sha})\n"
+            f"{render.branch(branch)} is already at "
+            f"{render.ref(R.ref_name(base))} ({previous_sha})\n"
             "there is nothing to catch up"
         )
     merge_ff_only(base, repo=repo)

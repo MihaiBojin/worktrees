@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import shlex
 
+from . import render
 from . import repo as R
 from .git import git
 
@@ -58,12 +59,13 @@ def create(
 ) -> Started:
     """Fetch, then branch `name` off the head branch and check it out."""
     if not check_ref_format(name, repo=repo):
-        raise Refusal(f"{name} is not a valid branch name")
+        raise Refusal(f"{render.branch(name)} is not a valid branch name")
     if R.ref_exists(f"refs/heads/{name}", repo=repo):
         # Native git, so the message names a command that exists for somebody
         # who installed the package without the shell plugin.
         raise Refusal(
-            f"{name} is already a branch; git switch {shlex.quote(name)} checks it out"
+            f"{render.branch(name)} is already a branch; "
+            f"git switch {shlex.quote(name)} checks it out"
         )
 
     remote = R.remote(repo=repo)
@@ -75,7 +77,10 @@ def create(
         # round trip proving the same thing.
         online = False
         if callable(warn):
-            warn(f"{remote} could not be fetched; branching from what is already here")
+            warn(
+                f"{render.ref(remote)} could not be fetched; branching from what "
+                "is already here"
+            )
 
     base, warning = R.head_ref(remote, online=online, repo=repo)
     if warning and callable(warn):

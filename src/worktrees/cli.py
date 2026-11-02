@@ -269,7 +269,7 @@ def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
             args.no_forge = True
             if not args.quiet:
                 _warn(
-                    f"{remote} could not be fetched; judging from the refs "
+                    f"{render.ref(remote)} could not be fetched; judging from the refs "
                     "already here, and not asking the forge"
                 )
     elif args.no_fetch and not args.quiet:
@@ -756,7 +756,7 @@ def run_add(args: argparse.Namespace) -> int:
         return 1
     if not args.quiet and not args.json:
         made = "on a new branch" if landed.created else "on the branch already here"
-        _err(f"{render.err(landed.branch, BOLD)} {made}")
+        _err(f"{render.branch(landed.branch)} {made}")
     return _landed(args, landed)
 
 
@@ -844,6 +844,14 @@ def run_list(args: argparse.Namespace) -> int:
         _err(f"already in {render.err(found[0].label, BOLD)}")
         return 0
 
+    # Which repository this is, above the list, so nobody has to run
+    # `git remote -v` to find out. Only where the picker is drawn: --list and
+    # --json are what a script reads, and a query that narrows to one takes it
+    # without showing anything.
+    if not (args.query and len(offered) == 1):
+        for name, url in R.remote_urls():
+            _err(f"{render.ref(name)}: {url}")
+
     # A query that narrows to one has said which. No query has not, even
     # when the repository holds exactly one other worktree.
     chosen = pick.choose(
@@ -877,7 +885,7 @@ def run_move(args: argparse.Namespace) -> int:
         _err(render.fail(str(exc)))
         return 1
     if not args.quiet and not args.json:
-        _err(f"renamed to {render.err(landed.branch, BOLD)}")
+        _err(f"renamed to {render.branch(landed.branch)}")
     return _landed(args, landed)
 
 
@@ -1027,29 +1035,40 @@ def _listed(names: list[str]) -> str:
 
 def run_help(args: argparse.Namespace) -> int:
     """Every name this package installs, and what each one answers."""
-    print(f"worktrees {__version__}: git worktree commands that refuse to lose work")
+    o = render.out
+    print(
+        f"{o('worktrees', BOLD)} {o(__version__, YELLOW)}: git worktree commands "
+        "that refuse to lose work"
+    )
     print()
 
-    rows: list[Row] = [(Cell("COMMAND", DIM), Cell("GW", DIM), Cell("DOES", DIM))]
+    # The binary green, the subcommand blue, what goes after either dim, so
+    # each column reads as one kind of thing. Plain text off a terminal.
+    rows: list[Row] = [(Cell("COMMAND", BOLD), Cell("GW", BOLD), Cell("DOES", BOLD))]
     for name, c in command_rows():
-        spelled = f"gw {name}"
-        if c.aliases:
-            spelled += " (" + ", ".join(c.aliases) + ")"
+        aliases = f" ({', '.join(c.aliases)})" if c.aliases else ""
+        alpha = c.about.endswith(" (alpha)")
+        about = c.about.removesuffix(" (alpha)")
         rows.append(
             (
                 # A row installing no binary has nothing for this column:
                 # `gw version` is the only way to type it.
-                Cell(f"{c.binary} {c.usage}".strip() or "\u2014", BOLD),
-                Cell(spelled),
-                Cell(c.about),
+                Cell.of((c.binary, BOLD + GREEN), (f" {c.usage}", DIM))
+                if c.binary and c.usage
+                else Cell(c.binary or "\u2014", BOLD + GREEN if c.binary else DIM),
+                Cell.of(("gw ", DIM), (name, BLUE), (aliases, DIM)),
+                Cell.of((about, ""), (" (alpha)", YELLOW)) if alpha else Cell(about),
             )
         )
     print(table(rows))
     print()
 
+    def names(binaries: list[str]) -> str:
+        return _listed([o(b, BOLD + GREEN) for b in binaries])
+
     lands = [c.binary for _, c in command_rows() if c.lands]
     print(
-        f"{_listed(lands)} change the directory you are "
+        f"{names(lands)} change the directory you are "
         "standing in.\nA binary cannot do that, so each needs the shell function "
         "of the same name\nfrom the plugin; the rest need nothing but $PATH."
     )
@@ -1058,12 +1077,13 @@ def run_help(args: argparse.Namespace) -> int:
     # list here: a row with no flags takes none, and saying so in prose is how
     # a help text comes to promise a flag the program refuses.
     bare = [c.binary or f"gw {name}" for name, c in command_rows() if c.flags is None]
-    scope = f"every command but {_listed(bare)}" if bare else "every command"
+    scope = f"every command but {names(bare)}" if bare else "every command"
+    flags = _listed([o(f, BOLD) for f in ("--json", "-q", "-v", "--explain")])
     print(
-        "gwnb and gwrot start branches rather than worktrees. Both are alpha "
-        f"and may go.\n\n--json, -q, -v and --explain work on {scope}, and\n"
-        "`gw <command> --help` has the rest. A non-empty NO_COLOR turns the "
-        "colour off."
+        f"{names(['gwnb', 'gwrot'])} start branches rather than worktrees. Both "
+        f"are {o('alpha', YELLOW)} and may go.\n\n{flags} work on {scope}, and\n"
+        f"`{o('gw <command> --help', BOLD)}` has the rest. A non-empty "
+        f"{o('NO_COLOR', BOLD)} turns the colour off."
     )
     return 0
 

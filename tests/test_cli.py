@@ -989,3 +989,47 @@ def test_list_is_never_coloured_even_on_a_terminal(world) -> None:
     os.waitpid(pid, 0)
     assert b"WORKTREE" in out
     assert b"\x1b[" not in out
+
+
+@pytest.mark.parametrize(
+    ("url", "short"),
+    [
+        ("git@github.com:org/repo.git", "github.com/org/repo"),
+        ("git@github.com:org/repo", "github.com/org/repo"),
+        ("ssh://git@github.com:22/org/repo.git", "github.com/org/repo"),
+        ("https://github.com/org/repo.git", "github.com/org/repo"),
+        ("https://user:secret@GitHub.com/org/repo/", "github.com/org/repo"),
+        (
+            "http://gitlab.example.com/group/sub/repo",
+            "gitlab.example.com/group/sub/repo",
+        ),
+        ("file:///srv/git/repo.git", "/srv/git/repo"),
+        ("/srv/git/repo.git", "/srv/git/repo"),
+        ("../upstream.git", "../upstream"),
+    ],
+)
+def test_a_remote_url_is_shown_as_host_and_path(url, short) -> None:
+    from worktrees import repo as R
+
+    assert R.short_url(url) == short
+
+
+def test_list_names_each_remote_above_the_picker(world) -> None:
+    """One line per remote, shortened, and never a credential."""
+    world.git("remote", "add", "origin", "git@github.com:org/repo.git")
+    world.git("remote", "add", "upstream", "https://me:tok@github.com/up/repo.git")
+    world.worktree("one")
+    code, out = run_on_a_terminal(world, "gwl", answer="\x1b")
+    assert code == 0, out
+    head = out.splitlines()
+    assert head[0].endswith("origin: github.com/org/repo")
+    assert head[1].endswith("upstream: github.com/up/repo")
+    assert "tok" not in out
+
+
+def test_list_for_a_script_names_no_remote(world) -> None:
+    world.git("remote", "add", "origin", "git@github.com:org/repo.git")
+    world.worktree("one")
+    p = run(world, "gwl", "--list")
+    assert p.returncode == 0, p.stderr
+    assert "github.com" not in p.stdout + p.stderr
