@@ -58,7 +58,8 @@ def _fish_flags(binary: str) -> set[str]:
 
 def _zsh_flags(binary: str) -> set[str]:
     text = (ZSH / f"_{binary}").read_text()
-    found = set(re.findall(r"'(--[a-z][a-z-]+)\[", text))
+    # A leading `*` is zsh for an option that may be given more than once.
+    found = set(re.findall(r"'\*?(--[a-z][a-z-]+)\[", text))
     found |= set(re.findall(r"\{(?:-[a-z],)?(--[a-z][a-z-]+)\}", text))
     return found
 

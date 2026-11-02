@@ -1,6 +1,6 @@
-#compdef gwnb
+#compdef gwbc
 
-# Flags as `gwnb --help` lists them.
+# Flags as `gwbc --help` lists them.
 
 _arguments -s \
     '--no-fetch[branch off what is already here]' \

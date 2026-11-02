@@ -231,7 +231,7 @@ def test_the_restore_line_is_safe_to_paste(world) -> None:
 
 
 def test_the_switch_hint_is_safe_to_paste(world) -> None:
-    """`gwnb` refusing a name it already has prints the same kind of line,
+    """`gwbc` refusing a name it already has prints the same kind of line,
     built from a name somebody typed."""
     from worktrees import new_branch
 

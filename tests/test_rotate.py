@@ -102,7 +102,7 @@ def test_a_detached_head_is_refused(world) -> None:
     world.git("checkout", "--quiet", "--detach", "HEAD")
     with pytest.raises(Refusal, match="HEAD is detached"):
         R_.rotate(fetch=False)
-    assert "new-branch" in _refusal(world)
+    assert "gwbc" in _refusal(world)
 
 
 def _refusal(world) -> str:
@@ -122,7 +122,7 @@ def test_a_head_branch_ahead_of_the_remote_is_refused(world) -> None:
     with pytest.raises(Refusal) as exc:
         R_.rotate(fetch=False)
     assert "1 commit(s) ahead of origin/main" in str(exc.value)
-    assert "new-branch" in str(exc.value)
+    assert "gwbc" in str(exc.value)
     assert world.git("rev-parse", "HEAD") == before
 
 

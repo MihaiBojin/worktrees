@@ -39,6 +39,7 @@ _gw() {
                         ;;
                     branch_args)
                         case ${words[1]} in
+                            create) _gwbc ;;
                             status) _gwbs ;;
                             delete) _gwbd ;;
                         esac

@@ -1,4 +1,4 @@
-"""gwnb: fetch, then branch off the head branch and check it out."""
+"""gwbc: fetch, then branch off the head branch and check it out."""
 
 from __future__ import annotations
 
@@ -16,12 +16,12 @@ from worktrees.git import Refused, guard
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 
-def gwnb(world, *args: str) -> subprocess.CompletedProcess[str]:
+def gwbc(world, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             sys.executable,
             "-c",
-            "from worktrees.cli import gwnb; raise SystemExit(gwnb())",
+            "from worktrees.cli import gwbc; raise SystemExit(gwbc())",
             *args,
         ],
         cwd=str(world.repo),
@@ -98,13 +98,13 @@ def test_a_tag_cannot_be_the_base(world) -> None:
 
 
 def test_a_name_is_required(world) -> None:
-    p = gwnb(world)
+    p = gwbc(world)
     assert p.returncode == 2
-    assert "usage: gwnb NAME" in p.stderr
+    assert "usage: gwbc NAME" in p.stderr
 
 
 def test_the_binary_reports_what_it_made(world) -> None:
-    p = gwnb(world, "feature", "--no-fetch")
+    p = gwbc(world, "feature", "--no-fetch")
     assert p.returncode == 0, p.stderr
     sha = world.git("rev-parse", "--short", "refs/heads/main")
     assert p.stdout.strip() == f"feature from main at {sha}"
@@ -112,14 +112,14 @@ def test_the_binary_reports_what_it_made(world) -> None:
 
 
 def test_json_is_data_on_stdout(world) -> None:
-    p = gwnb(world, "feature", "--no-fetch", "--json")
+    p = gwbc(world, "feature", "--no-fetch", "--json")
     assert p.returncode == 0, p.stderr
     assert json.loads(p.stdout)["base"] == "refs/heads/main"
 
 
 def test_a_refusal_leaves_the_checkout_alone(world) -> None:
     world.git("branch", "taken", "main")
-    p = gwnb(world, "taken", "--no-fetch")
+    p = gwbc(world, "taken", "--no-fetch")
     assert p.returncode == 1
     assert "already a branch" in p.stderr
     assert p.stdout == ""
@@ -140,16 +140,17 @@ def test_a_forced_checkout_is_refused(world) -> None:
 
 def test_the_usage_line_names_what_was_typed(world) -> None:
     """The alias and the subcommand are two programs, not one."""
-    p = gwnb(world)
+    p = gwbc(world)
     assert p.returncode == 2
-    assert p.stderr.strip() == "usage: gwnb NAME"
+    assert p.stderr.strip() == "usage: gwbc NAME"
 
     p = subprocess.run(
         [
             sys.executable,
             "-c",
             "from worktrees.cli import main; raise SystemExit(main())",
-            "new-branch",
+            "branch",
+            "create",
         ],
         cwd=str(world.repo),
         capture_output=True,
@@ -157,4 +158,4 @@ def test_the_usage_line_names_what_was_typed(world) -> None:
         env=env_for(world),
     )
     assert p.returncode == 2
-    assert p.stderr.strip() == "usage: worktrees new-branch NAME"
+    assert p.stderr.strip() == "usage: worktrees branch create NAME"

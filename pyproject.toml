@@ -16,7 +16,7 @@ version = "0.5.1"
 dependencies = []
 requires-python = ">=3.11"
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Natural Language :: English",
     "License :: OSI Approved :: Apache Software License",
@@ -47,12 +47,12 @@ dev = [
 [project.scripts]
 gw = "worktrees.cli:gw"
 gwa = "worktrees.cli:gwa"
+gwbc = "worktrees.cli:gwbc"
 gwbd = "worktrees.cli:gwbd"
 gwbs = "worktrees.cli:gwbs"
 gwh = "worktrees.cli:gwh"
 gwl = "worktrees.cli:gwl"
 gwm = "worktrees.cli:gwm"
-gwnb = "worktrees.cli:gwnb"
 gwp = "worktrees.cli:gwp"
 gwr = "worktrees.cli:gwr"
 gwrot = "worktrees.cli:gwrot"

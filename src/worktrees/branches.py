@@ -27,8 +27,14 @@ class Verdict:
     error: bool = False
 
     @property
+    def undo_parts(self) -> tuple[str, str, str]:
+        """The command that recreates the branch: git's words, the name as
+        the shell needs it, and the sha."""
+        return ("git branch", shlex.quote(self.branch), self.sha)
+
+    @property
     def undo(self) -> str:
-        return f"git branch {shlex.quote(self.branch)} {self.sha}"
+        return " ".join(self.undo_parts)
 
     def data(self) -> dict:
         return {**asdict(self), "undo": self.undo}

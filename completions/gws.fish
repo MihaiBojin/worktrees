@@ -5,6 +5,8 @@ complete -c gws -f
 complete -c gws -l branch -d 'consider only that branch'
 complete -c gws -l no-fetch -d 'use the refs already here'
 complete -c gws -l force-refresh -d 'fetch and ask the forge again, whatever is kept'
+complete -c gws -s f -d 'the same as --force-refresh'
+complete -c gws -l only -x -a 'remove keep unknown' -d 'show only rows with this verdict'
 complete -c gws -l delete-ignored -d 'count gitignored files as removable'
 complete -c gws -l no-forge -d 'decide from git alone; never ask the forge'
 

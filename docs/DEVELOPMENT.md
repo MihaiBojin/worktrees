@@ -37,8 +37,8 @@ what to run.
 | `src/worktrees/merged.py` | whether a branch's change is already upstream |
 | `src/worktrees/verdicts.py` | one verdict per worktree, and nothing that mutates |
 | `src/worktrees/prune.py` | the six commands that mutate, and the sweep |
-| `src/worktrees/new_branch.py` | alpha: starting a branch off the head branch |
-| `src/worktrees/rotate.py` | alpha: the next branch in a series |
+| `src/worktrees/new_branch.py` | starting a branch off the head branch |
+| `src/worktrees/rotate.py` | the next branch in a series |
 | `src/worktrees/layout.py` | where a worktree lives, derived from the main checkout |
 | `src/worktrees/pick.py` | matching a query, and the arrow-key picker |
 | `src/worktrees/worktree.py` | adding, moving and removing a checkout |
@@ -46,11 +46,9 @@ what to run.
 
 `pyproject.toml` maps each console script to an entry point in `cli.py`.
 
-`new_branch.py` and `rotate.py` are alpha. They start branches rather than
-worktrees, `origin new-branch` and `origin rotate` already do the same job,
-and only one of the two sets survives. Keep them matching `origin` rather
-than improving on it: a difference between them is a decision somebody has
-to make later, and there is no plan that makes both correct.
+`new_branch.py` and `rotate.py` start branches rather than worktrees. Their
+names, stem-stripping and collision check match `origin new-branch` and
+`origin rotate`; AGENTS.md lists the two places they differ.
 
 ## What an invocation costs
 
@@ -65,12 +63,13 @@ interpreter comes from uv. [docs/BENCHMARK.md](BENCHMARK.md) is the last run.
 ## Working on a checkout
 
 ```console
-uv tool install --from . git-worktrees
+make local-install    # uv tool install --force --from . git-worktrees
+make install          # uv tool install --force git-worktrees
 ```
 
-That installs the working copy in place of anything published, so `gws` on
-your `$PATH` is the code in front of you. `uv tool uninstall git-worktrees`
-puts it back.
+`make local-install` installs the working copy in place of anything
+published, so `gws` on your `$PATH` is the code in front of you. `make
+install` puts the latest release from PyPI back.
 
 The distribution is `git-worktrees` because PyPI already holds `worktrees`.
 The import package is `worktrees` and every console script keeps its own
@@ -110,7 +109,7 @@ A binary cannot `cd` its caller. A command that does gets a shell function of
 the same name, whose whole body is `command <name>` and a `cd`, so a script
 calling the binary still gets the path and only loses the move. `gwa`, `gwl`,
 `gwm` and `gwr` have one each, for fish under `functions/` and for zsh under
-`zsh/plugins/worktrees/functions/`. `gws`, `gwp`, `gwnb` and `gwrot` need
+`zsh/plugins/worktrees/functions/`. `gws`, `gwp`, `gwbc` and `gwrot` need
 none.
 
 ```fish

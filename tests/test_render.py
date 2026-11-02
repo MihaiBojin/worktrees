@@ -114,7 +114,7 @@ def test_a_warning_dims_its_detail(stderr_colour) -> None:
     [
         ("pass --force-refresh", "--force-refresh"),
         ("pass -f", "-f"),
-        ("'worktrees new-branch --x' names one", "'worktrees new-branch --x'"),
+        ("'gwbc --x' names one", "'gwbc --x'"),
     ],
 )
 def test_flags_and_quoted_commands_are_bold(stderr_colour, text, painted) -> None:
@@ -176,3 +176,16 @@ def test_a_failure_stays_red_after_a_painted_name(stderr_colour) -> None:
         f"{render.BOLD}{render.MAGENTA}x{render.RESET}{render.RED} is gone"
         f"{render.RESET}"
     )
+
+
+def test_an_undo_command_paints_its_branch_and_sha(stderr_colour) -> None:
+    """The way back reads like the table above it, and pastes as it did."""
+    import re
+
+    from worktrees import branch_cli, branches
+
+    v = branches.Verdict(branch="a b", sha="0" * 40, verdict="remove", why="")
+    line = branch_cli._undo(v)
+    assert render.branch("'a b'") in line
+    assert f"{render.YELLOW}{'0' * 40}{render.RESET}" in line
+    assert re.sub(r"\033\[[\d;]*m", "", line) == v.undo

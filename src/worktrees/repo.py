@@ -201,7 +201,9 @@ class Worktree:
 
 
 def worktrees(repo: str | os.PathLike[str] | None = None) -> list[Worktree]:
-    """Every worktree of this repository, main checkout first.
+    """Every worktree of this repository: the main checkout, then the rest
+    oldest to newest, as `created_at` dates them. git's own order is the
+    admin directories' names, which says nothing about when.
 
     `git worktree list --porcelain -z` NUL-terminates each attribute and ends
     a record with an empty one. Without -z git separates attributes by
@@ -243,11 +245,33 @@ def worktrees(repo: str | os.PathLike[str] | None = None) -> list[Worktree]:
         elif attr.startswith("prunable"):
             flags.add("prunable")
     emit()
-    return found
+    return sorted(found, key=created_at)
+
+
+def created_at(wt: Worktree) -> float:
+    """When `git worktree add` made it, read off its admin directory.
+
+    git records no date, but `add` writes `commondir` into
+    `.git/worktrees/<id>/` once and nothing rewrites it: `move` and `repair`
+    touch `gitdir`, a checkout touches `HEAD` and `index`. The worktree's own
+    `.git` file says which admin directory is its. The main checkout, and a
+    worktree whose directory or admin record is gone, have no date and sort
+    as 0 and infinity respectively.
+    """
+    if wt.main:
+        return 0.0
+    try:
+        pointer = (Path(wt.path) / ".git").read_text().strip()
+        admin = Path(pointer.removeprefix("gitdir: "))
+        if not admin.is_absolute():
+            admin = Path(wt.path) / admin
+        return (admin / "commondir").stat().st_mtime
+    except OSError:
+        return float("inf")
 
 
 def main_worktree(repo: str | os.PathLike[str] | None = None) -> str:
-    """The original checkout. git lists it first."""
+    """The original checkout, which `worktrees` puts first."""
     records = worktrees(repo)
     return records[0].path if records else ""
 
