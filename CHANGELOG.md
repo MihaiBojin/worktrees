@@ -17,6 +17,25 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.6.1 - 2026-11-02
+
+### Added
+
+`gwh` says which release the shell plugin in this shell came from, and whether
+it matches the commands. When the plugin is older, it names the tag to pin it
+to, and when newer, it gives the `uv tool upgrade git-worktrees` to run.
+`gw version` says the same on stderr, and its stdout is still the version
+alone. Both plugins export `WORKTREES_PLUGIN_VERSION` for this. A shell whose
+plugin predates this release reports none.
+
+### Changed
+
+The README installs the plugins at the release's tag, `fisher install
+MihaiBojin/worktrees@v0.6.1` for fish and `branch:v0.6.1` for Antidote, and
+says how to move each to another release. Moving an existing install onto a
+tag takes an edit to `fish_plugins` and `fisher update`, or `antidote purge
+MihaiBojin/worktrees` before editing the tag.
+
 ## 0.6.0 - 2026-11-02
 
 ### Changed

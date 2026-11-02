@@ -117,7 +117,7 @@ the plugin's tag to the same release, as each manager below describes.
 ### fish
 
 ```console
-fisher install MihaiBojin/worktrees@v0.6.0
+fisher install MihaiBojin/worktrees@v0.6.1
 ```
 
 Fisher copies `functions/`, `completions/` and `conf.d/` from the repository
@@ -134,7 +134,7 @@ the untagged one holds the files.
 Antidote takes a `path:` into the repository, and `branch:` takes a tag:
 
 ```
-MihaiBojin/worktrees branch:v0.6.0 path:zsh/plugins/worktrees   # in zsh_plugins.txt
+MihaiBojin/worktrees branch:v0.6.1 path:zsh/plugins/worktrees   # in zsh_plugins.txt
 ```
 
 The plugin puts its own `functions/` and `completions/` on `fpath` and
@@ -506,7 +506,7 @@ their own and `gwbc` puts them on a branch.
 
 ```console
 $ gwh
-worktrees 0.6.0: git worktree commands that refuse to lose work
+worktrees 0.6.1: git worktree commands that refuse to lose work
 
 COMMAND          GW                 DOES
 gws              gw status (s, st)  which worktrees are finished, and why
@@ -525,7 +525,7 @@ gwbd [NAME ...]  gw branch delete   delete local branches proved finished
 gwa, gwl, gwm and gwr change the directory you are standing in.
 A binary cannot do that, so each needs the shell function of the same name
 from the plugin; the rest need nothing but $PATH.
-The shell plugin here is 0.6.0, the same release as these commands.
+The shell plugin here is 0.6.1, the same release as these commands.
 ```
 
 `gw help`, `gw h` and `gw` with no subcommand print the same thing. One table
