@@ -516,8 +516,10 @@ cover every row. `-f` is on the two status commands only, since on `gwp` and
 
 `gw <command> --help` prints one command's own list.
 
-While `gws`, `gwp` and `gwr` fetch and judge, a spinner on stderr names the
-branch and the check in progress.
+While `gws`, `gwp`, `gwr`, `gwbs` and `gwbd` fetch and judge, a spinner on
+stderr names the branch and the check in progress. `gwbs` and `gwbd` judge one
+branch at a time, so their line also counts how far through the list they are:
+`fix-parser: was it squash-merged into main? (4 of 18)`.
 
 ### What is reused, and for how long
 

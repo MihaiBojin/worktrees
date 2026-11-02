@@ -240,7 +240,7 @@ on a terminal: both are what a script reads. The colour is applied at the
 call site that formats a table, and neither path passes a code to one.
 
 `progress.py` draws a spinner on stderr and one line saying what is being
-checked, while `gws`, `gwp` and `gwr` fetch and judge. It runs only when
+checked, while `gws`, `gwp`, `gwr`, `gwbs` and `gwbd` fetch and judge. It runs only when
 stderr is a terminal that can clear a line, and never under `-q` or `-v`,
 since the verbose log writes to the line it redraws. Anything else printed on
 stderr while it spins goes through `progress.line`, which clears the spinner

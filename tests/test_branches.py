@@ -345,3 +345,17 @@ def test_the_selector_and_the_plan_name_each_verdict(world):
     }
     assert rows == {"main": "keep", "done": "remove"}
     assert "VERDICT" in out.split("deleting 1 branch:")[1]
+
+
+def test_the_spinner_line_names_each_branch_and_how_far_along(world, monkeypatch):
+    """--all can mean dozens of branches, each a round trip to the forge."""
+    from worktrees import branches, progress
+
+    for name in ("one", "two"):
+        world.git("branch", name)
+    said: list[str] = []
+    monkeypatch.setattr(progress, "say", said.append)
+    head = world.git("rev-parse", "HEAD")
+    branches.assess([], head, "main", "", ask_forge=False)
+    assert "one: is it merged into main? (2 of 3)" in said
+    assert "two: is it merged into main? (3 of 3)" in said
