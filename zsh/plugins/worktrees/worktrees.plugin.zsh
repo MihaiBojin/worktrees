@@ -1,7 +1,7 @@
 # The four commands that change the caller's directory, and gwr!, which is
 # gwr --delete-ignored.
 #
-# Everything else here is a console script and needs nothing: gws, gwp, gwnb
+# Everything else here is a console script and needs nothing: gws, gwp, gwbc
 # and gwrot answer the same from a prompt and from a script. A binary cannot
 # cd its caller, and that is the only reason this file exists.
 #

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from . import __version__, progress, render
 from .errors import GitError, Refused
-from .render import BLUE, BOLD, CYAN, DIM, GREEN, RED, YELLOW, Cell, Row, table
+from .render import BLUE, BOLD, DIM, GREEN, RED, YELLOW, Cell, Row, table
 
 if TYPE_CHECKING:  # names used in annotations, which never run
     from . import repo as R
@@ -34,15 +34,7 @@ def _same(a: str, b: str) -> bool:
 
 def _verdict_table(rows: list[verdicts.Verdict]) -> str:
     """The table `gws` prints, which `gwp` prints too rather than name it."""
-    from . import verdicts
 
-    # Built here rather than at module level: naming the verdicts is what
-    # imports the module, and `gw version` has none to colour.
-    code = {
-        verdicts.REMOVE: GREEN,
-        verdicts.KEEP: BLUE,
-        verdicts.UNKNOWN: YELLOW,
-    }
     head: Row = (
         Cell("BRANCH", BOLD),
         Cell("PATH", BOLD),
@@ -51,9 +43,9 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
     )
     body: list[Row] = [
         (
-            Cell(v.label, CYAN),
+            Cell(v.label, render.BRANCH),
             Cell(v.path, DIM),
-            Cell(v.verdict, code.get(v.verdict, "")),
+            Cell(v.verdict, render.VERDICT.get(v.verdict, "")),
             Cell(v.why),
         )
         for v in rows
@@ -65,14 +57,39 @@ def _counted(rows: list[verdicts.Verdict]) -> str:
     """How many of each verdict, in the verdicts' own colours."""
     from . import prune, verdicts
 
-    go = len(prune.removable(rows))
-    unclear = len([v for v in rows if v.verdict == verdicts.UNKNOWN])
-    kept = len(rows) - go - unclear
-    return (
-        f"{render.out(str(go), GREEN)} removable, "
-        f"{render.out(str(kept), BLUE)} kept, "
-        f"{render.out(str(unclear), YELLOW)} unclear"
+    # `removable` rather than the verdict, so the count is what gwp removes.
+    go = {id(v) for v in prune.removable(rows)}
+    return render.counted(
+        [
+            verdicts.REMOVE
+            if id(v) in go
+            else verdicts.UNKNOWN
+            if v.verdict == verdicts.UNKNOWN
+            else verdicts.KEEP
+            for v in rows
+        ]
     )
+
+
+def add_status_flags(p: argparse.ArgumentParser, refresh: str) -> None:
+    """What `gws` and `gwbs` take beyond what `gwp` and `gwbd` share: a
+    short -f, and a filter. Not on the two that remove, where -f would read
+    as force."""
+    p.add_argument("-f", dest="force_refresh", action="store_true", help=refresh)
+    p.add_argument(
+        "--only",
+        action="append",
+        choices=render.VERDICTS,
+        metavar="VERDICT",
+        help="show only rows with this verdict (remove, keep or unknown); "
+        "repeat for more",
+    )
+
+
+def _only(args: argparse.Namespace, rows: list) -> list:
+    """The rows --only asks for, all of them without it."""
+    wanted = getattr(args, "only", None)
+    return [v for v in rows if v.verdict in wanted] if wanted else rows
 
 
 def _offerable(path: str) -> bool:
@@ -311,7 +328,7 @@ def run_status(args: argparse.Namespace) -> int:
 
     # Every repository beside this one shares the same `.worktrees` root, and
     # nothing else says which of the directories there are somebody else's.
-    # git lists the main checkout first, so records[0] is it.
+    # `worktrees` puts the main checkout first, so records[0] is it.
     main = records[0].path if records else ""
     others = layout.neighbours(main, [w.path for w in records]) if main else 0
 
@@ -340,7 +357,7 @@ def run_status(args: argparse.Namespace) -> int:
                             "ignored": v.ignored,
                             "sha": v.sha,
                         }
-                        for v in rows
+                        for v in _only(args, rows)
                     ],
                 },
                 indent=2,
@@ -348,28 +365,34 @@ def run_status(args: argparse.Namespace) -> int:
         )
         return 0
 
-    print(_verdict_table(rows))
+    print(_verdict_table(_only(args, rows)))
 
     if args.quiet:
         return 0
 
+    # Every row counted, --only or not, so a filtered table still says what
+    # it is not showing.
     print()
     print(_counted(rows))
     if len(rows) < 2:
-        _err("no worktrees besides the main checkout; gwa NAME makes one")
+        _err(render.note("no worktrees besides the main checkout; gwa NAME makes one"))
     if stale:
-        _err(
+        _warn(
             f"{len(stale)} stale record(s) for directories that are gone; "
             "gwp clears them"
         )
     if others:
         root = layout.worktrees_root(main)
-        _err(f"{others} worktree(s) under {root} belong to another repository")
+        _err(
+            render.note(
+                f"{others} worktree(s) under {root} belong to another repository"
+            )
+        )
     if unknown:
-        names = ", ".join(v.label for v in unknown)
-        _err(f"unclear, and gwp does not touch these: {names}")
+        names = ", ".join(render.branch(v.label) for v in unknown)
+        _warn(f"unclear, and gwp does not touch these: {names}")
     if go:
-        _err(f"gwp removes the {len(go)} marked removable")
+        _err(render.note(f"gwp removes the {len(go)} marked removable"))
     return 0
 
 
@@ -443,7 +466,7 @@ def run_prune(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
-# new-branch
+# branch create
 # --------------------------------------------------------------------------
 
 
@@ -480,7 +503,7 @@ def run_new_branch(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
     if not args.name:
-        # The program the caller typed, so `worktrees new-branch` does not
+        # The program the caller typed, so `worktrees branch create` does not
         # answer with the name of its own alias.
         _err(f"usage: {args.prog} NAME")
         return 2
@@ -1047,8 +1070,6 @@ def run_help(args: argparse.Namespace) -> int:
     rows: list[Row] = [(Cell("COMMAND", BOLD), Cell("GW", BOLD), Cell("DOES", BOLD))]
     for name, c in command_rows():
         aliases = f" ({', '.join(c.aliases)})" if c.aliases else ""
-        alpha = c.about.endswith(" (alpha)")
-        about = c.about.removesuffix(" (alpha)")
         rows.append(
             (
                 # A row installing no binary has nothing for this column:
@@ -1057,7 +1078,7 @@ def run_help(args: argparse.Namespace) -> int:
                 if c.binary and c.usage
                 else Cell(c.binary or "\u2014", BOLD + GREEN if c.binary else DIM),
                 Cell.of(("gw ", DIM), (name, BLUE), (aliases, DIM)),
-                Cell.of((about, ""), (" (alpha)", YELLOW)) if alpha else Cell(about),
+                Cell(c.about),
             )
         )
     print(table(rows))
@@ -1080,8 +1101,8 @@ def run_help(args: argparse.Namespace) -> int:
     scope = f"every command but {names(bare)}" if bare else "every command"
     flags = _listed([o(f, BOLD) for f in ("--json", "-q", "-v", "--explain")])
     print(
-        f"{names(['gwnb', 'gwrot'])} start branches rather than worktrees. Both "
-        f"are {o('alpha', YELLOW)} and may go.\n\n{flags} work on {scope}, and\n"
+        f"{names(['gwbc', 'gwrot'])} start branches rather than worktrees."
+        f"\n\n{flags} work on {scope}, and\n"
         f"`{o('gw <command> --help', BOLD)}` has the rest. A non-empty "
         f"{o('NO_COLOR', BOLD)} turns the colour off."
     )
@@ -1105,6 +1126,11 @@ def _complete_commands() -> int:
 # --------------------------------------------------------------------------
 # the command table
 # --------------------------------------------------------------------------
+
+
+def _add_status_flags(p: argparse.ArgumentParser) -> None:
+    _add_assess_flags(p)
+    add_status_flags(p, "the same as --force-refresh")
 
 
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
@@ -1154,7 +1180,7 @@ def run_branch(args: argparse.Namespace) -> int:
         for name, command in _BRANCH_COMMANDS.items():
             print(f"{name}\t{command.about}")
         return 0
-    p = _parser(args.prog, "Assess and delete local branches.")
+    p = _parser(args.prog, "Create, assess and delete local branches.")
     _add_branch_flags(p)
     p.print_help()
     return 0
@@ -1198,6 +1224,13 @@ class _Command:
 
 
 _BRANCH_COMMANDS: dict[str, _Command] = {
+    "create": _Command(
+        run_new_branch,
+        _add_new_branch_flags,
+        "branch off the head branch",
+        "gwbc",
+        usage="NAME",
+    ),
     "status": _Command(
         run_branch_status,
         _add_branch_status_flags,
@@ -1217,11 +1250,11 @@ _BRANCH_COMMANDS: dict[str, _Command] = {
 
 _COMMANDS: dict[str, _Command] = {
     "branch": _Command(
-        run_branch, _add_branch_flags, "assess and delete local branches"
+        run_branch, _add_branch_flags, "create, assess and delete local branches"
     ),
     "status": _Command(
         run_status,
-        _add_assess_flags,
+        _add_status_flags,
         "which worktrees are finished, and why",
         "gws",
         aliases=("s", "st"),
@@ -1269,18 +1302,10 @@ _COMMANDS: dict[str, _Command] = {
         aliases=("rm",),
         lands=True,
     ),
-    "new-branch": _Command(
-        run_new_branch,
-        _add_new_branch_flags,
-        "branch off the head branch (alpha)",
-        "gwnb",
-        usage="NAME",
-        aliases=("nb", "new"),
-    ),
     "rotate": _Command(
         run_rotate,
         _add_rotate_flags,
-        "the next branch in a series (alpha)",
+        "the next branch in a series",
         "gwrot",
         aliases=("rot",),
     ),
@@ -1351,7 +1376,7 @@ def _parser(prog: str, description: str) -> argparse.ArgumentParser:
 def gws(argv: list[str] | None = None) -> int:
     """Read-only. There is no flag here that removes anything."""
     p = _parser("gws", _STATUS_HELP)
-    _add_assess_flags(p)
+    _add_status_flags(p)
     return _dispatch(p, argv, run_status)
 
 
@@ -1376,9 +1401,9 @@ def gwbd(argv: list[str] | None = None) -> int:
     return _dispatch(p, argv, command.run)
 
 
-def gwnb(argv: list[str] | None = None) -> int:
+def gwbc(argv: list[str] | None = None) -> int:
     """Checking out needs no shell either."""
-    p = _parser("gwnb", _NEW_BRANCH_HELP)
+    p = _parser("gwbc", _NEW_BRANCH_HELP)
     _add_new_branch_flags(p)
     return _dispatch(p, argv, run_new_branch)
 
@@ -1514,6 +1539,8 @@ def _dispatch(
     # canonical name, so a usage line echoes what they wrote.
     command = getattr(args, "command", None)
     args.prog = f"{p.prog} {command}" if command else p.prog
+    if getattr(args, "branch_command", None):
+        args.prog += f" {args.branch_command}"
     if run is None:
         if command is None:
             return run_help(args)

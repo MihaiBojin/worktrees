@@ -40,7 +40,7 @@ function too, so this is the agent path as much as the human one.
 
 | | changes directory | ships as |
 | --- | --- | --- |
-| `gws`, `gwp`, `gwbs`, `gwbd`, `gwnb`, `gwrot`, `gwh` | no | a console script, and nothing else |
+| `gws`, `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`, `gwh` | no | a console script, and nothing else |
 | a command that lands you somewhere | yes | a console script, plus a function of the same name |
 
 A binary cannot `cd` its caller. That is the only thing shell code is here for,
@@ -75,14 +75,12 @@ It calls the `gwr` function rather than `command gwr`, so the caller still
 lands where the binary says, and it has no console script of its own.
 `SHORTCUTS` in `tests/test_shims.py` lists them and holds each to one line.
 
-## Two commands are alpha
+## Two commands start branches
 
-`gwnb` and `gwrot` start branches, not worktrees. `origin new-branch` and
-`origin rotate` do the same job, only one of the two sets survives, and
-nothing has decided which. So they match `origin` rather than improve on it:
-the name format, the stem-stripping and the remote-aware collision check are
-copied, and a difference between them is a decision somebody has to make
-later. Say so wherever they are documented.
+`gwbc` and `gwrot` start branches, not worktrees, and do the job
+`origin new-branch` and `origin rotate` do. The name format, the
+stem-stripping and the remote-aware collision check are the same in both, so
+a branch either one names is one the other would have named.
 
 Two divergences are deliberate. `origin` has a single non-zero exit code and
 draws no line between a usage error and a runtime one; this CLI keeps

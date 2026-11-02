@@ -88,18 +88,21 @@ class Cell:
         cell.parts = parts
         return cell
 
-    def painted(self, width: int) -> str:
+    def painted(self, width: int, ink: Ink | None = None) -> str:
+        ink = ink or out
         if not self.parts:
-            return out(self.text.ljust(width), self.code)
+            return ink(self.text.ljust(width), self.code)
         pad = " " * (width - len(self.text))
-        return "".join(out(text, code) for text, code in self.parts) + pad
+        return "".join(ink(text, code) for text, code in self.parts) + pad
 
 
 Row = tuple["str | Cell", ...]
 
 
-def table(rows: list[Row]) -> str:
+def table(rows: list[Row], ink: Ink | None = None) -> str:
     """Columns wide enough for their content, the last one unpadded.
+
+    Painted for stdout unless `ink` is `err`, for a table bound for stderr.
 
     Padding runs on the text and painting after it. The other order counts an
     escape sequence as width, and every column under a coloured cell sits
@@ -111,8 +114,8 @@ def table(rows: list[Row]) -> str:
     widths = [max(len(r[i].text) for r in grid) for i in range(len(grid[0]))]
     lines = []
     for row in grid:
-        cells = [c.painted(widths[i]) for i, c in enumerate(row[:-1])]
-        lines.append("  ".join([*cells, row[-1].painted(0)]).rstrip())
+        cells = [c.painted(widths[i], ink) for i, c in enumerate(row[:-1])]
+        lines.append("  ".join([*cells, row[-1].painted(0, ink)]).rstrip())
     return "\n".join(lines)
 
 
@@ -121,9 +124,24 @@ def table(rows: list[Row]) -> str:
 # --------------------------------------------------------------------------
 
 
+# What each verdict prints in, in `gws`, `gwp` and `gwbs` alike, and in the
+# counts under them. A branch is the same bold magenta it is on stderr.
+VERDICT = {"remove": GREEN, "keep": BLUE, "unknown": YELLOW}
+BRANCH = BOLD + MAGENTA
+VERDICTS = tuple(VERDICT)
+
+
+def counted(verdicts: list[str]) -> str:
+    """`2 removable, 1 kept, 0 unclear`, each number in its verdict's colour."""
+    words = {"remove": "removable", "keep": "kept", "unknown": "unclear"}
+    return ", ".join(
+        f"{out(str(verdicts.count(v)), VERDICT[v])} {words[v]}" for v in VERDICTS
+    )
+
+
 def branch(name: str) -> str:
     """A local branch, in a message bound for stderr."""
-    return err(name, BOLD + MAGENTA)
+    return err(name, BRANCH)
 
 
 def ref(name: str) -> str:

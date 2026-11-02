@@ -5,7 +5,7 @@
 
 Git worktree commands that refuse to lose work.
 
-`gws`, `gwp`, `gwbs`, `gwbd`, `gwnb`, `gwrot`, and `gwh` run as console
+`gws`, `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`, and `gwh` run as console
 scripts. `gwa`, `gwl`, `gwm`, and `gwr` change the caller's directory and need
 a shell function of the same name.
 
@@ -20,8 +20,8 @@ a shell function of the same name.
 | `gwm NEW` | rename this worktree's branch and move the checkout to match |
 | `gwr [QUERY]` | remove a worktree whose branch is finished, and the branch |
 | `gwr! [QUERY]` | `gwr --delete-ignored`, a shell function in fish and zsh |
-| `gwnb NAME` | alpha. Fetch, then branch `NAME` off the head branch and check it out |
-| `gwrot` | alpha. Start the next branch after this one, or catch the head branch up |
+| `gwbc NAME` | fetch, then branch `NAME` off the head branch and check it out |
+| `gwrot` | start the next branch after this one, or catch the head branch up |
 | `gwh` | print that table, with every name each command answers to |
 
 `gw` takes the same commands as subcommands, each with shorthands, so `gwl`,
@@ -37,7 +37,7 @@ a shell function of the same name.
 | `gwl` | `gw list`, `ls`, `l` |
 | `gwm` | `gw move`, `mv`, `m` |
 | `gwr` | `gw remove`, `rm` |
-| `gwnb` | `gw new-branch`, `nb`, `new` |
+| `gwbc` | `gw branch create` |
 | `gwrot` | `gw rotate`, `rot` |
 | `gwh` | `gw help`, `h`, and `gw` with no subcommand |
 
@@ -54,11 +54,8 @@ a worktree.
 
 `gws` and `gwp` are what this tool is for and their behaviour is settled.
 
-**`gwnb` and `gwrot` are alpha and may go.** They start branches rather than
-worktrees, which is a different job from the one this repository exists to do,
-and `origin new-branch` and `origin rotate` already do it. Only one of the two
-sets survives. Until that is decided the names, the flags and the output may
-change, and nothing should be built on top of them.
+`gwbc` and `gwrot` start branches rather than worktrees: `gwbc` one you
+name, `gwrot` the next in a series.
 
 ## Two holes in git
 
@@ -105,7 +102,7 @@ Python 3.11 or newer, and no dependencies. The standard library answers every
 question this asks, so an invocation pays for the interpreter and nothing
 else.
 
-That installs `gws`, `gwp`, `gwbs`, `gwbd`, `gwnb`, `gwrot`, and `gwh`. The
+That installs `gws`, `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`, and `gwh`. The
 four that land you somewhere need a shell function too, and every command has
 a completion, both of which arrive through a plugin manager.
 
@@ -139,7 +136,7 @@ autoload -Uz compinit && compinit
 Each function runs `command <name>` and `cd`s to what it printed, provided
 that is a directory. `--json` and `--list` print what was asked for on the
 same stream a destination arrives on, so the shim asks whether what it has is
-somewhere to go and stays put when it is not. `gws`, `gwp`, `gwnb`, `gwrot` and `gwh`
+somewhere to go and stays put when it is not. `gws`, `gwp`, `gwbc`, `gwrot` and `gwh`
 change no directory, so they ship as console scripts alone and answer the same
 from a prompt and from a script.
 
@@ -355,6 +352,10 @@ host and path: `git@github.com:you/repo.git` and
 `https://github.com/you/repo.git` are both `github.com/you/repo`, and a user,
 token or port in the URL is not shown. `--list` and `--json` leave them out.
 
+Rows run in the order the worktrees were made, the main checkout first and
+the newest last. git keeps no date, so it is read off the file `git worktree
+add` writes into `.git/worktrees/` and nothing changes afterwards.
+
 WORKTREE is the directory under `.worktrees`, or the main checkout's own
 directory name. It parts from BRANCH when somebody switches branch inside a
 worktree. Up and down move the highlight, enter takes it, a digit takes that
@@ -401,13 +402,12 @@ deleted, under `--delete-ignored` and under `--force` alike.
 to lose. It is a shell function in fish and zsh, not a console script, and it
 calls the `gwr` function so you still land where `gwr` says.
 
-## gwnb and gwrot (alpha)
+## gwbc and gwrot
 
-Both are alpha and both start branches rather than worktrees. See the note
-under the command table.
+Both start branches rather than worktrees.
 
 ```console
-$ gwnb fix-parser
+$ gwbc fix-parser
 fix-parser from origin/main at 4a91c02
 ```
 
@@ -463,25 +463,27 @@ there is nothing to catch up.
 That is `merge --ff-only`, never a rebase: rewriting local commits on the
 head branch is the class this tooling refuses everywhere else. Commits the
 remote does not have are refused and listed, because they are a change of
-their own and `gwnb` puts them on a branch.
+their own and `gwbc` puts them on a branch.
 
 ## gwh
 
 ```console
 $ gwh
-worktrees 0.2.0: git worktree commands that refuse to lose work
+worktrees 0.5.1: git worktree commands that refuse to lose work
 
-COMMAND          GW                       DOES
-gws              gw status (s, st)        which worktrees are finished, and why
-gwp              gw prune (p)             remove the ones status marks removable
-gwa NAME [BASE]  gw add (a)               create a worktree and land you in it
-gwl [QUERY]      gw list (l, ls)          pick a worktree and land you in it
-gwm NEW          gw move (m, mv)          rename this branch and move it
-gwr [QUERY]      gw remove (rm)           remove one whose branch is finished
-gwnb NAME        gw new-branch (nb, new)  branch off the head branch (alpha)
-gwrot            gw rotate (rot)          the next branch in a series (alpha)
-gwh              gw help (h)              every command and alias, this list
-—                gw version (v)           the version this package installs
+COMMAND          GW                 DOES
+gws              gw status (s, st)  which worktrees are finished, and why
+gwp              gw prune (p)       remove the ones status marks removable
+gwa NAME [BASE]  gw add (a)         create a worktree and land you in it
+gwl [QUERY]      gw list (l, ls)    pick a worktree and land you in it
+gwm NEW          gw move (m, mv)    rename this branch and move it
+gwr [QUERY]      gw remove (rm)     remove one whose branch is finished
+gwrot            gw rotate (rot)    the next branch in a series
+gwh              gw help (h)        every command and alias, this list
+—                gw version (v)     the version this package installs
+gwbc NAME        gw branch create   branch off the head branch
+gwbs [NAME ...]  gw branch status   which branches are finished, and why
+gwbd [NAME ...]  gw branch delete   delete local branches proved finished
 ```
 
 `gw help`, `gw h` and `gw` with no subcommand print the same thing. One table
@@ -497,15 +499,20 @@ print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
 
 | | |
 | --- | --- |
-| `gws` | `--branch NAME`, `--no-fetch`, `--force-refresh`, `--delete-ignored`, `--no-forge` |
-| `gwp` | those five, and `-y` |
+| `gws` | `--branch NAME`, `--no-fetch`, `-f`/`--force-refresh`, `--delete-ignored`, `--no-forge`, `--only VERDICT` |
+| `gwp` | `--branch NAME`, `--no-fetch`, `--force-refresh`, `--delete-ignored`, `--no-forge`, and `-y` |
 | `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--force-refresh`, `--no-forge`, `-y` |
-| `gwa`, `gwnb` | `--no-fetch`, `--force-refresh` |
+| `gwa`, `gwbc` | `--no-fetch`, `--force-refresh` |
 | `gwrot` | `--no-fetch`, `-f`/`--force-refresh` |
-| `gwbs` | `--no-fetch`, `--force-refresh`, `--no-forge` |
-| `gwbd` | those three, `--all`, `--dry-run` and `-y` |
+| `gwbs` | `--no-fetch`, `-f`/`--force-refresh`, `--no-forge`, `--only VERDICT` |
+| `gwbd` | `--no-fetch`, `--force-refresh`, `--no-forge`, `--all`, `--dry-run` and `-y` |
 | `gwl` | `-l` |
 | `gwm`, `gwh` | none |
+
+`--only` takes `remove`, `keep` or `unknown` and can be given more than
+once. It narrows the table and `--json`; the counts under the table still
+cover every row. `-f` is on the two status commands only, since on `gwp` and
+`gwbd` it would read as forcing a removal.
 
 `gw <command> --help` prints one command's own list.
 
@@ -520,7 +527,7 @@ is kept, and `--no-fetch` never fetches.
 
 | what | when | reused for |
 | --- | --- | --- |
-| a fetch, by `gws`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwnb`, `gwrot` | from any worktree of the repository | 10 minutes; the command says how old it is |
+| a fetch, by `gws`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwbc`, `gwrot` | from any worktree of the repository | 10 minutes; the command says how old it is |
 | a request, merged or closed | on the commit it was asked about | until `--force-refresh` |
 | a request, open | a draft, a conflict, or on GitLab a needed rebase, with no auto-merge and no check running | 10 minutes |
 | a request, open | auto-merge or merge-when-pipeline-succeeds set | never |
@@ -561,7 +568,7 @@ squash-merged
 $ fish -c 'gws --json' | jq '.verdicts | length'
 4
 
-$ bash -c 'gwnb spike --json' | jq -r .base
+$ bash -c 'gwbc spike --json' | jq -r .base
 refs/remotes/origin/main
 ```
 

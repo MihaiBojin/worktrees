@@ -6,10 +6,10 @@ import argparse
 import json
 import sys
 
-from . import branches, prune
-from .cli import _assessment_head, _err, _explain, _Stop
+from . import branches, prune, render
+from .cli import _assessment_head, _err, _explain, _only, _Stop, add_status_flags
 from .git import GitError, Refused, options
-from .render import BOLD, DIM, Cell, table
+from .render import BOLD, DIM, YELLOW, Cell, table
 
 
 def status_flags(p: argparse.ArgumentParser) -> None:
@@ -20,6 +20,7 @@ def status_flags(p: argparse.ArgumentParser) -> None:
         help="exact local branch names; all when omitted",
     )
     _assessment_flags(p)
+    add_status_flags(p, "the same as --force-refresh")
 
 
 def _assessment_flags(p: argparse.ArgumentParser) -> None:
@@ -84,19 +85,19 @@ def _table(rows: list[branches.Verdict]) -> str:
     return table(
         [
             (
-                Cell("VERDICT", DIM),
-                Cell("BRANCH", DIM),
-                Cell("SHA", DIM),
-                Cell("WHY", DIM),
-                Cell("WORKTREE", DIM),
+                Cell("VERDICT", BOLD),
+                Cell("BRANCH", BOLD),
+                Cell("SHA", BOLD),
+                Cell("WHY", BOLD),
+                Cell("WORKTREE", BOLD),
             ),
             *[
                 (
-                    Cell(v.verdict),
-                    Cell(v.branch, BOLD),
-                    Cell(v.sha[:12]),
+                    _verdict(v),
+                    Cell(v.branch, render.BRANCH),
+                    Cell(v.sha[:12], YELLOW),
                     Cell(v.why),
-                    Cell(", ".join(v.paths)),
+                    Cell(", ".join(v.paths), DIM),
                 )
                 for v in rows
             ],
@@ -117,23 +118,56 @@ def _report(
                 {
                     "head": head,
                     "head_sha": head_sha,
-                    "verdicts": [v.data() for v in rows],
+                    "verdicts": [v.data() for v in _only(args, rows)],
                     **outcomes,
                 },
                 indent=2,
             )
         )
     else:
-        print(_table(rows))
+        print(_table(_only(args, rows)))
         if not args.quiet:
-            counts = {
-                name: sum(v.verdict == name for v in rows)
-                for name in ("remove", "keep", "unknown")
-            }
-            print(
-                f"\n{counts['remove']} removable, {counts['keep']} kept, "
-                f"{counts['unknown']} unclear"
-            )
+            # Every row counted, --only or not, so a filtered table still
+            # says what it is not showing.
+            print("\n" + render.counted([v.verdict for v in rows]))
+
+
+def _branches(n: int) -> str:
+    return f"{n} branch" if n == 1 else f"{n} branches"
+
+
+def _verdict(v: branches.Verdict) -> Cell:
+    return Cell(v.verdict, render.VERDICT.get(v.verdict, ""))
+
+
+def _undo(v: branches.Verdict) -> str:
+    """The way back, painted as the tables paint a branch and a sha."""
+    git, name, sha = v.undo_parts
+    return f"{render.command(git)} {render.branch(name)} {render.err(sha, YELLOW)}"
+
+
+def _plan(go: list[branches.Verdict]) -> str:
+    """What is about to be deleted, on stderr, before the question."""
+    return table(
+        [
+            (
+                Cell("VERDICT", BOLD),
+                Cell("BRANCH", BOLD),
+                Cell("SHA", BOLD),
+                Cell("WHY", BOLD),
+            ),
+            *[
+                (
+                    _verdict(v),
+                    Cell(v.branch, render.BRANCH),
+                    Cell(v.sha[:12], YELLOW),
+                    Cell(v.why),
+                )
+                for v in go
+            ],
+        ],
+        ink=render.err,
+    )
 
 
 def status(args: argparse.Namespace) -> int:
@@ -151,11 +185,45 @@ def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:
         return []
     if not sys.stdin.isatty():
         raise Refused("not a terminal; pass branch names or --all, or use gwbs --json")
-    for row in rows:
-        if row.verdict != "remove":
-            _err(f"  -  {row.branch}: {row.why}")
-    for i, row in enumerate(candidates, 1):
-        _err(f"  {i}  {row.branch}  {row.why}")
+    # The ones that cannot be picked first and grey, so the numbered rows
+    # sit together above the prompt.
+    others = [v for v in rows if v.verdict != "remove"]
+    _err(
+        table(
+            [
+                (
+                    Cell("", BOLD),
+                    Cell("VERDICT", BOLD),
+                    Cell("BRANCH", BOLD),
+                    Cell("SHA", BOLD),
+                    Cell("WHY", BOLD),
+                ),
+                *[
+                    (
+                        Cell("-", DIM),
+                        # In its colour even here: keep and unknown are
+                        # different reasons not to offer it.
+                        _verdict(v),
+                        Cell(v.branch, DIM),
+                        Cell(v.sha[:12], DIM),
+                        Cell(v.why, DIM),
+                    )
+                    for v in others
+                ],
+                *[
+                    (
+                        Cell(str(i), BOLD),
+                        _verdict(v),
+                        Cell(v.branch, render.BRANCH),
+                        Cell(v.sha[:12], YELLOW),
+                        Cell(v.why),
+                    )
+                    for i, v in enumerate(candidates, 1)
+                ],
+            ],
+            ink=render.err,
+        )
+    )
     answer = prune._prompt(
         f"which? [1-{len(candidates)}, space-separated numbers, or blank to cancel] "
     ).strip()
@@ -178,21 +246,29 @@ def delete(args: argparse.Namespace) -> int:
         go = [v for v in rows if v.verdict == "remove"]
     else:
         go = _select(rows)
-    for row in go:
-        _err(f"{row.branch} at {row.sha}: {row.why}")
-        _err(f"  undo: {row.undo}")
     removed: list[str] = []
     failures: list[dict[str, str]] = []
     if args.dry_run:
         _report(
             args, head, head_sha, rows, removed=removed, failed=failures, dry_run=True
         )
+        if not args.json:
+            # After the table, even when stdout is a pipe that buffers it.
+            sys.stdout.flush()
+            _err(
+                render.note(
+                    f"dry run: {_branches(len(go))} would go; nothing was deleted"
+                )
+            )
         return int(any(v.error for v in rows))
+    if go and not args.json:
+        _err(render.note(f"deleting {_branches(len(go))}:"))
+        _err(_plan(go))
     if go and not args.yes:
         if not sys.stdin.isatty():
             raise Refused("not a terminal; pass --yes to confirm deletion")
         if prune._prompt(
-            f"delete {len(go)} branch(es)? [y/N] "
+            f"delete {_branches(len(go))}? [y/N] "
         ).strip().lower() not in ("y", "yes"):
             _report(args, head, head_sha, rows, removed=removed, failed=failures)
             return 0
@@ -201,12 +277,21 @@ def delete(args: argparse.Namespace) -> int:
             branches.delete(row, head, head_sha, head_branch, remote, not args.no_forge)
         except (GitError, Refused, ValueError) as exc:
             failures.append({"branch": row.branch, "why": str(exc)})
-            _err(f"{row.branch} kept: {exc}")
+            _err(render.fail(f"{render.branch(row.branch)} kept: {exc}"))
         else:
             removed.append(row.branch)
-    _report(args, head, head_sha, rows, removed=removed, failed=failures)
-    if removed and not args.json:
-        print("deleted: " + ", ".join(removed))
+    if args.json:
+        _report(args, head, head_sha, rows, removed=removed, failed=failures)
+    elif removed:
+        names = ", ".join(render.out(name, render.BRANCH) for name in removed)
+        print(f"deleted {_branches(len(removed))}: {names}")
+    if removed:
+        # One block, after the fact, and on stderr even under --json: only
+        # what actually went needs a way back, and a person always sees it.
+        _err(render.note("each comes back with:"))
+        for row in go:
+            if row.branch in removed:
+                _err(f"  {_undo(row)}")
     if failures or any(v.error for v in rows):
         return 1
     return 3 if args.names and any(v.verdict != "remove" for v in rows) else 0

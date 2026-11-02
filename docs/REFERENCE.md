@@ -36,7 +36,7 @@ What is here:
 | the zsh half | `zsh/plugins/worktrees/` |
 
 Thirteen console scripts: `gws`, `gwp`, `gwbs`, `gwbd`, `gwa`, `gwl`, `gwm`,
-`gwr`, `gwnb`, `gwrot`, `gwh`, `gw`, and `worktrees`. Four ship a shell function of
+`gwr`, `gwbc`, `gwrot`, `gwh`, `gw`, and `worktrees`. Four ship a shell function of
 the same name, one per shell, because a binary cannot `cd` its caller.
 
 The distribution is `git-worktrees` on PyPI, installed with
@@ -103,7 +103,7 @@ Flags and commands.
 | `gwp` with nothing removable prints the verdict table | the reason each worktree stayed is the answer to the question, and naming another command puts it one round trip away | `cli.run_prune` |
 | One row per command carries its function, flags, description, aliases, and directory behaviour | help and dispatch read the same rows | `cli._COMMANDS`, `cli._BRANCH_COMMANDS`, and `cli.command_rows()` |
 | The head-branch ladder tries `refs/remotes/<remote>/<b>` before `refs/heads/<b>` and returns a full ref | returning a bare name is what lets a tag named `origin/main` answer for the head branch | `repo.full_ref`, `repo.head_ref` |
-| `gwa` and `gwnb` fetch the whole remote with `--prune` rather than the base branch alone | base-only fetching forks a second divergent branch where the remote already had one, and the network cost is the round trip rather than the ref count | `repo.fetch` |
+| `gwa` and `gwbc` fetch the whole remote with `--prune` rather than the base branch alone | base-only fetching forks a second divergent branch where the remote already had one, and the network cost is the round trip rather than the ref count | `repo.fetch` |
 | Branches this tool starts do not track the head branch | a branch off `refs/remotes/<remote>/main` that tracked it would take it as its upstream, and `git push` would target the head branch | `--no-track` on `worktree_add` and `switch_create` |
 
 Output and machine surface.
@@ -227,7 +227,7 @@ involved.
 | A5 | tag `foo` and branch `tags/foo` | held, `unknown` | none |
 | A6 | branch named a full 40-hex sha | held: judged `squash-merged`, and the restore line carries the branch's own sha | none |
 | A7 | tag `feature` outside the head branch, branch `feature` merged | held: reaped, reason `merged` | none. `test_a_tag_cannot_answer_for_a_branch` runs A1's direction only |
-| A8 | branch `weird>pwned`, a name a shell redirects on | held: the restore line and the `gwnb` hint quote the name, and bash, zsh and fish read the quotes alike | `test_the_restore_line_is_safe_to_paste`, `test_a_restore_line_means_the_same_in_every_shell` |
+| A8 | branch `weird>pwned`, a name a shell redirects on | held: the restore line and the `gwbc` hint quote the name, and bash, zsh and fish read the quotes alike | `test_the_restore_line_is_safe_to_paste`, `test_a_restore_line_means_the_same_in_every_shell` |
 | A9 | worktree at a path holding a newline | held: left out of `--complete`, because one row a line cannot carry it. A tab is carried, since both shells split a row at the first one | `test_a_path_holding_a_newline_is_not_offered`, `test_a_path_holding_a_tab_is_still_offered` |
 
 A7 is the class running the other way. A suite that only asserts "never delete
@@ -391,7 +391,6 @@ Known and unfixed:
 | --- | --- |
 | a merged request stops counting once the merge deletes the remote branch | `fetch --prune` drops the remote-tracking ref the merge removed, `unpushed_count` answers `None`, and a branch that is definitely merged reads `unknown` for good. #47 |
 | `status` cannot judge a branch with no worktree | #29 |
-| `gwnb` and `gwrot` are alpha and may go | they start branches rather than worktrees, `origin new-branch` and `origin rotate` already do that, and only one of the two sets survives |
 
 Nine rows left this table in #46, merged 2026-09-11 as `daa8284`:
 the unreachable remote (#35), `gwr`'s forge scope and `--no-forge`

@@ -449,7 +449,7 @@ def test_the_cli_name_takes_a_subcommand(world) -> None:
 def test_the_cli_name_with_no_argument_prints_help(world) -> None:
     p = run(world, "main")
     assert p.returncode == 0
-    for name in ("status", "prune", "new-branch"):
+    for name in ("status", "prune", "branch create"):
         assert name in p.stdout
 
 
@@ -503,8 +503,6 @@ def test_every_shorthand_reaches_the_same_command(world, spelling: str) -> None:
         ("m", "move"),
         ("mv", "move"),
         ("rm", "remove"),
-        ("nb", "new-branch"),
-        ("new", "new-branch"),
         ("rot", "rotate"),
         ("h", "help"),
     ],
@@ -638,7 +636,7 @@ def test_a_failed_fetch_still_makes_the_branch(world) -> None:
     """An offline machine gets a branch off whatever it last saw."""
     _unreachable(world)
     world.git("update-ref", "refs/remotes/origin/main", "main")
-    p = run(world, "gwnb", "spike")
+    p = run(world, "gwbc", "spike")
     assert p.returncode == 0, p.stderr
     assert "could not be fetched" in p.stderr
     assert "spike from origin/main" in p.stdout
@@ -1033,3 +1031,103 @@ def test_list_for_a_script_names_no_remote(world) -> None:
     p = run(world, "gwl", "--list")
     assert p.returncode == 0, p.stderr
     assert "github.com" not in p.stdout + p.stderr
+
+
+def test_status_only_shows_the_verdicts_asked_for(world) -> None:
+    """The table narrows; the counts still cover every row."""
+    world.worktree("done")
+    whole = run(world, "gws", "--no-fetch", "--no-forge")
+    assert whole.returncode == 0, whole.stderr
+    assert "keep" in whole.stdout
+
+    p = run(world, "gws", "--no-fetch", "--no-forge", "--only", "remove")
+    assert p.returncode == 0, p.stderr
+    table, _, counts = p.stdout.partition("\n\n")
+    assert "keep" not in table
+    assert counts.strip() == whole.stdout.partition("\n\n")[2].strip()
+
+
+def test_status_only_narrows_json_too(world) -> None:
+    world.worktree("done")
+    p = run(world, "gws", "--no-fetch", "--no-forge", "--json", "--only", "keep")
+    assert p.returncode == 0, p.stderr
+    verdicts = [v["verdict"] for v in json.loads(p.stdout)["verdicts"]]
+    assert verdicts and set(verdicts) == {"keep"}
+
+
+def test_only_takes_no_verdict_that_does_not_exist(world) -> None:
+    p = run(world, "gws", "--no-fetch", "--only", "maybe")
+    assert p.returncode == 2
+    assert "invalid choice" in p.stderr
+
+
+@pytest.mark.parametrize("entry", ["gws", "gwbs"])
+def test_status_f_is_force_refresh(entry) -> None:
+    import argparse
+
+    p = argparse.ArgumentParser()
+    if entry == "gws":
+        cli._add_status_flags(p)
+    else:
+        cli._add_branch_status_flags(p)
+    assert p.parse_args(["-f"]).force_refresh is True
+
+
+@pytest.mark.parametrize("entry", ["gwp", "gwbd"])
+def test_the_commands_that_remove_take_no_f(entry) -> None:
+    """On them -f would read as forcing a removal."""
+    import argparse
+
+    p = argparse.ArgumentParser()
+    if entry == "gwp":
+        cli._add_prune_flags(p)
+    else:
+        cli._add_branch_delete_flags(p)
+    with pytest.raises(SystemExit):
+        p.parse_args(["-f"])
+
+
+def test_list_orders_worktrees_by_when_they_were_made(world) -> None:
+    """Main first, then oldest to newest, whatever order git lists them in."""
+    paths = [world.worktree(name) for name in ("one", "two", "three")]
+    # Make the last one git lists the oldest and the first the newest.
+    for age, path in zip((300, 200, 100), reversed(paths), strict=True):
+        admin = Path((path / ".git").read_text().strip().removeprefix("gitdir: "))
+        old = time.time() - age
+        os.utime(admin / "commondir", (old, old))
+
+    p = run(world, "gwl", "--json")
+    assert p.returncode == 0, p.stderr
+    listed = [w["path"] for w in json.loads(p.stdout)]
+    assert listed == [str(world.repo), *map(str, reversed(paths))]
+
+
+@pytest.mark.parametrize("entry", ["gws", "gwr"])
+def test_status_and_remove_list_in_the_same_order_as_list(world, entry) -> None:
+    """One order everywhere: oldest to newest after the main checkout."""
+    paths = [world.worktree(name) for name in ("one", "two", "three")]
+    for age, path in zip((300, 200, 100), reversed(paths), strict=True):
+        admin = Path((path / ".git").read_text().strip().removeprefix("gitdir: "))
+        old = time.time() - age
+        os.utime(admin / "commondir", (old, old))
+
+    args = ["--json", "--no-fetch", "--no-forge"]
+    if entry == "gwr":
+        code, out = run_on_a_terminal(
+            world, entry, "--no-fetch", "--no-forge", answer="\x1b"
+        )
+        assert code == 0, out
+        names = ("one", "two", "three")
+        shown = [
+            n for ln in out.splitlines() for n in names if f"/.worktrees/{n}/" in ln
+        ]
+        assert shown == ["three", "two", "one"]
+        return
+    p = run(world, entry, *args)
+    assert p.returncode == 0, p.stderr
+    listed = [v["branch"] for v in json.loads(p.stdout)["verdicts"]]
+    assert [b for b in listed if b in ("one", "two", "three")] == [
+        "three",
+        "two",
+        "one",
+    ]

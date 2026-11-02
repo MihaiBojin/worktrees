@@ -9,7 +9,7 @@
 complete -c gw -f
 complete -c gw -n __fish_use_subcommand -a '(command gw --complete)'
 
-complete -c gw -n '__fish_seen_subcommand_from branch; and not __fish_seen_subcommand_from status delete' \
+complete -c gw -n '__fish_seen_subcommand_from branch; and not __fish_seen_subcommand_from create status delete' \
     -a '(command gw branch --complete)'
 complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from status delete' \
     -a '(command gwbs --complete)'

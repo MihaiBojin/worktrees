@@ -325,4 +325,22 @@ def test_successful_deletion_is_reported_to_a_person(world):
     world.git("branch", "done")
     p = cli(world, "branch", "delete", "done", "--yes", "--no-fetch", "--no-forge")
     assert p.returncode == 0, p.stderr
-    assert "deleted: done" in p.stdout
+    assert "deleted 1 branch: done" in p.stdout
+
+
+def test_the_selector_and_the_plan_name_each_verdict(world):
+    """keep and unknown are different reasons a row cannot be picked."""
+    from test_cli import run_on_a_terminal
+
+    world.git("branch", "done")
+    code, out = run_on_a_terminal(
+        world, "gwbd", "--no-fetch", "--no-forge", answer="1\nn\n"
+    )
+    assert code == 0, out
+    rows = {
+        ln.split()[2]: ln.split()[1]
+        for ln in out.splitlines()
+        if ln[:3].strip() in ("-", "1")
+    }
+    assert rows == {"main": "keep", "done": "remove"}
+    assert "VERDICT" in out.split("deleting 1 branch:")[1]

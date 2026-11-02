@@ -1,6 +1,6 @@
 """Start the next branch in a series, or catch the head branch up.
 
-`new-branch` names a branch. This one works out the name, from the branch you
+`gwbc` names a branch. This one works out the name, from the branch you
 are standing on, and starts it. Two commands rather than one with an optional
 argument: naming and continuing are different jobs, and a command doing both
 needs an "and" in its description.
@@ -126,7 +126,7 @@ def rotate(
     if not branch:
         raise Refusal(
             "HEAD is detached, so there is no branch to name the next one "
-            "after; 'worktrees new-branch <name>' names one"
+            "after; 'gwbc <name>' names one"
         )
 
     remote = R.remote(repo=repo)
@@ -202,7 +202,7 @@ def _catch_up(
             f"{render.ref(R.ref_name(base))}, so it "
             f"cannot be fast-forwarded:\n{lines}\n"
             "Those commits are a change of their own; "
-            "'worktrees new-branch <name>' puts them on one."
+            "'gwbc <name>' puts them on one."
         )
     behind = _count(local, base, repo=repo)
     previous_sha = _short(local, repo=repo)
