@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from collections.abc import Callable
@@ -1059,9 +1060,64 @@ def run_remove(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------
 
 
+# Exported by conf.d/worktrees.fish and worktrees.plugin.zsh, set to the
+# release each came from. scripts/bump_version.py writes both.
+PLUGIN_VERSION = "WORKTREES_PLUGIN_VERSION"
+
+
+def _release(version: str) -> tuple[int, ...] | None:
+    """`x.y.z` as numbers to compare, or None for anything else, such as the
+    `0+unknown` of a source tree nothing installed."""
+    parts = version.split(".")
+    if len(parts) != 3 or not all(p.isdigit() for p in parts):
+        return None
+    return tuple(int(p) for p in parts)
+
+
+def plugin_state() -> tuple[str, bool]:
+    """What the shell plugin here says about its release, against this
+    package's, and whether the two are the same release.
+
+    A shell without the variable has no plugin loaded, or one from before the
+    plugin carried it. Nothing here can tell those two apart.
+    """
+    plugin = os.environ.get(PLUGIN_VERSION, "")
+    if not plugin:
+        return (
+            "No shell plugin here says which release it is: none is loaded,\n"
+            "or it is older than the release that started saying so.",
+            False,
+        )
+    if plugin == __version__:
+        return (
+            f"The shell plugin here is {plugin}, the same release as these commands.",
+            True,
+        )
+    ours, theirs = _release(__version__), _release(plugin)
+    if ours and theirs and theirs < ours:
+        return (
+            f"The shell plugin here is {plugin}, older than these commands.\n"
+            f"Pin it to v{__version__}: https://github.com/MihaiBojin/worktrees#install",
+            False,
+        )
+    if ours and theirs:
+        return (
+            f"The shell plugin here is {plugin}, newer than these commands.\n"
+            "Upgrade them with `uv tool upgrade git-worktrees`.",
+            False,
+        )
+    return (
+        f"The shell plugin here is {plugin}, and these commands are {__version__}.",
+        False,
+    )
+
+
 def run_version(args: argparse.Namespace) -> int:
-    """The version of the installed distribution."""
+    """The version of the installed distribution on stdout, which is what a
+    script reads, and the shell plugin's on stderr."""
     print(__version__)
+    text, same = plugin_state()
+    _err(render.note(text) if same else render.warn(text))
     return 0
 
 
@@ -1109,6 +1165,8 @@ def run_help(args: argparse.Namespace) -> int:
         "standing in.\nA binary cannot do that, so each needs the shell function "
         "of the same name\nfrom the plugin; the rest need nothing but $PATH."
     )
+    text, same = plugin_state()
+    print(o(text, "" if same else YELLOW))
     print()
     # Which commands take the common flags is the table's answer, not a second
     # list here: a row with no flags takes none, and saying so in prose is how

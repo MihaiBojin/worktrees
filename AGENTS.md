@@ -105,6 +105,14 @@ zsh/plugins/worktrees/completions/_gwa
 Neither manager puts a binary on `$PATH`. The console scripts arrive through
 `uv tool install` from the published package, which is a separate step.
 
+Both plugins export `WORKTREES_PLUGIN_VERSION`, the release they came from:
+`conf.d/worktrees.fish` and `worktrees.plugin.zsh`, one assignment each.
+`gwh` and `gw version` compare it with `__version__`, in Python; the shell
+files hold the value and no logic. Nothing built can stamp a file a plugin
+manager copies from git, so `scripts/bump_version.py` writes it at release,
+along with the tag in the README's install lines, and `tests/test_version.py`
+fails when a copy disagrees with `pyproject.toml`.
+
 Nothing installs this from a checkout on the user's disk. It is consumed as a
 third-party plugin and a third-party tool, so anything that assumes a local
 clone at a known path is wrong here.

@@ -157,7 +157,7 @@ network. `GIT_CONFIG_GLOBAL` carries that: without it git still reads
 ```
 
 That does the whole of it: cut `release/v0.2.0` from `origin/main`,
-`uv version 0.2.0`, open the pull request, wait for its checks, squash-merge,
+`scripts/bump_version.py 0.2.0`, open the pull request, wait for its checks, squash-merge,
 wait for main's own run on the merged commit, and only then tag. The tag lands
 on a commit already proved green, so it never has to move.
 
@@ -201,12 +201,21 @@ published. Nothing is generated from pull request titles.
 By hand it is the same four commands:
 
 ```console
-uv version 0.2.0          # rewrites pyproject.toml and re-locks
+python3 scripts/bump_version.py 0.2.0   # uv version, then the plugins and README
 # open a pull request, review it, merge it
 git switch main && git pull
 git tag -a v0.2.0 -m v0.2.0
 git push origin v0.2.0
 ```
+
+`uv version` alone is not the bump. It rewrites `pyproject.toml` and
+`uv.lock`, and the shell plugins carry a copy it never sees: Fisher and
+Antidote install them from the tag rather than from anything built, so each
+exports `WORKTREES_PLUGIN_VERSION` written into it, and the README's install
+lines name the tag. `scripts/bump_version.py` writes every one of them, and
+checks each line matches before it writes any. `tests/test_version.py` fails
+when one disagrees with `pyproject.toml`, so a release pull request missing
+one fails its checks before anything is tagged.
 
 The version lives in `pyproject.toml`, in the repository, on every commit,
 and in git history. The tag agrees with it or nothing is published. A tag

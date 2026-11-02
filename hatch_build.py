@@ -2,8 +2,8 @@
 
 Reading it back through `importlib.metadata` at import instead costs 10 ms of
 a 67 ms invocation, on every command, for a string two of them print. A
-constant in the wheel costs nothing, and `pyproject.toml` stays the one place
-the version is written.
+constant in the wheel costs nothing, and the package reads its version from
+`pyproject.toml` alone. The shell plugins' copy is `scripts/bump_version.py`'s.
 
 Not `hatch-vcs`: deriving the version from a tag inverts which of the two has
 to agree with the other, and `publish.yml` refuses a tag whose commit carries
