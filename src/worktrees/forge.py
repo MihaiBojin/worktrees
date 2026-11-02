@@ -244,6 +244,13 @@ def _ask(branch: str, repo: str | os.PathLike[str] | None) -> Request | None:
     return Request(int(number), state, noun, state == "OPEN" and _idle(row))
 
 
+def _trace(argv: list[str], code: int, stdout: str, stderr: str) -> None:
+    if options.verbose:
+        from . import progress, render
+
+        progress.line(render.trace(argv, code, stdout, stderr, failed=code != 0))
+
+
 def query(
     argv: list[str], repo: str | os.PathLike[str] | None = None
 ) -> list[dict] | None:
@@ -251,12 +258,6 @@ def query(
     import json
 
     options.log.append(tuple(argv))
-    if options.verbose:
-        import shlex
-        import sys
-
-        print("+ " + shlex.join(argv), file=sys.stderr)
-
     try:
         proc = subprocess.run(
             argv,
@@ -267,8 +268,10 @@ def query(
             env={k: v for k, v in os.environ.items() if k not in REDIRECTS},
             timeout=30,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _trace(argv, 1, "", str(exc))
         return None
+    _trace(argv, proc.returncode, proc.stdout, proc.stderr)
     if proc.returncode != 0:
         return None
 

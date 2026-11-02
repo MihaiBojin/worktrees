@@ -248,6 +248,19 @@ since the verbose log writes to the line it redraws. Anything else printed on
 stderr while it spins goes through `progress.line`, which clears the spinner
 first.
 
+A message on stderr goes through `render.fail`, `render.warn` or
+`render.note`. On a terminal each leads with its symbol, `✗`, `!` or `→`,
+makes flags and quoted commands bold and shas yellow in its first line. A
+failure prints every line red; a warning or a note dims the lines after its
+first. A branch name is wrapped in `render.branch` and a
+ref such as `origin/main` in `render.ref` where the message is built, since
+no pattern tells a branch from prose; the passes after leave those alone. Off a terminal it is the words alone, so a test or a
+log reads what the code wrote. `-v` prints each command once it has run, as
+`render.trace` lays it out: the line that pastes back, what it printed,
+indented, its exit code when that is not 0 or is the only answer, then a
+blank line. Printing after the run keeps a command and its answer together
+when eight threads are asking at once.
+
 ## A recent fetch, and a forge answer that cannot change, are reused
 
 The README's "What is reused, and for how long" table lists every case and

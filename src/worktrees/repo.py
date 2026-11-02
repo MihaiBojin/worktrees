@@ -22,6 +22,47 @@ def remotes() -> None:
     """The names of every remote."""
 
 
+@git("remote -v")
+def remote_verbose() -> None:
+    """Each remote's fetch and push URL, with url.insteadOf applied."""
+
+
+def remote_urls(repo: str | os.PathLike[str] | None = None) -> list[tuple[str, str]]:
+    """Every remote and where it fetches from, as `short_url` writes it."""
+    seen: list[tuple[str, str]] = []
+    for line in remote_verbose(repo=repo).lines:
+        name, _, rest = line.partition("\t")
+        url, _, kind = rest.rpartition(" ")
+        if kind == "(fetch)" and url:
+            seen.append((name, short_url(url)))
+    return seen
+
+
+def short_url(url: str) -> str:
+    """host/owner/repo, whichever way the URL spells it.
+
+    `git@github.com:org/repo.git`, `ssh://git@github.com:22/org/repo` and
+    `https://user:token@github.com/org/repo.git` are all
+    `github.com/org/repo`. The user, any password or token and the port are
+    dropped, which is also what keeps a credential out of the terminal. A
+    local path is shown as it is, less a trailing `.git`.
+    """
+    from urllib.parse import urlsplit
+
+    text = url.strip().rstrip("/").removesuffix(".git")
+    if "://" in text:
+        parts = urlsplit(text)
+        if parts.scheme == "file":
+            return parts.path
+        return f"{parts.hostname or ''}{parts.path}"
+    host, colon, path = text.partition(":")
+    # scp-like `[user@]host:path`: a colon before any slash. A Windows drive
+    # (`C:\\...`) is one letter, and a local path has its slash first.
+    if colon and "/" not in host and len(host) > 1:
+        return f"{host.rpartition('@')[2].lower()}/{path.lstrip('/')}"
+    return text
+
+
 @git("config --get $key", ok=(0, 1))
 def config_get(key: str) -> None:
     """One config value. Exit 1 means unset, not broken."""

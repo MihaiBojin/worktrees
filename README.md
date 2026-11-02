@@ -341,6 +341,7 @@ asks, however many there are:
 
 ```console
 $ gwl                # standing in never-pushed
+origin: github.com/you/repo
   #  WORKTREE       BRANCH         PATH
   *  never-pushed   never-pushed   /home/you/git/.worktrees/never-pushed/repo
 > 1  repo           main           /home/you/git/repo
@@ -348,6 +349,11 @@ $ gwl                # standing in never-pushed
   3  holds-secrets  holds-secrets  /home/you/git/.worktrees/holds-secrets/repo
 which? [up/down and enter, 1-3, or esc to cancel]
 ```
+
+The lines above the table name each remote and where it fetches from, as
+host and path: `git@github.com:you/repo.git` and
+`https://github.com/you/repo.git` are both `github.com/you/repo`, and a user,
+token or port in the URL is not shown. `--list` and `--json` leave them out.
 
 WORKTREE is the directory under `.worktrees`, or the main checkout's own
 directory name. It parts from BRANCH when somebody switches branch inside a
