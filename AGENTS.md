@@ -246,14 +246,22 @@ since the verbose log writes to the line it redraws. Anything else printed on
 stderr while it spins goes through `progress.line`, which clears the spinner
 first.
 
-A message on stderr goes through `render.fail`, `render.warn` or
-`render.note`. On a terminal each leads with its symbol, `✗`, `!` or `→`,
-makes flags and quoted commands bold and shas yellow in its first line. A
-failure prints every line red; a warning or a note dims the lines after its
-first. A branch name is wrapped in `render.branch` and a
-ref such as `origin/main` in `render.ref` where the message is built, since
-no pattern tells a branch from prose; the passes after leave those alone. Off a terminal it is the words alone, so a test or a
-log reads what the code wrote. `-v` prints each command once it has run, as
+Every message on stderr goes through `render.fail`, `render.warn` or
+`render.note`, a usage error and a cancelled picker included. On a terminal
+each leads with its symbol, `✗`, `!` or `→`, and its first line makes flags
+and quoted commands bold, paths dim and shas yellow. A path is a word that
+starts with `/`, `~/`, `./` or `../`, taken whole, so a directory named `-x`
+is not a flag and a uuid inside one is not a sha. A failure prints every line
+red; a warning or a note dims the lines after its first.
+
+A branch name is wrapped in `render.branch` and a ref such as `origin/main` in
+`render.ref` where the message is built, since no pattern tells a branch from
+prose; the passes after leave those alone. A branch is bold magenta wherever
+it prints: a table, the picker, a message, a result line. A prompt is
+`render.ask`, the question bold and the answers it takes dim. The line that
+puts a branch back is `render.restore`, painted the way a table paints a
+branch and a sha, and it pastes the same. Off a terminal it is the words
+alone, so a test or a log reads what the code wrote. `-v` prints each command once it has run, as
 `render.trace` lays it out: the line that pastes back, what it printed,
 indented, its exit code when that is not 0 or is the only answer, then a
 blank line. Printing after the run keeps a command and its answer together

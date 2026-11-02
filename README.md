@@ -227,7 +227,7 @@ $ gwp
 squash-merged  /home/you/git/.worktrees/squash-merged/repo
   restore with: git branch squash-merged a2b41ad1fb271bd7d84256f0d35ee5d58c29dd08
 remove 1 worktree(s)? [y/N] y
-removed 1 worktree(s)
+removed 1 worktree(s): squash-merged
 ```
 
 It removes exactly the rows `gws` marks `remove`, under the same flags, and one

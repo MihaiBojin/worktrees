@@ -228,7 +228,7 @@ def remove(
             ref_delete(f"refs/heads/{chosen.branch}", chosen.sha, repo=main)
         except (GitError, Refused) as exc:
             if callable(say):
-                say(f"  branch {chosen.branch} kept: {exc}")
+                say(render.fail(f"branch {render.branch(chosen.branch)} kept: {exc}"))
     return main if standing_in else ""
 
 

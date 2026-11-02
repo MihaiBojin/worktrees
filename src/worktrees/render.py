@@ -155,18 +155,33 @@ def command(text: str) -> str:
     return err(text, BOLD)
 
 
+def restore(name: str, sha: str) -> str:
+    """`git branch NAME SHA`, the line that puts a branch back: quoted to
+    paste, and painted the way a table paints a branch and a sha."""
+    return f"{command('git branch')} {branch(shlex.quote(name))} {err(sha, YELLOW)}"
+
+
+def ask(question: str, hint: str) -> str:
+    """A prompt on stderr: the question bold, the answers it takes dim."""
+    return f"{err(question, BOLD)} {err(hint, DIM)} "
+
+
 # Text `branch`, `ref` or `command` already painted, left as it is; then a
-# quoted command, a flag, or a sha with at least one digit, so a word like
-# `deadbeef` in prose stays prose. Quoted before flag: a flag inside one stays
-# part of the command it belongs to. Commands and flags are bold rather than
-# a colour, so they read as part of the line they sit in: red in a failure.
+# quoted command, a path, a flag, or a sha with at least one digit, so a word
+# like `deadbeef` in prose stays prose. Quoted before flag: a flag inside one
+# stays part of the command it belongs to. A path is a word that starts with
+# `/`, `~/`, `./` or `../`, dim as in a table, and taken whole before the flag
+# and sha passes, which would otherwise find both inside it. Commands and flags
+# are bold rather than a colour, so they read as part of the line they sit
+# in: red in a failure.
 _TOKEN = re.compile(
     r"(?P<painted>\033\[[\d;]*m.*?\033\[0m)"
     r"|(?P<quoted>'[^'\n]+')"
+    r"|(?P<path>(?<![^\s(])(?:~|\.{1,2})?/[^\s'\"),;:]*)"
     r"|(?P<flag>(?<![\w-])--?[A-Za-z][\w-]*)"
     r"|(?P<sha>\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b)"
 )
-_TOKEN_CODE = {"quoted": BOLD, "flag": BOLD, "sha": YELLOW}
+_TOKEN_CODE = {"quoted": BOLD, "path": DIM, "flag": BOLD, "sha": YELLOW}
 
 
 def _tokens(text: str) -> str:

@@ -178,14 +178,34 @@ def test_a_failure_stays_red_after_a_painted_name(stderr_colour) -> None:
     )
 
 
-def test_an_undo_command_paints_its_branch_and_sha(stderr_colour) -> None:
+def test_a_restore_command_paints_its_branch_and_sha(stderr_colour) -> None:
     """The way back reads like the table above it, and pastes as it did."""
     import re
 
-    from worktrees import branch_cli, branches
+    from worktrees import branches
 
     v = branches.Verdict(branch="a b", sha="0" * 40, verdict="remove", why="")
-    line = branch_cli._undo(v)
+    line = render.restore(v.branch, v.sha)
     assert render.branch("'a b'") in line
     assert f"{render.YELLOW}{'0' * 40}{render.RESET}" in line
     assert re.sub(r"\033\[[\d;]*m", "", line) == v.undo
+
+
+@pytest.mark.parametrize(
+    "path", ["/tmp/a-b/d72cd87d-b528/repo", "~/git/x", "./rel/-x", "../up"]
+)
+def test_a_path_in_a_message_is_dim_and_whole(stderr_colour, path) -> None:
+    """Not a flag where a directory starts with a dash, nor a sha in a uuid."""
+    line = render.fail(f"x is already checked out at {path}")
+    assert f"{render.DIM}{path}{render.RESET}" in line
+    assert render.YELLOW not in line
+
+
+def test_a_ref_is_not_a_path(stderr_colour) -> None:
+    assert render.DIM not in render.warn("behind origin/main by 2")
+
+
+def test_a_prompt_is_a_bold_question_and_dim_answers(stderr_colour) -> None:
+    assert render.ask("remove 1?", "[y/N]") == (
+        f"{render.BOLD}remove 1?{render.RESET} {render.DIM}[y/N]{render.RESET} "
+    )

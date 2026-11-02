@@ -333,6 +333,7 @@ def test_prune_deletes_the_branch_and_the_empty_parents(world) -> None:
     assert not wt.exists()
     assert "done" not in world.git("branch", "--format=%(refname:short)").split()
     assert not (world.parent / ".worktrees" / "done").exists()
+    assert p.stdout.strip() == "removed 1 worktree(s): done"
 
 
 def test_a_squash_merged_branch_goes_with_its_checkout(world) -> None:

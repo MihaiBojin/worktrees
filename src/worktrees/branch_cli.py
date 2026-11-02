@@ -140,12 +140,6 @@ def _verdict(v: branches.Verdict) -> Cell:
     return Cell(v.verdict, render.VERDICT.get(v.verdict, ""))
 
 
-def _undo(v: branches.Verdict) -> str:
-    """The way back, painted as the tables paint a branch and a sha."""
-    git, name, sha = v.undo_parts
-    return f"{render.command(git)} {render.branch(name)} {render.err(sha, YELLOW)}"
-
-
 def _plan(go: list[branches.Verdict]) -> str:
     """What is about to be deleted, on stderr, before the question."""
     return table(
@@ -225,7 +219,10 @@ def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:
         )
     )
     answer = prune._prompt(
-        f"which? [1-{len(candidates)}, space-separated numbers, or blank to cancel] "
+        render.ask(
+            "which?",
+            f"[1-{len(candidates)}, space-separated numbers, or blank to cancel]",
+        )
     ).strip()
     if not answer:
         return []
@@ -268,7 +265,7 @@ def delete(args: argparse.Namespace) -> int:
         if not sys.stdin.isatty():
             raise Refused("not a terminal; pass --yes to confirm deletion")
         if prune._prompt(
-            f"delete {_branches(len(go))}? [y/N] "
+            render.ask(f"delete {_branches(len(go))}?", "[y/N]")
         ).strip().lower() not in ("y", "yes"):
             _report(args, head, head_sha, rows, removed=removed, failed=failures)
             return 0
@@ -291,7 +288,12 @@ def delete(args: argparse.Namespace) -> int:
         _err(render.note("each comes back with:"))
         for row in go:
             if row.branch in removed:
-                _err(f"  {_undo(row)}")
+                _err(f"  {render.restore(row.branch, row.sha)}")
+    # A named branch that was not proved finished says why, rather than
+    # leaving exit 3 to speak for it.
+    held = [v for v in rows if args.names and v.verdict != "remove"]
+    for v in held:
+        _err(render.fail(f"{render.branch(v.branch)} kept: {v.why}"))
     if failures or any(v.error for v in rows):
         return 1
-    return 3 if args.names and any(v.verdict != "remove" for v in rows) else 0
+    return 3 if held else 0

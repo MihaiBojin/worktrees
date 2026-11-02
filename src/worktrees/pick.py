@@ -147,7 +147,9 @@ def _select(
     place. Anywhere else, a dumb terminal or a stderr that is not one, the
     list is printed once and each move prints the row it lands on.
     """
-    prompt = f"which? [up/down and enter, 1-{len(candidates)}, or esc to cancel] "
+    prompt = render.ask(
+        "which?", f"[up/down and enter, 1-{len(candidates)}, or esc to cancel]"
+    )
     redraw = sys.stderr.isatty() and os.environ.get("TERM") != "dumb"
 
     def cells(mark: str, wt: Worktree) -> list[str]:
@@ -174,11 +176,11 @@ def _select(
             codes = [
                 render.BOLD,
                 render.BOLD + render.REVERSE,
-                render.CYAN + render.REVERSE,
+                render.BRANCH + render.REVERSE,
                 render.DIM,
             ]
         else:
-            codes = [render.DIM, render.BOLD, render.CYAN, render.DIM]
+            codes = [render.DIM, render.BOLD, render.BRANCH, render.DIM]
         return line(cells(mark, candidates[i]), codes)
 
     # The rows that cannot be picked stay grey, their worktree name bold.
