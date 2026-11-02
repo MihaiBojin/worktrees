@@ -14,7 +14,10 @@ rather than the key: `NO_COLOR=` unsets the request instead of making it.
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import sys
+from collections.abc import Sequence
 from typing import IO
 
 RESET = "\033[0m"
@@ -92,3 +95,78 @@ def table(rows: list[Row]) -> str:
         cells = [out(c.text.ljust(widths[i]), c.code) for i, c in enumerate(row[:-1])]
         lines.append("  ".join([*cells, out(row[-1].text, row[-1].code)]).rstrip())
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------
+# messages on stderr
+# --------------------------------------------------------------------------
+
+# A quoted command, a flag, or a sha with at least one digit, so a word like
+# `deadbeef` in prose stays prose. Quoted first: a flag inside one stays part
+# of the command it belongs to.
+_TOKEN = re.compile(
+    r"(?P<quoted>'[^'\n]+')"
+    r"|(?P<flag>(?<![\w-])--?[A-Za-z][\w-]*)"
+    r"|(?P<sha>\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b)"
+)
+_TOKEN_CODE = {"quoted": CYAN, "flag": CYAN, "sha": YELLOW}
+
+
+def _tokens(text: str) -> str:
+    return _TOKEN.sub(lambda m: err(m.group(), _TOKEN_CODE[m.lastgroup or ""]), text)
+
+
+def _message(symbol: str, code: str, text: str) -> str:
+    """The symbol, the first line as the headline, any further lines dim.
+
+    Plain text when stderr is not a terminal: the symbol is decoration, and a
+    log or a pipe gets the words as they were.
+    """
+    if not err.on:
+        return text
+    head, *rest = text.split("\n")
+    lines = [f"{err(symbol, BOLD + code)} {_tokens(head)}"]
+    lines += [f"  {err(line, DIM)}" for line in rest]
+    return "\n".join(lines)
+
+
+def fail(text: str) -> str:
+    """Why nothing was done."""
+    return _message("✗", RED, text)
+
+
+def warn(text: str) -> str:
+    """Something done differently from how it was asked, or might be stale."""
+    return _message("!", YELLOW, text)
+
+
+def note(text: str) -> str:
+    """What the command is doing on the caller's behalf."""
+    return _message("→", CYAN, text)
+
+
+# Enough of `git worktree list` or a forge answer to see its shape.
+_TRACE_LINES = 20
+
+
+def trace(
+    argv: Sequence[str], code: int, stdout: str, stderr: str, failed: bool
+) -> str:
+    """One command for -v: the line that pastes back, what it printed, its
+    exit code, and a blank line before the next.
+
+    The exit code is shown when it is not 0 or when nothing was printed,
+    since for `show-ref --quiet` and its kind the code is the whole answer.
+    """
+    # NUL-separated output (`-z`) reads one record to a line.
+    printed = [ln for ln in stdout.replace("\0", "\n").splitlines() if ln]
+    errors = [ln for ln in stderr.splitlines() if ln]
+    lines = [f"{err('+', DIM)} {err(shlex.join(argv), BOLD)}"]
+    shown = printed[:_TRACE_LINES]
+    lines += [f"  {err(ln, DIM)}" for ln in shown]
+    if len(printed) > len(shown):
+        lines.append(f"  {err(f'... {len(printed) - len(shown)} more', DIM)}")
+    lines += [f"  {err(ln, RED if failed else DIM)}" for ln in errors]
+    if code or not (printed or errors):
+        lines.append(f"  {err(f'exit {code}', RED if failed else DIM)}")
+    return "\n".join(lines) + "\n"

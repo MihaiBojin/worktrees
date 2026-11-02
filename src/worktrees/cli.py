@@ -23,6 +23,10 @@ def _err(text: str) -> None:
     progress.line(text)
 
 
+def _warn(text: str) -> None:
+    _err(render.warn(text))
+
+
 def _same(a: str, b: str) -> bool:
     """One directory under two spellings, or under a symlink."""
     return bool(a) and bool(b) and Path(a).resolve() == Path(b).resolve()
@@ -180,8 +184,10 @@ def _should_fetch(args: argparse.Namespace) -> bool:
         return True
     if not args.quiet:
         _err(
-            f"fetched {int((time.time() - fetched) // 60)} min ago; using those "
-            "refs (--force-refresh fetches now)"
+            render.note(
+                f"fetched {int((time.time() - fetched) // 60)} min ago; using "
+                "those refs (--force-refresh fetches now)"
+            )
         )
     return False
 
@@ -262,18 +268,18 @@ def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
             # cannot give, not for one it is about to fail to give too.
             args.no_forge = True
             if not args.quiet:
-                _err(
+                _warn(
                     f"{remote} could not be fetched; judging from the refs "
                     "already here, and not asking the forge"
                 )
     elif args.no_fetch and not args.quiet:
         # A fetch reused because it is recent has already said so.
-        _err("using the refs already here; they may be stale (--no-fetch)")
+        _warn("using the refs already here; they may be stale (--no-fetch)")
 
     progress.say("finding the head branch")
     head, warning = R.head_ref(remote, online=online)
     if warning and not args.quiet:
-        _err(warning)
+        _warn(warning)
     if not head:
         raise _Stop("cannot tell which branch this repository branches from", 2)
     head_branch = R.ref_name(head)
@@ -427,9 +433,8 @@ def run_prune(args: argparse.Namespace) -> int:
         print(json.dumps({"removed": removed, "failed": failed}, indent=2))
     elif failed:
         _err(
-            render.err(
-                f"{failed} of {len(go)} could not be removed; each said why above",
-                RED,
+            render.fail(
+                f"{failed} of {len(go)} could not be removed; each said why above"
             )
         )
     else:
@@ -480,14 +485,14 @@ def run_new_branch(args: argparse.Namespace) -> int:
         _err(f"usage: {args.prog} NAME")
         return 2
 
-    warn = None if args.quiet else _err
+    warn = None if args.quiet else _warn
     if args.no_fetch and not args.quiet:
-        _err("branching from what is already here; refs may be stale (--no-fetch)")
+        _warn("branching from what is already here; refs may be stale (--no-fetch)")
 
     try:
         started = new_branch.create(args.name, fetch=_should_fetch(args), warn=warn)
     except new_branch.Refusal as exc:
-        _err(render.err(str(exc), RED))
+        _err(render.fail(str(exc)))
         return 1
 
     if args.json:
@@ -542,14 +547,14 @@ def run_rotate(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    warn = None if args.quiet else _err
+    warn = None if args.quiet else _warn
     if args.no_fetch and not args.quiet:
-        _err("working from what is already here; refs may be stale (--no-fetch)")
+        _warn("working from what is already here; refs may be stale (--no-fetch)")
 
     try:
         result = rotate_mod.rotate(fetch=_should_fetch(args), warn=warn)
     except new_branch.Refusal as exc:
-        _err(render.err(str(exc), RED))
+        _err(render.fail(str(exc)))
         return 1
 
     if isinstance(result, rotate_mod.CaughtUp):
@@ -743,11 +748,11 @@ def run_add(args: argparse.Namespace) -> int:
         _err(f"usage: {args.prog} NAME [BASE]")
         return 2
 
-    warn = None if args.quiet else _err
+    warn = None if args.quiet else _warn
     try:
         landed = wt_mod.add(args.name, args.base, fetch=_should_fetch(args), warn=warn)
     except new_branch.Refusal as exc:
-        _err(render.err(str(exc), RED))
+        _err(render.fail(str(exc)))
         return 1
     if not args.quiet and not args.json:
         made = "on a new branch" if landed.created else "on the branch already here"
@@ -869,7 +874,7 @@ def run_move(args: argparse.Namespace) -> int:
     try:
         landed = wt_mod.move(args.name)
     except new_branch.Refusal as exc:
-        _err(render.err(str(exc), RED))
+        _err(render.fail(str(exc)))
         return 1
     if not args.quiet and not args.json:
         _err(f"renamed to {render.err(landed.branch, BOLD)}")
@@ -1499,13 +1504,13 @@ def _dispatch(
         _err("")
         return 130
     except _Stop as exc:
-        _err(render.err(str(exc), RED))
+        _err(render.fail(str(exc)))
         return exc.code
     except Refused as exc:
-        _err(render.err(str(exc), RED))
+        _err(render.fail(str(exc)))
         return 3
     except GitError as exc:
-        _err(render.err(str(exc), RED))
+        _err(render.fail(str(exc)))
         return 1
 
 

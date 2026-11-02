@@ -22,10 +22,10 @@ import inspect
 import os
 import shlex
 import subprocess
-import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Protocol
 
+from . import progress, render
 from .errors import GitError, Refused
 
 Argv = tuple[str, ...]
@@ -384,18 +384,27 @@ def git(
             full += argv
 
             options.log.append(tuple(full))
-            if options.verbose:
-                # shlex.join, so the printed line pastes back into a shell.
-                print("+ " + shlex.join(full), file=sys.stderr)
             environ = None
             if env is not None:
                 environ = {**os.environ, **env}
             proc = subprocess.run(
                 full, capture_output=True, text=True, env=environ, check=False
             )
+            if options.verbose:
+                # After it ran, so the command and its answer print as one
+                # block even when eight threads are asking at once.
+                progress.line(
+                    render.trace(
+                        full,
+                        proc.returncode,
+                        proc.stdout,
+                        proc.stderr,
+                        failed=proc.returncode not in accept,
+                    )
+                )
             if proc.returncode not in accept:
                 raise GitError(
-                    f"git {shlex.join(argv)} exited {proc.returncode}: "
+                    f"git {shlex.join(argv)} exited {proc.returncode}:\n"
                     f"{proc.stderr.strip() or '(no output)'}"
                 )
             return Run(proc.returncode, proc.stdout, proc.stderr)

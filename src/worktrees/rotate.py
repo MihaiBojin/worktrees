@@ -156,8 +156,8 @@ def rotate(
     if not ahead and not _count(local, base, repo=repo):
         raise Refusal(
             f"{branch} is already at {R.ref_name(base)} ({sha}) with no commits "
-            "of its own, so the next branch would be the same commit under "
-            "another name"
+            "of its own\nthe next branch would be the same commit under another "
+            "name; commit to this one first"
         )
 
     chosen = next_name(stem(branch), remote, repo=repo)
@@ -200,7 +200,7 @@ def _catch_up(
     previous_sha = _short(local, repo=repo)
     if not behind:
         raise Refusal(
-            f"{branch} is already at {R.ref_name(base)} ({previous_sha}); "
+            f"{branch} is already at {R.ref_name(base)} ({previous_sha})\n"
             "there is nothing to catch up"
         )
     merge_ff_only(base, repo=repo)
