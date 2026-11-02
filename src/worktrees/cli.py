@@ -554,9 +554,28 @@ def run_rotate(args: argparse.Namespace) -> int:
 
     if isinstance(result, rotate_mod.CaughtUp):
         if args.json:
-            print(json.dumps({"branch": result.branch, "at": result.at}, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "branch": result.branch,
+                        "at": result.at,
+                        "previous_sha": result.previous_sha,
+                        "sha": result.sha,
+                    },
+                    indent=2,
+                )
+            )
         elif not args.quiet:
-            print(f"{render.out(result.branch, BOLD)} is at {result.at}")
+            print(
+                _was_now(
+                    (result.branch, result.previous_sha, ""),
+                    (
+                        result.branch,
+                        result.sha,
+                        f"fast-forwarded by {_commits(result.count)} to {result.at}",
+                    ),
+                )
+            )
         return 0
 
     if args.json:
@@ -567,16 +586,45 @@ def run_rotate(args: argparse.Namespace) -> int:
                     "stem": result.stem,
                     "base": result.base,
                     "sha": result.sha,
+                    "previous": result.previous,
+                    "previous_sha": result.previous_sha,
                 },
                 indent=2,
             )
         )
     elif not args.quiet:
+        base = R.ref_name(result.base)
+        kept = (
+            f"kept, {_commits(result.ahead)} not on {base}"
+            if result.ahead
+            else "kept, no commits of its own"
+        )
         print(
-            f"{render.out(result.branch, BOLD)} from "
-            f"{R.ref_name(result.base)} at {result.sha}"
+            _was_now(
+                (result.previous, result.previous_sha, kept),
+                (result.branch, result.sha, f"new, from {base}"),
+            )
         )
     return 0
+
+
+def _was_now(was: tuple[str, str, str], now: tuple[str, str, str]) -> str:
+    """Where HEAD stood before and stands after: branch, sha and a note."""
+    return table(
+        [
+            (Cell("was", DIM), was[0], Cell(was[1], YELLOW), Cell(was[2], DIM)),
+            (
+                Cell("now", DIM),
+                Cell(now[0], BOLD + GREEN),
+                Cell(now[1], YELLOW),
+                Cell(now[2], DIM),
+            ),
+        ]
+    )
+
+
+def _commits(n: int) -> str:
+    return f"{n} commit" if n == 1 else f"{n} commits"
 
 
 # --------------------------------------------------------------------------
@@ -1267,7 +1315,7 @@ _NEW_BRANCH_HELP = "Fetch, then branch NAME off the head branch and check it out
 _ROTATE_HELP = (
     "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
     "head branch there is no chain to continue, so it catches that up to the "
-    "remote instead."
+    "remote instead. Exits 1 when either would change nothing."
 )
 
 

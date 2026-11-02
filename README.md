@@ -428,13 +428,31 @@ Three digits, so the sequence cannot be read as another field of the date. A
 number is free only when neither `refs/heads/` nor the remote holds it, or
 two people rotate into the same name.
 
+It prints the branch it left and the one it made, each with its commit:
+
+```console
+$ gwrot
+was  fix-parser                 6d45e4f  kept, 1 commit not on origin/main
+now  fix-parser-2026-09-11_001  910074d  new, from origin/main
+```
+
+A branch already at the head branch with no commits of its own is refused at
+exit 1, because the next branch would be the same commit under another name.
+Running `gwrot` twice without committing in between is how that happens.
+`origin rotate` makes the branch anyway; this is the second place the two
+differ, after exit codes.
+
 On the head branch there is no chain to continue, so it catches that up
 instead:
 
 ```console
 $ gwrot
-main is at origin/main
+was  main  6d45e4f
+now  main  910074d  fast-forwarded by 3 commits to origin/main
 ```
+
+A head branch already level with the remote is refused at exit 1 too, since
+there is nothing to catch up.
 
 That is `merge --ff-only`, never a rebase: rewriting local commits on the
 head branch is the class this tooling refuses everywhere else. Commits the

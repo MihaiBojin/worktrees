@@ -84,9 +84,11 @@ the name format, the stem-stripping and the remote-aware collision check are
 copied, and a difference between them is a decision somebody has to make
 later. Say so wherever they are documented.
 
-Exit codes are the one deliberate divergence. `origin` has a single non-zero
-code and draws no line between a usage error and a runtime one; this CLI
-keeps argparse's 2 for a usage error.
+Two divergences are deliberate. `origin` has a single non-zero exit code and
+draws no line between a usage error and a runtime one; this CLI keeps
+argparse's 2 for a usage error. And `gwrot` refuses, at exit 1, a rotation or
+catch-up that would change nothing, where `origin rotate` makes a branch at
+the same commit under a new name.
 
 ## Where shell code goes
 
