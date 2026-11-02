@@ -192,12 +192,27 @@ jobs:
           name: dist
           path: dist/
 
-      # The install check waits for PyPI to serve the files.
+      # The install check resolves the wheel alone, so the sdist can still be
+      # missing from PyPI here. A file PyPI does not serve yet is asked again,
+      # backing off from 15s over eight attempts as the install check does;
+      # any other failure ends the job at once.
       - name: Verify attestations on PyPI
         run: |
           for f in dist/*.whl dist/*.tar.gz; do
-            uvx pypi-attestations@0.0.30 verify pypi \
-              --repository "https://github.com/$GITHUB_REPOSITORY" "pypi:${f#dist/}"
+            file="${f#dist/}"
+            delay=15
+            for attempt in 1 2 3 4 5 6 7 8; do
+              code=0
+              uvx pypi-attestations@0.0.30 verify pypi \
+                --repository "https://github.com/$GITHUB_REPOSITORY" "pypi:$file" 2>err.txt || code=$?
+              cat err.txt >&2
+              [ "$code" -ne 0 ] || break
+              grep -q "Could not find the artifact" err.txt || exit 1
+              [ "$attempt" -lt 8 ] || exit 1
+              echo "waiting ${delay}s for PyPI to serve $file (attempt $attempt/8)..." >&2
+              sleep "$delay"
+              delay=$((delay * 2))
+            done
           done
 
   release:
