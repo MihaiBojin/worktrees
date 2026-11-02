@@ -476,7 +476,8 @@ print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
 | `gws` | `--branch NAME`, `--no-fetch`, `--force-refresh`, `--delete-ignored`, `--no-forge` |
 | `gwp` | those five, and `-y` |
 | `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--force-refresh`, `--no-forge`, `-y` |
-| `gwa`, `gwnb`, `gwrot` | `--no-fetch`, `--force-refresh` |
+| `gwa`, `gwnb` | `--no-fetch`, `--force-refresh` |
+| `gwrot` | `--no-fetch`, `-f`/`--force-refresh` |
 | `gwbs` | `--no-fetch`, `--force-refresh`, `--no-forge` |
 | `gwbd` | those three, `--all`, `--dry-run` and `-y` |
 | `gwl` | `-l` |

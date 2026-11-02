@@ -189,3 +189,17 @@ def test_it_takes_no_argument(world) -> None:
     p = gwrot(world, "some-name", "--no-fetch")
     assert p.returncode == 2
     assert "unrecognized arguments" in p.stderr
+
+
+def test_f_fetches_however_recent_the_last_fetch(world) -> None:
+    bare = world.root / "origin.git"
+    subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
+    world.git("remote", "add", "origin", str(bare))
+    world.git("push", "--quiet", "origin", "main")
+    world.git("fetch", "--quiet", "origin")
+    world.git("switch", "--quiet", "--create", "fix-parser")
+
+    p = gwrot(world, "-f", "-v")
+    assert p.returncode == 0, p.stderr
+    assert "fetched 0 min ago" not in p.stderr
+    assert "+ git fetch" in p.stderr

@@ -515,6 +515,7 @@ def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
         "--no-fetch", action="store_true", help="work from what is already here"
     )
     p.add_argument(
+        "-f",
         "--force-refresh",
         action="store_true",
         help="fetch even when the last fetch is under 10 minutes old",
