@@ -642,6 +642,21 @@ all refused, because git reads the empty string as "no old value" and takes
 the branch at exit 0, which is `branch -D` spelled longer. `update-ref --stdin`
 is refused with them: it deletes refs without `-d` appearing at all.
 
+## Agent plugin
+
+`plugin/` is a plugin for Claude Code and Codex. `/worktrees:prune` runs `gws`
+and `gwbs`, shows the worktrees and branches they proved finished, asks which
+to remove, and removes those with `gwp` and `gwbd`. It is listed in the
+`release-tools` marketplace:
+
+```console
+claude plugin marketplace add releasetools/agent-plugins
+claude plugin install worktrees@release-tools
+```
+
+[plugin/README.md](plugin/README.md) covers Codex, what the command shows and
+what it will not do.
+
 ## Contributing
 
 The Python, the tests and the release procedure are in

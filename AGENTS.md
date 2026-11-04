@@ -131,6 +131,20 @@ command's flags, and `tests/test_completions.py` diffs those against `--help`
 in both directions for both shells: a renamed flag fails there rather than
 going quiet in a completion nobody is watching.
 
+## The agent plugin reads `--json`
+
+`plugin/` is an agent plugin, installed from a release tag through the
+`release-tools` marketplace. Its skill pipes `gws --json` and `gwbs --json`
+through one jq filter and removes only with `gwp` and `gwbd`, so the JSON
+fields that filter names are an interface. `tests/test_plugin.py` runs the
+filter, copied out of `SKILL.md`, against both commands' output: a renamed or
+dropped field fails there.
+
+The plugin carries the release version in three manifests, and
+`scripts/bump_version.py` stamps all three. `plugin/plugin.json` is the
+portable manifest, the Claude one with only the fields Agent Plugins v1 names;
+the same test holds it to that.
+
 ## The picker is Python's, and there is no fzf
 
 Building the candidate list, matching a query against it, ranking, deciding
