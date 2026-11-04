@@ -20,6 +20,7 @@ a shell function of the same name.
 | `gwm NEW` | rename this worktree's branch and move the checkout to match |
 | `gwr [QUERY]` | remove a worktree whose branch is finished, and the branch |
 | `gwr! [QUERY]` | `gwr --delete-ignored`, a shell function in fish and zsh |
+| `gwp!` | `gwp --force-refresh --delete-ignored --yes`, a shell function in fish and zsh |
 | `gwbc NAME` | fetch, then branch `NAME` off the head branch and check it out |
 | `gwrot` | start the next branch after this one, or catch the head branch up |
 | `gwh` | print that table, with every name each command answers to |
@@ -121,8 +122,8 @@ fisher install MihaiBojin/worktrees@v0.6.1
 ```
 
 Fisher copies `functions/`, `completions/` and `conf.d/` from the repository
-root, so the functions for `gwa`, `gwl`, `gwm`, `gwr` and `gwr!` land together
-with a completion for every command. Nothing has to be sourced.
+root, so the functions for `gwa`, `gwl`, `gwm`, `gwr`, `gwr!` and `gwp!` land
+together with a completion for every command. Nothing has to be sourced.
 
 To change release, edit the tag on that line of
 `$__fish_config_dir/fish_plugins` and run `fisher update`. The same edit moves

@@ -69,10 +69,13 @@ end
 
 `command` is what stops the function calling itself, in all three shells.
 
-One other kind of function exists: a shortcut, a banged name that calls a shim
-with its flags fixed and does nothing else. `gwr!` is `gwr --delete-ignored`.
-It calls the `gwr` function rather than `command gwr`, so the caller still
-lands where the binary says, and it has no console script of its own.
+One other kind of function exists: a shortcut, a banged name that calls a
+command with its flags fixed and does nothing else. `gwr!` is `gwr
+--delete-ignored`, and `gwp!` is `gwp --force-refresh --delete-ignored
+--yes`. A shortcut calls its command by its plain name, so `gwr!` reaches the
+`gwr` function rather than `command gwr` and the caller still lands where the
+binary says. No binary carries a banged name, so a shortcut shadows nothing,
+and none has a console script of its own.
 `SHORTCUTS` in `tests/test_shims.py` lists them and holds each to one line.
 
 ## Two commands start branches
