@@ -18,4 +18,4 @@ autoload -Uz gwa gwl gwm gwr 'gwr!' 'gwp!'
 # The release this plugin came from, which `gwh` and `gw version` compare
 # with their own. Exported, because the environment is all a binary can see
 # of the shell that started it.
-export WORKTREES_PLUGIN_VERSION=0.6.1
+export WORKTREES_PLUGIN_VERSION=0.6.2

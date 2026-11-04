@@ -17,6 +17,16 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.6.2 - 2026-11-04
+
+### Added
+
+`gwp!` runs `gwp --force-refresh --delete-ignored --yes` in fish and zsh:
+it fetches fresh, counts worktrees holding gitignored files as removable,
+and removes everything `gws` marks removable without asking. Arguments
+after it pass through, so `gwp! --branch NAME` works. Update the fish or
+zsh plugin to install this shortcut.
+
 ## 0.6.1 - 2026-11-02
 
 ### Added
