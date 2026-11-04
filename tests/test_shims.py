@@ -21,8 +21,11 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 CD_COMMANDS = ("gwa", "gwl", "gwm", "gwr")
-# A shortcut calls a shim with its flags fixed, and nothing else.
-SHORTCUTS = {"gwr!": "gwr --delete-ignored"}
+# A shortcut calls a command with its flags fixed, and nothing else.
+SHORTCUTS = {
+    "gwr!": "gwr --delete-ignored",
+    "gwp!": "gwp --force-refresh --delete-ignored --yes",
+}
 
 
 def scripts() -> dict[str, str]:
@@ -48,11 +51,13 @@ def test_the_two_dialects_ship_the_same_names() -> None:
 
 
 @pytest.mark.parametrize("name", SHORTCUTS)
-def test_a_shortcut_is_one_call_to_a_shim(name: str) -> None:
-    """Through the shim, not `command`, so the caller still lands where the
-    binary says. Anything more is logic, and logic belongs in the CLI."""
+def test_a_shortcut_is_one_call_to_a_command(name: str) -> None:
+    """By its plain name, not `command`, so a shortcut to a shim still lands
+    where the binary says. Anything more is logic, and logic belongs in the
+    CLI."""
     call = SHORTCUTS[name]
-    assert call.split()[0] in CD_COMMANDS
+    assert call.split()[0] in scripts()
+    assert name not in scripts()
     for path, line in (
         (ROOT / "functions" / f"{name}.fish", f"{call} $argv"),
         (ROOT / "zsh/plugins/worktrees/functions" / name, f'{call} "$@"'),
@@ -215,7 +220,12 @@ def _run_zsh(bin_dir: Path, line: str) -> tuple[int, str]:
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
     fns = ROOT / "zsh/plugins/worktrees/functions"
     proc = subprocess.run(
-        [zsh, "-f", "-c", f"fpath=({fns} $fpath); autoload -Uz gwa gwr 'gwr!'; {line}"],
+        [
+            zsh,
+            "-f",
+            "-c",
+            f"fpath=({fns} $fpath); autoload -Uz gwa gwr 'gwr!' 'gwp!'; {line}",
+        ],
         capture_output=True,
         text=True,
         env=env,
@@ -243,6 +253,28 @@ def test_the_zsh_shortcut_lands_where_gwr_says_with_the_flag(tmp_path) -> None:
     assert code == 0, out
     assert str(target.resolve()) in out
     assert seen.read_text().split() == ["--delete-ignored", "x"]
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+def test_gwp_bang_runs_gwp_with_its_flags_and_its_exit_code(tmp_path, shell) -> None:
+    seen = tmp_path / "argv"
+    bin_dir = _fake(tmp_path, "gwp", f'#!/bin/sh\necho "$@" > "{seen}"\nexit 4\n')
+    if shell == "fish":
+        _, out = _run_fish(
+            bin_dir,
+            f"source '{ROOT / 'functions' / 'gwp!.fish'}'; "
+            "gwp! --branch x; echo code=$status",
+        )
+    else:
+        _, out = _run_zsh(bin_dir, "gwp! --branch x; echo code=$?")
+    assert "code=4" in out, out
+    assert seen.read_text().split() == [
+        "--force-refresh",
+        "--delete-ignored",
+        "--yes",
+        "--branch",
+        "x",
+    ]
 
 
 def test_the_zsh_shim_returns_the_binarys_exit_code(tmp_path) -> None:
