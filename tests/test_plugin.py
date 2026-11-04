@@ -1,5 +1,5 @@
-"""The agent plugin in `plugin/`: its manifests agree, and the jq filter its
-skill runs reads the JSON `gws` and `gwbs` print today."""
+"""The agent plugin in `plugin/`: its manifests agree, and the jq filters its
+skill runs read the JSON `gws` and `gwbs` print today."""
 
 from __future__ import annotations
 
@@ -51,11 +51,24 @@ def test_the_portable_manifest_is_the_claude_one_rewritten() -> None:
     assert text == json.dumps(wanted, indent=2, ensure_ascii=False) + "\n"
 
 
-def _filter() -> str:
-    """The jq program in the skill, exactly as an agent runs it."""
-    found = re.search(r"\| jq -cs '(.*?)'\n```", SKILL.read_text(), re.S)
-    assert found, "the skill's assessment command is not where this looks"
+def _filter(entry: str) -> str:
+    """The jq program the skill pipes `entry --json` into, as written."""
+    found = re.search(
+        rf"^{entry} --json \| jq -c '(.*?)'\n```",
+        SKILL.read_text(),
+        re.S | re.M,
+    )
+    assert found, f"the skill's {entry} command is not where this looks"
     return found.group(1)
+
+
+def _jq(program: str, piped: str, head: str = "") -> dict:
+    """Runs the program with `HEAD_SHA` written over, as the skill says."""
+    program = program.replace("HEAD_SHA", head)
+    proc = subprocess.run(
+        ["jq", "-c", program], input=piped, capture_output=True, text=True, check=True
+    )
+    return json.loads(proc.stdout)
 
 
 def _json(world, entry: str) -> str:
@@ -88,27 +101,18 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
         world.git("commit", "--quiet", "-m", f"{branch} (#1)")
     world.worktree("started")
 
-    piped = _json(world, "gws") + _json(world, "gwbs")
-    proc = subprocess.run(
-        ["jq", "-cs", _filter()],
-        input=piped,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    out = json.loads(proc.stdout)
+    branches = _jq(_filter("gwbs"), _json(world, "gwbs"))
+    out = _jq(_filter("gws"), _json(world, "gws"), branches["head_sha"])
 
     worktrees = {row["branch"]: row for row in out["worktrees"]}
     assert set(worktrees) == {"squashed", "started"}
     assert worktrees["squashed"]["at_head"] is False
     assert worktrees["started"]["at_head"] is True
     assert worktrees["squashed"]["path"] == str(squashed)
+    assert (out["kept"], out["unknown"], out["ignored"]) == (1, 0, [])
 
     # Checked out in a worktree, so gwbs keeps it and only gwp may take it.
-    assert [row["branch"] for row in out["branches"]] == ["loose"]
-    assert out["branches"][0]["proof"] == "squash"
-    assert out["branches"][0]["undo"].startswith("git branch loose ")
-
-    assert out["kept"] == {"worktrees": 1, "branches": 3}
-    assert out["unknown"] == {"worktrees": 0, "branches": 0}
-    assert out["ignored"] == []
+    assert [row["branch"] for row in branches["branches"]] == ["loose"]
+    assert branches["branches"][0]["proof"] == "squash"
+    assert branches["branches"][0]["undo"].startswith("git branch loose ")
+    assert (branches["kept"], branches["unknown"]) == (3, 0)

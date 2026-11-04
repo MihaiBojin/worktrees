@@ -22,34 +22,44 @@ found, say so and stop.
 
 ## 1. Assess
 
-Run this from inside the repository, as one command. Add `--no-fetch` to both
-`gws` and `gwbs` only when the user asked for it.
+Run these two from inside the repository, in this order, each exactly as
+written. Add `--no-fetch` to `gwbs` and `gws` only when the user asked for it.
+
+Branches first:
 
 ```sh
-{ gws --json; gwbs --json; } | jq -cs '
-  .[0] as $w | .[1] as $b
-  | def count($rows; $v): [$rows[] | select(.verdict == $v)] | length;
-  {
-    head: $w.head,
-    worktrees: [$w.verdicts[] | select(.verdict == "remove")
-      | {branch, path, why, at_head: (.sha == $b.head_sha)}],
-    branches: [$b.verdicts[] | select(.verdict == "remove")
-      | {branch, proof, undo}],
-    kept: {worktrees: count($w.verdicts; "keep"), branches: count($b.verdicts; "keep")},
-    unknown: {worktrees: count($w.verdicts; "unknown"), branches: count($b.verdicts; "unknown")},
-    ignored: [$w.verdicts[] | select(.verdict == "keep" and .ignored > 0) | .branch]
-  }'
+gwbs --json | jq -c '{
+  head_sha,
+  branches: [.verdicts[] | select(.verdict == "remove") | {branch, proof, undo}],
+  kept: [.verdicts[] | select(.verdict == "keep")] | length,
+  unknown: [.verdicts[] | select(.verdict == "unknown")] | length
+}'
 ```
 
-- `worktrees` are linked worktrees `gwp` would remove, together with their
-  branches. `why` is the proof, such as `squash-merged`.
+Then worktrees, with the `head_sha` that printed written in place of
+`HEAD_SHA`:
+
+```sh
+gws --json | jq -c '{
+  worktrees: [.verdicts[] | select(.verdict == "remove")
+    | {branch, path, why, at_head: (.sha == "HEAD_SHA")}],
+  kept: [.verdicts[] | select(.verdict == "keep")] | length,
+  unknown: [.verdicts[] | select(.verdict == "unknown")] | length,
+  ignored: [.verdicts[] | select(.verdict == "keep" and .ignored > 0) | .branch]
+}'
+```
+
 - `branches` are local branches with no worktree that `gwbd` would delete.
   `proof` is `ancestry`, `squash`, `content` or `forge`; `undo` recreates the
   branch.
+- `worktrees` are linked worktrees `gwp` would remove, together with their
+  branches. `why` is the proof, such as `squash-merged`.
 - `at_head` is true when the worktree's branch sits exactly on the head
   branch's tip. That is a worktree with no commits of its own, which is what
   one somebody has just started looks like.
 - `ignored` names worktrees kept only because they hold gitignored files.
+- `kept` and `unknown` count the rest. The main checkout and the head branch
+  are always among the kept.
 
 A branch checked out in a worktree is `keep` in `branches` and appears in
 `worktrees` instead, so nothing is listed twice.

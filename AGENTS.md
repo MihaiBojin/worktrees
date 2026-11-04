@@ -134,11 +134,14 @@ going quiet in a completion nobody is watching.
 ## The agent plugin reads `--json`
 
 `plugin/` is an agent plugin, installed from a release tag through the
-`release-tools` marketplace. Its skill pipes `gws --json` and `gwbs --json`
-through one jq filter and removes only with `gwp` and `gwbd`, so the JSON
-fields that filter names are an interface. `tests/test_plugin.py` runs the
-filter, copied out of `SKILL.md`, against both commands' output: a renamed or
-dropped field fails there.
+`release-tools` marketplace. Its skill pipes `gwbs --json` and `gws --json`
+each through a jq filter and removes only with `gwp` and `gwbd`, so the JSON
+fields those filters name are an interface. `tests/test_plugin.py` runs both
+filters, read out of `SKILL.md`, against the commands' output: a renamed or
+dropped field fails there. They are two plain pipelines, and the head sha is
+written into the second as a literal rather than passed as a jq variable,
+because Claude Code refused both a `{ ...; } | jq` group and a jq program
+holding a `$` under the command's `allowed-tools`.
 
 The plugin carries the release version in three manifests, and
 `scripts/bump_version.py` stamps all three. `plugin/plugin.json` is the
