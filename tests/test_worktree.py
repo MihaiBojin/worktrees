@@ -112,7 +112,23 @@ def test_add_refuses_a_name_git_rejects(world, name: str) -> None:
 def test_add_with_no_name_names_what_was_typed(world) -> None:
     p = run(world, "gwa")
     assert p.returncode == 2
-    assert p.stderr.strip() == "usage: gwa NAME [BASE]"
+    assert p.stderr.startswith("gwa needs NAME\n\nusage: gwa ")
+    assert p.stdout == ""
+
+
+@pytest.mark.parametrize("binary", ["gwa", "gwl", "gwm", "gwr"])
+def test_a_command_that_lands_prints_its_help_on_stderr(world, binary: str) -> None:
+    """Its shell function captures stdout to find where to go."""
+    p = run(world, binary, "--help")
+    assert p.returncode == 0
+    assert p.stdout == ""
+    assert p.stderr.startswith(f"usage: {binary} ")
+
+
+def test_a_command_that_stays_prints_its_help_on_stdout(world) -> None:
+    p = run(world, "gws", "--help")
+    assert p.stdout.startswith("usage: gws ")
+    assert p.stderr == ""
 
 
 # --------------------------------------------------------------------------

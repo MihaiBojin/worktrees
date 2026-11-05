@@ -69,6 +69,12 @@ end
 
 `command` is what stops the function calling itself, in all three shells.
 
+Because the function captures stdout, a command that lands prints its `--help`
+on stderr, and argparse is asked whether that stream is a terminal before it
+picks colour. A missing argument prints the error and then the help, both on
+stderr, at exit 2: the function prints nothing captured from a run that
+failed.
+
 One other kind of function exists: a shortcut, a banged name that calls a
 command with its flags fixed and does nothing else. `gwr!` is `gwr
 --delete-ignored`, and `gwp!` is `gwp --force-refresh --delete-ignored
