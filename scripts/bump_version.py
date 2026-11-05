@@ -5,7 +5,9 @@
 `uv version` writes `pyproject.toml` and `uv.lock`, and the wheel reads it
 from there. The shell plugins carry a copy of their own, because Fisher and
 Antidote install them from a git tag rather than from anything built, and the
-README's install lines name that tag. `.releasetools.yaml` runs this as the
+README's install lines name that tag. The agent plugin's three manifests carry
+one too: a marketplace installs it from a tag, and a client sees an update only
+when the version moves. `.releasetools.yaml` runs this as the
 release's bump, and `tests/test_version.py` fails when a copy disagrees with
 `pyproject.toml`.
 
@@ -29,6 +31,9 @@ STAMPS: dict[str, tuple[str, ...]] = {
     "zsh/plugins/worktrees/worktrees.plugin.zsh": (
         "export WORKTREES_PLUGIN_VERSION={}",
     ),
+    "plugin/.claude-plugin/plugin.json": ('"version": "{}"',),
+    "plugin/.codex-plugin/plugin.json": ('"version": "{}"',),
+    "plugin/plugin.json": ('"version": "{}"',),
     "README.md": (
         "MihaiBojin/worktrees@v{}",
         "MihaiBojin/worktrees branch:v{}",

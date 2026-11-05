@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "worktrees",
+  "version": "0.6.2",
+  "description": "Remove the git worktrees and branches the worktrees CLI proves finished, after asking",
+  "author": {
+    "name": "Mihai Bojin",
+    "url": "https://github.com/MihaiBojin"
+  },
+  "homepage": "https://github.com/MihaiBojin/worktrees/tree/main/plugin#readme",
+  "repository": "https://github.com/MihaiBojin/worktrees",
+  "license": "Apache-2.0",
+  "keywords": [
+    "git",
+    "worktree",
+    "branch",
+    "prune",
+    "squash-merge"
+  ]
+}
