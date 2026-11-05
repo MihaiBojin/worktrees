@@ -17,6 +17,17 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.7.0 - 2026-11-05
+
+### Added
+
+An agent plugin for Claude Code and Codex, in `plugin/`. `/worktrees:prune`
+runs `gws` and `gwbs`, shows the worktrees and branches they proved
+finished with the proof for each, asks which to remove, and removes those
+with `gwp` and `gwbd`, then lists what was removed, what was refused and
+the commands that restore each branch. Install it from the `release-tools`
+marketplace as `worktrees@release-tools`.
+
 ## 0.6.2 - 2026-11-04
 
 ### Added
