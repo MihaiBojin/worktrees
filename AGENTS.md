@@ -199,8 +199,15 @@ once and each move prints the row it lands on, so nothing writes a cursor
 code where it would show up as text.
 
 A query that is exactly one worktree's branch or path is that worktree
-alone. `gwr one` beside `one-more` is not a question, and neither is
-`gwr "$(gw two)"`.
+alone. `gw one` beside `one-more` is not a question, and neither is
+`gw "$(gw two)"`.
+
+`gwr` matches exactly and nothing looser: a query is a worktree's name
+under `.worktrees`, its branch or its path. Several exact matches get the
+picker over those alone at a terminal, and a refusal at exit 3 listing
+their paths without one. No match fails at exit 1. A removal that fell back
+to the closest match would, asked twice for `fix`, remove `fix-more` the
+second time.
 
 Dropping `fzf` is less code, not more. It removes the spawn and the fallback
 branch a machine without `fzf` would otherwise need.

@@ -138,7 +138,7 @@ def _report(
         if not args.quiet:
             # Every row counted, --only or not, so a filtered table still
             # says what it is not showing.
-            print("\n" + render.counted(rows))
+            print("\n" + render.counted(render.out, rows))
 
 
 def _branches(n: int) -> str:

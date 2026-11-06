@@ -125,21 +125,30 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
     assert (branches["kept"], branches["unknown"]) == (4, 0)
 
 
-def test_the_skill_removes_a_chosen_worktree_by_its_path(world) -> None:
+def test_the_skill_removes_only_the_chosen_worktree_by_its_path(world) -> None:
     """`command gwr 'PATH' --yes`, with the path the filter printed, removes
-    the worktree and its branch without a terminal to ask at."""
+    that worktree and its branch without a terminal to ask at, and nothing
+    else, even when run again after it is gone."""
     assert "`command gwr 'PATH' --yes 2>&1`" in SKILL.read_text()
-    done = world.worktree("done")
-    world.commit("done-file", at=done)
-    world.git("merge", "--quiet", "--squash", "done")
-    world.git("commit", "--quiet", "-m", "done (#1)")
+    for name in ("done", "done-more"):
+        wt = world.worktree(name)
+        world.commit(f"{name}-file", at=wt)
+        world.git("merge", "--quiet", "--squash", name)
+        world.git("commit", "--quiet", "-m", f"{name} (#1)")
     head = world.git("rev-parse", "HEAD")
 
     out = _jq(_filter("gwp"), _json(world, "gwp"), head)
-    [row] = out["worktrees"]
-    proc = _run(world, "gwr", row["path"], "--yes")
+    rows = {row["branch"]: row for row in out["worktrees"]}
+    assert set(rows) == {"done", "done-more"}
+    chosen = rows["done"]["path"]
+    proc = _run(world, "gwr", chosen, "--yes")
     assert proc.returncode == 0, proc.stderr
     assert "restore with: git branch done " in proc.stderr
     assert "removed done" in proc.stderr
-    assert not done.exists()
+    assert not Path(chosen).exists()
     assert world.git("branch", "--list", "done") == ""
+
+    again = _run(world, "gwr", chosen, "--yes")
+    assert again.returncode == 1
+    assert Path(rows["done-more"]["path"]).exists()
+    assert world.git("branch", "--list", "done-more") != ""

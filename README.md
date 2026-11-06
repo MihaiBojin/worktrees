@@ -322,7 +322,8 @@ A run that removes nothing writes nothing: no ref, no directory, and no
 `git worktree prune`. `-y` removes without asking, in every mode, and still
 prints the disclosure first. `--json` prints the assessment as an object,
 with `removed` and `failed` added under `--yes`; `gwp --yes --json` is what an
-agent runs. `--list` prints the table uncoloured and nothing else on stdout.
+agent runs. `--list` prints the table uncoloured and nothing else on stdout;
+the counts and the result line go to stderr.
 `--only VERDICT` narrows the table and the JSON rows by verdict, so
 `--only remove` shows protected rows too, and never narrows the set removed:
 the disclosure names every target.
@@ -454,9 +455,12 @@ gw -h lists every command
 ```
 
 `gwr` lists the main checkout dimmed and unnumbered, since git will not
-remove it, and starts the highlight on the worktree you are standing in. A
-name or path that is exactly one worktree's, as `gw --list` and `gw` print
-them, takes that one without asking which.
+remove it, and starts the highlight on the worktree you are standing in.
+A query to `gwr` matches exactly: the WORKTREE name, the branch or the path,
+as `gw --list` prints them, and no substring. One match takes that one
+without asking. Several are offered in the picker at a terminal and
+refused at exit 3 without one, with each path named, so a script can pass
+the one it meant. No match fails at exit 1 and removes nothing.
 
 `gwr` says why a worktree is not eligible, with the same verdict and reason
 `gwp` prints: `is not finished` for a branch with work left, and `is

@@ -39,8 +39,8 @@ them.
 ## What it does
 
 1. Runs `gwp --json` and `gwbs --json` against the refs already here, and
-   keeps only the rows marked `remove`, with their proof, plus counts of the
-   rest.
+   keeps only the eligible rows, `remove` with nothing holding them back,
+   with their proof, plus counts of the rest.
 2. Shows them in one table. A worktree whose branch sits on the head branch's
    tip, with no commits of its own, is marked: that is also what a worktree
    somebody has just started looks like.

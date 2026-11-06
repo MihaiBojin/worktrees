@@ -131,8 +131,9 @@ BRANCH = BOLD + MAGENTA
 VERDICTS = tuple(VERDICT)
 
 
-def counted(rows: list) -> str:
-    """`2 eligible, 1 kept, 0 unclear`, each number in its verdict's colour.
+def counted(paint: Ink, rows: list) -> str:
+    """`2 eligible, 1 kept, 0 unclear`, each number in its verdict's colour,
+    painted by `out` or `err` for the stream it goes to.
 
     `rows` carry `verdict` and `eligible`. A protected `remove` row is kept,
     so the first number is what the command would remove.
@@ -141,9 +142,9 @@ def counted(rows: list) -> str:
     unclear = sum(1 for v in rows if v.verdict == "unknown")
     return ", ".join(
         (
-            f"{out(str(eligible), VERDICT['remove'])} eligible",
-            f"{out(str(len(rows) - eligible - unclear), VERDICT['keep'])} kept",
-            f"{out(str(unclear), VERDICT['unknown'])} unclear",
+            f"{paint(str(eligible), VERDICT['remove'])} eligible",
+            f"{paint(str(len(rows) - eligible - unclear), VERDICT['keep'])} kept",
+            f"{paint(str(unclear), VERDICT['unknown'])} unclear",
         )
     )
 
