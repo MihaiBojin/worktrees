@@ -1,12 +1,24 @@
 #compdef gw worktrees
 
-# Subcommands come from the CLI. `gw --complete` prints every name and
-# shorthand with its description, so a command added to the table needs no
-# edit here.
+# Subcommands and worktrees come from the CLI. `gw --complete` prints every
+# name and shorthand with its description, and `gw list --complete` every
+# worktree, so a command added to the table needs no edit here. Both are
+# offered first, since `gw QUERY` is `gw list QUERY`.
 #
 # Only the flags every subcommand shares are offered after one. The rest are
 # on the binaries, where they are typed: repeating the per-command sets here
 # would be a second copy of nine files that has to change with them.
+
+# The worktrees `$@ --complete` prints, the main checkout included or not.
+__gw_worktrees() {
+    local -a names wdescs
+    local line
+    for line in ${(f)"$(command "$@" --complete 2>/dev/null)"}; do
+        names+=( ${line%%$'\t'*} )
+        wdescs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
+    done
+    (( $#names )) && _describe -t worktrees worktree wdescs names
+}
 
 _gw() {
     local -a subs descs line
@@ -14,6 +26,11 @@ _gw() {
 
     _arguments -C \
         '(-h --help)'{-h,--help}'[show the help and exit]' \
+        '(-l --list)'{-l,--list}'[print them all and pick none]' \
+        '--json[the result as data]' \
+        '(-q --quiet)'{-q,--quiet}'[less output]' \
+        '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+        '--explain[print every git command and exit]' \
         '1: :->command' \
         '*:: :->rest'
 
@@ -24,6 +41,7 @@ _gw() {
                 descs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
             done
             (( $#subs )) && _describe -t commands 'gw command' descs subs
+            __gw_worktrees gw list
             ;;
         rest)
             if [[ ${words[1]} == branch ]]; then
@@ -47,26 +65,21 @@ _gw() {
                 esac
                 return
             fi
-            # gwl and gwr do not offer the same set: the main checkout is
-            # one gwl can take you to and one gwr can never remove.
-            local source=
+            # gw list and gwr do not offer the same set: the main checkout
+            # is one gw list can take you to and one gwr can never remove.
             case ${words[1]} in
-                list|l|ls)   source=gwl ;;
-                remove|rm)   source=gwr ;;
+                list)        __gw_worktrees gw list ;;
+                remove|rm)   __gw_worktrees gwr ;;
             esac
-            if [[ -n $source ]]; then
-                local -a names wdescs
-                for line in ${(f)"$(command $source --complete 2>/dev/null)"}; do
-                    names+=( ${line%%$'\t'*} )
-                    wdescs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
-                done
-                (( $#names )) && _describe -t worktrees worktree wdescs names
-            fi
-            _arguments -s \
-                '--json[the result as data]' \
-                '(-q --quiet)'{-q,--quiet}'[less output]' \
-                '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+            local -a flags=(
+                '--json[the result as data]'
+                '(-q --quiet)'{-q,--quiet}'[less output]'
+                '(-v --verbose)'{-v,--verbose}'[print every git command]'
                 '--explain[print every git command and exit]'
+            )
+            [[ ${words[1]} == list ]] &&
+                flags+=( '(-l --list)'{-l,--list}'[print them all and pick none]' )
+            _arguments -s $flags
             ;;
     esac
 }

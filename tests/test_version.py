@@ -229,5 +229,5 @@ def test_gw_version_keeps_stdout_to_the_version(plugin: str | None) -> None:
 def test_help_says_what_the_plugin_is_inside_eighty_columns(plugin: str | None) -> None:
     proc = _gw("-h", plugin=plugin)
     assert proc.returncode == 0, proc.stderr
-    assert "shell plugin" in proc.stdout
-    assert [ln for ln in proc.stdout.splitlines() if len(ln) > 80] == []
+    assert "shell plugin" in proc.stderr
+    assert [ln for ln in proc.stderr.splitlines() if len(ln) > 80] == []

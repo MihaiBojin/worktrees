@@ -446,46 +446,56 @@ def test_the_cli_name_takes_a_subcommand(world) -> None:
     assert "done" in {v["branch"] for v in json.loads(p.stdout)["verdicts"]}
 
 
-def test_the_cli_name_with_no_argument_prints_help(world) -> None:
-    p = run(world, "main")
-    assert p.returncode == 0
-    for name in ("status", "prune", "branch create"):
-        assert name in p.stdout
+@pytest.mark.parametrize(
+    "args", [(), ("one",), ("--json",), ("--list",), ("one", "--list")]
+)
+@pytest.mark.parametrize("entry", ["gw", "main"])
+def test_anything_but_a_command_runs_list(world, entry: str, args) -> None:
+    """The query and every flag go to `gw list`, nothing at all included."""
+    world.worktree("one")
+    world.worktree("two")
+    p = run(world, entry, *args)
+    listed = run(world, entry, "list", *args)
+    assert p.returncode == listed.returncode == 0, p.stderr
+    assert p.stdout == listed.stdout
+    assert p.stderr == listed.stderr
 
 
-def test_a_bare_flag_means_status(world) -> None:
-    p = run(world, "main", "--explain")
+def test_a_command_beats_a_worktree_of_the_same_name(world) -> None:
+    world.worktree("status")
+    p = run(world, "gw", "status", "--no-fetch", "--no-forge", "--json")
     assert p.returncode == 0, p.stderr
-    assert "git worktree list --porcelain -z" in p.stdout
+    assert "verdicts" in json.loads(p.stdout)
+    listed = json.loads(run(world, "gw", "list", "status", "--json").stdout)
+    assert [w["branch"] for w in listed] == ["status"]
 
 
-def test_an_unknown_command_names_the_closest_one(world) -> None:
-    """argparse answers this with a usage line and every choice, and the name
-    worth reading arrives last."""
+def test_a_query_near_a_command_names_it(world) -> None:
+    """A mistyped command reaches `gw list` as a query."""
     p = run(world, "gw", "verison")
-    assert p.returncode == 2
-    assert p.stderr.splitlines() == [
-        "gw: there is no command 'verison'",
-        "the closest is: gw version",
-        "gw -h lists every command",
-    ]
-
-
-def test_an_unknown_command_near_nothing_still_points_at_help(world) -> None:
-    p = run(world, "main", "xyzzy")
-    assert p.returncode == 2
-    assert p.stderr.splitlines() == [
-        "worktrees: there is no command 'xyzzy'",
-        "worktrees -h lists every command",
-    ]
-
-
-@pytest.mark.parametrize("typed", ["help", "h"])
-def test_help_is_not_a_command(world, typed: str) -> None:
-    p = run(world, "gw", typed)
-    assert p.returncode == 2
+    assert p.returncode == 1
     assert p.stdout == ""
-    assert p.stderr.splitlines()[-1] == "gw -h lists every command"
+    assert p.stderr.splitlines() == [
+        "no worktree matches",
+        "the closest command is: gw version",
+    ]
+
+
+def test_a_query_near_a_command_names_it_under_either_name(world) -> None:
+    p = run(world, "main", "list", "prnue")
+    assert p.returncode == 1
+    assert p.stderr.splitlines() == [
+        "no worktree matches",
+        "the closest command is: worktrees prune",
+    ]
+
+
+@pytest.mark.parametrize("typed", ["help", "ls"])
+def test_a_removed_name_is_a_query(world, typed: str) -> None:
+    p = run(world, "gw", typed)
+    assert p.returncode == 1
+    assert p.stdout == ""
+    assert p.stderr.splitlines()[0] == "no worktree matches"
 
 
 # --------------------------------------------------------------------------
@@ -506,8 +516,6 @@ def test_every_shorthand_reaches_the_same_command(world, spelling: str) -> None:
     [
         ("p", "prune"),
         ("a", "add"),
-        ("l", "list"),
-        ("ls", "list"),
         ("m", "move"),
         ("mv", "move"),
         ("rm", "remove"),
@@ -542,8 +550,8 @@ def test_every_command_is_installed_under_its_own_name() -> None:
     assert declared <= set(scripts)
     # The two that take a subcommand are the only ones with no row of their own.
     assert set(scripts) - declared == {"gw", "worktrees"}
-    # and version is the only row that installs nothing.
-    assert [n for n, c in cli.command_rows() if not c.binary] == ["version"]
+    # and `gw` alone runs list, so list and version install nothing.
+    assert [n for n, c in cli.command_rows() if not c.binary] == ["list", "version"]
 
 
 # --------------------------------------------------------------------------
@@ -564,12 +572,12 @@ def test_help_names_every_command_and_every_shorthand(
     from worktrees import cli
 
     for name, command in cli.command_rows():
-        assert command.binary in p.stdout, name
-        assert f"gw {name}" in p.stdout, name
+        assert command.binary in p.stderr, name
+        assert f"gw {name}" in p.stderr, name
         for alias in command.aliases:
-            assert alias in p.stdout, alias
-    assert "shell plugin" in p.stdout
-    assert "gw <command> --help" in p.stdout
+            assert alias in p.stderr, alias
+    assert "shell plugin" in p.stderr
+    assert "gw <command> --help" in p.stderr
 
 
 def test_help_runs_no_git(world, tmp_path: Path) -> None:
@@ -587,14 +595,17 @@ def test_help_runs_no_git(world, tmp_path: Path) -> None:
         env={**env_for(world), "PATH": str(tmp_path)},
     )
     assert p.returncode == 0, p.stderr
-    assert "gw version (v)" in p.stdout
+    assert "gw version (v)" in p.stderr
 
 
-def test_the_cli_with_no_argument_prints_that_same_help(world) -> None:
-    bare = run(world, "main").stdout
-    asked = run(world, "main", "-h").stdout
-    assert bare == asked
-    assert "gws" in bare and "gw status (s, st)" in bare
+@pytest.mark.parametrize("entry", ["gw", "main"])
+def test_help_goes_to_stderr_since_gw_changes_directory(world, entry) -> None:
+    """`gw`'s shell function captures stdout to find where to go."""
+    p = run(world, entry, "-h")
+    assert p.stdout == ""
+    assert "gw with no subcommand runs gw list." in p.stderr
+    assert "gwa, gw, gwm and gwr change the directory" in p.stderr
+    assert "gw [QUERY]       gw list " in p.stderr
 
 
 @pytest.mark.parametrize(
@@ -616,7 +627,7 @@ def test_help_promises_no_flag_the_program_refuses(world, flag: str) -> None:
     assert "unrecognized arguments" in p.stderr
 
     listed = run(world, "gw", "-h")
-    assert "work on every command but gw version" in listed.stdout
+    assert "work on every command but gw version" in listed.stderr
     # and the flags it does claim are taken by a command that has a row
     assert run(world, "gws", "--no-fetch", flag).returncode == 0
 
@@ -625,7 +636,7 @@ def test_help_stays_inside_eighty_columns(world) -> None:
     """It is read at a prompt, next to the commands it describes."""
     p = run(world, "gw", "-h")
     assert p.returncode == 0, p.stderr
-    assert [ln for ln in p.stdout.splitlines() if len(ln) > 80] == []
+    assert [ln for ln in p.stderr.splitlines() if len(ln) > 80] == []
 
 
 # --------------------------------------------------------------------------
@@ -774,11 +785,11 @@ def test_a_stash_on_another_branch_is_not_named(world) -> None:
 def test_list_with_no_query_prompts_on_a_terminal(world) -> None:
     """One other worktree, and it still asks, because nothing said which.
 
-    The prompt is the whole point: `gwl` with no argument means show me the
+    The prompt is the whole point: `gw` with no argument means show me the
     options, and one option is still an option rather than a destination.
     """
     world.worktree("one")
-    code, out = run_on_a_terminal(world, "gwl", answer="1\n")
+    code, out = run_on_a_terminal(world, "gw", answer="1\n")
     assert code == 0, out
     assert "which? [up/down and enter, 1-2, or esc to cancel]" in out
     assert "one" in out
@@ -786,7 +797,7 @@ def test_list_with_no_query_prompts_on_a_terminal(world) -> None:
 
 def test_list_with_no_query_takes_esc_as_cancelled(world) -> None:
     world.worktree("one")
-    code, out = run_on_a_terminal(world, "gwl", answer="\x1b")
+    code, out = run_on_a_terminal(world, "gw", answer="\x1b")
     assert code == 0, out
     assert "nothing picked" in out
 
@@ -794,7 +805,7 @@ def test_list_with_no_query_takes_esc_as_cancelled(world) -> None:
 def test_list_takes_one_match_outright_on_a_terminal(world) -> None:
     world.worktree("one")
     two = world.worktree("two")
-    code, out = run_on_a_terminal(world, "gwl", "two", answer="")
+    code, out = run_on_a_terminal(world, "gw", "two", answer="")
     assert code == 0, out
     assert "which?" not in out
     assert out.strip() == str(two), out
@@ -803,25 +814,23 @@ def test_list_takes_one_match_outright_on_a_terminal(world) -> None:
 def test_list_says_so_rather_than_landing_you_where_you_are(world) -> None:
     """One candidate, standing in it: a note, and no path to cd into."""
     wt = world.worktree("one")
-    code, out = run_on_a_terminal_at(world, wt, "gwl", "one", answer="")
+    code, out = run_on_a_terminal_at(world, wt, "gw", "one", answer="")
     assert code == 0, out
     assert "already in one" in out
     assert str(wt) not in out
 
 
 def test_list_offers_main_to_somebody_standing_in_it(world) -> None:
-    """From a subdirectory of the main checkout, `gwl main` is the way back."""
+    """From a subdirectory of the main checkout, `gw main` is the way back."""
     world.worktree("one")
     (world.repo / "sub").mkdir()
-    code, out = run_on_a_terminal_at(
-        world, world.repo / "sub", "gwl", "main", answer=""
-    )
+    code, out = run_on_a_terminal_at(world, world.repo / "sub", "gw", "main", answer="")
     assert code == 0, out
     assert out.strip() == str(world.repo), out
 
 
 def test_list_on_a_terminal_in_a_repository_with_no_worktrees_says_so(world) -> None:
-    code, out = run_on_a_terminal(world, "gwl", answer="")
+    code, out = run_on_a_terminal(world, "gw", answer="")
     assert code == 1, out
     assert "this is the only worktree" in out
 
@@ -829,7 +838,7 @@ def test_list_on_a_terminal_in_a_repository_with_no_worktrees_says_so(world) -> 
 def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
     world.worktree("one")
     two = world.worktree("two")
-    code, out = run_on_a_terminal(world, "gwl", answer="\x1b[B\x1b[B\r")
+    code, out = run_on_a_terminal(world, "gw", answer="\x1b[B\x1b[B\r")
     assert code == 0, out
     assert out.rstrip().endswith(str(two)), out
 
@@ -853,7 +862,7 @@ def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
             ("prune", ("--no-fetch", "--no-forge"), "remove 2 worktree(s)? [y/N] "),
         )
         for entry, prefix in (
-            (cli._COMMANDS[command].binary, ()),
+            (cli._COMMANDS[command].binary or "gw", ()),
             *(
                 (entry, (name,))
                 for entry in ("gw", "main")
@@ -949,7 +958,7 @@ def test_list_shows_the_worktree_you_are_standing_in_unnumbered(world) -> None:
     """Marked, above the ones you can go to, and carrying no number: it is
     where you are rather than somewhere to go."""
     wt = world.worktree("cleanup")
-    code, out = run_on_a_terminal_at(world, wt, "gwl", answer="\x1b")
+    code, out = run_on_a_terminal_at(world, wt, "gw", answer="\x1b")
     assert code == 0, out
     assert re.search(r"^\s+#\s+WORKTREE\s+BRANCH\s+PATH$", out, re.M), out
     assert re.search(r"^  \*\s+cleanup\s+cleanup\s", out, re.M), out
@@ -1019,7 +1028,7 @@ def test_remove_asks_before_removing_an_unfinished_worktree_and_keeps_the_branch
 
 def test_list_marks_main_when_you_stand_in_it(world) -> None:
     world.worktree("one")
-    code, out = run_on_a_terminal(world, "gwl", answer="\x1b")
+    code, out = run_on_a_terminal(world, "gw", answer="\x1b")
     assert code == 0, out
     assert re.search(r"^> 1\s+repo\s+main \*\s", out, re.M), out
     assert re.search(r"^  2\s+one\s+one\s", out, re.M), out
@@ -1047,7 +1056,7 @@ def test_list_is_never_coloured_even_on_a_terminal(world) -> None:
             [
                 sys.executable,
                 "-c",
-                "from worktrees.cli import gwl; raise SystemExit(gwl())",
+                "from worktrees.cli import gw; raise SystemExit(gw())",
                 "--list",
             ],
             {**env_for(world), "TERM": "xterm"},
@@ -1094,7 +1103,7 @@ def test_list_names_each_remote_above_the_picker(world) -> None:
     world.git("remote", "add", "origin", "git@github.com:org/repo.git")
     world.git("remote", "add", "upstream", "https://me:tok@github.com/up/repo.git")
     world.worktree("one")
-    code, out = run_on_a_terminal(world, "gwl", answer="\x1b")
+    code, out = run_on_a_terminal(world, "gw", answer="\x1b")
     assert code == 0, out
     head = out.splitlines()
     assert head[0].endswith("origin: github.com/org/repo")
@@ -1105,7 +1114,7 @@ def test_list_names_each_remote_above_the_picker(world) -> None:
 def test_list_for_a_script_names_no_remote(world) -> None:
     world.git("remote", "add", "origin", "git@github.com:org/repo.git")
     world.worktree("one")
-    p = run(world, "gwl", "--list")
+    p = run(world, "gw", "--list")
     assert p.returncode == 0, p.stderr
     assert "github.com" not in p.stdout + p.stderr
 
@@ -1173,7 +1182,7 @@ def test_list_orders_worktrees_by_when_they_were_made(world) -> None:
         old = time.time() - age
         os.utime(admin / "commondir", (old, old))
 
-    p = run(world, "gwl", "--json")
+    p = run(world, "gw", "--json")
     assert p.returncode == 0, p.stderr
     listed = [w["path"] for w in json.loads(p.stdout)]
     assert listed == [str(world.repo), *map(str, reversed(paths))]
@@ -1244,3 +1253,37 @@ def test_help_is_coloured_on_a_terminal_when_stdout_is_captured(world, args) -> 
     assert stdout == b""
     # argparse paints its heading, which only reaches a stream it sees as a tty.
     assert "\x1b[1;34musage: " in b"".join(chunks).decode()
+
+
+def test_gw_help_is_coloured_on_a_terminal_when_stdout_is_captured(world) -> None:
+    """What `gw -h` meets inside its shell function: stdout captured, stderr
+    on the terminal. Colour follows the stream the help reaches."""
+    parent, child = pty.openpty()
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gw; raise SystemExit(gw())",
+            "-h",
+        ],
+        cwd=str(world.repo),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=child,
+        env={**env_for(world), "TERM": "xterm-256color"},
+    )
+    os.close(child)
+    chunks: list[bytes] = []
+    while True:
+        try:
+            data = os.read(parent, 65536)
+        except OSError:  # the child closed its end
+            break
+        if not data:
+            break
+        chunks.append(data)
+    stdout = proc.stdout.read() if proc.stdout else b""
+    proc.wait()
+    os.close(parent)
+    assert stdout == b""
+    assert "\x1b[1mworktrees\x1b[0m" in b"".join(chunks).decode()

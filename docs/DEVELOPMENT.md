@@ -109,9 +109,10 @@ are refused whatever flags are passed.
 
 A binary cannot `cd` its caller. A command that does gets a shell function of
 the same name, whose whole body is `command <name>` and a `cd`, so a script
-calling the binary still gets the path and only loses the move. `gwa`, `gwl`,
+calling the binary still gets the path and only loses the move. `gwa`, `gw`,
 `gwm` and `gwr` have one each, for fish under `functions/` and for zsh under
-`zsh/plugins/worktrees/functions/`. `gws`, `gwp`, `gwbc` and `gwrot` need
+`zsh/plugins/worktrees/functions/`. `gw`'s runs every subcommand but `list`
+uncaptured, since only `gw list` lands you anywhere. `gws`, `gwp`, `gwbc` and `gwrot` need
 none.
 
 ```fish

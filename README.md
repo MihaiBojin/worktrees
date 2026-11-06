@@ -6,7 +6,7 @@
 Git worktree commands that refuse to lose work.
 
 `gws`, `gwp`, `gwbs`, `gwbd`, `gwbc` and `gwrot` run as console
-scripts. `gwa`, `gwl`, `gwm`, and `gwr` change the caller's directory and need
+scripts. `gwa`, `gw`, `gwm`, and `gwr` change the caller's directory and need
 a shell function of the same name.
 
 | | |
@@ -16,7 +16,7 @@ a shell function of the same name.
 | `gwbs [NAME ...]` | assess local branches, including those without worktrees |
 | `gwbd [NAME ...]` | delete branches proved finished, with confirmation and undo commands |
 | `gwa NAME [BASE]` | create a worktree for `NAME` and land you in it |
-| `gwl [QUERY]` | pick one of this repository's worktrees and land you in it |
+| `gw [QUERY]` | pick one of this repository's worktrees and land you in it |
 | `gwm NEW` | rename this worktree's branch and move the checkout to match |
 | `gwr [QUERY]` | remove a worktree whose branch is finished, and the branch |
 | `gwr! [QUERY]` | `gwr --delete-ignored`, a shell function in fish and zsh |
@@ -24,8 +24,8 @@ a shell function of the same name.
 | `gwbc NAME` | fetch, then branch `NAME` off the head branch and check it out |
 | `gwrot` | start the next branch after this one, or catch the head branch up |
 
-`gw` takes the same commands as subcommands, each with shorthands, so `gwl`,
-`gw list`, `gw ls` and `gw l` are one command:
+`gw` takes the same commands as subcommands, each with shorthands, so `gws`,
+`gw status`, `gw st` and `gw s` are one command:
 
 | | |
 | --- | --- |
@@ -34,15 +34,17 @@ a shell function of the same name.
 | `gwbs` | `gw branch status` |
 | `gwbd` | `gw branch delete` |
 | `gwa` | `gw add`, `a` |
-| `gwl` | `gw list`, `ls`, `l` |
+| `gw` | `gw list` |
 | `gwm` | `gw move`, `mv`, `m` |
 | `gwr` | `gw remove`, `rm` |
 | `gwbc` | `gw branch create` |
 | `gwrot` | `gw rotate`, `rot` |
 
-`gw -h` prints that table with every name each command answers to, and so
-does `gw` with no subcommand. `worktrees` is the same program under its long
-name.
+`gw` with no subcommand runs `gw list`, and so does `gw` followed by anything
+that is not a subcommand: `gw parse` is `gw list parse`, and `gw --json` is
+`gw list --json`. A subcommand wins over a worktree of the same name, which
+`gw list prune` still reaches. `gw -h` prints that table with every name each
+command answers to. `worktrees` is the same program under its long name.
 
 The command reference covers [branch status](docs/commands/branch-status.md)
 and [branch delete](docs/commands/branch-delete.md), including content proofs,
@@ -122,7 +124,7 @@ fisher install MihaiBojin/worktrees@v0.7.0
 ```
 
 Fisher copies `functions/`, `completions/` and `conf.d/` from the repository
-root, so the functions for `gwa`, `gwl`, `gwm`, `gwr`, `gwr!` and `gwp!` land
+root, so the functions for `gw`, `gwa`, `gwm`, `gwr`, `gwr!` and `gwp!` land
 together with a completion for every command. Nothing has to be sourced.
 
 To change release, edit the tag on that line of
@@ -179,7 +181,7 @@ release that started exporting it, and nothing can tell those two apart. A
 bash started from fish or zsh inherits the variable without the functions.
 
 The completions hold no candidate of their own. `gw --complete` prints every
-subcommand and shorthand, `gwl --complete` prints every worktree, and both
+subcommand and shorthand, `gw list --complete` prints every worktree, and both
 shells narrow what those return, so the matching stays in one place and a
 command added to the table needs no edit in either shell.
 
@@ -319,7 +321,7 @@ There is no `--dry-run`. `gws` reports and `gwp` asks, so a flag meaning "do
 not act" would be a no-op wearing the clothes of a safety feature, and somebody
 would one day cite it as the reason a sweep was safe.
 
-## gwa, gwl, gwm, gwr
+## gwa, gw, gwm, gwr
 
 Worktrees live at `<PARENT>/.worktrees/<NAME>/<REPO>`, derived rather than
 configured, so two tools cannot disagree about a location neither can be
@@ -328,14 +330,18 @@ name goes last, so `auth/oauth` cannot collide with `auth`.
 
 ```console
 $ gwa fix-parser          # creates it and lands you in it
-$ gwl parse               # one match takes it outright
+$ gw parse                # one match takes it outright
 $ gwm parser-v2           # renames the branch and moves the checkout
 $ gwr                     # asks which, starting on the one you are in
 ```
 
 Each prints one destination on stdout, which is what the shell function
-reads, and prints data there instead under `--json` and `--list`, as `gwl`
-does without a terminal. `gwr` prints a path **only** when you were standing
+reads, and prints data there instead under `--json` and `--list`, as `gw`
+does without a terminal. The `gw` function captures only `gw list` and the
+forms that run it; every other subcommand reaches the terminal as it would
+without the function, so `gw prune` keeps its colour and its prompt. So `gw
+add`, `gw move` and `gw remove` print their destination, and `gwa`, `gwm` and
+`gwr` move you. `gwr` prints a path **only** when you were standing
 in what it removed; empty output, and output that is not a directory, both
 mean stay put.
 
@@ -348,13 +354,13 @@ $ git status
 fatal: Unable to read current working directory: No such file or directory
 ```
 
-`gwl` offers the main checkout too. It is where a finished branch leaves you
+`gw` offers the main checkout too. It is where a finished branch leaves you
 and the one destination that is always there, so a list without it is a list
-of everywhere except the place you most often want. `gwl main` finds it
+of everywhere except the place you most often want. `gw main` finds it
 whatever branch it stands on, and `--list` marks the one you are in:
 
 ```console
-$ gwl --list
+$ gw --list
    WORKTREE       BRANCH         PATH
    repo           main           /home/you/git/repo
    dirty-work     dirty-work     /home/you/git/.worktrees/dirty-work/repo
@@ -366,17 +372,17 @@ It never offers that one. Picking it is the one answer that cannot take you
 anywhere, and asking for the one you are in says so and stays put:
 
 ```console
-$ gwl dirty          # standing in dirty-work
+$ gw dirty           # standing in dirty-work
 already in dirty-work
 ```
 
 A query that narrows to one takes it outright. No query does not, even when
-the repository holds exactly one other worktree: `gwl` with no argument means
+the repository holds exactly one other worktree: `gw` with no argument means
 show me the options, and being moved without being asked is not that. So it
 asks, however many there are:
 
 ```console
-$ gwl                # standing in never-pushed
+$ gw                 # standing in never-pushed
 origin: github.com/you/repo
   #  WORKTREE       BRANCH         PATH
   *  never-pushed   never-pushed   /home/you/git/.worktrees/never-pushed/repo
@@ -407,14 +413,21 @@ numbered, even when you are inside it, and carries a `*` after its name
 then: from a subdirectory, picking it takes you back to the top.
 
 Matching is substring first and then subsequence, so `tst` finds `add-tests`,
-and a substring hit always outranks a loose one. Without a terminal `gwl`
+and a substring hit always outranks a loose one. Without a terminal `gw`
 selects nothing: it prints the `--list` table of every match and exits 0,
 even when one worktree matches or the only match is where you stand. A query
-that matches nothing fails at exit 1.
+that matches nothing fails at exit 1, and names the closest command when it
+looks like a mistyped one:
+
+```console
+$ gw prnue
+no worktree matches
+the closest command is: gw prune
+```
 
 `gwr` lists the main checkout dimmed and unnumbered, since git will not
 remove it, and starts the highlight on the worktree you are standing in. A
-name or path that is exactly one worktree's, as `gwl --list` and `gwl` print
+name or path that is exactly one worktree's, as `gw --list` and `gw` print
 them, takes that one without asking which.
 
 `gwr` says why a branch is not finished, the same verdict `gws` prints. At a
@@ -516,7 +529,7 @@ COMMAND          GW                 DOES
 gws              gw status (s, st)  which worktrees are finished, and why
 gwp              gw prune (p)       remove the ones status marks removable
 gwa NAME [BASE]  gw add (a)         create a worktree and land you in it
-gwl [QUERY]      gw list (l, ls)    pick a worktree and land you in it
+gw [QUERY]       gw list            pick a worktree and land you in it
 gwm NEW          gw move (m, mv)    rename this branch and move it
 gwr [QUERY]      gw remove (rm)     remove one whose branch is finished
 gwrot            gw rotate (rot)    the next branch in a series
@@ -525,14 +538,16 @@ gwbc NAME        gw branch create   branch off the head branch
 gwbs [NAME ...]  gw branch status   which branches are finished, and why
 gwbd [NAME ...]  gw branch delete   delete local branches proved finished
 
-gwa, gwl, gwm and gwr change the directory you are standing in.
+gw with no subcommand runs gw list.
+
+gwa, gw, gwm and gwr change the directory you are standing in.
 A binary cannot do that, so each needs the shell function of the same name
 from the plugin; the rest need nothing but $PATH.
 The shell plugin here is 0.7.0, the same release as these commands.
 ```
 
-`gw --help`, `worktrees -h` and `gw` with no subcommand print the same thing,
-inside a repository or out of one. One table in `cli.py` carries the names, so
+`gw --help` and `worktrees -h` print the same thing, on stderr, inside a
+repository or out of one. One table in `cli.py` carries the names, so
 what `gw -h` prints and what `gw` accepts cannot disagree, and it raises at
 import if two commands ever claim one name.
 
@@ -551,7 +566,7 @@ be quiet about, takes `--json`, `-q`, `-v` and `--explain`. Beyond those:
 | `gwrot` | `--no-fetch`, `-f`/`--force-refresh` |
 | `gwbs` | `--no-fetch`, `-f`/`--force-refresh`, `--no-forge`, `--only VERDICT` |
 | `gwbd` | `--no-fetch`, `--force-refresh`, `--no-forge`, `--all`, `--dry-run` and `-y` |
-| `gwl` | `-l` |
+| `gw`, `gw list` | `-l` |
 | `gwm` | none |
 
 `--only` takes `remove`, `keep` or `unknown` and can be given more than
@@ -598,7 +613,7 @@ forge asked.
 Data goes to stdout and diagnostics to stderr, the prompt included, so `--json`
 is parseable in every mode. Colour is decided per stream and only for a
 terminal, so a redirect, a pipe, a non-empty `NO_COLOR` or `TERM=dumb` give the
-bytes a pipe would have got. `--json` and `gwl --list` are never coloured, even
+bytes a pipe would have got. `--json` and `gw --list` are never coloured, even
 on a terminal. `NO_COLOR=` is not a request to
 turn it off, which is the no-color.org rule.
 

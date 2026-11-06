@@ -1,5 +1,5 @@
 # Candidates come from the CLI. `gwr --complete` prints the worktrees gwr
-# can reach, which is not gwl's list: the main checkout is never one.
+# can reach, which is not gw list's: the main checkout is never one.
 
 complete -c gwr -f
 complete -c gwr -a '(command gwr --complete)'

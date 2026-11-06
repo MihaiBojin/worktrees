@@ -97,7 +97,7 @@ def choose(
     because there happened to be one other worktree is not that.
 
     `shown` are drawn dimmed above the numbered ones, each after its mark,
-    and the highlight never lands on them: the worktree `gwl` stands in, the
+    and the highlight never lands on them: the worktree `gw list` stands in, the
     main checkout `gwr` cannot remove. A list that leaves them out shows
     fewer rows than `git worktree list`, which reads as though something went
     missing. `at` is the candidate highlighted first, and `here` is one that

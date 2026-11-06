@@ -1,4 +1,4 @@
-"""gwa, gwl, gwm and gwr: the four that land you somewhere."""
+"""gwa, gw, gwm and gwr: the four that land you somewhere."""
 
 from __future__ import annotations
 
@@ -116,30 +116,32 @@ def test_add_with_no_name_names_what_was_typed(world) -> None:
     assert p.stdout == ""
 
 
-@pytest.mark.parametrize("binary", ["gwa", "gwl", "gwm", "gwr"])
-def test_a_command_that_lands_prints_its_help_on_stderr(world, binary: str) -> None:
+@pytest.mark.parametrize("argv", [("gwa",), ("gw", "list"), ("gwm",), ("gwr",)])
+def test_a_command_that_lands_prints_its_help_on_stderr(world, argv) -> None:
     """Its shell function captures stdout to find where to go."""
-    p = run(world, binary, "--help")
+    p = run(world, *argv, "--help")
     assert p.returncode == 0
     assert p.stdout == ""
-    assert p.stderr.startswith(f"usage: {binary} ")
+    assert p.stderr.startswith(f"usage: {' '.join(argv)} ")
 
 
-def test_a_command_that_stays_prints_its_help_on_stdout(world) -> None:
-    p = run(world, "gws", "--help")
-    assert p.stdout.startswith("usage: gws ")
+@pytest.mark.parametrize("argv", [("gws",), ("gw", "add"), ("gw", "remove")])
+def test_a_command_that_stays_prints_its_help_on_stdout(world, argv) -> None:
+    """`gw add` prints its destination; the `gw` function passes it through."""
+    p = run(world, *argv, "--help")
+    assert p.stdout.startswith(f"usage: {' '.join(argv)} ")
     assert p.stderr == ""
 
 
 # --------------------------------------------------------------------------
-# gwl
+# gw list
 # --------------------------------------------------------------------------
 
 
 def test_list_offers_the_main_checkout(world) -> None:
     """It is where a finished branch leaves you, so it is a destination."""
     world.worktree("one")
-    p = run(world, "gwl", "--json")
+    p = run(world, "gw", "--json")
     payload = json.loads(p.stdout)
     assert [w["branch"] for w in payload] == ["main", "one"]
     assert [w["main"] for w in payload] == [True, False]
@@ -147,7 +149,7 @@ def test_list_offers_the_main_checkout(world) -> None:
 
 def test_list_marks_the_one_you_stand_in(world) -> None:
     wt = world.worktree("one")
-    p = run(world, "gwl", "--list", at=wt)
+    p = run(world, "gw", "--list", at=wt)
     assert p.returncode == 0, p.stderr
     head, *body = p.stdout.splitlines()
     assert head.split() == ["WORKTREE", "BRANCH", "PATH"]
@@ -158,7 +160,7 @@ def test_list_marks_the_one_you_stand_in(world) -> None:
 def test_the_main_checkout_says_so_without_saying_it_twice(world) -> None:
     world.git("branch", "--move", "main", "trunk")
     world.worktree("one", base="trunk")
-    p = run(world, "gwl", "--list")
+    p = run(world, "gw", "--list")
     assert "trunk (main)" in p.stdout
 
 
@@ -177,8 +179,8 @@ def test_list_without_a_terminal_prints_every_match(world, made, at, query) -> N
     made = {name: world.worktree(name) for name in made}
     where = made[at] if at else None
     args = (query,) if query else ()
-    listed = run(world, "gwl", "--list", *args, at=where)
-    for entry, prefix in (("gwl", ()), ("gw", ("list",))):
+    listed = run(world, "gw", "--list", *args, at=where)
+    for entry, prefix in (("gw", ()), ("gw", ("list",)), ("main", ("list",))):
         p = run(world, entry, *prefix, *args, at=where)
         assert p.returncode == 0, p.stderr
         assert p.stderr == ""
@@ -188,9 +190,9 @@ def test_list_without_a_terminal_prints_every_match(world, made, at, query) -> N
 
 def test_list_without_a_terminal_fails_on_no_match(world) -> None:
     world.worktree("one")
-    p = run(world, "gwl", "zzz")
+    p = run(world, "gw", "zzz")
     assert p.returncode == 1
-    assert "no worktree matches" in p.stderr
+    assert p.stderr.splitlines() == ["no worktree matches"]
     assert p.stdout == ""
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import sys
 import time
@@ -744,7 +745,7 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
         help="decide from git alone; never ask the forge",
     )
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
-    # Its own, not gwl's: assess skips the main checkout, so gwr can never act
+    # Its own, not gw list's: assess skips the main checkout, so gwr can never act
     # on it and offering it would complete to "no worktree matches".
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
     _add_cd_flags(p)
@@ -844,12 +845,12 @@ def run_list(args: argparse.Namespace) -> int:
         )
         return 0
 
+    if not found:
+        return _no_match(args.prog.split()[0], args.query)
+
     # Nothing can answer a picker without a terminal, so a script gets every
     # match, a single one included, and nothing is selected.
     if args.list or not sys.stdin.isatty():
-        if not found:
-            _err(render.fail("no worktree matches"))
-            return 1
         # The picker's columns, without its numbers: `*` marks where you are.
         # Never coloured: like --json, it is what a script reads.
         head: Row = ("", "WORKTREE", "BRANCH", "PATH")
@@ -865,9 +866,6 @@ def run_list(args: argparse.Namespace) -> int:
         print(table([head, *body]))
         return 0
 
-    if not found:
-        _err(render.fail("no worktree matches"))
-        return 1
     if len(rows) < 2:
         _err(render.fail("this is the only worktree; gwa NAME makes another"))
         return 1
@@ -1141,13 +1139,14 @@ def run_help(args: argparse.Namespace) -> int:
     rows: list[Row] = [(Cell("COMMAND", BOLD), Cell("GW", BOLD), Cell("DOES", BOLD))]
     for name, c in command_rows():
         aliases = f" ({', '.join(c.aliases)})" if c.aliases else ""
+        binary = _typed_as(name, c)
         rows.append(
             (
-                # A row installing no binary has nothing for this column:
-                # `gw version` is the only way to type it.
-                Cell.of((c.binary, BOLD + GREEN), (f" {c.usage}", DIM))
-                if c.binary and c.usage
-                else Cell(c.binary or "\u2014", BOLD + GREEN if c.binary else DIM),
+                # `gw version` installs no binary and has nothing for this
+                # column: the subcommand is the only way to type it.
+                Cell.of((binary, BOLD + GREEN), (f" {c.usage}", DIM))
+                if binary and c.usage
+                else Cell(binary or "\u2014", BOLD + GREEN if binary else DIM),
                 Cell.of(("gw ", DIM), (name, BLUE), (aliases, DIM)),
                 Cell(c.about),
             )
@@ -1158,9 +1157,10 @@ def run_help(args: argparse.Namespace) -> int:
     def names(binaries: list[str]) -> str:
         return _listed([o(b, BOLD + GREEN) for b in binaries])
 
-    lands = [c.binary for _, c in command_rows() if c.lands]
+    lands = [_typed_as(name, c) for name, c in command_rows() if c.lands]
     print(
-        f"{names(lands)} change the directory you are "
+        f"{o('gw', BOLD + GREEN)} with no subcommand runs "
+        f"{o('gw list', BOLD + GREEN)}.\n\n{names(lands)} change the directory you are "
         "standing in.\nA binary cannot do that, so each needs the shell function "
         "of the same name\nfrom the plugin; the rest need nothing but $PATH."
     )
@@ -1180,6 +1180,12 @@ def run_help(args: argparse.Namespace) -> int:
         f"{o('NO_COLOR', BOLD)} turns the colour off."
     )
     return 0
+
+
+def _typed_as(name: str, c: _Command) -> str:
+    """The name a person types without a subcommand: the console script, or
+    `gw` itself for `gw list`, which is what `gw` alone runs."""
+    return c.binary or ("gw" if name == "list" else "")
 
 
 def _complete_commands() -> int:
@@ -1348,13 +1354,12 @@ _COMMANDS: dict[str, _Command] = {
         aliases=("a",),
         lands=True,
     ),
+    # No console script: `gw` with no subcommand runs this one.
     "list": _Command(
         run_list,
         _add_list_flags,
         "pick a worktree and land you in it",
-        "gwl",
         usage="[QUERY]",
-        aliases=("l", "ls"),
         lands=True,
     ),
     "move": _Command(
@@ -1451,7 +1456,10 @@ class _Parser(argparse.ArgumentParser):
 
     def print_help(self, file=None) -> None:
         if file is None:
+            # `gw list` too: the `gw` function captures it, and no other
+            # subcommand.
             lands = {c.binary for c in _COMMANDS.values() if c.lands}
+            lands |= {"gw list", "worktrees list"}
             file = sys.stderr if self.prog in lands else sys.stdout
         # argparse decides colour by asking whether sys.stdout is a terminal,
         # whatever stream the help goes to, so it is asked about this one.
@@ -1521,13 +1529,6 @@ def gwa(argv: list[str] | None = None) -> int:
     return _dispatch(p, argv, run_add)
 
 
-def gwl(argv: list[str] | None = None) -> int:
-    """The same, for one that already exists."""
-    p = _parser("gwl", "Pick one of this repository's worktrees and print its path.")
-    _add_list_flags(p)
-    return _dispatch(p, argv, run_list)
-
-
 def gwm(argv: list[str] | None = None) -> int:
     """Renaming the directory you stand in is why this one is not optional."""
     p = _parser("gwm", "Rename this worktree's branch to NEW and move it to match.")
@@ -1554,27 +1555,22 @@ def gw(argv: list[str] | None = None) -> int:
     return main(argv, prog="gw")
 
 
-def _unknown_command(prog: str, typed: str) -> int:
-    """A name no row answers to, and the nearest one that does.
+def _no_match(prog: str, query: str) -> int:
+    """No worktree answers to the query, and the command it is closest to.
 
-    argparse spells every command twice for this, once in a usage line and
-    once in the choices, so the name worth reading arrives last. The pool is
-    the same table `gw -h` prints, plus `--help`, which people type as a
-    command.
+    `gw ARGS` runs `gw list ARGS` whenever ARGS does not start with a
+    command, so a mistyped command arrives here as a query.
     """
-    # difflib costs 0.8 ms to import and only a mistyped command needs it,
-    # so the run that made the typo pays for it and no other run does.
+    # difflib costs 0.8 ms to import and only a query that matched nothing
+    # needs it, so no other run pays for it.
     import difflib
 
-    render.setup()  # reached before _dispatch, which does this for the rest
-    lines = [f"{prog}: there is no command {typed!r}"]
-    pool = [*_CANONICAL, "--help"]
-    near = difflib.get_close_matches(typed, pool, n=1)
+    lines = ["no worktree matches"]
+    near = difflib.get_close_matches(query, list(_CANONICAL), n=1)
     if near:
-        lines.append(f"the closest is: {prog} {near[0]}")
-    lines.append(f"{prog} -h lists every command")
+        lines.append(f"the closest command is: {prog} {near[0]}")
     _err(render.fail("\n".join(lines)))
-    return 2
+    return 1
 
 
 def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
@@ -1583,13 +1579,15 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     if args_in and args_in[0] == "--complete":
         return _complete_commands()
     if args_in and args_in[0] in ("-h", "--help"):
-        render.setup()  # reached before _dispatch, which does this for the rest
-        return run_help(argparse.Namespace())
-    if args_in and args_in[0].startswith("-"):
-        # `worktrees --explain` is not about one command; status answers it.
-        args_in = ["status", *args_in]
-    if args_in and not args_in[0].startswith("-") and args_in[0] not in _CANONICAL:
-        return _unknown_command(prog, args_in[0])
+        # On stderr, since `gw` changes directory and its function captures
+        # stdout. Decided after the swap, so colour follows the stream it
+        # reaches.
+        with contextlib.redirect_stdout(sys.stderr):
+            render.setup()
+            return run_help(argparse.Namespace())
+    if not args_in or args_in[0] not in _CANONICAL:
+        # A query, a flag or nothing at all: `gw ARGS` is `gw list ARGS`.
+        args_in = ["list", *args_in]
 
     p = _parser(prog, "Git worktree commands that refuse to lose work.")
     subs = p.add_subparsers(dest="command")
@@ -1606,11 +1604,10 @@ def _needed(args_in: list[str]) -> list[str]:
 
     Building every one and its shorthands is 1.5 ms of a 47 ms run, and all
     but one answer a question nobody asked. `main` has already answered `-h`
-    and refused a name no row answers to, so a first argument here names a
-    command.
+    and put `list` in front of anything else, so the first argument here
+    names a command.
     """
-    # `gw` on its own prints the help table and parses nothing
-    return [_CANONICAL[args_in[0]]] if args_in else []
+    return [_CANONICAL[args_in[0]]]
 
 
 def _dispatch(
@@ -1638,9 +1635,7 @@ def _dispatch(
     if getattr(args, "branch_command", None):
         args.prog += f" {args.branch_command}"
     if run is None:
-        if command is None:
-            return run_help(args)
-        run = _COMMANDS[_CANONICAL[command]].run
+        run = _COMMANDS[_CANONICAL[args.command]].run
     try:
         return run(args)
     except KeyboardInterrupt:
