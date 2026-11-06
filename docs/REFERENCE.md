@@ -116,7 +116,7 @@ Output and machine surface.
 | Help asked for goes to stdout at exit 0; a usage printed because the invocation was wrong goes to stderr at exit 2 | `--help \| less` on an empty screen is the failure this avoids | argparse, plus the hand-written `usage:` lines |
 | Completions hold no candidate of their own | `gw --complete`, `gwl --complete` and `gwr --complete` print name and description, tab separated, which fish reads directly and zsh splits for `_describe` | a command added to the table needs no edit in either shell |
 | The picker is Python's, and there is no fzf | the largest number of linked worktrees in one repository here is four, and at that size a list moved through with the arrow keys reads faster and costs no spawn and no absent-fzf fallback | `pick.py`, about twenty lines of substring-then-subsequence matching |
-| No terminal, no prompt | an agent or a pipe reaching a prompt would hang forever holding the repository's worktrees | `pick.choose` and `prune.confirm` both refuse and name the flag that answers without one |
+| No terminal, no prompt | an agent or a pipe reaching a prompt would hang forever holding the repository's worktrees | `pick.choose` and `prune.confirm` both refuse at exit 3. `gwl` prints the `--list` table of every match instead, since a list is an answer a script can read |
 
 Language, distribution, packaging.
 
