@@ -90,8 +90,8 @@ failed.
 
 One other kind of function exists: a shortcut, a banged name that calls a
 command with its flags fixed and does nothing else. `gwr!` is `gwr
---delete-ignored`, and `gwp!` is `gwp --delete-ignored --yes`. A shortcut calls its command by its plain name, so `gwr!` reaches the
-`gwr` function rather than `command gwr` and the caller still lands where the
+--delete-ignored`, and `gwp!` is `gwp --delete-ignored --yes`. A shortcut
+calls its command by its plain name, so `gwr!` reaches the `gwr` function rather than `command gwr` and the caller still lands where the
 binary says. No binary carries a banged name, so a shortcut shadows nothing,
 and none has a console script of its own.
 `SHORTCUTS` in `tests/test_shims.py` lists them and holds each to one line.
@@ -396,10 +396,10 @@ tested on what it returns rather than on its exit code. `tree_of` takes
 tree", and turns every squash merge into "not merged" with nothing failing.
 
 The two calls that reach the network, `fetch` and `remote set-head --auto`,
-take `ok=(0, 128)` for the same reason in reverse: a remote that cannot be
-reached is an answer rather than a failure. `gw sync`, their one caller,
-reads the result and stops at exit 1 with git's reason, leaving the sync
-record as it was.
+both take 128, git's exit when it cannot reach the remote, so `gw sync`,
+their one caller, can read git's reason and stop at exit 1 rather than
+raise, leaving the sync record as it was. `set-head` also takes 1, a server
+with no branch to name.
 
 One `git status --porcelain --ignored=traditional` answers both questions a
 worktree is asked. It is a strict superset of plain `--porcelain`, so `dirty`

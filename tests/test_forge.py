@@ -153,9 +153,13 @@ def _unsettled(world, provider: str) -> Path:
         ("gwr", ("feature", "--yes")),
         ("gwbs", ()),
         ("gwbd", ("loose", "--dry-run")),
+        ("gwa", ("fresh",)),
+        ("gwbc", ("fresh",)),
+        ("gwrot", ()),
+        ("gw", ("list", "--list")),
     ],
 )
-def test_assessment_never_asks_the_forge(world, provider, entry, args) -> None:
+def test_only_sync_asks_the_forge(world, provider, entry, args) -> None:
     wt = _unsettled(world, provider)
     env, log = _recording(world)
     p = cli(world, *args, entry=entry, env=env)

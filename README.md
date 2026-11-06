@@ -474,9 +474,9 @@ The base is the [head branch](#the-head-branch), so after a `gw sync` it is
 `gw sync` first for what it has now. When the head branch does not resolve,
 `gwbc` and `gwrot` fail at exit 1 and make nothing. The base travels as a full
 ref, because git resolves a bare name as a tag first and a repository holding a
-tag called `origin/main` would branch from the tag. `--no-track`, so the head branch does not become the new branch's
-upstream and `git push` does not target it. The line at the end names the
-commit it got.
+tag called `origin/main` would branch from the tag. `--no-track`, so the head
+branch does not become the new branch's upstream and `git push` does not
+target it. The line at the end names the commit it got.
 
 `gwrot` takes no argument. The name comes from the branch you are standing on,
 with any suffix a previous rotation added already stripped, so four rotations
@@ -658,7 +658,7 @@ branch at a time, so their line also counts how far through the list they are:
 ### What reaches the network
 
 Only `gw sync` runs `git fetch`, `git remote set-head`, `gh` or `glab`. Every
-other command reads what the last sync left: the remote-tracking refs, and the
+other command reads what is already here: the remote-tracking refs, and the
 forge's answer for each branch tip, which holds until the next sync and only
 for the tip it was recorded at.
 

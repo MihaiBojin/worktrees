@@ -506,6 +506,9 @@ def test_only_sync_fetches_or_sets_head(world, entry, args) -> None:
     """A remote with a branch, no origin/HEAD and no FETCH_HEAD: the state
     in which a command that fetched on its way would fetch."""
     bare(world)
+    # A fetch would otherwise create origin/HEAD, and a set-head after it
+    # would never run, so a command that did both would log only the fetch.
+    world.git("config", "remote.origin.followRemoteHEAD", "never")
     world.git("update-ref", "refs/remotes/origin/main", "main")
     world.worktree("feature")
     env, log = _logging_git(world)

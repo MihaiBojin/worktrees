@@ -147,6 +147,10 @@ def test_a_moved_tip_has_no_evidence(forge_world):
             "the request's source repository does not match this remote",
         ),
         (
+            {"repository": "github.com/someone/else"},
+            "the request was made in another repository",
+        ),
+        (
             {"merged_at": ""},
             "the request has no verified merge commit",
         ),
@@ -155,13 +159,33 @@ def test_a_moved_tip_has_no_evidence(forge_world):
             "the request's merge commit is not available locally",
         ),
     ],
-    ids=["target", "source", "source-sha", "fork", "unmerged-at", "merge-missing"],
+    ids=[
+        "target",
+        "source",
+        "source-sha",
+        "fork",
+        "repository",
+        "unmerged-at",
+        "merge-missing",
+    ],
 )
 def test_a_mismatched_request_proves_nothing(forge_world, changes, why):
     world = forge_world
     synced(world, merged(world, **changes))
     row = assess(world)
     assert (row["verdict"], row["why"]) == ("unknown", why), row
+
+
+@pytest.mark.parametrize("rev", ["main^{tree}", "main:feature"])
+def test_a_merge_sha_that_is_not_a_commit_proves_nothing(forge_world, rev):
+    world = forge_world
+    synced(world, merged(world, merge_sha=world.git("rev-parse", rev)))
+    row = assess(world)
+    assert (row["verdict"], row["why"], row["error"]) == (
+        "unknown",
+        "the request's merge commit is not available locally",
+        False,
+    ), row
 
 
 def test_a_merge_commit_outside_the_head_proves_nothing(forge_world):
@@ -223,6 +247,10 @@ def test_a_rejected_request_does_not_block_content_proof(forge_world):
         result = assess(world)
         assert result["verdict"] == "remove", result
         assert result["proof"] in ("squash", "content")
+        assert result["request"]["target_branch"] == changes.get(
+            "target_branch", "main"
+        ), result
+        assert result["request"]["state"] == changes.get("state", "MERGED")
 
 
 def test_delete_removes_a_branch_the_sync_proved(forge_world):

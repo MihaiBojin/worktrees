@@ -98,14 +98,15 @@ def prove(
     head: str,
     head_branch: str,
     evidence: dict,
+    repository: str,
     say: Callable[[str], None],
 ) -> Proof:
     """Whether the change at `sha` is in the head branch.
 
     The one proof a worktree and a loose branch are both judged by.
     `evidence` is what the last `gw sync` recorded per branch, and a merged
-    request it holds for exactly this tip, merged into the head branch, is
-    checked first. Nothing here asks the forge.
+    request it holds for exactly this tip, made in `repository` and merged
+    into the head branch, is checked first. Nothing here asks the forge.
     """
     found = Proof(UNKNOWN, "no proof that its change is in the head branch")
     # A merged request that fails a check settles `unknown`, but only once
@@ -122,18 +123,17 @@ def prove(
             )
         else:
             settled = True
-            found.why = request.unverified_reason(branch, sha, head_branch)
-            if not found.why and not R.object_type(request.merge_sha):
-                found.why = "the request's merge commit is not available locally"
-            if not found.why:
-                if merged.is_ancestor(request.merge_sha, head):
-                    found.verdict, found.proof = REMOVE, "forge"
-                    found.why = (
-                        f"{request.noun} #{request.number} merged this tip "
-                        "into the head branch"
-                    )
-                    return found
-                found.why = "the request's merge commit is not in the head branch"
+            no = request.unverified_reason(branch, sha, head_branch, repository)
+            if not no and R.object_type(request.merge_sha).out.strip() != "commit":
+                no = "the request's merge commit is not available locally"
+            if not no and merged.is_ancestor(request.merge_sha, head):
+                found.verdict, found.proof = REMOVE, "forge"
+                found.why = (
+                    f"{request.noun} #{request.number} merged this tip "
+                    "into the head branch"
+                )
+                return found
+            found.why = no or "the request's merge commit is not in the head branch"
     for proof, why, question, check in (
         (
             "ancestry",
@@ -156,7 +156,7 @@ def prove(
     ):
         say(question)
         if check(sha, head):
-            return Proof(REMOVE, why, proof)
+            return Proof(REMOVE, why, proof, found.request)
     if settled:
         return found
     if not merged.merge_bases(sha, head).lines:
@@ -203,6 +203,7 @@ def assess(
     """
     main = R.main_worktree()
     evidence = (sync.read() or {}).get("evidence", {})
+    repository = branch_forge.repository_for(R.remote())
     if here is None:
         here = R.toplevel().out.strip()
 
@@ -248,6 +249,7 @@ def assess(
             head,
             head_branch,
             evidence,
+            repository,
             lambda question: progress.say(f"{wt.label}: {question}"),
         )
         ignored = status.ignored

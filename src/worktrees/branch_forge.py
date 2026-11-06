@@ -39,9 +39,13 @@ class Request:
             return None
         return cls(**data)
 
-    def unverified_reason(self, branch: str, sha: str, head_branch: str) -> str:
+    def unverified_reason(
+        self, branch: str, sha: str, head_branch: str, repository: str
+    ) -> str:
         if self.source_branch != branch or self.source_sha != sha:
             return "the request does not identify this branch tip"
+        if self.repository != repository:
+            return "the request was made in another repository"
         if not self.same_repository:
             return "the request's source repository does not match this remote"
         if self.target_branch != head_branch:
@@ -87,6 +91,12 @@ def tool_for(remote: str) -> str:
     return _forge(remote)[0]
 
 
+def repository_for(remote: str) -> str:
+    """The host/path a request on the remote's forge records, or empty."""
+    tool, host, path = _forge(remote)
+    return f"{host}/{path}" if tool else ""
+
+
 def request_for(branch: str, remote: str) -> Request | None:
     """The newest request from `branch`, or None when there is none.
 
@@ -94,12 +104,12 @@ def request_for(branch: str, remote: str) -> Request | None:
     when the forge CLI is missing, fails, or answers in a shape this cannot
     read: none of those says there is no request.
     """
-    tool, host, path = _forge(remote)
+    tool, _, path = _forge(remote)
     if not tool:
         return None
     if not shutil.which(tool):
         raise forge.Unanswered(f"{tool} is not installed")
-    repository = f"{host}/{path}"
+    repository = repository_for(remote)
     if tool == "gh":
         argv = [
             tool,
