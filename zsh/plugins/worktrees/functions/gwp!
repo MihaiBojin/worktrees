@@ -1,2 +1,2 @@
-# gwp! confirms removal of eligible worktrees.
+# gwp! skips confirmation when removing eligible worktrees.
 gwp --yes "$@"

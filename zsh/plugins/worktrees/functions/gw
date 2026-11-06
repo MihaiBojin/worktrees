@@ -1,0 +1,23 @@
+if (( $# != 1 )) || [[ $1 == -* ]]; then
+    command gw "$@"
+    return $?
+fi
+local -a commands
+commands=("${(@f)$(command gw --complete)}")
+commands=("${commands[@]%%$'\t'*}")
+if (( ${commands[(Ie)$1]} )); then
+    command gw "$@"
+    return $?
+fi
+# The sentinel preserves trailing LFs through command substitution.
+local output code dest
+output="$(command gw "$@"; code=$?; printf .; exit $code)"
+code=$?
+output=${output%.}
+dest=${output%$'\n'}
+if (( code == 0 )) && [[ -n $dest && -d $dest ]]; then
+    cd -- "$dest" || return $?
+else
+    printf '%s' "$output"
+fi
+return $code

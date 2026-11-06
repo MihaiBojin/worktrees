@@ -8,7 +8,7 @@ for line in ${(f)"$(command gwbd --complete 2>/dev/null)"}; do
 done
 
 _arguments -s \
-    '*--delete[permit deletion categories]:value:' \
+    '*--delete[permit deletion categories]:value:(empty stashes all)' \
     '--json[verdicts and evidence as data]' \
     '(-q --quiet)'{-q,--quiet}'[omit the summary]' \
     '(-v --verbose)'{-v,--verbose}'[print every command]' \

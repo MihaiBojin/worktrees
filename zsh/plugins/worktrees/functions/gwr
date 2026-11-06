@@ -1,14 +1,13 @@
-# gwr [PATH|QUERY]: remove a finished worktree and its branch; cd out if you were in it.
-#
-# The binary prints one destination, or the data `--json` and `--list` were
-# asked for, on the same stream. `$(...)` strips only
-# trailing newlines, so a path holding one arrives whole and zsh needs no
-# equivalent of fish's `string collect`. Empty output means stay put.
-local dest
-dest="$(command gwr "$@")" || return
-[[ -n $dest ]] || return 0
-# A directory is somewhere to go, and anything else is what --json or
-# --list was asked for, arriving on the same stream. The shim cannot tell
-# them apart by looking, so it asks, and prints what is not a directory.
-[[ -d $dest ]] || { print -r -- "$dest"; return 0; }
-cd -- "$dest"
+# The sentinel preserves trailing LFs through command substitution.
+local output code dest
+output="$(command gwr "$@"; code=$?; printf .; exit $code)"
+code=$?
+output=${output%.}
+dest=${output%$'\n'}
+# A destination means removal succeeded, even if later cleanup failed.
+if [[ -n $dest && -d $dest ]]; then
+    cd -- "$dest" || return $?
+else
+    printf '%s' "$output"
+fi
+return $code

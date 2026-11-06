@@ -16,7 +16,7 @@
 }
 
 _arguments -s \
-    '*--delete[permit deletion categories]:value:' \
+    '*--delete[permit deletion categories]:value:(empty ignored-files stashes all)' \
     '--keep-branch[retain the branch and its stashes]' \
     '(-y --yes)'{-y,--yes}'[do not ask]' \
     '--json[the result as data]' \

@@ -512,7 +512,7 @@ def test_a_bare_flag_means_status(world) -> None:
 def test_an_unknown_command_names_the_closest_one(world) -> None:
     """argparse answers this with a usage line and twenty-two choices, and
     the name worth reading arrives last."""
-    p = run(world, "gw", "verison")
+    p = run(world, "gw", "verison", "extra")
     assert p.returncode == 2
     assert p.stderr.splitlines() == [
         "gw: there is no command 'verison'",
@@ -522,7 +522,7 @@ def test_an_unknown_command_names_the_closest_one(world) -> None:
 
 
 def test_an_unknown_command_near_nothing_still_points_at_help(world) -> None:
-    p = run(world, "main", "xyzzy")
+    p = run(world, "main", "xyzzy", "extra")
     assert p.returncode == 2
     assert p.stderr.splitlines() == [
         "worktrees: there is no command 'xyzzy'",

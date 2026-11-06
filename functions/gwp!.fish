@@ -1,4 +1,4 @@
-# gwp! confirms removal of eligible worktrees.
-function gwp! --wraps 'gwp --yes' --description 'remove eligible worktrees without asking'
+# gwp! skips confirmation when removing eligible worktrees.
+function gwp! --wraps 'gwp --yes' --description 'skip confirmation for eligible worktrees'
     gwp --yes $argv
 end

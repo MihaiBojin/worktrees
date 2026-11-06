@@ -12,5 +12,5 @@ complete -c gwr -s v -l verbose -d 'print every git command'
 complete -c gwr -l explain -d 'print every git command and exit'
 
 complete -c gwr -s h -l help -d 'show the help and exit'
-complete -c gwr -l delete -r -d 'permit deletion categories; repeat to combine'
+complete -c gwr -l delete -x -a 'empty ignored-files stashes all' -d 'permit deletion categories; repeat to combine'
 complete -c gwr -l keep-branch -d 'retain the branch and its stashes'
