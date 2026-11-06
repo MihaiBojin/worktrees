@@ -102,7 +102,7 @@ Scope and safety.
 | `gwr` on the worktree you are standing in steps out, removes it, and prints the main checkout for the shim to `cd` to | refusing would make the common case need a `cd` first, and the `cd` out is the shim's job | `worktree.remove` |
 | The main checkout is never removable, and no escape-hatch flag is printed | `git worktree remove` answers `fatal: '<path>' is a main working tree` and no flag gets past it, so there is nothing to offer | `verdicts.assess` skips it before judging |
 | A branch is deleted on this program's own proof, or not at all | a squash merge leaves no history, so deferring to `git branch -d` means the content probe buys the checkout and never the branch | `prune.ref_delete`, and §3.2 for what it replaced |
-| A stale record for a directory somebody deleted by hand is nobody's verdict | clearing one mutates, so the command that asks may not do it | `verdicts.stale` names them, `gwp` runs `git worktree prune` |
+| A stale record for a directory somebody deleted by hand is nobody's verdict | clearing one mutates, so only a run that removes may do it | `verdicts.stale` names them, and `prune.sweep` runs `git worktree prune` after a removal |
 
 Flags and commands.
 
@@ -110,7 +110,7 @@ Flags and commands.
 | --- | --- | --- |
 | `gws` reports and `gwp` acts, under one function that returns the set | what one prints and the other removes cannot drift | `prune.removable` |
 | `gwbd --dry-run` assesses branches without deleting them; worktree commands use `gws` for assessment | the branch selector and batch deletion share one preview | `branch_cli.delete`, `cli._dispatch` |
-| `gwp` with nothing removable prints the verdict table | the reason each worktree stayed is the answer to the question, and naming another command puts it one round trip away | `cli.run_prune` |
+| `gwp` prints the verdict table before it asks, and with nothing removable | the reason each worktree stayed is the answer to the question, and naming another command puts it one round trip away | `cli.run_prune` |
 | One row per command carries its function, flags, description, aliases, and directory behaviour | help and dispatch read the same rows | `cli._COMMANDS`, `cli._BRANCH_COMMANDS`, and `cli.command_rows()` |
 | The head ref is the last sync's `<remote>/HEAD`, a clone's, or the local `main` or `master`, and is always a full ref | a bare name is what lets a tag named `origin/main` answer for the head branch, and a `<remote>/main` nothing named the head is a guess about the server | `repo.head_ref` |
 | A head ref that does not resolve makes every row that needs one `unknown` and every mutating or branch-starting command stop at exit 1 | measuring against nothing proves nothing, and a dangling `<remote>/HEAD` falling through to a local branch measures against a branch nobody chose | `cli._require`, `new_branch.head`, `verdicts.unresolved`, `branches.assess` |
@@ -128,7 +128,7 @@ Output and machine surface.
 | Help asked for goes to stdout at exit 0; a usage printed because the invocation was wrong goes to stderr at exit 2 | `--help \| less` on an empty screen is the failure this avoids | argparse, plus the hand-written `usage:` lines |
 | Completions hold no candidate of their own | `gw --complete`, `gw list --complete` and `gwr --complete` print name and description, tab separated, which fish reads directly and zsh splits for `_describe` | a command added to the table needs no edit in either shell |
 | The picker is Python's, and there is no fzf | the largest number of linked worktrees in one repository here is four, and at that size a list moved through with the arrow keys reads faster and costs no spawn and no absent-fzf fallback | `pick.py`, about twenty lines of substring-then-subsequence matching |
-| No terminal, no prompt | an agent or a pipe reaching a prompt would hang forever holding the repository's worktrees | `pick.choose` and `prune.confirm` both refuse at exit 3. `gw list` prints the `--list` table of every match instead, since a list is an answer a script can read |
+| No terminal, no prompt | an agent or a pipe reaching a prompt would hang forever holding the repository's worktrees | `pick.choose` and `prune.confirm` both refuse at exit 3. `gwp` asks only at a terminal and otherwise reports and exits 0, and `gw list` prints the `--list` table of every match, since a report and a list are answers a script can read |
 
 Language, distribution, packaging.
 
@@ -168,7 +168,7 @@ nobody re-derives the first.
 | "`gwl --list` is 58 ms against `origin gwl`'s 1.94 s" | not like-for-like then, and not a live comparison now. §7 has today's figures |
 | "The bats suite is the specification for the port" | there is no port and no bats suite. `tests/` is the specification, and it was written against this code |
 | `origin worktree path <branch>` | not built. `gw --list` and `gw --json` answer it |
-| `origin prune` is read-only until `--yes` | `gwp` runs `git worktree prune` before it assesses, and that mutates. `--yes` gates the checkout and the branch delete, and nothing else |
+| `origin prune` is read-only until `--yes` | `gwp` reports and asks at a terminal, and without one only reports. `--yes` removes without asking, and a run that removes nothing writes nothing, `git worktree prune` included |
 | "Every mutation stays serial" as a property of the program | true within one process and asserted nowhere across two. Nothing takes a cross-process lock |
 
 ## 4. What must not break

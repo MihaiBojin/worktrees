@@ -12,7 +12,7 @@ a shell function of the same name.
 | | |
 | --- | --- |
 | `gws` | say which worktrees are finished, and why. Removes nothing, and has no flag that could |
-| `gwp` | remove the ones `gws` marks removable, having asked first |
+| `gwp` | print the `gws` table, then remove the ones it marks removable, having asked at a terminal |
 | `gwbs [NAME ...]` | assess local branches, including those without worktrees |
 | `gwbd [NAME ...]` | delete branches proved finished, with confirmation and undo commands |
 | `gwa NAME [BASE]` | create a worktree for `NAME` and land you in it |
@@ -261,24 +261,30 @@ that moved since the sync, and a sync file that is missing, malformed or
 written for another remote URL, carry no evidence, and git alone decides.
 
 A record left behind by a directory somebody deleted by hand is nobody's
-verdict. `gws` names how many there are; clearing them is `git worktree prune`,
-which mutates, so `gwp` is what runs it.
+verdict. `gws` names how many there are. `git worktree prune` clears them, and
+`gwp` runs it after a removal and at no other time.
 
 ## gwp
 
 ```console
 $ gwp
 Head: origin/main (remote)
+BRANCH         PATH                                         VERDICT  WHY
+main           /home/you/git/repo                           keep     it is the main checkout, and never removable
+squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   its tree or combined patch is already in the head branch
+
+1 removable, 1 kept, 0 unclear
 squash-merged  /home/you/git/.worktrees/squash-merged/repo
   restore with: git branch squash-merged a2b41ad1fb271bd7d84256f0d35ee5d58c29dd08
 remove 1 worktree(s)? [y/N] y
 removed 1 worktree(s): squash-merged
 ```
 
-It removes exactly the rows `gws` marks `remove`, under the same flags, and one
-function returns that set for both. What goes and what puts it back is printed
-before anything does, and neither `--quiet` nor `--yes` silences it. The sha in
-the restore line is full length, because that line is meant to be pasted.
+It prints what `gws` prints first, the table, the counts and the notes, then
+removes exactly the rows marked `remove`, under the same flags. One function
+returns that set for both. What goes and what puts it back is printed before
+anything does, and neither `--quiet` nor `--yes` silences it. The sha in the
+restore line is full length, because that line is meant to be pasted.
 
 A stash made on a branch that is about to go is named too. `refs/stash` is
 per-repository and pins its own commits, so the entry survives the branch and
@@ -293,40 +299,50 @@ survives, and says so in git's own words. Neither `branch -d`, which reads
 history and so refuses the squash merge the probe just proved, nor `branch -D`,
 which reads nothing and is refused by the guard.
 
-`-y` skips the question. A run whose stdin is not a terminal refuses rather
-than blocking, because an agent or a pipe reaching a prompt would hang forever
-holding the repository's worktrees:
+It asks only at a terminal, and only without `--json` or `--list`. Anywhere
+else it prints the assessment, removes nothing and exits 0, because an agent
+or a pipe reaching a prompt would hang forever holding the repository's
+worktrees:
 
 ```console
 $ gwp < /dev/null
 Head: origin/main (remote)
-squash-merged  /home/you/git/.worktrees/squash-merged/repo
-  restore with: git branch squash-merged a2b41ad1fb271bd7d84256f0d35ee5d58c29dd08
-not a terminal, so nothing can answer for the 1 above; pass --yes to remove them
+BRANCH         PATH                                         VERDICT  WHY
+main           /home/you/git/repo                           keep     it is the main checkout, and never removable
+squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   its tree or combined patch is already in the head branch
+
+1 removable, 1 kept, 0 unclear
+1 would be removed; gwp --yes removes them
 ```
 
-That exits 3 and touches nothing, the code every refusal uses. `gwp --yes --json`
-is what an agent runs.
+A run that removes nothing writes nothing: no ref, no directory, and no
+`git worktree prune`. `-y` removes without asking, in every mode, and still
+prints the disclosure first. `--json` prints the object `gws --json` prints,
+with `removed` and `failed` added under `--yes`; `gwp --yes --json` is what an
+agent runs. `--list` prints the table uncoloured and nothing else on stdout.
+`--only VERDICT` narrows the table and the JSON rows, and never the set
+removed: the disclosure names every target.
 
-With nothing to remove it prints the table `gws` prints, rather than the name
-of the command that would have printed it. The reason each worktree stayed is
-the answer to the question, and naming another command puts it one round trip
-away:
+With nothing to remove it prints the same table and says so. The reason each
+worktree stayed is the answer to the question, and naming another command puts
+it one round trip away:
 
 ```console
 $ gwp
 Head: origin/main (remote)
 BRANCH         PATH                                         VERDICT  WHY
+main           /home/you/git/repo                           keep     it is the main checkout, and never removable
 dirty-work     /home/you/git/.worktrees/dirty-work/repo     keep     it has uncommitted changes
 holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     its tip is an ancestor of the head branch, but holds 2 ignored path(s); pass --delete-ignored
 never-pushed   /home/you/git/.worktrees/never-pushed/repo   keep     no proof that its change is in the head branch
 
-nothing to remove; 0 removable, 3 kept, 0 unclear
+0 removable, 4 kept, 0 unclear
+nothing to remove
 ```
 
-There is no `--dry-run`. `gws` reports and `gwp` asks, so a flag meaning "do
-not act" would be a no-op wearing the clothes of a safety feature, and somebody
-would one day cite it as the reason a sweep was safe.
+There is no `--dry-run`. `gwp` reports without a terminal and asks at one, so
+a flag meaning "do not act" would be a no-op wearing the clothes of a safety
+feature, and somebody would one day cite it as the reason a sweep was safe.
 
 ## gwa, gw, gwm, gwr
 
@@ -663,7 +679,7 @@ takes all of them but `--json`. Beyond those:
 | | |
 | --- | --- |
 | `gws` | `--branch NAME`, `--delete-ignored`, `--only VERDICT` |
-| `gwp` | `--branch NAME`, `--delete-ignored`, and `-y` |
+| `gwp` | `--branch NAME`, `--delete-ignored`, `--only VERDICT`, `-l` and `-y` |
 | `gwr` | `-f`, `--delete-ignored`, `-y` |
 | `gwbs` | `--only VERDICT` |
 | `gwbd` | `--all`, `--dry-run` and `-y` |

@@ -295,27 +295,26 @@ def test_bare_enter_removes_nothing(world) -> None:
     assert wt.exists()
 
 
-def test_without_a_terminal_it_refuses_rather_than_blocking(world) -> None:
-    """An agent or a pipe reaches this and would otherwise hang forever."""
+def test_without_a_terminal_it_reports_and_removes_nothing(world) -> None:
+    """An agent or a pipe gets the assessment, and nothing blocks on a prompt."""
     wt = world.worktree("done")
     p = run(world, "gwp")
-    assert p.returncode == 3
-    assert "not a terminal" in p.stderr
-    assert "pass --yes" in p.stderr
+    assert p.returncode == 0, p.stderr
+    assert "done" in p.stdout and "remove" in p.stdout
+    assert "1 removable, 1 kept, 0 unclear" in p.stdout
+    assert "1 would be removed; gwp --yes removes them" in p.stderr
+    assert "[y/N]" not in p.stderr
+    assert "restore with" not in p.stderr
     assert wt.exists()
 
 
-def test_no_terminal_is_one_exit_code(world) -> None:
+def test_gwr_without_a_terminal_refuses_at_exit_3(world) -> None:
     """One condition, one number. 2 is already argparse's and _Stop's."""
     world.worktree("a")
     world.worktree("b")
-    for entry, args in (
-        ("gwp", ()),
-        ("gwr", ()),
-    ):
-        p = run(world, entry, *args)
-        assert p.returncode == 3, f"{entry} exited {p.returncode}: {p.stderr}"
-        assert "terminal" in p.stderr
+    p = run(world, "gwr")
+    assert p.returncode == 3, p.stderr
+    assert "terminal" in p.stderr
 
 
 def test_remove_without_a_terminal_says_to_narrow_the_query(world) -> None:
@@ -344,7 +343,7 @@ def test_prune_deletes_the_branch_and_the_empty_parents(world) -> None:
     assert not wt.exists()
     assert "done" not in world.git("branch", "--format=%(refname:short)").split()
     assert not (world.parent / ".worktrees" / "done").exists()
-    assert p.stdout.strip() == "removed 1 worktree(s): done"
+    assert p.stdout.splitlines()[-1] == "removed 1 worktree(s): done"
 
 
 def test_a_squash_merged_branch_goes_with_its_checkout(world) -> None:
@@ -363,7 +362,8 @@ def test_a_squash_merged_branch_goes_with_its_checkout(world) -> None:
     assert "restore with: git branch squashed " in p.stderr
 
 
-def test_prune_clears_a_stale_record(world) -> None:
+def test_prune_clears_a_stale_record_when_it_removes(world) -> None:
+    world.worktree("done")
     wt = world.worktree("gone")
     import shutil
 
@@ -371,6 +371,17 @@ def test_prune_clears_a_stale_record(world) -> None:
     p = run(world, "gwp", "--yes")
     assert p.returncode == 0, p.stderr
     assert "gone" not in world.git("worktree", "list", "--porcelain")
+
+
+def test_prune_leaves_a_stale_record_when_it_removes_nothing(world) -> None:
+    wt = world.worktree("gone")
+    import shutil
+
+    shutil.rmtree(wt)
+    p = run(world, "gwp", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert "nothing to remove" in p.stderr
+    assert "gone" in world.git("worktree", "list", "--porcelain")
 
 
 def test_prune_says_so_when_there_is_nothing(world) -> None:
@@ -389,7 +400,8 @@ def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
     assert p.returncode == 0, p.stderr
     assert "busy" in p.stdout
     assert "it has uncommitted changes" in p.stdout
-    assert "nothing to remove; 0 removable, 2 kept, 0 unclear" in p.stdout
+    assert "0 removable, 2 kept, 0 unclear" in p.stdout
+    assert "nothing to remove" in p.stderr
     assert "gws" not in p.stdout
 
 
@@ -405,6 +417,164 @@ def test_dry_run_is_refused_by_name(world) -> None:
         p = run(world, entry, "--dry-run")
         assert p.returncode == 2
         assert "there is no --dry-run" in p.stderr
+        assert "gwp reports without a terminal and asks at one" in p.stderr
+
+
+# --------------------------------------------------------------------------
+# gwp reports first, then asks only at a terminal
+# --------------------------------------------------------------------------
+
+
+def _snapshot(world) -> tuple[str, str, list[str]]:
+    """Everything a removal or a `worktree prune` would change."""
+    return (
+        world.git("worktree", "list", "--porcelain"),
+        world.git("for-each-ref"),
+        sorted(str(p.relative_to(world.root)) for p in world.root.rglob("*")),
+    )
+
+
+@pytest.mark.parametrize(
+    ("args", "terminal"),
+    [
+        ((), False),
+        (("--json",), False),
+        (("--list",), False),
+        (("-q",), False),
+        (("--yes",), False),
+        (("--json",), True),
+        (("--list",), True),
+        ((), True),
+    ],
+    ids=[
+        "plain",
+        "json",
+        "list",
+        "quiet",
+        "yes-nothing",
+        "tty-json",
+        "tty-list",
+        "tty-no",
+    ],
+)
+def test_a_gwp_that_removes_nothing_writes_nothing(world, args, terminal) -> None:
+    """A stale record present, which a `git worktree prune` would clear."""
+    import shutil
+
+    if args != ("--yes",):
+        world.worktree("done")
+    shutil.rmtree(world.worktree("gone"))
+    before = _snapshot(world)
+    if terminal:
+        # "y" for the modes that must not ask: a misplaced prompt removes.
+        code, out = run_on_a_terminal(
+            world, "gwp", *args, answer="n\n" if not args else "y\n"
+        )
+        assert code == 0, out
+    else:
+        p = run(world, "gwp", *args)
+        assert p.returncode == 0, p.stderr
+    assert _snapshot(world) == before
+
+
+def test_gwp_prints_the_table_before_it_asks(world) -> None:
+    world.worktree("done")
+    code, out = run_on_a_terminal(world, "gwp", answer="n\n")
+    assert code == 0, out
+    assert "nothing removed" in out
+    assert out.index("1 removable, 1 kept, 0 unclear") < out.index("restore with")
+    assert out.index("restore with") < out.index("remove 1 worktree(s)? [y/N]")
+
+
+def test_gwp_yes_at_a_terminal_does_not_ask(world) -> None:
+    wt = world.worktree("done")
+    code, out = run_on_a_terminal(world, "gwp", "--yes", answer="n\n")
+    assert code == 0, out
+    assert "[y/N]" not in out
+    assert "restore with: git branch done " in out
+    assert not wt.exists()
+
+
+@pytest.mark.parametrize("flag", ["--json", "--list"])
+def test_gwp_at_a_terminal_with_a_script_flag_does_not_ask(world, flag) -> None:
+    wt = world.worktree("done")
+    code, out = run_on_a_terminal(world, "gwp", flag, answer="y\n")
+    assert code == 0, out
+    assert "[y/N]" not in out
+    assert "1 would be removed; gwp --yes removes them" in out
+    assert wt.exists()
+
+
+@pytest.mark.parametrize("flag", [(), ("--json",), ("--list",)])
+def test_gwp_yes_removes_in_every_mode(world, flag) -> None:
+    wt = world.worktree("done")
+    p = run(world, "gwp", "--yes", *flag)
+    assert p.returncode == 0, p.stderr
+    assert "restore with: git branch done " in p.stderr
+    assert not wt.exists()
+
+
+def test_gwp_json_is_the_gws_assessment(world) -> None:
+    world.worktree("done")
+    gws = json.loads(run(world, "gws", "--json").stdout)
+    p = run(world, "gwp", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout) == gws
+
+
+def test_gwp_json_with_yes_adds_what_it_removed(world) -> None:
+    world.worktree("done")
+    gws = json.loads(run(world, "gws", "--json").stdout)
+    p = run(world, "gwp", "--json", "--yes")
+    assert p.returncode == 0, p.stderr
+    out = json.loads(p.stdout)
+    assert out == {**gws, "removed": ["done"], "failed": 0}
+
+
+def test_gwp_list_is_never_coloured(world) -> None:
+    world.worktree("done")
+    world.worktree("busy")
+    (world.parent / ".worktrees" / "busy" / "repo" / "wip").write_text("x")
+    for args in (("--list",), ("--list", "--yes")):
+        code, out = run_with_a_terminal_on_stdout(world, "gwp", *args)
+        assert code == 0, out
+        assert "\x1b" not in out, (args, out)
+        assert "busy" in out
+    code, out = run_with_a_terminal_on_stdout(world, "gwp")
+    assert "\x1b" in out, "the control: the same stdout is painted without --list"
+
+
+def test_gwp_only_narrows_the_table_and_not_the_targets(world) -> None:
+    wt = world.worktree("done")
+    world.worktree("busy")
+    (world.parent / ".worktrees" / "busy" / "repo" / "wip").write_text("x")
+    p = run(world, "gwp", "--only", "keep", "--yes")
+    assert p.returncode == 0, p.stderr
+    table_rows = p.stdout.split("removed")[0]
+    assert "busy" in table_rows
+    assert "/.worktrees/done/" not in table_rows
+    assert "restore with: git branch done " in p.stderr
+    assert not wt.exists()
+
+
+def test_gwp_only_narrows_the_json_rows(world) -> None:
+    world.worktree("done")
+    world.worktree("busy")
+    (world.parent / ".worktrees" / "busy" / "repo" / "wip").write_text("x")
+    p = run(world, "gwp", "--only", "remove", "--json")
+    assert p.returncode == 0, p.stderr
+    assert [v["branch"] for v in json.loads(p.stdout)["verdicts"]] == ["done"]
+    assert "1 would be removed" in p.stderr
+
+
+def test_gwp_with_nothing_eligible_says_so(world) -> None:
+    world.worktree("busy")
+    (world.parent / ".worktrees" / "busy" / "repo" / "wip").write_text("x")
+    code, out = run_on_a_terminal(world, "gwp", answer="y\n")
+    assert code == 0, out
+    assert "it has uncommitted changes" in out
+    assert "nothing to remove" in out
+    assert "[y/N]" not in out
 
 
 def test_explain_lists_every_command_and_runs_none(world) -> None:
@@ -989,7 +1159,11 @@ def test_ctrl_c_at_every_prompt(world, entry, args, prompt) -> None:
     assert "Traceback" not in stderr, stderr
     assert "KeyboardInterrupt" not in stderr, stderr
     assert proc.returncode == 130, stderr
-    assert out == b""
+    # gwp prints its assessment before it asks; nothing else prints a result.
+    if prompt.startswith("remove 2"):
+        assert b"2 removable" in out and b"removed" not in out, out
+    else:
+        assert out == b""
     assert stderr.endswith(prompt + "\n"), stderr
     assert world.git("worktree", "list", "--porcelain") == before
     assert world.git("show-ref") == refs

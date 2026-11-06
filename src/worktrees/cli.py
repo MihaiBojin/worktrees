@@ -33,9 +33,16 @@ def _same(a: str, b: str) -> bool:
     return bool(a) and bool(b) and Path(a).resolve() == Path(b).resolve()
 
 
-def _verdict_table(rows: list[verdicts.Verdict]) -> str:
-    """The table `gws` prints, which `gwp` prints too rather than name it."""
-
+def _verdict_table(rows: list[verdicts.Verdict], plain: bool = False) -> str:
+    """The table `gws` and `gwp` print. `plain` is `gwp --list`'s, never
+    coloured, since like --json it is what a script reads."""
+    if plain:
+        return table(
+            [
+                ("BRANCH", "PATH", "VERDICT", "WHY"),
+                *((v.label, v.path, v.verdict, v.why) for v in rows),
+            ]
+        )
     head: Row = (
         Cell("BRANCH", BOLD),
         Cell("PATH", BOLD),
@@ -294,7 +301,7 @@ def run_status(args: argparse.Namespace) -> int:
     """Say what is here. Nothing in this path removes anything."""
     import json
 
-    from . import layout, prune, verdicts
+    from . import prune
     from .git import options
 
     options.verbose = args.verbose
@@ -302,82 +309,105 @@ def run_status(args: argparse.Namespace) -> int:
         return _explain()
 
     target = _assessment_head(args)
-    resolves = target[0].resolves
-    if not resolves:
+    if not target[0].resolves:
         _err(render.fail(target[0].problem()))
     rows, stale, _, _, records = _assess(args, target)
-    go = prune.removable(rows)
-    unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
-    failed = int(not resolves or any(v.error for v in rows))
-
-    # Every repository beside this one shares the same `.worktrees` root, and
-    # nothing else says which of the directories there are somebody else's.
-    # `worktrees` puts the main checkout first, so records[0] is it.
-    main = records[0].path if records else ""
-    others = layout.neighbours(main, [w.path for w in records]) if main else 0
+    failed = int(not target[0].resolves or any(v.error for v in rows))
 
     if args.json:
-        print(
-            json.dumps(
-                {
-                    **_envelope(args),
-                    "stale": [w.path for w in stale],
-                    # How many worktrees under the shared root are a
-                    # sibling repository's. Nothing here reads or removes
-                    # them; a caller counting directories needs to know
-                    # they are not all this repository's.
-                    "neighbours": others,
-                    # `ignored` and `sha` are fields rather than facts to
-                    # parse back out of `why`. A caller deciding whether to
-                    # pass --delete-ignored wants the count, not a sentence
-                    # that happens to contain it, and the sha is what the
-                    # verdict was formed against.
-                    "verdicts": [
-                        {
-                            "verdict": v.verdict,
-                            "branch": v.branch,
-                            "path": v.path,
-                            "why": v.why,
-                            "ignored": v.ignored,
-                            "sha": v.sha,
-                        }
-                        for v in _only(args, rows)
-                    ],
-                },
-                indent=2,
-            )
-        )
+        print(json.dumps(_assessment(args, rows, stale, records), indent=2))
         return failed
 
-    print(_verdict_table(_only(args, rows)))
+    _report(args, rows, stale, records)
+    go = prune.removable(rows)
+    if go and not args.quiet:
+        _err(render.note(f"gwp removes the {len(go)} marked removable"))
+    return failed
 
+
+def _neighbours(records: list[R.Worktree]) -> int:
+    """How many worktrees under the shared root are a sibling repository's.
+
+    Every repository beside this one shares the same `.worktrees` root, and
+    nothing else says which of the directories there are somebody else's.
+    `worktrees` puts the main checkout first, so records[0] is it.
+    """
+    from . import layout
+
+    main = records[0].path if records else ""
+    return layout.neighbours(main, [w.path for w in records]) if main else 0
+
+
+def _assessment(
+    args: argparse.Namespace,
+    rows: list[verdicts.Verdict],
+    stale: list[R.Worktree],
+    records: list[R.Worktree],
+) -> dict[str, object]:
+    """The object `gws --json` and `gwp --json` print."""
+    return {
+        **_envelope(args),
+        "stale": [w.path for w in stale],
+        # Nothing here reads or removes a neighbour; a caller counting
+        # directories needs to know they are not all this repository's.
+        "neighbours": _neighbours(records),
+        # `ignored` and `sha` are fields rather than facts to parse back out
+        # of `why`. A caller deciding whether to pass --delete-ignored wants
+        # the count, not a sentence that happens to contain it, and the sha
+        # is what the verdict was formed against.
+        "verdicts": [
+            {
+                "verdict": v.verdict,
+                "branch": v.branch,
+                "path": v.path,
+                "why": v.why,
+                "ignored": v.ignored,
+                "sha": v.sha,
+            }
+            for v in _only(args, rows)
+        ],
+    }
+
+
+def _report(
+    args: argparse.Namespace,
+    rows: list[verdicts.Verdict],
+    stale: list[R.Worktree],
+    records: list[R.Worktree],
+) -> None:
+    """The table, the counts and the notes `gws` and `gwp` print. Under
+    `--list` the table alone, uncoloured, and the notes on stderr."""
+    from . import layout, verdicts
+
+    plain = getattr(args, "list", False)
+    print(_verdict_table(_only(args, rows), plain=plain))
     if args.quiet:
-        return failed
+        return
 
     # Every row counted, --only or not, so a filtered table still says what
     # it is not showing.
-    print()
-    print(_counted(rows))
+    if not plain:
+        print()
+        print(_counted(rows))
     if len(rows) < 2:
         _err(render.note("no worktrees besides the main checkout; gwa NAME makes one"))
     if stale:
         _warn(
             f"{len(stale)} stale record(s) for directories that are gone; "
-            "gwp clears them"
+            "a gwp that removes something clears them"
         )
+    others = _neighbours(records)
     if others:
-        root = layout.worktrees_root(main)
+        root = layout.worktrees_root(records[0].path)
         _err(
             render.note(
                 f"{others} worktree(s) under {root} belong to another repository"
             )
         )
+    unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
     if unknown:
         names = ", ".join(render.branch(v.label) for v in unknown)
         _warn(f"unclear, and gwp does not touch these: {names}")
-    if go:
-        _err(render.note(f"gwp removes the {len(go)} marked removable"))
-    return failed
 
 
 # --------------------------------------------------------------------------
@@ -386,76 +416,66 @@ def run_status(args: argparse.Namespace) -> int:
 
 
 def run_prune(args: argparse.Namespace) -> int:
-    """Remove exactly what status marks removable, having asked first."""
+    """Print the assessment, then remove what it marks removable: having
+    asked, at a terminal, or under --yes. Anything else only reports."""
     import json
 
-    from . import prune, verdicts
+    from . import prune
     from .git import options
 
     options.verbose = args.verbose
     if args.explain:
         return _explain()
 
-    # Before anything changes, so a refusal leaves the records as they were.
+    asks = sys.stdin.isatty() and not args.json and not args.list
     head = _assessment_head(args)
-    _require(head[0])
-    # git's own bookkeeping for worktrees whose directories somebody removed
-    # by hand. A stale record answers for a directory that is not there, and
-    # neither command may propose removing one.
-    prune.worktree_prune()
+    if args.yes or asks:
+        # Before anything is judged, so a refusal is the whole of the output.
+        _require(head[0])
+    elif not head[0].resolves:
+        _err(render.fail(head[0].problem()))
 
-    rows, _, _, _, _ = _assess(args, head)
+    rows, stale, _, _, records = _assess(args, head)
     go = prune.removable(rows)
-    unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
-    errors = int(any(v.error for v in rows))
+    errors = int(not head[0].resolves or any(v.error for v in rows))
+    result = _assessment(args, rows, stale, records) if args.json else {}
 
-    if not go:
-        # The reason each one stayed, here, rather than the name of the
-        # command that would have printed it.
+    if not args.json:
+        _report(args, rows, stale, records)
+        # The table reaches a pipe ahead of the disclosure and the prompt.
+        sys.stdout.flush()
+
+    if not go or not (args.yes or asks):
+        if args.yes and args.json:
+            result |= {"removed": [], "failed": 0}
         if args.json:
-            print(json.dumps({**_envelope(args), "removed": [], "failed": 0}, indent=2))
+            print(json.dumps(result, indent=2))
+        if not go:
+            _err(render.note("nothing to remove"))
         else:
-            print(_verdict_table(rows))
-            if not args.quiet:
-                print()
-                print(f"nothing to remove; {_counted(rows)}")
-                if len(rows) < 2:
-                    _err(
-                        render.note(
-                            "no worktrees besides the main checkout; gwa NAME makes one"
-                        )
-                    )
+            _err(render.note(f"{len(go)} would be removed; gwp --yes removes them"))
         return errors
-
-    if unknown and not args.quiet:
-        names = ", ".join(render.branch(v.label) for v in unknown)
-        _warn(f"unclear, and this does not touch them: {names}")
 
     # What goes, and what puts it back, before anything does. On stderr with
     # the rest of the diagnostics, so stdout carries the result alone;
     # --quiet and --yes do not silence it.
     never = prune.plan(go, _err)
-
-    # A Refused from here goes to _dispatch, which exits 3 for every refusal.
-    # No terminal is one condition, so it is one code wherever it is met.
     if not args.yes and not prune.confirm(len(go), never=never):
         _err(render.note("nothing removed"))
-        return 0
+        return errors
 
     failed = prune.sweep(go, _err)
-    removed = [v.label for v in go]
     if args.json:
-        print(
-            json.dumps(
-                {**_envelope(args), "removed": removed, "failed": failed}, indent=2
-            )
-        )
+        result |= {"removed": [v.label for v in go], "failed": failed}
+        print(json.dumps(result, indent=2))
     elif failed:
         _err(
             render.fail(
                 f"{failed} of {len(go)} could not be removed; each said why above"
             )
         )
+    elif args.list:
+        print(f"removed {len(go)} worktree(s): {', '.join(v.label for v in go)}")
     else:
         names = ", ".join(render.out(v.label, render.BRANCH) for v in go)
         print(f"removed {len(go)} worktree(s): {names}")
@@ -1238,6 +1258,13 @@ def _add_status_flags(p: argparse.ArgumentParser) -> None:
 
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
+    add_status_flags(p)
+    p.add_argument(
+        "-l",
+        "--list",
+        action="store_true",
+        help="print the table uncoloured and ask nothing",
+    )
     p.add_argument(
         "-y", "--yes", action="store_true", help="do not ask before removing"
     )
@@ -1461,7 +1488,11 @@ _CANONICAL = _canonical()
 
 
 _STATUS_HELP = "Say which of this repository's worktrees are finished, and why."
-_PRUNE_HELP = "Remove the worktrees gws marks removable, and their branches."
+_PRUNE_HELP = (
+    "Print the assessment gws prints. At a terminal, ask before removing the "
+    "worktrees it marks removable, and their branches; elsewhere only report, "
+    "unless --yes."
+)
 _NEW_BRANCH_HELP = "Branch NAME off the head branch and check it out."
 _ROTATE_HELP = (
     "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
@@ -1660,7 +1691,7 @@ def _dispatch(
     if "--dry-run" in raw and not branch_delete:
         _err(
             render.fail(
-                "there is no --dry-run: gws reports, and gwp asks before removing"
+                "there is no --dry-run: gwp reports without a terminal and asks at one"
             )
         )
         return 2

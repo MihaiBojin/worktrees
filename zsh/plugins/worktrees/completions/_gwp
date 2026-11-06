@@ -5,6 +5,8 @@
 _arguments -s \
     '--branch[consider only that branch]:branch:' \
     '--delete-ignored[count gitignored files as removable]' \
+    '*--only[show only rows with this verdict]:verdict:(remove keep unknown)' \
+    '(-l --list)'{-l,--list}'[print the table uncoloured and ask nothing]' \
     '(-y --yes)'{-y,--yes}'[do not ask before removing]' \
     '--json[verdicts as data]' \
     '(-q --quiet)'{-q,--quiet}'[verdicts only]' \

@@ -114,7 +114,7 @@ def test_an_unresolved_head_has_a_null_ref(world, setup, source, argv) -> None:
 def test_each_command_keeps_its_own_fields(world) -> None:
     keys = {
         "gws": {"stale", "neighbours", "verdicts"},
-        "gwp": {"removed", "failed"},
+        "gwp": {"stale", "neighbours", "verdicts", "removed", "failed"},
         "gwr": {"removed", "path"},
         "gwbs": {"head_sha", "verdicts"},
         "gwbd": {"head_sha", "verdicts", "removed", "failed"},
