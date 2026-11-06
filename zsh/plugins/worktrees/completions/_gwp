@@ -4,7 +4,7 @@
 
 _arguments -s \
     '--delete-ignored[count gitignored files as removable]' \
-    '*--only[show only rows with this verdict]:verdict:(remove keep unknown)' \
+    '*--only[narrow the table; what is removed stays the same]:verdict:(remove keep unknown)' \
     '(-l --list)'{-l,--list}'[print the table uncoloured and ask nothing]' \
     '(-y --yes)'{-y,--yes}'[do not ask before removing]' \
     '--json[verdicts as data]' \

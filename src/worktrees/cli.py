@@ -61,13 +61,15 @@ def _verdict_table(rows: list[verdicts.Verdict], plain: bool = False) -> str:
     return table([head, *body])
 
 
-def _counted(rows: list[verdicts.Verdict]) -> str:
-    """How many of each verdict, in the verdicts' own colours."""
+def _counted(rows: list[verdicts.Verdict], paint: render.Ink = render.out) -> str:
+    """How many of each verdict, in the verdicts' own colours as the stream
+    `paint` writes to shows them."""
     from . import prune, verdicts
 
     # `removable` rather than the verdict, so the count is what gwp removes.
     go = {id(v) for v in prune.removable(rows)}
     return render.counted(
+        paint,
         [
             verdicts.REMOVE
             if id(v) in go
@@ -75,19 +77,22 @@ def _counted(rows: list[verdicts.Verdict]) -> str:
             if v.verdict == verdicts.UNKNOWN
             else verdicts.KEEP
             for v in rows
-        ]
+        ],
     )
 
 
-def add_status_flags(p: argparse.ArgumentParser) -> None:
-    """The `--only` filter `gwp` and `gwbs` take."""
+def add_status_flags(
+    p: argparse.ArgumentParser,
+    text: str = "show only rows with this verdict (remove, keep or unknown); "
+    "repeat for more",
+) -> None:
+    """The `--only` that `gwp` and `gwbs` take."""
     p.add_argument(
         "--only",
         action="append",
         choices=render.VERDICTS,
         metavar="VERDICT",
-        help="show only rows with this verdict (remove, keep or unknown); "
-        "repeat for more",
+        help=text,
     )
 
 
@@ -337,8 +342,9 @@ def _report(
     stale: list[R.Worktree],
     records: list[R.Worktree],
 ) -> None:
-    """The table, the counts and the notes `gwp` prints. Under
-    `--list` the table alone, uncoloured, and the notes on stderr."""
+    """The table, the counts and the notes `gwp` prints. Under `--list`
+    the table alone is on stdout, uncoloured, and the counts join the notes
+    on stderr."""
     from . import layout, verdicts
 
     plain = getattr(args, "list", False)
@@ -348,7 +354,9 @@ def _report(
 
     # Every row counted, --only or not, so a filtered table still says what
     # it is not showing.
-    if not plain:
+    if plain:
+        _err(render.note(_counted(rows, render.err)))
+    else:
         print()
         print(_counted(rows))
     if len(rows) < 2:
@@ -437,7 +445,8 @@ def run_prune(args: argparse.Namespace) -> int:
             )
         )
     elif args.list:
-        print(f"removed {len(go)} worktree(s): {', '.join(v.label for v in go)}")
+        names = ", ".join(render.branch(v.label) for v in go)
+        _err(render.note(f"removed {len(go)} worktree(s): {names}"))
     else:
         names = ", ".join(render.out(v.label, render.BRANCH) for v in go)
         print(f"removed {len(go)} worktree(s): {names}")
@@ -1215,7 +1224,11 @@ def _complete_commands() -> int:
 
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
-    add_status_flags(p)
+    add_status_flags(
+        p,
+        text="narrow the table to rows with this verdict (remove, keep or "
+        "unknown), repeatable; what is removed stays the same",
+    )
     p.add_argument(
         "-l",
         "--list",

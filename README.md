@@ -308,7 +308,8 @@ A run that removes nothing writes nothing: no ref, no directory, and no
 `git worktree prune`. `-y` removes without asking, in every mode, and still
 prints the disclosure first. `--json` prints the assessment as an object,
 with `removed` and `failed` added under `--yes`; `gwp --yes --json` is what an
-agent runs. `--list` prints the table uncoloured and nothing else on stdout.
+agent runs. `--list` prints the table uncoloured and nothing else on stdout;
+the counts and the result line go to stderr.
 `--only VERDICT` narrows the table and the JSON rows, and never the set
 removed: the disclosure names every target.
 

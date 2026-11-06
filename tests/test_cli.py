@@ -534,6 +534,23 @@ def test_gwp_list_is_never_coloured(world) -> None:
     assert "\x1b" in out, "the control: the same stdout is painted without --list"
 
 
+def test_gwp_list_puts_the_table_alone_on_stdout(world) -> None:
+    world.worktree("done")
+    listed = run(world, "gwp", "--list")
+    assert len(listed.stdout.splitlines()) == 3, listed.stdout
+    assert "1 removable, 1 kept, 0 unclear" in listed.stderr
+    p = run(world, "gwp", "--list", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert p.stdout == listed.stdout
+    assert "1 removable, 1 kept, 0 unclear" in p.stderr
+    assert "removed 1 worktree(s): done" in p.stderr
+
+
+def test_gwp_only_help_says_the_targets_stay(world) -> None:
+    p = run(world, "gwp", "--help")
+    assert "what is removed stays the same" in " ".join(p.stdout.split())
+
+
 def test_gwp_only_narrows_the_table_and_not_the_targets(world) -> None:
     wt = world.worktree("done")
     world.worktree("busy")
