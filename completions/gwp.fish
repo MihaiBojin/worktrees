@@ -6,7 +6,6 @@ complete -c gwp -l branch -d 'consider only that branch'
 complete -c gwp -l no-fetch -d 'use the refs already here'
 complete -c gwp -l force-refresh -d 'fetch even when the last fetch is under 10 minutes old'
 complete -c gwp -l delete-ignored -d 'count gitignored files as removable'
-complete -c gwp -l no-forge -d 'decide from git alone; never ask the forge'
 complete -c gwp -s y -l yes -d 'do not ask before removing'
 
 complete -c gwp -l json -d 'verdicts as data'

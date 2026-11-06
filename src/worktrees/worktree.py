@@ -237,8 +237,6 @@ def removable(
     head: str,
     head_branch: str,
     delete_ignored: bool,
-    remote: str,
-    ask_forge: bool = True,
 ) -> list[Verdict]:
     """Every worktree, judging the one you stand in like any other.
 
@@ -252,9 +250,7 @@ def removable(
         head,
         head_branch,
         delete_ignored,
-        remote,
         here="",
-        ask_forge=ask_forge,
     )
 
 

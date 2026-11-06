@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from urllib.parse import urlsplit
 
 from . import forge
@@ -27,6 +27,17 @@ class Request:
 
     def data(self) -> dict:
         return asdict(self)
+
+    @classmethod
+    def from_data(cls, data: object) -> Request | None:
+        """The request `data()` wrote, or None for anything else."""
+        kinds: dict[object, type] = {"int": int, "str": str, "bool": bool}
+        names = {f.name: kinds[f.type] for f in fields(cls)}
+        if not isinstance(data, dict) or set(data) != set(names):
+            return None
+        if any(type(data[name]) is not kind for name, kind in names.items()):
+            return None
+        return cls(**data)
 
     def unverified_reason(self, branch: str, sha: str, head_branch: str) -> str:
         if self.source_branch != branch or self.source_sha != sha:

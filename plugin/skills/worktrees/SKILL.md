@@ -50,8 +50,9 @@ gws --json | jq -c '{
 ```
 
 - `branches` are local branches with no worktree that `gwbd` would delete.
-  `proof` is `ancestry`, `squash`, `content` or `forge`; `undo` recreates the
-  branch.
+  `proof` is `forge`, `ancestry`, `squash` or `content`; `forge` means a
+  merged request the last `gw sync` recorded for this tip. `undo` recreates
+  the branch.
 - `worktrees` are linked worktrees `gwp` would remove, together with their
   branches. `why` names the proof, such as `its tree or combined patch is
   already in the head branch`.

@@ -20,8 +20,6 @@ complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcomman
     -l no-fetch -d 'use the refs already here'
 complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from status delete' \
     -l force-refresh -d 'fetch even when the last fetch is under 10 minutes old'
-complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from status delete' \
-    -l no-forge -d 'never ask GitHub or GitLab'
 complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from status' \
     -l only -x -a 'remove keep unknown' -d 'show only rows with this verdict'
 complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from delete' \

@@ -167,7 +167,7 @@ def test_json_carries_the_ignored_count_as_a_number(world) -> None:
     world.git("merge", "--quiet", "--ff-only", "main", at=wt)
     wt.joinpath(".env").write_text("S=1\n")
 
-    p = run(world, "gws", "--no-fetch", "--no-forge", "--json")
+    p = run(world, "gws", "--no-fetch", "--json")
     assert p.returncode == 0, p.stderr
     rows = {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
     row = rows["holds-secrets"]
@@ -181,7 +181,7 @@ def test_json_carries_the_ignored_count_as_a_number(world) -> None:
 def test_json_carries_the_sha_the_verdict_was_formed_against(world) -> None:
     wt = world.worktree("done")
     head = world.git("rev-parse", "HEAD", at=wt)
-    p = run(world, "gws", "--no-fetch", "--no-forge", "--json")
+    p = run(world, "gws", "--no-fetch", "--json")
     assert p.returncode == 0, p.stderr
     row = json.loads(p.stdout)["verdicts"][0]
     assert row["sha"] == head
@@ -206,7 +206,7 @@ def test_status_counts_the_worktrees_belonging_to_a_sibling(world) -> None:
     else says so: the directories there are not all this repository's."""
     world.worktree("mine")
     world.sibling("other", "theirs")
-    p = run(world, "gws", "--no-fetch", "--no-forge")
+    p = run(world, "gws", "--no-fetch")
     assert p.returncode == 0, p.stderr
     root = world.parent / ".worktrees"
     assert f"1 worktree(s) under {root} belong to another repository" in p.stderr
@@ -215,17 +215,17 @@ def test_status_counts_the_worktrees_belonging_to_a_sibling(world) -> None:
 
 def test_status_says_nothing_when_the_root_is_all_ours(world) -> None:
     world.worktree("mine")
-    p = run(world, "gws", "--no-fetch", "--no-forge")
+    p = run(world, "gws", "--no-fetch")
     assert p.returncode == 0, p.stderr
     assert "another repository" not in p.stderr
 
 
 def test_json_carries_the_neighbour_count_as_a_number(world) -> None:
     world.worktree("mine")
-    p = run(world, "gws", "--no-fetch", "--no-forge", "--json")
+    p = run(world, "gws", "--no-fetch", "--json")
     assert json.loads(p.stdout)["neighbours"] == 0
     world.sibling("other", "theirs")
-    p = run(world, "gws", "--no-fetch", "--no-forge", "--json")
+    p = run(world, "gws", "--no-fetch", "--json")
     assert json.loads(p.stdout)["neighbours"] == 1
 
 
@@ -474,7 +474,7 @@ def test_anything_but_a_command_runs_list(world, entry: str, args) -> None:
 
 def test_a_command_beats_a_worktree_of_the_same_name(world) -> None:
     world.worktree("status")
-    p = run(world, "gw", "status", "--no-fetch", "--no-forge", "--json")
+    p = run(world, "gw", "status", "--no-fetch", "--json")
     assert p.returncode == 0, p.stderr
     assert "verdicts" in json.loads(p.stdout)
     listed = json.loads(run(world, "gw", "list", "status", "--json").stdout)
@@ -813,13 +813,6 @@ def test_explain_names_every_refusal_the_guard_holds(world) -> None:
         assert named in flat, named
 
 
-def test_remove_takes_no_forge_like_status_and_prune(world) -> None:
-    world.worktree("done")
-    assert "--no-forge" in run(world, "gwr", "--help").stderr
-    p = run(world, "gwr", "--no-fetch", "--no-forge", "done", "-y")
-    assert p.returncode == 0, p.stderr
-
-
 # --------------------------------------------------------------------------
 # a stash outlives the branch it names
 # --------------------------------------------------------------------------
@@ -838,7 +831,7 @@ def test_a_removal_names_the_stash_made_on_the_branch(world) -> None:
     world.git("add", "--", "f.txt")
     world.git("commit", "--quiet", "-m", "squash of wip")
 
-    p = run(world, "gwp", "--no-fetch", "--no-forge", "-y")
+    p = run(world, "gwp", "--no-fetch", "-y")
     assert p.returncode == 0, p.stderr
     assert "stash@{0} was made on this branch and outlives it" in p.stderr
     assert "git stash branch <new> stash@{0}" in p.stderr
@@ -858,7 +851,7 @@ def test_a_stash_on_another_branch_is_not_named(world) -> None:
     world.git("add", "--", "f.txt")
     world.git("commit", "--quiet", "-m", "squash of wip")
 
-    p = run(world, "gwp", "--no-fetch", "--no-forge", "-y")
+    p = run(world, "gwp", "--no-fetch", "-y")
     assert p.returncode == 0, p.stderr
     assert "was made on this branch" not in p.stderr
 
@@ -932,15 +925,15 @@ def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
             ("list", (), "which? [up/down and enter, 1-3, or esc to cancel] "),
             (
                 "remove",
-                ("--no-fetch", "--no-forge"),
+                ("--no-fetch",),
                 "which? [up/down and enter, 1-2, or esc to cancel] ",
             ),
             (
                 "remove",
-                ("--no-fetch", "--no-forge", "one"),
+                ("--no-fetch", "one"),
                 "remove 1 worktree(s)? [y/N] ",
             ),
-            ("prune", ("--no-fetch", "--no-forge"), "remove 2 worktree(s)? [y/N] "),
+            ("prune", ("--no-fetch",), "remove 2 worktree(s)? [y/N] "),
         )
         for entry, prefix in (
             (cli._COMMANDS[command].binary or "gw", ()),
@@ -1008,16 +1001,16 @@ def test_status_lists_the_main_checkout_and_never_proposes_it(world) -> None:
     """A listing that leaves it out shows one row where `git worktree list`
     shows two, which reads as though something went missing."""
     world.worktree("done")
-    p = run(world, "gws", "--no-fetch", "--no-forge")
+    p = run(world, "gws", "--no-fetch")
     assert p.returncode == 0, p.stderr
     assert "it is the main checkout, and never removable" in p.stdout
     assert p.stdout.count("keep") == 1
     assert "1 removable, 1 kept, 0 unclear" in p.stdout
     rows = {
         v["branch"]: v
-        for v in json.loads(
-            run(world, "gws", "--no-fetch", "--no-forge", "--json").stdout
-        )["verdicts"]
+        for v in json.loads(run(world, "gws", "--no-fetch", "--json").stdout)[
+            "verdicts"
+        ]
     }
     assert set(rows) == {"main", "done"}
     assert rows["main"]["verdict"] == "keep"
@@ -1052,9 +1045,7 @@ def test_remove_starts_on_the_worktree_you_stand_in_and_lists_main_unnumbered(
 ) -> None:
     world.worktree("one")
     two = world.worktree("two")
-    code, out = run_on_a_terminal_at(
-        world, two, "gwr", "--no-fetch", "--no-forge", answer="\x1b"
-    )
+    code, out = run_on_a_terminal_at(world, two, "gwr", "--no-fetch", answer="\x1b")
     assert code == 0, out
     assert "  1  one" in out
     assert "> 2  two" in out
@@ -1070,18 +1061,14 @@ def test_remove_asks_before_deleting_ignored_files_on_a_terminal(world) -> None:
     wt = world.worktree("holds")
     (wt / ".env").write_text("SECRET=1\n")
 
-    code, out = run_on_a_terminal(
-        world, "gwr", "holds", "--no-fetch", "--no-forge", answer="n\n"
-    )
+    code, out = run_on_a_terminal(world, "gwr", "holds", "--no-fetch", answer="n\n")
     assert code == 0, out
     assert "holds 1 ignored path(s); they go with it" in out
     assert ".env" in out
     assert "nothing removed" in out
     assert wt.exists()
 
-    code, out = run_on_a_terminal(
-        world, "gwr", "holds", "--no-fetch", "--no-forge", answer="y\n"
-    )
+    code, out = run_on_a_terminal(world, "gwr", "holds", "--no-fetch", answer="y\n")
     assert code == 0, out
     assert not wt.exists()
 
@@ -1091,17 +1078,13 @@ def test_remove_asks_before_removing_an_unfinished_worktree_and_keeps_the_branch
 ) -> None:
     wt = world.worktree("busy")
     world.commit("b.txt", "b\n", at=wt)
-    code, out = run_on_a_terminal(
-        world, "gwr", "busy", "--no-fetch", "--no-forge", answer="n\n"
-    )
+    code, out = run_on_a_terminal(world, "gwr", "busy", "--no-fetch", answer="n\n")
     assert code == 0, out
     assert "is not finished" in out
     assert "removing the worktree keeps the branch" in out
     assert wt.exists()
 
-    code, out = run_on_a_terminal(
-        world, "gwr", "busy", "--no-fetch", "--no-forge", answer="y\n"
-    )
+    code, out = run_on_a_terminal(world, "gwr", "busy", "--no-fetch", answer="y\n")
     assert code == 0, out
     assert not wt.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/busy")
@@ -1118,9 +1101,7 @@ def test_list_marks_main_when_you_stand_in_it(world) -> None:
 def test_remove_lists_main_unnumbered_under_a_query_too(world) -> None:
     world.worktree("one")
     world.worktree("two")
-    code, out = run_on_a_terminal(
-        world, "gwr", "--no-fetch", "--no-forge", "o", answer="\x1b"
-    )
+    code, out = run_on_a_terminal(world, "gwr", "--no-fetch", "o", answer="\x1b")
     assert code == 0, out
     assert re.search(r"^  \*\s+repo\s+main\s", out, re.M), out
     assert "nothing picked" in out
@@ -1203,11 +1184,11 @@ def test_list_for_a_script_names_no_remote(world) -> None:
 def test_status_only_shows_the_verdicts_asked_for(world) -> None:
     """The table narrows; the counts still cover every row."""
     world.worktree("done")
-    whole = run(world, "gws", "--no-fetch", "--no-forge")
+    whole = run(world, "gws", "--no-fetch")
     assert whole.returncode == 0, whole.stderr
     assert "keep" in whole.stdout
 
-    p = run(world, "gws", "--no-fetch", "--no-forge", "--only", "remove")
+    p = run(world, "gws", "--no-fetch", "--only", "remove")
     assert p.returncode == 0, p.stderr
     table, _, counts = p.stdout.partition("\n\n")
     assert "keep" not in table
@@ -1216,7 +1197,7 @@ def test_status_only_shows_the_verdicts_asked_for(world) -> None:
 
 def test_status_only_narrows_json_too(world) -> None:
     world.worktree("done")
-    p = run(world, "gws", "--no-fetch", "--no-forge", "--json", "--only", "keep")
+    p = run(world, "gws", "--no-fetch", "--json", "--only", "keep")
     assert p.returncode == 0, p.stderr
     verdicts = [v["verdict"] for v in json.loads(p.stdout)["verdicts"]]
     assert verdicts and set(verdicts) == {"keep"}
@@ -1278,11 +1259,9 @@ def test_status_and_remove_list_in_the_same_order_as_list(world, entry) -> None:
         old = time.time() - age
         os.utime(admin / "commondir", (old, old))
 
-    args = ["--json", "--no-fetch", "--no-forge"]
+    args = ["--json", "--no-fetch"]
     if entry == "gwr":
-        code, out = run_on_a_terminal(
-            world, entry, "--no-fetch", "--no-forge", answer="\x1b"
-        )
+        code, out = run_on_a_terminal(world, entry, "--no-fetch", answer="\x1b")
         assert code == 0, out
         names = ("one", "two", "three")
         shown = [

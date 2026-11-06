@@ -8,7 +8,6 @@ complete -c gws -l force-refresh -d 'fetch even when the last fetch is under 10 
 complete -c gws -s f -d 'the same as --force-refresh'
 complete -c gws -l only -x -a 'remove keep unknown' -d 'show only rows with this verdict'
 complete -c gws -l delete-ignored -d 'count gitignored files as removable'
-complete -c gws -l no-forge -d 'decide from git alone; never ask the forge'
 
 complete -c gws -l json -d 'verdicts as data'
 complete -c gws -s q -l quiet -d 'verdicts only'

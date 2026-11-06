@@ -7,7 +7,6 @@ _arguments -s \
     '--no-fetch[use the refs already here]' \
     '--force-refresh[fetch even when the last fetch is under 10 minutes old]' \
     '--delete-ignored[count gitignored files as removable]' \
-    '--no-forge[decide from git alone; never ask the forge]' \
     '(-y --yes)'{-y,--yes}'[do not ask before removing]' \
     '--json[verdicts as data]' \
     '(-q --quiet)'{-q,--quiet}'[verdicts only]' \

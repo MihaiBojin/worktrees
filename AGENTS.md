@@ -324,7 +324,7 @@ indented, its exit code when that is not 0 or is the only answer, then a
 blank line. Printing after the run keeps a command and its answer together
 when eight threads are asking at once.
 
-## A recent fetch is reused, and the forge is asked every time
+## A recent fetch is reused, and the forge is asked only by gw sync
 
 The README's "What is reused, and for how long" table lists every case and
 its lifetime. It is the one copy: the constant is `cli._FRESH`, and a change
@@ -337,12 +337,12 @@ time it runs, and is the only command that writes `git-worktrees-sync.json`. FET
 `repo.fetched_at` reads every copy.
 
 `gw sync` records the forge's answer for every branch tip in that file,
-keyed by branch and the SHA it asked about. No assessment reads it, so a
-branch git cannot settle costs one round trip on every run that asks.
+keyed by branch and the SHA it asked about. Assessment reads it once per run
+through `sync.read()` and never runs `gh` or `glab`; `branch_forge.request_for`
+and `forge.query` have `gw sync` as their only caller.
 
 The per-worktree checks run on eight threads. Each is independent, and the
-time goes waiting on git and on `gh`, one round trip per branch git cannot
-settle.
+time goes waiting on git.
 
 ## Every git command is one spec
 
@@ -434,9 +434,10 @@ confirmation and deletes refs with the full expected SHA and `--no-deref`.
 The branch content check compares every path changed from the merge base to
 the tip with the current head tree, including modes and deletions. It can
 prove a re-imported change even when the head branch has unrelated edits.
-Forge evidence must match the source tip, source repository, and target
-branch, with a merge commit contained in the head branch. A closed unmerged
-request is never proof.
+Forge evidence comes from the last `gw sync` and must match the source tip,
+source repository, and target branch, with a merge commit present locally
+and contained in the head branch. A closed unmerged request is never proof,
+and neither is a missing, malformed or mismatched sync entry.
 
 `verdicts.prove` is that chain, and it judges a worktree's branch too:
 `gws` runs its worktree checks first and calls it for the rest. Ancestry,
@@ -450,11 +451,12 @@ Measured on this repository's own stack: `rotate` changed `README.md` by
 regions. `git merge-tree` reports a conflict, and a diff cannot tell that
 from real work left over. There is no content probe that answers this.
 
-So the forge answers it, asked last because it costs a round trip and only
-where git already failed. A request that names another tip, as a branch
-with commits made after the merge does, reads `unknown`. Evidence for this
-tip proves it, subject to the worktree protections. `--no-forge` keeps a
-run offline.
+So the forge answers it, through what `gw sync` recorded, and `prove`
+checks that first. The entry must be recorded at this tip: a branch with
+commits made after the sync has no evidence and git alone decides. A merged
+request that fails a check reads `unknown` unless ancestry, squash or content
+proves the branch. Evidence for this tip proves it, subject to the worktree
+protections.
 
 ## Three verdicts, and the third is not a softer second
 

@@ -9,7 +9,7 @@ command before asking for confirmation.
 gwbd old-fix finished-feature
 gwbd
 gwbd --all --dry-run
-gwbd old-fix --no-fetch --no-forge --yes --json
+gwbd old-fix --no-fetch --yes --json
 ```
 
 | Selection | Behaviour |

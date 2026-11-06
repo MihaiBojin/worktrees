@@ -5,7 +5,7 @@ from __future__ import annotations
 import shlex
 from dataclasses import asdict, dataclass, field
 
-from . import progress, prune, verdicts
+from . import progress, prune, sync, verdicts
 from . import repo as R
 from .git import GitError, Refused, git
 
@@ -41,10 +41,9 @@ def local_refs() -> dict[str, tuple[str, str]]:
     }
 
 
-def assess(
-    names: list[str], head_sha: str, head_branch: str, remote: str, ask_forge: bool
-) -> list[Verdict]:
+def assess(names: list[str], head_sha: str, head_branch: str) -> list[Verdict]:
     refs = local_refs()
+    evidence = (sync.read() or {}).get("evidence", {})
     missing = [name for name in names if name not in refs]
     if missing:
         raise ValueError("no local branch: " + ", ".join(missing))
@@ -68,17 +67,15 @@ def assess(
         elif symbolic:
             row.verdict, row.why = "keep", "it is a symbolic branch ref"
         else:
-            # One at a time, and each can cost a round trip to the forge, so
-            # the count says how far through a long list this is.
+            # One at a time, so the count says how far through a long list
+            # this is.
             of = f" ({i} of {len(wanted)})" if len(wanted) > 1 else ""
 
             def say(question: str, name: str = name, of: str = of) -> None:
                 progress.say(f"{name}: {question}{of}")
 
             try:
-                found = verdicts.prove(
-                    sha, name, head_sha, head_branch, remote, ask_forge, say
-                )
+                found = verdicts.prove(sha, name, head_sha, head_branch, evidence, say)
                 row.verdict, row.why = found.verdict, found.why
                 row.proof, row.request = found.proof, found.request
             except GitError as exc:
@@ -91,13 +88,11 @@ def delete(
     head_ref: str,
     head_sha: str,
     head_branch: str,
-    remote: str,
-    ask_forge: bool,
 ) -> None:
     """Recheck the verdict and delete only the commit the user approved."""
     if prune.sha_of(head_ref).out.strip() != head_sha:
         raise Refused("the head branch changed after assessment; run the command again")
-    fresh = assess([row.branch], head_sha, head_branch, remote, ask_forge)[0]
+    fresh = assess([row.branch], head_sha, head_branch)[0]
     if fresh.sha != row.sha:
         raise Refused(f"{row.branch} changed after assessment; run the command again")
     if fresh.verdict != "remove":

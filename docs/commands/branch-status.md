@@ -7,7 +7,7 @@ An unknown name stops the command with exit 2.
 
 ```console
 gwbs
-gwbs feature old-fix --no-fetch --no-forge
+gwbs feature old-fix --no-fetch
 worktrees branch status --json
 ```
 
@@ -31,10 +31,10 @@ The checks run in this order and stop at the first proof:
 
 | `proof` | Check |
 | --- | --- |
+| `forge` | The last `gw sync` recorded a merged GitHub PR or GitLab MR for this source tip, with a merge commit contained in the head branch. |
 | `ancestry` | The branch tip is an ancestor of the head commit. |
 | `squash` | The trees match, or the branch's combined patch matches a patch in the head branch. |
 | `content` | Every path changed from the common ancestor to the branch tip has the same final state in the head commit. |
-| `forge` | A merged GitHub PR or GitLab MR identifies this source tip and a merge commit contained in the head branch. |
 
 The content check includes file modes and object IDs. Deleted paths must be
 absent in both trees. Renames are compared as deletion plus addition. Changes
@@ -52,13 +52,17 @@ ancestry or squash evidence can still prove that the work was merged.
 
 ## GitHub and GitLab
 
-The forge is queried only when git has not proved the branch finished.
-`gh pr list` or `glab mr list` requests the newest request for that source
+Assessment never runs `gh` or `glab`. It reads the evidence the last
+[`gw sync`](../../README.md#gw-sync) recorded in `git-worktrees-sync.json`,
+one entry per local branch, keyed by the tip that was asked about. At sync,
+`gh pr list` or `glab mr list` requests the newest request for each source
 branch, explicitly in the default remote's repository. `GH_REPO` and
 `GITLAB_REPO` cannot redirect the query.
 
 A forge proof requires all of these facts:
 
+- The sync file names the default remote and its current URL.
+- The entry was recorded at the branch's current tip.
 - The request is `MERGED` and has a merge timestamp.
 - The source repository and branch match, and the source SHA equals the
   local branch tip being assessed.
@@ -69,7 +73,9 @@ A forge proof requires all of these facts:
 A missing remote branch is not evidence of a merge. Reusing a branch name
 after an earlier PR or MR does not make its new commits removable. A missing
 SHA or a mismatched repository prevents forge proof. Requests from forks
-require independent git proof.
+require independent git proof. A branch moved since the last sync, and a
+sync file that is missing or malformed, give no forge evidence; git alone
+decides.
 
 A `CLOSED` request without a merge never grants permission to delete. Its
 branch can still qualify through git evidence, including identical changed
@@ -83,29 +89,30 @@ GitHub queries request `headRefOid`, `headRefName`, `headRepository`,
 [GitLab merge request API](https://docs.gitlab.com/api/merge_requests/).
 
 Hostnames `github.com` and `github.*` select `gh`; `gitlab.com` and
-`gitlab.*` select `glab`. Other hosts use git evidence only. The selected
-CLI must be installed and authenticated. Missing tools, failed requests, and
-malformed responses cannot authorize deletion.
+`gitlab.*` select `glab`. Other hosts use git evidence only. `gw sync` needs
+the selected CLI installed and authenticated. Missing tools, failed requests,
+and malformed responses record no evidence, so they cannot authorize
+deletion.
 
 ## Flags and output
 
 | Flag | Behaviour |
 | --- | --- |
-| `--no-fetch` | Use existing refs. Forge queries remain enabled. |
-| `--no-forge` | Use git evidence only. Combine with `--no-fetch` for offline use. |
+| `--no-fetch` | Use existing refs. |
 | `--json` | Print structured evidence on stdout. Diagnostics use stderr. |
 | `-q`, `--quiet` | Omit the summary. |
 | `-v`, `--verbose` | Print executed commands on stderr. |
 | `--explain` | Print the declared git commands and safety rules, then exit. |
 
 A run fetches the default remote's refs unless `--no-fetch` is given. A failed
-fetch reports the failure and disables forge queries for that invocation.
+fetch reports the failure and judges from the refs already here.
 
 JSON contains `head`, `head_sha`, and `verdicts`. Each verdict has `branch`,
 `sha`, `verdict`, `why`, `proof`, `paths`, `request`, `error`, and `undo`.
-`request` is null when no usable forge response was obtained or no query was
-needed. Otherwise it records the request number, URL, state, repository,
-source branch and SHA, target branch, merge SHA, and merge timestamp.
+`request` is null when the last sync recorded no usable request for this tip,
+or a git check proved the branch. Otherwise it records the request number,
+URL, state, repository, source branch and SHA, target branch, merge SHA, and
+merge timestamp.
 
 Exit 0 means assessment completed, including `keep` and `unknown` results.
 Exit 1 means a git operation failed. Exit 2 means invalid usage. Ctrl-C exits

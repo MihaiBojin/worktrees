@@ -438,3 +438,26 @@ def test_a_failed_fetch_leaves_the_evidence(world) -> None:
     assert p.returncode == 1
     assert record(world) == before
     assert not marker.exists(), "the forge was asked after a failed fetch"
+
+
+@pytest.mark.parametrize(
+    ("source", "target"), [(True, True), (1, True), (7, 7.0), (None, None)]
+)
+def test_gitlab_requires_integer_project_ids(world, source, target) -> None:
+    forge_remote(world, "gitlab")
+    world.git("branch", "feature")
+    row = json.loads(a_request(world, "gitlab", "feature"))[0]
+    row.update(source_project_id=source, target_project_id=target)
+    p = synced(world, fake(world, "gitlab", {"feature": json.dumps([row])}))
+    assert p.returncode == 0, p.stderr
+    assert record(world)["evidence"]["feature"]["request"]["same_repository"] is False
+
+
+@pytest.mark.parametrize("payload", ["null", "{}", "[null]", '[{"number": "invalid"}]'])
+def test_a_malformed_answer_records_no_evidence(world, payload) -> None:
+    forge_remote(world)
+    world.git("branch", "feature")
+    p = synced(world, fake(world, "github", {"feature": payload}))
+    assert p.returncode == 1
+    assert "the forge did not answer for feature" in p.stderr
+    assert "feature" not in record(world)["evidence"]

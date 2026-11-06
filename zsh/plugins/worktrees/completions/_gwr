@@ -20,7 +20,6 @@ _arguments -s \
     '--delete-ignored[also delete its gitignored files]' \
     '--no-fetch[use the refs already here]' \
     '--force-refresh[fetch even when the last fetch is under 10 minutes old]' \
-    '--no-forge[decide from git alone; never ask the forge]' \
     '(-y --yes)'{-y,--yes}'[do not ask]' \
     '--json[the result as data]' \
     '(-q --quiet)'{-q,--quiet}'[the path alone]' \

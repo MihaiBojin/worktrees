@@ -235,7 +235,7 @@ word.
 
 | | means |
 | --- | --- |
-| `remove` | finished, and safe to remove. The reason says how it was proved: by ancestry, by squash, by content, by a merged request on the forge, or by a ref reaching a detached commit |
+| `remove` | finished, and safe to remove. The reason says how it was proved: by a merged request the last `gw sync` recorded, by ancestry, by squash, by content, or by a ref reaching a detached commit |
 | `keep` | something says no. Uncommitted work, the head branch, a lock, the worktree you are standing in, ignored files, or a branch sharing history with the head branch and holding work it lacks |
 | `unknown` | it could not tell. A branch with no common history with the head branch, forge evidence that does not match this tip, or a git command that failed while judging it, which also makes the command exit 1 |
 
@@ -245,23 +245,18 @@ same reason. The worktree checks come first: the main checkout, the one you
 stand in, a lock, the head branch and uncommitted changes each keep it before
 the proof runs, and ignored files hold back a `remove` after it.
 
-Where git cannot tell, the forge is asked. A branch merged as part of a
-stack is that case: its changes reach the head branch across several
-squashes, so the intermediate state it holds differs from the final one in
-the same regions, and a diff cannot separate a stale branch from one with
-work left. A merged request proves the branch only when it names this exact
-tip, came from this repository, targeted the head branch, and has a merge
-commit the head branch contains. Anything less reads `unknown`. The forge
-is asked on every run for each branch git cannot settle. `--no-forge`
-decides from git alone, and so does a run whose fetch just failed.
-
-The remote's URL picks the forge and the repository. A host of
-`github.com` or `github.*` is asked through `gh`, and `gitlab.com` or
-`gitlab.*` through `glab`, each passed that host and path and nothing else.
-Any other host, an ssh alias among them, gets git's answer alone.
-`GH_REPO` and `GITLAB_REPO` would override the repository passed, so both
-are dropped before `gh` or `glab` runs; everything else in the environment,
-the token included, is passed through.
+The forge's evidence comes first, and it comes from the last
+[`gw sync`](#gw-sync). No other command runs `gh` or `glab`. A branch
+merged as part of a stack needs it: its changes reach the head branch
+across several squashes, so the intermediate state it holds differs from
+the final one in the same regions, and a diff cannot separate a stale
+branch from one with work left. A recorded request proves the branch only
+when it was recorded for this exact tip, is merged, came from this
+repository, targeted the head branch, and has a merge commit that is here
+and that the head branch contains. A merged request that fails one of
+those reads `unknown`, unless git proves the branch on its own. A branch
+that moved since the sync, and a sync file that is missing, malformed or
+written for another remote URL, carry no evidence, and git alone decides.
 
 A record left behind by a directory somebody deleted by hand is nobody's
 verdict. `gws` names how many there are; clearing them is `git worktree prune`,
@@ -587,6 +582,14 @@ Every branch the forge did not answer for is named on stderr with the
 reason, such as the first line `gh` printed. A signed-out `gh` fails every
 question, so it keeps the last sync's evidence the way a missing one does.
 
+The remote's URL picks the forge and the repository. A host of
+`github.com` or `github.*` is asked through `gh`, and `gitlab.com` or
+`gitlab.*` through `glab`, each passed that host and path and nothing else.
+Any other host, an ssh alias among them, records no evidence.
+`GH_REPO` and `GITLAB_REPO` would override the repository passed, so both
+are dropped before `gh` or `glab` runs; everything else in the environment,
+the token included, is passed through.
+
 It takes `-q`, `-v` and `--explain`, and no `--json`. It has no console
 script of its own.
 
@@ -632,13 +635,13 @@ takes all of them but `--json`. Beyond those:
 
 | | |
 | --- | --- |
-| `gws` | `--branch NAME`, `--no-fetch`, `-f`/`--force-refresh`, `--delete-ignored`, `--no-forge`, `--only VERDICT` |
-| `gwp` | `--branch NAME`, `--no-fetch`, `--force-refresh`, `--delete-ignored`, `--no-forge`, and `-y` |
-| `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--force-refresh`, `--no-forge`, `-y` |
+| `gws` | `--branch NAME`, `--no-fetch`, `-f`/`--force-refresh`, `--delete-ignored`, `--only VERDICT` |
+| `gwp` | `--branch NAME`, `--no-fetch`, `--force-refresh`, `--delete-ignored`, and `-y` |
+| `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--force-refresh`, `-y` |
 | `gwa`, `gwbc` | `--no-fetch`, `--force-refresh` |
 | `gwrot` | `--no-fetch`, `-f`/`--force-refresh` |
-| `gwbs` | `--no-fetch`, `-f`/`--force-refresh`, `--no-forge`, `--only VERDICT` |
-| `gwbd` | `--no-fetch`, `--force-refresh`, `--no-forge`, `--all`, `--dry-run` and `-y` |
+| `gwbs` | `--no-fetch`, `-f`/`--force-refresh`, `--only VERDICT` |
+| `gwbd` | `--no-fetch`, `--force-refresh`, `--all`, `--dry-run` and `-y` |
 | `gw`, `gw list` | `-l` |
 | `gwm` | none |
 
@@ -662,21 +665,18 @@ A fetch is most of what a run costs, so a recent one is reused.
 | what | when | reused for |
 | --- | --- | --- |
 | a fetch, by `gws`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwbc`, `gwrot` | from any worktree of the repository | 10 minutes; the command says how old it is |
-| a request on the forge | any state, or no request at all | never; it is asked on every run |
+| a request on the forge | any state, or no request at all | until the next `gw sync`, and only for the tip it was recorded at |
 
 Every command works against one remote, the default remote:
 `checkout.defaultRemote` when it names a remote, otherwise the only remote. A
 repository with several remotes and no `checkout.defaultRemote` has none, and
-is treated like a repository with no remote at all: nothing is fetched, the
-forge is not asked, and the head branch comes from the local `main`,
+is treated like a repository with no remote at all: nothing is fetched, no
+forge evidence is read, and the head branch comes from the local `main`,
 `master` or `trunk`. `git config checkout.defaultRemote origin` picks one.
 
 A remote that cannot be reached is not fatal anywhere. The fetch fails, the
 command says so on stderr, and it answers from the refs already here, which is
-where `--no-fetch` sends it on request. The forge is not asked either: it is
-over the same network, and `gh` waits 30 seconds before saying so, once per
-branch. `--no-fetch` alone says nothing about the network, so it leaves the
-forge asked.
+where `--no-fetch` sends it on request.
 
 Data goes to stdout and diagnostics to stderr, the prompt included, so `--json`
 is parseable in every mode. Colour is decided per stream and only for a

@@ -169,11 +169,6 @@ def _add_assess_flags(p: argparse.ArgumentParser) -> None:
         "-v", "--verbose", action="store_true", help="print every git command"
     )
     p.add_argument(
-        "--no-forge",
-        action="store_true",
-        help="decide from git alone; never ask the forge",
-    )
-    p.add_argument(
         "--explain", action="store_true", help="print every git command and exit"
     )
 
@@ -214,17 +209,15 @@ def _should_fetch(args: argparse.Namespace) -> bool:
 def _assess(
     args: argparse.Namespace,
     judge: Callable[..., list[verdicts.Verdict]] | None = None,
-    ask_forge: bool | None = None,
 ) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
     """`_judge_all`, with a spinner on stderr saying what it is checking."""
     with progress.running(not args.quiet and not args.verbose):
-        return _judge_all(args, judge, ask_forge)
+        return _judge_all(args, judge)
 
 
 def _judge_all(
     args: argparse.Namespace,
     judge: Callable[..., list[verdicts.Verdict]] | None,
-    ask_forge: bool | None,
 ) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
     """Fetch, resolve the head branch, and judge every worktree.
 
@@ -235,19 +228,13 @@ def _judge_all(
     from . import repo as R
     from . import verdicts
 
-    head, head_branch, remote = _assessment_head(args)
+    head, head_branch, _ = _assessment_head(args)
 
     only = getattr(args, "branch", "")
     ignored = getattr(args, "delete_ignored", False)
     records = R.worktrees()
-    # The forge is asked last and only where git could not tell. It costs a
-    # round trip, and a branch merged as part of a stack is the one case
-    # content cannot answer: its changes reach the head branch across several
-    # squashes, so a stale intermediate and real work look alike to a diff.
-    if ask_forge is None:
-        ask_forge = not getattr(args, "no_forge", False)
     rows = (
-        judge(only, head, head_branch, ignored, remote, ask_forge=ask_forge)
+        judge(only, head, head_branch, ignored)
         if judge
         else verdicts.assess(
             records,
@@ -255,8 +242,6 @@ def _judge_all(
             head,
             head_branch,
             ignored,
-            remote,
-            ask_forge=ask_forge,
             # `gws` and `gwp` report; `gwr` acts, and takes this list as its
             # candidates, so it asks through `judge` and gets it without.
             include_main=True,
@@ -270,8 +255,6 @@ def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
     from . import repo as R
 
     remote = R.remote()
-    # A skipped fetch still leaves the forge asked: it is what settles a
-    # stacked branch, and it is not what the fetch refreshed.
     online = _should_fetch(args) if remote else not args.no_fetch
     if online:
         # An unreachable remote is not a reason to refuse to answer. It lands
@@ -280,15 +263,10 @@ def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
         progress.say(f"fetching {remote}")
         if remote and not R.fetch(remote):
             online = False
-            # The forge is reached over the network the fetch just failed on,
-            # and `gh` waits 30 seconds before saying so, once for every
-            # branch git could not call merged. It is asked for an answer git
-            # cannot give, not for one it is about to fail to give too.
-            args.no_forge = True
             if not args.quiet:
                 _warn(
                     f"{render.ref(remote)} could not be fetched; judging from the refs "
-                    "already here, and not asking the forge"
+                    "already here"
                 )
     elif args.no_fetch and not args.quiet:
         # A fetch reused because it is recent has already said so.
@@ -796,11 +774,6 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="fetch even when the last fetch is under 10 minutes old",
     )
-    p.add_argument(
-        "--no-forge",
-        action="store_true",
-        help="decide from git alone; never ask the forge",
-    )
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
     # Its own, not gw list's: assess skips the main checkout, so gwr can never act
     # on it and offering it would complete to "no worktree matches".
@@ -999,12 +972,7 @@ def run_remove(args: argparse.Namespace) -> int:
                 print(f"{w.label}\t{w.path}")
         return 0
 
-    # The picker shows a path and a branch and no verdict, so nothing before
-    # the answer needs the forge. Scanning without it turns one round trip per
-    # worktree into at most one for the whole command.
-    rows, _, head, head_branch, records = _assess(
-        args, judge=wt_mod.removable, ask_forge=False
-    )
+    rows, _, _, _, records = _assess(args, judge=wt_mod.removable)
     found = pick.matches(
         args.query, [R.Worktree(v.path, "", v.branch, frozenset()) for v in rows]
     )
@@ -1035,21 +1003,6 @@ def run_remove(args: argparse.Namespace) -> int:
         _err(render.note("nothing picked"))
         return 0
     chosen = by_path[picked.path]
-
-    # Now that there is one branch, the forge is worth a question: it is the
-    # only thing that settles a branch merged as part of a stack.
-    if chosen.verdict != prune.REMOVE and not args.no_forge:
-        with progress.running(not args.quiet and not args.verbose):
-            judged = wt_mod.removable(
-                chosen.branch,
-                head,
-                head_branch,
-                args.delete_ignored,
-                R.remote(),
-                ask_forge=True,
-            )
-        if judged:
-            chosen = judged[0]
 
     if chosen.error:
         _err(

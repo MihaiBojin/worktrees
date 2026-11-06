@@ -210,7 +210,7 @@ Four behaviours the field survey found nowhere else, of which three are here:
 
 | | state |
 | --- | --- |
-| a merged request as evidence only when it names this branch tip and a merge commit the head branch contains, asked of the repository the remote names and no other | `branch_forge.py`, `forge.REDIRECTS` and `verdicts.prove` |
+| a merged request as evidence only when it names this branch tip and a merge commit the head branch contains, asked by `gw sync` of the repository the remote names and no other | `branch_forge.py`, `forge.REDIRECTS`, `sync.py` and `verdicts.prove` |
 | a worktree belonging to another repository, which makes `git worktree list` return empty and so reads as "nothing is there" | `layout.owner_of`, reached from `gwa` |
 | the derived layout | `layout.destination` |
 | stash entries parked on a branch counting as work | **not needed.** The entry survives the removal and `git stash branch` recovers it, so there is nothing to keep. #39 names it instead |
@@ -248,7 +248,7 @@ unmerged work" passes while it holds.
 | B3 | plus a branch named `origin/main` | held: `refs/remotes/origin/main` wins the ladder | none |
 | B4 | `git config git-worktree-plugin.headBranch origin/main` | gone. There is no such key | |
 | B5 | `headBranch` naming a ref that does not exist | gone with B4 | |
-| B6 | `origin/HEAD` unset, no remote-tracking refs, remote unreachable | held since #46: the fetch and the `set-head` behind it answer 128 rather than raising, and the command says so and judges from the refs already here. The forge is not asked after a failed fetch either | `test_a_failed_fetch_still_answers_status`, `test_a_failed_fetch_stops_the_forge_being_asked` |
+| B6 | `origin/HEAD` unset, no remote-tracking refs, remote unreachable | held since #46: the fetch and the `set-head` behind it answer 128 rather than raising, and the command says so and judges from the refs already here | `test_a_failed_fetch_still_answers_status` |
 | B7 | detached-HEAD worktree | held: named, and judged on whether a ref reaches its commit | `test_a_detached_worktree_is_named_not_mistaken` |
 
 B2 and B3 are why the head-branch ladder returns a full ref.
@@ -297,8 +297,11 @@ Rules that each have a failure behind them:
 - Drive a real pty where the answer depends on a terminal. `pick.choose` and
   `prune.confirm` both branch on `isatty`, and a test that fakes it tests the
   fake.
-- A stub `gh` on `PATH` is what makes the forge assertable without a network.
-  It is a shell script that prints the rows the test wants.
+- A stub `gh` or `glab` on `PATH` is what makes `gw sync` assertable without
+  a network. It is a shell script that prints the rows the test wants. An
+  assessment test writes `git-worktrees-sync.json` itself through
+  `sync.write`, and a stub that records its calls proves no assessment runs
+  either CLI.
 - Every refusal assertion needs a canary the run must have issued. An empty
   call log is indistinguishable from a CLI that never reached git, and
   `test_no_unexpected_git_command_ran` asserts `len(options.log) > 5` before
@@ -367,7 +370,7 @@ more than 3.13 and nothing is wrong.
 ### How many git calls, which is a count rather than a clock
 
 Counts travel between repositories where milliseconds do not. Over nine
-linked worktrees, `gws --no-fetch --no-forge` issues 26:
+linked worktrees, `gws --no-fetch` issues 28:
 
 | | count |
 | --- | --- |
@@ -376,6 +379,7 @@ linked worktrees, `gws --no-fetch --no-forge` issues 26:
 | `show-ref --verify`, the head-branch ladder | 4 |
 | `worktree list --porcelain -z` | 2 |
 | `rev-parse --show-toplevel` and `remote` | 2 |
+| `rev-parse --git-common-dir` and `remote` again, reading the last sync | 2 |
 
 Eighteen of those were `status`, twice per worktree, until `#40`. They are
 serial: one process each, nothing overlapped.

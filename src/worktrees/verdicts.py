@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import branch_forge, forge, merged, progress
+from . import branch_forge, merged, progress, sync
 from . import repo as R
 from .git import GitError
 
@@ -76,8 +76,20 @@ def stale(records: list[R.Worktree]) -> list[R.Worktree]:
 class Proof:
     verdict: str
     why: str
-    proof: str = ""  # ancestry, squash, content or forge, on a remove
-    request: dict | None = None  # what the forge said, when it was asked
+    proof: str = ""  # forge, ancestry, squash or content, on a remove
+    request: dict | None = None  # what the last gw sync recorded for this tip
+
+
+def recorded(evidence: dict, branch: str, sha: str) -> branch_forge.Request | None:
+    """The request the last `gw sync` found for `branch` at exactly `sha`.
+
+    None when it found none, when the branch has moved since, and for an
+    entry in any shape `Request.data()` does not write.
+    """
+    entry = evidence.get(branch)
+    if not isinstance(entry, dict) or entry.get("sha") != sha:
+        return None
+    return branch_forge.Request.from_data(entry.get("request"))
 
 
 def prove(
@@ -85,16 +97,43 @@ def prove(
     branch: str,
     head: str,
     head_branch: str,
-    remote: str,
-    ask_forge: bool,
+    evidence: dict,
     say: Callable[[str], None],
 ) -> Proof:
     """Whether the change at `sha` is in the head branch.
 
-    The one proof a worktree and a loose branch are both judged by. The local
-    checks run first; the forge is asked only when they fail, and only its
-    evidence for exactly this tip, merged into the head branch, counts.
+    The one proof a worktree and a loose branch are both judged by.
+    `evidence` is what the last `gw sync` recorded per branch, and a merged
+    request it holds for exactly this tip, merged into the head branch, is
+    checked first. Nothing here asks the forge.
     """
+    found = Proof(UNKNOWN, "no proof that its change is in the head branch")
+    # A merged request that fails a check settles `unknown`, but only once
+    # git has had its say: content can still prove what the forge did not.
+    settled = False
+    request = recorded(evidence, branch, sha)
+    if request is not None:
+        say("did the last gw sync find it merged?")
+        found.request = request.data()
+        if request.state != "MERGED":
+            found.why = (
+                f"{request.noun} #{request.number} is "
+                f"{request.state.lower()}, not merged"
+            )
+        else:
+            settled = True
+            found.why = request.unverified_reason(branch, sha, head_branch)
+            if not found.why and not R.object_type(request.merge_sha):
+                found.why = "the request's merge commit is not available locally"
+            if not found.why:
+                if merged.is_ancestor(request.merge_sha, head):
+                    found.verdict, found.proof = REMOVE, "forge"
+                    found.why = (
+                        f"{request.noun} #{request.number} merged this tip "
+                        "into the head branch"
+                    )
+                    return found
+                found.why = "the request's merge commit is not in the head branch"
     for proof, why, question, check in (
         (
             "ancestry",
@@ -118,36 +157,8 @@ def prove(
         say(question)
         if check(sha, head):
             return Proof(REMOVE, why, proof)
-    found = Proof(UNKNOWN, "no proof that its change is in the head branch")
-    if ask_forge and remote:
-        say("asking the forge for its pull request")
-        try:
-            request = branch_forge.request_for(branch, remote)
-        except forge.Unanswered:
-            request = None
-        if request is not None:
-            found.request = request.data()
-            if request.state == "MERGED":
-                why = request.unverified_reason(branch, sha, head_branch)
-                if why:
-                    found.why = why
-                    return found
-                if not R.object_type(request.merge_sha):
-                    found.why = "the request's merge commit is not available locally"
-                    return found
-                if merged.is_ancestor(request.merge_sha, head):
-                    found.verdict, found.proof = REMOVE, "forge"
-                    found.why = (
-                        f"{request.noun} #{request.number} merged this tip "
-                        "into the head branch"
-                    )
-                    return found
-                found.why = "the request's merge commit is not in the head branch"
-                return found
-            found.why = (
-                f"{request.noun} #{request.number} is "
-                f"{request.state.lower()}, not merged"
-            )
+    if settled:
+        return found
     if not merged.merge_bases(sha, head).lines:
         found.why = "no common history with the head branch"
         return found
@@ -161,9 +172,7 @@ def assess(
     head: str,
     head_branch: str,
     delete_ignored: bool,
-    remote: str,
     here: str | None = None,
-    ask_forge: bool = False,
     include_main: bool = False,
 ) -> list[Verdict]:
     """Every worktree, in the order `git worktree remove` would refuse them.
@@ -181,6 +190,7 @@ def assess(
     the list as its candidates, so it asks for the list without it.
     """
     main = R.main_worktree()
+    evidence = (sync.read() or {}).get("evidence", {})
     if here is None:
         here = R.toplevel().out.strip()
 
@@ -225,8 +235,7 @@ def assess(
             wt.branch,
             head,
             head_branch,
-            remote,
-            ask_forge,
+            evidence,
             lambda question: progress.say(f"{wt.label}: {question}"),
         )
         ignored = status.ignored
@@ -248,7 +257,6 @@ def assess(
             )
 
     # Each worktree is judged on its own, and most of the time goes waiting
-    # on git and on the forge, one round trip per branch git cannot settle.
-    # Threads overlap the waits; map keeps git's order.
+    # on git. Threads overlap the waits; map keeps git's order.
     with ThreadPoolExecutor(max_workers=8) as pool:
         return [v for v in pool.map(judged, records) if v is not None]

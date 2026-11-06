@@ -30,7 +30,6 @@ def _assessment_flags(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="fetch even when the last fetch is under 10 minutes old",
     )
-    p.add_argument("--no-forge", action="store_true", help="never ask GitHub or GitLab")
     p.add_argument("--json", action="store_true", help="verdicts and evidence as data")
     p.add_argument("-q", "--quiet", action="store_true", help="omit the summary")
     p.add_argument("-v", "--verbose", action="store_true", help="print every command")
@@ -59,7 +58,7 @@ def delete_flags(p: argparse.ArgumentParser) -> None:
 
 def _prepare(
     args: argparse.Namespace,
-) -> tuple[str, str, str, str, list[branches.Verdict]] | None:
+) -> tuple[str, str, str, list[branches.Verdict]] | None:
     options.verbose = args.verbose
     if args.complete:
         for name, (sha, _) in branches.local_refs().items():
@@ -68,21 +67,19 @@ def _prepare(
     if args.explain:
         _explain()
         return None
-    # A spinner and the question being asked, on a terminal: a branch git
-    # cannot settle costs a round trip to the forge, and --all may hold dozens.
+    # A spinner and the question being asked, on a terminal: --all may hold
+    # dozens of branches.
     with progress.running(not args.quiet and not args.verbose):
-        head, head_branch, remote = _assessment_head(args)
+        head, head_branch, _ = _assessment_head(args)
         head_sha = prune.sha_of(head).out.strip()
         if not head_sha:
             raise GitError(f"cannot resolve {head}")
         progress.say("reading local branches")
         try:
-            rows = branches.assess(
-                args.names, head_sha, head_branch, remote, not args.no_forge
-            )
+            rows = branches.assess(args.names, head_sha, head_branch)
         except ValueError as exc:
             raise _Stop(str(exc), 2) from exc
-    return head, head_sha, head_branch, remote, rows
+    return head, head_sha, head_branch, rows
 
 
 def _table(rows: list[branches.Verdict]) -> str:
@@ -172,7 +169,7 @@ def status(args: argparse.Namespace) -> int:
     prepared = _prepare(args)
     if prepared is None:
         return 0
-    head, head_sha, _, _, rows = prepared
+    head, head_sha, _, rows = prepared
     _report(args, head, head_sha, rows)
     return int(any(v.error for v in rows))
 
@@ -242,7 +239,7 @@ def delete(args: argparse.Namespace) -> int:
     prepared = _prepare(args)
     if prepared is None:
         return 0
-    head, head_sha, head_branch, remote, rows = prepared
+    head, head_sha, head_branch, rows = prepared
     if args.names or args.all or args.dry_run:
         go = [v for v in rows if v.verdict == "remove"]
     else:
@@ -281,9 +278,7 @@ def delete(args: argparse.Namespace) -> int:
                 f"{row.branch}: checking again, then deleting ({i} of {len(go)})"
             )
             try:
-                branches.delete(
-                    row, head, head_sha, head_branch, remote, not args.no_forge
-                )
+                branches.delete(row, head, head_sha, head_branch)
             except (GitError, Refused, ValueError) as exc:
                 failures.append({"branch": row.branch, "why": str(exc)})
                 _err(render.fail(f"{render.branch(row.branch)} kept: {exc}"))

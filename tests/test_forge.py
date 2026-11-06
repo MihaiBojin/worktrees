@@ -3,7 +3,8 @@
 A branch merged as part of a stack reaches the head branch across several
 squashes, and the intermediate state it holds differs from the final one in
 the same regions. To a diff that is indistinguishable from real work left
-over, so something outside git has to say.
+over, so something outside git has to say. `gw sync` asks it; assessment
+reads what that sync recorded and asks nothing.
 """
 
 from __future__ import annotations
@@ -17,8 +18,9 @@ from pathlib import Path
 
 import pytest
 from conftest import env_for
-from test_branch_forge import evidence, stub
+from test_branch_forge import merged, synced
 from test_branches import cli
+from test_sync import forge_remote
 
 from worktrees import forge
 from worktrees import repo as R
@@ -40,18 +42,18 @@ def forge_worktree(world) -> Path:
     return wt
 
 
-def gws(world, env, *args: str) -> dict:
-    p = cli(world, "status", "--no-fetch", "--json", *args, env=env)
+def gws(world, *args: str) -> dict:
+    p = cli(world, "status", "--no-fetch", "--json", *args)
     assert p.returncode == 0, p.stderr
     return {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
 
 
-def test_a_merged_request_finishes_a_worktree_git_cannot_see(world) -> None:
+def test_a_synced_merged_request_finishes_a_worktree_git_cannot_see(world) -> None:
     forge_worktree(world)
-    assert gws(world, env_for(world), "--no-forge")["feature"]["verdict"] == "keep"
+    assert gws(world)["feature"]["verdict"] == "keep"
 
-    env = stub(world, "github", [evidence(world, "github")])
-    row = gws(world, env)["feature"]
+    synced(world, merged(world))
+    row = gws(world)["feature"]
     assert row["verdict"] == "remove", row
     assert row["why"] == "pull request #17 merged this tip into the head branch"
 
@@ -59,45 +61,23 @@ def test_a_merged_request_finishes_a_worktree_git_cannot_see(world) -> None:
 def test_a_merged_request_cannot_speak_for_a_later_commit(world) -> None:
     """It names the tip it merged, and nothing made after it."""
     wt = forge_worktree(world)
-    row = evidence(world, "github")
+    synced(world, merged(world))
     world.commit("after", "a\n", at=wt)
-    row = gws(world, stub(world, "github", [row]))["feature"]
-    assert row["verdict"] == "unknown"
-    assert row["why"] == "the request does not identify this branch tip"
+    assert gws(world)["feature"]["verdict"] == "keep"
 
 
 def test_an_open_request_decides_nothing(world) -> None:
     forge_worktree(world)
-    env = stub(world, "github", [evidence(world, "github", state="OPEN")])
-    row = gws(world, env)["feature"]
+    synced(world, merged(world, state="OPEN"))
+    row = gws(world)["feature"]
     assert row["verdict"] == "keep"
     assert row["why"] == "pull request #17 is open, not merged"
-
-
-@pytest.mark.parametrize(("answer", "code"), [("[]", 0), ("", 1), ("[]", 1)])
-def test_a_silent_forge_leaves_the_answer_to_git(world, answer, code) -> None:
-    """No request, not signed in, failing: none of them is a `no`."""
-    forge_worktree(world)
-    marker = world.root / "asked"
-    bin_dir = world.root / "silent-bin"
-    bin_dir.mkdir()
-    exe = bin_dir / "gh"
-    exe.write_text(f"#!/bin/sh\n: > {marker}\nprintf '%s' '{answer}'\nexit {code}\n")
-    exe.chmod(0o755)
-    env = env_for(world)
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
-    row = gws(world, env)["feature"]
-    assert marker.exists(), "the forge was not asked"
-    assert (row["verdict"], row["why"]) == (
-        "keep",
-        "no proof that its change is in the head branch",
-    )
 
 
 @pytest.mark.parametrize("protection", ["dirty", "ignored", "locked"])
 def test_a_merged_request_keeps_worktree_protections(world, protection) -> None:
     wt = forge_worktree(world)
-    env = stub(world, "github", [evidence(world, "github")])
+    synced(world, merged(world))
     if protection == "dirty":
         (wt / "feature").write_text("unfinished\n")
     elif protection == "ignored":
@@ -106,174 +86,92 @@ def test_a_merged_request_keeps_worktree_protections(world, protection) -> None:
         (wt / "cache").write_text("keep\n")
     else:
         world.git("worktree", "lock", str(wt))
-    assert gws(world, env)["feature"]["verdict"] == "keep"
+    assert gws(world)["feature"]["verdict"] == "keep"
 
 
-def test_prune_removes_a_worktree_the_forge_proved(world) -> None:
+def test_prune_removes_a_worktree_the_sync_proved(world) -> None:
     wt = forge_worktree(world)
-    env = stub(world, "github", [evidence(world, "github")])
-    p = cli(world, "--no-fetch", "--yes", entry="gwp", env=env)
+    synced(world, merged(world))
+    p = cli(world, "--no-fetch", "--yes", entry="gwp")
     assert p.returncode == 0, p.stderr
     assert not wt.exists()
     assert not R.ref_exists("refs/heads/feature")
     assert world.repo.exists()
 
 
-def test_gwr_asks_the_forge_about_the_one_it_was_given(world) -> None:
-    """`gwr` scans without the forge, then asks about the worktree picked."""
+def test_gwr_removes_a_worktree_the_sync_proved(world) -> None:
     wt = forge_worktree(world)
-    env = stub(world, "github", [evidence(world, "github")])
-    p = cli(world, "feature", "--no-fetch", "--yes", entry="gwr", env=env)
+    synced(world, merged(world))
+    p = cli(world, "feature", "--no-fetch", "--yes", entry="gwr")
     assert p.returncode == 0, p.stderr
     assert not wt.exists()
     assert not R.ref_exists("refs/heads/feature")
 
 
-def _marker(world, marker: Path) -> dict[str, str]:
-    """An env whose `gh` records having been asked and answers nothing."""
-    bin_dir = world.root / "marker-bin"
-    bin_dir.mkdir(exist_ok=True)
-    exe = bin_dir / "gh"
-    exe.write_text(f"#!/bin/sh\n: > {marker}\nprintf '[]\\n'\n")
-    exe.chmod(0o755)
-    env = env_for(world)
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
-    return env
-
-
-def test_the_forge_is_never_asked_about_a_branch_git_settled(world) -> None:
-    """It costs a round trip, and merged is merged."""
-    marker = world.root / "asked"
-    world.git("remote", "add", "origin", "git@github.com:owner/repo.git")
-    world.git("update-ref", "refs/remotes/origin/main", "main")
-    world.worktree("done")  # identical tree to main: settled without asking
-    assert gws(world, _marker(world, marker))["done"]["verdict"] == "remove"
-    assert not marker.exists()
-
-
-def test_no_forge_keeps_it_offline(world) -> None:
-    marker = world.root / "asked"
-    forge_worktree(world)
-    env = _marker(world, marker)
-    gws(world, env, "--no-forge")
-    assert not marker.exists()
-    gws(world, env)
-    assert marker.exists(), "the control: without --no-forge it is asked"
-
-
-def test_the_cli_offers_no_forge(world) -> None:
-    from conftest import env_for
-
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import gws; raise SystemExit(gws())",
-            "--help",
-        ],
-        cwd=str(world.repo),
-        capture_output=True,
-        text=True,
-        env=env_for(world),
-    )
-    assert "--no-forge" in proc.stdout
-
-
 # --------------------------------------------------------------------------
-# the forge is over the network the fetch just used
+# only gw sync runs gh or glab
 # --------------------------------------------------------------------------
 
 
-def _marker_gh(tmp_path: Path, marker: Path) -> Path:
-    """A `gh` that records having been asked and answers nothing."""
-    bin_dir = tmp_path / "marker-bin"
-    bin_dir.mkdir(exist_ok=True)
-    exe = bin_dir / "gh"
-    exe.write_text(f"#!/bin/sh\n: > {marker}\nprintf '[]\\n'\n")
-    exe.chmod(0o755)
-    return bin_dir
-
-
-def _gws(world, bin_dir: Path):
+def _recording(world) -> tuple[dict[str, str], Path]:
+    """An env whose `gh` and `glab` write each call down and answer nothing."""
+    log = world.root / "forge-calls"
+    bin_dir = world.root / "recording-bin"
+    bin_dir.mkdir()
+    for tool in ("gh", "glab"):
+        exe = bin_dir / tool
+        exe.write_text(f'#!/bin/sh\necho "{tool} $*" >> {log}\necho "[]"\n')
+        exe.chmod(0o755)
     env = env_for(world)
     env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
-    return subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import gws; raise SystemExit(gws())",
-        ],
-        cwd=str(world.repo),
-        capture_output=True,
-        text=True,
-        env=env,
-    )
+    return env, log
 
 
-def _github_at(world, path: Path) -> None:
-    """A remote whose URL names GitHub, which is the only kind the forge is
-    asked about, and whose fetch goes to `path`."""
-    url = "git@github.com:owner/repo.git"
-    world.git("config", f"url.{path}.insteadOf", url)
-    world.git("remote", "add", "origin", url)
+def _unsettled(world, provider: str) -> Path:
+    """A forge host, and a worktree and a loose branch git cannot settle."""
+    forge_remote(world, provider)
+    wt = world.worktree("feature")
+    world.commit("feature", "branch\n", at=wt)
+    world.commit("feature", "later edits\n")
+    world.git("branch", "loose", "feature")
+    return wt
 
 
-def test_a_failed_fetch_stops_the_forge_being_asked(world, tmp_path) -> None:
-    """`gh` waits 30 seconds for a network that just refused git."""
-    marker = tmp_path / "asked"
-    bin_dir = _marker_gh(tmp_path, marker)
-    _github_at(world, world.root / "nowhere.git")
-    world.git("update-ref", "refs/remotes/origin/main", "main")
-    wt = world.worktree("unmerged")
-    world.commit("u.txt", "u\n", at=wt)
+@pytest.mark.parametrize("provider", ["github", "gitlab"])
+@pytest.mark.parametrize(
+    ("entry", "args"),
+    [
+        ("gws", ()),
+        ("gwp", ("--yes",)),
+        ("gwr", ("feature", "--yes")),
+        ("gwbs", ()),
+        ("gwbd", ("loose", "--dry-run")),
+    ],
+)
+def test_assessment_never_asks_the_forge(world, provider, entry, args) -> None:
+    wt = _unsettled(world, provider)
+    env, log = _recording(world)
+    p = cli(world, *args, entry=entry, env=env)
+    assert p.returncode in (0, 1, 3), p.stderr
+    assert not log.exists(), log.read_text()
+    assert wt.exists()
 
-    p = _gws(world, bin_dir)
+
+@pytest.mark.parametrize("provider", ["github", "gitlab"])
+def test_sync_asks_the_forge(world, provider) -> None:
+    """The control for the test above: the same repository, the same fake."""
+    _unsettled(world, provider)
+    env, log = _recording(world)
+    p = cli(world, "sync", env=env)
     assert p.returncode == 0, p.stderr
-    assert "could not be fetched" in p.stderr
-    assert "not asking the forge" in p.stderr
-    assert not marker.exists()
+    assert log.read_text().startswith("gh " if provider == "github" else "glab ")
 
 
-def test_a_reachable_remote_leaves_the_forge_asked(world, tmp_path) -> None:
-    """The control. Without it the test above passes on a run that never
-    reached the forge for some other reason."""
-    marker = tmp_path / "asked"
-    bin_dir = _marker_gh(tmp_path, marker)
-    bare = world.root / "origin.git"
-    subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
-    _github_at(world, bare)
-    world.git("push", "--quiet", "origin", "main")
-    wt = world.worktree("unmerged")
-    world.commit("u.txt", "u\n", at=wt)
-
-    p = _gws(world, bin_dir)
-    assert p.returncode == 0, p.stderr
-    assert "could not be fetched" not in p.stderr
-    assert marker.exists()
-
-
-@pytest.mark.parametrize("default", ["", "origin"])
-def test_several_remotes_without_a_default_leave_the_forge_unasked(
-    world, tmp_path, default: str
-) -> None:
-    """A fork and its upstream, both on GitHub. Without
-    `checkout.defaultRemote` nothing says which repository to ask, so none
-    is; with it, the forge is asked."""
-    marker = tmp_path / "asked"
-    bin_dir = _marker_gh(tmp_path, marker)
-    bare = world.root / "origin.git"
-    subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
-    _github_at(world, bare)
-    world.git("remote", "add", "upstream", "git@github.com:upstream/repo.git")
-    world.git("push", "--quiet", "origin", "main")
-    if default:
-        world.git("config", "checkout.defaultRemote", default)
-    wt = world.worktree("unmerged")
-    world.commit("u.txt", "u\n", at=wt)
-
-    p = _gws(world, bin_dir)
-    assert p.returncode == 0, p.stderr
-    assert marker.exists() == bool(default)
+@pytest.mark.parametrize("entry", ["gws", "gwp", "gwr", "gwbs", "gwbd"])
+def test_no_command_takes_no_forge(world, entry) -> None:
+    p = cli(world, "--no-forge", entry=entry)
+    assert p.returncode == 2
+    assert "unrecognized arguments: --no-forge" in p.stderr
 
 
 # --------------------------------------------------------------------------
@@ -353,11 +251,11 @@ def _gws_args(world, *args: str):
 
 def test_a_recent_fetch_is_not_repeated(world) -> None:
     _with_origin(world)
-    first = _gws_args(world, "--no-forge")
+    first = _gws_args(world)
     assert first.returncode == 0, first.stderr
     assert "fetched" not in first.stderr
 
-    second = _gws_args(world, "--no-forge", "-v")
+    second = _gws_args(world, "-v")
     assert second.returncode == 0, second.stderr
     assert "fetched 0 min ago; using those refs" in second.stderr
     assert "+ git fetch" not in second.stderr
@@ -366,8 +264,8 @@ def test_a_recent_fetch_is_not_repeated(world) -> None:
 def test_a_reused_fetch_says_so_once(world) -> None:
     """Not also the --no-fetch warning, for a flag nobody passed."""
     _with_origin(world)
-    _gws_args(world, "--no-forge")
-    p = _gws_args(world, "--no-forge")
+    _gws_args(world)
+    p = _gws_args(world)
     assert p.returncode == 0, p.stderr
     assert "fetched 0 min ago; using those refs" in p.stderr
     assert "--no-fetch" not in p.stderr
@@ -375,26 +273,26 @@ def test_a_reused_fetch_says_so_once(world) -> None:
 
 def test_force_refresh_fetches_whatever_the_age(world) -> None:
     _with_origin(world)
-    _gws_args(world, "--no-forge")
-    p = _gws_args(world, "--no-forge", "--force-refresh", "-v")
+    _gws_args(world)
+    p = _gws_args(world, "--force-refresh", "-v")
     assert p.returncode == 0, p.stderr
     assert "+ git fetch --prune origin" in p.stderr
 
 
 def test_a_fetch_over_10_minutes_old_is_repeated(world) -> None:
     _with_origin(world)
-    _gws_args(world, "--no-forge")
+    _gws_args(world)
     head = Path(world.git("rev-parse", "--git-path", "FETCH_HEAD").strip())
     head = head if head.is_absolute() else world.repo / head
     old = time.time() - 11 * 60
     os.utime(head, (old, old))
-    p = _gws_args(world, "--no-forge", "-v")
+    p = _gws_args(world, "-v")
     assert "+ git fetch --prune origin" in p.stderr
 
 
 def test_gwa_reuses_a_fetch_another_command_made(world) -> None:
     _with_origin(world)
-    _gws_args(world, "--no-forge")
+    _gws_args(world)
     p = subprocess.run(
         [
             sys.executable,

@@ -1,15 +1,21 @@
-"""Forge evidence must identify this branch tip and a merge into its head."""
+"""Forge evidence comes from the last `gw sync`, and must identify this
+branch tip and a merge into its head."""
 
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 
 import pytest
 from conftest import env_for
 from test_branches import cli, local_branch
 
+NAME = "git-worktrees-sync.json"
+
 
 def evidence(world, provider, **changes) -> dict:
+    """One row as `gh` or `glab` prints it, for the tip of `feature`."""
     tip = world.git("rev-parse", "feature")
     head = world.git("rev-parse", "main")
     if provider == "github":
@@ -42,130 +48,190 @@ def evidence(world, provider, **changes) -> dict:
     return {**row, **changes}
 
 
-def stub(world, provider, payload) -> dict[str, str]:
-    bin_dir = world.root / "forge-bin"
-    bin_dir.mkdir(exist_ok=True)
-    tool = "gh" if provider == "github" else "glab"
-    target = f"{provider}.com/owner/repo"
-    if provider == "gitlab":
-        target = "https://" + target
-    exe = bin_dir / tool
-    # A wrong repository selection or an inherited redirect must not produce
-    # the response that could authorize a deletion.
-    exe.write_text(
-        "#!/bin/sh\n"
-        'test -z "${GH_REPO-}${GITLAB_REPO-}" || exit 8\n'
-        f'case " $* " in *" --repo {target} "*) ;; *) exit 9;; esac\n'
-        f"cat <<'JSON'\n{json.dumps(payload)}\nJSON\n"
+def merged(world, branch: str = "feature", **changes) -> dict:
+    """The evidence `gw sync` records for a request that merged `branch`'s
+    tip into main, with `changes` applied to the request."""
+    tip = world.git("rev-parse", branch)
+    request = {
+        "number": 17,
+        "state": "MERGED",
+        "noun": "pull request",
+        "url": "https://github.com/owner/repo/pull/17",
+        "repository": "github.com/owner/repo",
+        "source_branch": branch,
+        "source_sha": tip,
+        "target_branch": "main",
+        "merge_sha": world.git("rev-parse", "main"),
+        "merged_at": "2026-09-28T00:00:00Z",
+        "same_repository": True,
+    }
+    return {branch: {"sha": tip, "request": {**request, **changes}}}
+
+
+def synced(world, evidence: dict) -> None:
+    """Write the file `gw sync` writes, as though it had just run."""
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import json, sys; from worktrees import sync; t = sync.now(); "
+            "sync.write('origin', t, t, json.loads(sys.argv[1]))",
+            json.dumps(evidence),
+        ],
+        cwd=world.repo,
+        env=env_for(world),
+        check=True,
     )
-    exe.chmod(0o755)
-    env = env_for(world)
-    env["PATH"] = f"{bin_dir}:{env['PATH']}"
-    env["GH_REPO"] = env["GITLAB_REPO"] = "wrong/repo"
-    return env
 
 
-@pytest.fixture(params=["github", "gitlab"])
-def forge_world(world, request):
-    provider = request.param
+@pytest.fixture
+def forge_world(world):
+    """A loose branch whose change content cannot settle: main edited the
+    same path further, the shape a branch merged as part of a stack leaves."""
     local_branch(world)
     world.commit("feature", "later edits\n")
-    world.git("remote", "add", "origin", f"git@{provider}.com:owner/repo.git")
+    world.git("remote", "add", "origin", "git@github.com:owner/repo.git")
     world.git("update-ref", "refs/remotes/origin/main", "main")
-    return world, provider
+    return world
 
 
-def assess(world, provider, row) -> dict:
-    env = stub(world, provider, [row])
-    p = cli(world, "branch", "status", "feature", "--no-fetch", "--json", env=env)
+def assess(world) -> dict:
+    p = cli(world, "branch", "status", "feature", "--no-fetch", "--json")
     assert p.returncode == 0, p.stderr
     return json.loads(p.stdout)["verdicts"][0]
 
 
-def test_merged_request_matches_source_tip_and_reachable_merge(forge_world):
-    world, provider = forge_world
-    row = assess(world, provider, evidence(world, provider))
+def test_without_a_sync_git_alone_decides(forge_world):
+    assert assess(forge_world)["verdict"] == "keep"
+
+
+def test_a_synced_merged_request_proves_the_branch(forge_world):
+    world = forge_world
+    synced(world, merged(world))
+    row = assess(world)
     assert row["verdict"] == "remove", row
     assert row["proof"] == "forge"
+    assert row["why"] == "pull request #17 merged this tip into the head branch"
     assert row["request"]["number"] == 17
     assert row["request"]["source_sha"] == world.git("rev-parse", "feature")
 
 
+def test_a_moved_tip_has_no_evidence(forge_world):
+    world = forge_world
+    synced(world, merged(world))
+    world.git("checkout", "-q", "feature")
+    world.commit("after", "a\n")
+    world.git("checkout", "-q", "main")
+    row = assess(world)
+    assert (row["verdict"], row["proof"], row["request"]) == ("keep", "", None)
+
+
 @pytest.mark.parametrize(
-    "mismatch", ["tip", "target", "source", "fork", "merge", "missing"]
+    ("changes", "why"),
+    [
+        (
+            {"target_branch": "release"},
+            "the request targeted a different branch",
+        ),
+        (
+            {"source_branch": "other"},
+            "the request does not identify this branch tip",
+        ),
+        (
+            {"same_repository": False},
+            "the request's source repository does not match this remote",
+        ),
+        (
+            {"merged_at": ""},
+            "the request has no verified merge commit",
+        ),
+        (
+            {"merge_sha": "0" * 40},
+            "the request's merge commit is not available locally",
+        ),
+    ],
+    ids=["target", "source", "fork", "unmerged-at", "merge-missing"],
 )
-def test_unverified_merge_cannot_authorize_deletion(forge_world, mismatch):
-    world, provider = forge_world
-    row = evidence(world, provider)
-    fields = {
-        "github": {
-            "tip": "headRefOid",
-            "target": "baseRefName",
-            "source": "headRefName",
-            "fork": "headRepository",
-            "merge": "mergeCommit",
-            "missing": "mergedAt",
-        },
-        "gitlab": {
-            "tip": "sha",
-            "target": "target_branch",
-            "source": "source_branch",
-            "fork": "source_project_id",
-            "merge": "merge_commit_sha",
-            "missing": "merged_at",
-        },
-    }
-    value: object = "0" * 40 if mismatch in ("tip", "merge") else "different"
-    if mismatch == "fork":
-        value = {"nameWithOwner": "other/repo"} if provider == "github" else 999
-    if mismatch == "merge" and provider == "github":
-        value = {"oid": value}
-    if mismatch == "missing":
-        value = None
-    row[fields[provider][mismatch]] = value
-    result = assess(world, provider, row)
-    assert result["verdict"] != "remove", result
+def test_a_mismatched_request_proves_nothing(forge_world, changes, why):
+    world = forge_world
+    synced(world, merged(world, **changes))
+    row = assess(world)
+    assert (row["verdict"], row["why"]) == ("unknown", why), row
 
 
-@pytest.mark.parametrize("state", ["closed", "open"])
-def test_closed_or_open_requests_do_not_authorize_deletion(forge_world, state):
-    world, provider = forge_world
-    row = evidence(
-        world, provider, state=state.upper() if provider == "github" else state
+def test_a_merge_commit_outside_the_head_proves_nothing(forge_world):
+    world = forge_world
+    world.git("checkout", "-qb", "elsewhere")
+    outside = world.commit("elsewhere", "e\n")
+    world.git("checkout", "-q", "main")
+    synced(world, merged(world, merge_sha=outside))
+    row = assess(world)
+    assert (row["verdict"], row["why"]) == (
+        "unknown",
+        "the request's merge commit is not in the head branch",
     )
-    result = assess(world, provider, row)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [{"number": "17"}, {"same_repository": 1}, {"merge_sha": None}, {"extra": 1}],
+)
+def test_a_malformed_entry_proves_nothing(forge_world, changes):
+    world = forge_world
+    synced(world, merged(world, **changes))
+    row = assess(world)
+    assert (row["verdict"], row["request"]) == ("keep", None), row
+
+
+@pytest.mark.parametrize("text", ["", "{", "[]", '{"remote": 1}'])
+def test_a_malformed_file_proves_nothing(forge_world, text):
+    world = forge_world
+    synced(world, merged(world))
+    (world.repo / ".git" / NAME).write_text(text)
+    assert assess(world)["verdict"] == "keep"
+
+
+def test_a_file_for_another_remote_url_proves_nothing(forge_world):
+    world = forge_world
+    synced(world, merged(world))
+    assert assess(world)["verdict"] == "remove", "the control"
+    world.git("remote", "set-url", "origin", "git@github.com:someone/else.git")
+    assert assess(world)["verdict"] == "keep"
+
+
+@pytest.mark.parametrize("state", ["CLOSED", "OPEN"])
+def test_closed_or_open_requests_do_not_authorize_deletion(forge_world, state):
+    world = forge_world
+    synced(world, merged(world, state=state))
+    result = assess(world)
     assert result["verdict"] == "keep", result
-    assert result["request"]["state"] == state.upper()
+    assert result["why"] == f"pull request #17 is {state.lower()}, not merged"
+    assert result["request"]["state"] == state
 
 
-def test_closed_request_does_not_block_independent_content_proof(forge_world):
-    world, provider = forge_world
+def test_a_rejected_request_does_not_block_content_proof(forge_world):
+    world = forge_world
     world.commit("feature", "branch\n")
     world.git("update-ref", "refs/remotes/origin/main", "main")
-    result = assess(world, provider, evidence(world, provider, state="CLOSED"))
-    assert result["verdict"] == "remove", result
-    assert result["proof"] in ("squash", "content")
+    for changes in ({"state": "CLOSED"}, {"target_branch": "release"}):
+        synced(world, merged(world, **changes))
+        result = assess(world)
+        assert result["verdict"] == "remove", result
+        assert result["proof"] in ("squash", "content")
 
 
-@pytest.mark.parametrize("payload", [None, {}, [None], [{"number": "invalid"}]])
-def test_malformed_forge_data_keeps_the_branch(forge_world, payload):
-    world, provider = forge_world
-    env = stub(world, provider, payload)
-    p = cli(
-        world, "branch", "delete", "feature", "--yes", "--no-fetch", "--json", env=env
-    )
+def test_delete_removes_a_branch_the_sync_proved(forge_world):
+    world = forge_world
+    synced(world, merged(world))
+    p = cli(world, "branch", "delete", "feature", "--yes", "--no-fetch", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["removed"] == ["feature"]
+
+
+def test_delete_keeps_a_branch_the_sync_did_not_prove(forge_world):
+    world = forge_world
+    synced(world, merged(world, same_repository=False))
+    p = cli(world, "branch", "delete", "feature", "--yes", "--no-fetch", "--json")
     assert p.returncode == 3, p.stderr
     assert json.loads(p.stdout)["removed"] == []
     assert world.git("rev-parse", "feature")
-
-
-@pytest.mark.parametrize(
-    ("source", "target"), [(True, True), (1, True), (7, 7.0), (None, None)]
-)
-def test_gitlab_requires_integer_project_ids(world, source, target):
-    local_branch(world)
-    world.commit("feature", "later edits\n")
-    world.git("remote", "add", "origin", "git@gitlab.com:owner/repo.git")
-    world.git("update-ref", "refs/remotes/origin/main", "main")
-    row = evidence(world, "gitlab", source_project_id=source, target_project_id=target)
-    assert assess(world, "gitlab", row)["verdict"] != "remove"
