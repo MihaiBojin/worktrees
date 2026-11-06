@@ -19,6 +19,10 @@ REMOVE = "remove"
 KEEP = "keep"
 UNKNOWN = "unknown"
 
+MAIN_CHECKOUT = "it is the main checkout, and never removable"
+HEAD_BRANCH = "it is the head branch"
+MAIN_OR_MASTER = "it is main or master"
+
 
 class Verdict:
     __slots__ = ("branch", "error", "ignored", "path", "sha", "verdict", "why")
@@ -166,16 +170,30 @@ def prove(
     return found
 
 
-def unresolved(records: list[R.Worktree], only: str, why: str) -> list[Verdict]:
-    """Every worktree `unknown`, the main checkout too: with no head ref
-    there is nothing to measure any of them against."""
-    return [
-        Verdict(UNKNOWN, wt.branch, wt.path, why, sha=wt.sha, error=True)
-        for wt in records
-        if "bare" not in wt.flags
-        and "prunable" not in wt.flags
-        and (not only or wt.branch == only)
-    ]
+def unresolved(
+    records: list[R.Worktree], only: str, head_branch: str, why: str
+) -> list[Verdict]:
+    """With no head ref, the main checkout and a worktree on the head branch,
+    `main` or `master` are kept, since neither answer measures anything, and
+    every other worktree is `unknown`."""
+    main = R.main_worktree()
+    rows = []
+    for wt in records:
+        if "bare" in wt.flags or "prunable" in wt.flags:
+            continue
+        if only and wt.branch != only:
+            continue
+        if wt.path == main:
+            rows.append(Verdict(KEEP, wt.branch, wt.path, MAIN_CHECKOUT, sha=wt.sha))
+        elif wt.branch and wt.branch == head_branch:
+            rows.append(Verdict(KEEP, wt.branch, wt.path, HEAD_BRANCH, sha=wt.sha))
+        elif wt.branch in ("main", "master"):
+            rows.append(Verdict(KEEP, wt.branch, wt.path, MAIN_OR_MASTER, sha=wt.sha))
+        else:
+            rows.append(
+                Verdict(UNKNOWN, wt.branch, wt.path, why, sha=wt.sha, error=True)
+            )
+    return rows
 
 
 def assess(
@@ -220,7 +238,7 @@ def assess(
             # the main checkout is the more useful of the two facts and the
             # only one that is true from anywhere.
             if include_main:
-                return say(KEEP, "it is the main checkout, and never removable")
+                return say(KEEP, MAIN_CHECKOUT)
             return None
 
         if here and Path(wt.path).resolve() == Path(here).resolve():
@@ -228,7 +246,7 @@ def assess(
         if "locked" in wt.flags:
             return say(KEEP, "it is locked")
         if wt.branch and wt.branch == head_branch:
-            return say(KEEP, "it is the head branch")
+            return say(KEEP, HEAD_BRANCH)
         # One read, both answers. Asking again further down was half of
         # every assessment's git calls.
         progress.say(f"{wt.label}: reading its status")

@@ -41,34 +41,24 @@ def local_refs() -> dict[str, tuple[str, str]]:
     }
 
 
-def _named(names: list[str], refs: dict[str, tuple[str, str]]) -> list[str]:
-    """The branches asked for, or every one when none were."""
-    missing = [name for name in names if name not in refs]
-    if missing:
-        raise ValueError("no local branch: " + ", ".join(missing))
-    return list(dict.fromkeys(names or refs))
-
-
-def unresolved(names: list[str], why: str) -> list[Verdict]:
-    """Every branch `unknown`: with no head ref there is nothing to measure
-    any of them against."""
-    refs = local_refs()
-    return [
-        Verdict(name, refs[name][0], "unknown", why, error=True)
-        for name in _named(names, refs)
-    ]
-
-
-def assess(names: list[str], head_sha: str, head_branch: str) -> list[Verdict]:
+def assess(
+    names: list[str], head_sha: str, head_branch: str, no_head: str = ""
+) -> list[Verdict]:
+    """Every branch asked for, judged against `head_sha`. With no head sha,
+    `no_head` says why, and every branch a head would have to prove is
+    `unknown`, `main` and `master` apart."""
     refs = local_refs()
     evidence = (sync.read() or {}).get("evidence", {})
     repository = branch_forge.repository_for(R.remote())
-    wanted = _named(names, refs)
+    missing = [name for name in names if name not in refs]
+    if missing:
+        raise ValueError("no local branch: " + ", ".join(missing))
     checked: dict[str, list[str]] = {}
     for wt in R.worktrees():
         if wt.branch:
             checked.setdefault(wt.branch, []).append(wt.path)
     rows = []
+    wanted = list(dict.fromkeys(names or refs))
     for i, name in enumerate(wanted, 1):
         sha, symbolic = refs[name]
         row = Verdict(
@@ -82,6 +72,10 @@ def assess(names: list[str], head_sha: str, head_branch: str) -> list[Verdict]:
             row.verdict, row.why = "keep", "checked out in a worktree"
         elif symbolic:
             row.verdict, row.why = "keep", "it is a symbolic branch ref"
+        elif not head_sha and name in ("main", "master"):
+            row.verdict, row.why = "keep", verdicts.MAIN_OR_MASTER
+        elif not head_sha:
+            row.error, row.why = True, no_head
         else:
             # One at a time, so the count says how far through a long list
             # this is.

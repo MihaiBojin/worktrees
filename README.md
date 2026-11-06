@@ -692,7 +692,7 @@ A `<remote>/HEAD` naming a branch that is gone is still the answer, and it
 does not resolve. Nothing falls through from it to a local branch.
 
 `gws`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwbc` and `gwrot` print the
-head branch and its source on stderr:
+head branch and its source on stderr when it resolves:
 
 ```console
 Head: origin/main (remote)
@@ -702,11 +702,15 @@ Head: main (inferred; master also exists)
 `--json` leaves the line out. `-q` leaves it out too, unless the head branch
 was inferred.
 
-When the head branch does not resolve, every row `gws` and `gwbs` print is
-`unknown` and they exit 1. `gwp`, `gwr` and `gwbd` refuse at exit 1 and change
-nothing, and `gwa`, `gwbc` and `gwrot` fail at exit 1. The message is
-`No main or master branch.` when the head branch was inferred, and otherwise
-names the ref and `gw sync`, which sets it again.
+When the head branch does not resolve, the command prints why instead of the
+`Head:` line: `No main or master branch.` when the head branch was inferred,
+and otherwise the ref and `gw sync`, which sets it again. `gws` and `gwbs`
+still print every row and exit 1. A row that needs no head keeps its `keep`:
+the main checkout, the head branch, `main`, `master`, and in `gwbs` a branch
+checked out in a worktree. Every other row is `unknown`. `gwp`, `gwr` and
+`gwbd` refuse at exit 1 and change nothing. `gwbc` and `gwrot` fail at exit 1,
+and so does `gwa` when it would branch from the head; `gwa` with a `BASE`, or
+for a branch that already exists, does not read the head.
 
 Data goes to stdout and diagnostics to stderr, the prompt included, so `--json`
 is parseable in every mode. Colour is decided per stream and only for a

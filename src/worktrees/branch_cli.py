@@ -80,11 +80,7 @@ def _prepare(
         head_sha = prune.sha_of(found.ref).out.strip() if found.resolves else ""
         progress.say("reading local branches")
         try:
-            rows = (
-                branches.assess(args.names, head_sha, head_branch)
-                if head_sha
-                else branches.unresolved(args.names, found.problem())
-            )
+            rows = branches.assess(args.names, head_sha, head_branch, found.problem())
         except ValueError as exc:
             raise _Stop(str(exc), 2) from exc
     return found, head_sha, head_branch, rows
@@ -178,8 +174,10 @@ def status(args: argparse.Namespace) -> int:
     if prepared is None:
         return 0
     found, head_sha, _, rows = prepared
+    if not found.resolves:
+        _err(render.fail(found.problem()))
     _report(args, found.ref, head_sha, rows)
-    return int(any(v.error for v in rows))
+    return int(not found.resolves or any(v.error for v in rows))
 
 
 def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:

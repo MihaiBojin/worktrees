@@ -271,6 +271,10 @@ def test_a_tag_shadowing_the_head_branch_does_not_shadow_it(world) -> None:
     world.git("update-ref", "refs/remotes/origin/main", "main")
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     world.git("tag", "origin/main", "refs/heads/feature")
+    # The trap is live: git resolves the bare name to the tag.
+    assert world.git("rev-parse", "origin/main") == world.git(
+        "rev-parse", "refs/heads/feature"
+    )
 
     head = R.head_ref("origin").ref
     assert head == "refs/remotes/origin/main"
