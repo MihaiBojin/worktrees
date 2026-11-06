@@ -1509,17 +1509,22 @@ def _dispatch(
             return run_help(args)
         run = _COMMANDS[_CANONICAL[command]].run
     try:
+        if run is run_prune and args.only and not args.dry_run:
+            raise _Stop("--only requires --dry-run", 2)
         if (
             run not in (run_help, run_version, run_sync)
-            and not getattr(args, "json", False)
             and not getattr(args, "explain", False)
             and not getattr(args, "complete", False)
             and not (hasattr(args, "name") and not args.name)
+            and not (run is run_branch and not getattr(args, "branch_command", None))
         ):
             from . import repo as R
             from . import sync
+            from .git import options
 
-            if R.toplevel().out.strip():
+            options.verbose = getattr(args, "verbose", False)
+            R.require_offline_git()
+            if not getattr(args, "json", False) and R.toplevel().out.strip():
                 for notice in sync.notices(getattr(args, "quiet", False)):
                     _err(render.note(notice))
         return run(args)

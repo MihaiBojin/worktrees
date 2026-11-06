@@ -388,13 +388,13 @@ def git(
             full += argv
 
             options.log.append(tuple(full))
-            environ = None
-            if env is not None:
-                environ = {**os.environ, **env}
+            environ = {**os.environ, **(env or {}), "GIT_NO_LAZY_FETCH": "1"}
             proc = subprocess.run(
                 full,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="surrogateescape",
                 input=input,
                 env=environ,
                 check=False,

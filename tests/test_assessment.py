@@ -522,3 +522,125 @@ def test_first_parent_history_is_reused_through_rechecks(world, entry):
     getattr(cli, entry)(args)
     calls = [argv for argv in options.log if "--first-parent" in argv]
     assert len(calls) == 1, calls
+
+
+@pytest.mark.parametrize(
+    "history,want", [("historical", "remove"), ("different-bytes", "keep")]
+)
+def test_non_utf8_patch_data_preserves_squash_proof(world, history, want):
+    world.commit("file", "before\n")
+    wt = world.worktree("feature")
+    (wt / "file").write_bytes(b"caf\xe9\n")
+    world.git("add", "file", at=wt)
+    world.git("commit", "--quiet", "-m", "feature", at=wt)
+    (world.repo / "file").write_bytes(
+        b"caf\xe9\n" if history == "historical" else b"caf\xff\n"
+    )
+    world.git("add", "file")
+    world.git("commit", "--quiet", "-m", "upstream change")
+    world.commit("file", "later upstream edit\n")
+    world.git("worktree", "remove", str(wt))
+    loose = rows(world, "gwbs", "feature")[0]
+    assert loose["verdict"] == want
+    if history == "historical":
+        assert loose["proof"] == "squash"
+    world.git("worktree", "add", "--quiet", str(wt), "feature")
+    attached = next(row for row in rows(world) if row["branch"] == "feature")
+    assert attached["verdict"] == want
+    assert attached["proof"] == loose["proof"]
+
+
+def test_git_wrapper_round_trips_non_utf8_standard_input(world):
+    import subprocess
+
+    from worktrees.git import git
+
+    @git("hash-object --stdin")
+    def hash_input():
+        """Hash data without storing an object."""
+
+    value = b"caf\xe9\xff\n"
+    expected = subprocess.run(
+        ["git", "hash-object", "--stdin"], input=value, capture_output=True, check=True
+    ).stdout.decode()
+    assert (
+        hash_input(input=value.decode("utf-8", "surrogateescape")).out.strip()
+        == expected.strip()
+    )
+
+
+def test_unrelated_equal_trees_are_unknown_for_loose_and_checked_out_branches(world):
+    world.git("checkout", "--quiet", "--orphan", "feature")
+    world.git("commit", "--quiet", "-m", "independent root")
+    world.git("checkout", "--quiet", "main")
+    assert world.git("rev-parse", "feature^{tree}") == world.git(
+        "rev-parse", "main^{tree}"
+    )
+    row = rows(world, "gwbs", "feature")[0]
+    assert row["verdict"] == "unknown"
+    assert not row["eligible"]
+    assert "no common history" in row["why"]
+    wt = world.root / "feature"
+    world.git("worktree", "add", "--quiet", str(wt), "feature")
+    attached = next(row for row in rows(world) if row["branch"] == "feature")
+    assert attached["verdict"] == "unknown"
+    assert not attached["eligible"]
+
+
+@pytest.mark.parametrize("entry,prefix", [("gwp", ()), ("gw", ("prune",))])
+def test_mutating_prune_rejects_only_before_any_changes(world, entry, prefix):
+    done = finished(world)
+    gone = world.worktree("gone")
+    shutil.rmtree(gone)
+    before = snapshot(world.repo)
+    records = world.git("worktree", "list", "--porcelain")
+    refs = world.git("show-ref")
+    result = run(world, entry, *prefix, "--only", "empty", "--yes", "--json")
+    assert result.returncode == 2, result.stderr
+    assert "--only" in result.stderr and "--dry-run" in result.stderr
+    assert done.exists()
+    assert snapshot(world.repo) == before
+    assert world.git("worktree", "list", "--porcelain") == records
+    assert world.git("show-ref") == refs
+
+
+@pytest.mark.parametrize("name", ["main", "master"])
+def test_finished_protected_names_are_ineligible_by_name_alone(world, name):
+    side = world.merged_branch("side")
+    world.git("branch", "trunk")
+    world.git("switch", "--quiet", "-c", "holding")
+    world.git("update-ref", "refs/heads/main", side)
+    world.git("branch", "master", side)
+    world.git("branch", "ordinary", side)
+    world.git("remote", "add", "origin", "https://example.test/repo.git")
+    world.git("update-ref", "refs/remotes/origin/trunk", "trunk")
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+    loose = {row["branch"]: row for row in rows(world, "gwbs")}
+    assert loose["ordinary"]["verdict"] == "remove"
+    assert loose["ordinary"]["eligible"]
+    assert loose[name]["verdict"] == "remove"
+    assert not loose[name]["eligible"]
+    assert loose[name]["protections"] == ["it is a protected branch"]
+    wt = world.root / name
+    world.git("worktree", "add", "--quiet", str(wt), name)
+    attached = next(row for row in rows(world) if row["branch"] == name)
+    assert attached["verdict"] == "remove"
+    assert not attached["eligible"]
+    assert attached["protections"] == ["it is a protected branch"]
+
+
+def test_validated_forge_proof_precedes_unrelated_history(world, network):
+    from test_branch_forge import evidence, stub
+    from test_branches import cli
+
+    world.git("checkout", "--quiet", "--orphan", "feature")
+    world.git("commit", "--quiet", "-m", "independent root")
+    world.git("checkout", "--quiet", "main")
+    world.git("remote", "add", "origin", "git@github.com:owner/repo.git")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+    env = stub(world, "github", [evidence(world, "github")], network)
+    result = cli(world, "branch", "status", "feature", "--json", env=env)
+    assert result.returncode == 0, result.stderr
+    row = json.loads(result.stdout)["verdicts"][0]
+    assert row["verdict"] == "remove"
+    assert row["proof"] == "forge"

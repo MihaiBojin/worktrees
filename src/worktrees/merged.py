@@ -65,6 +65,10 @@ def squash_matches(
 ) -> bool:
     """Compare a pinned commit's combined patch with the head branch."""
 
+    base = merge_base(head, ref, repo=repo)
+    if not base or not base.out.strip():
+        return False
+
     tree = tree_of(ref, repo=repo)
     if not tree or not tree.out.strip():
         return False
@@ -74,10 +78,6 @@ def squash_matches(
     head_tree = tree_of(head, repo=repo)
     if head_tree and head_tree.out.strip() == tree.out.strip():
         return True
-
-    base = merge_base(head, ref, repo=repo)
-    if not base or not base.out.strip():
-        return False
 
     patch = combined_patch(base.out.strip(), ref, repo=repo).out
     ids = patch_ids(input=patch, repo=repo).lines
