@@ -6,7 +6,6 @@ allowed-tools:
   - Bash(gw:*)
   - Bash(gwp:*)
   - Bash(gwbs:*)
-  - Bash(gwl:*)
   - Bash(command gwr:*)
   - Bash(command gwbd:*)
   - Bash(jq:*)

@@ -143,6 +143,16 @@ def _offerable(path: str) -> bool:
 
 def _explain() -> int:
     """Every git command the program can issue."""
+    from . import (  # noqa: F401
+        branches,
+        merged,
+        new_branch,
+        prune,
+        repo,
+        rotate,
+        verdicts,
+        worktree,
+    )
     from .git import RULES, commands
 
     rows: list[Row] = [(Cell(""), Cell("COMMAND", BOLD), Cell("GIT", BOLD))]
@@ -703,8 +713,7 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     )
     _add_delete_flags(p)
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
-    # Its own, not gwl's: assess skips the main checkout, so gwr can never act
-    # on it and offering it would complete to "no worktree matches".
+    # Removal candidates omit main, which Git cannot remove.
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
     _add_cd_flags(p)
     _add_cd_output_flags(p)
@@ -802,7 +811,7 @@ def run_list(args: argparse.Namespace) -> int:
         )
         return 0
 
-    if args.list:
+    if args.list or not sys.stdin.isatty():
         if not found:
             _err(render.fail("no worktree matches"))
             return 1
@@ -823,9 +832,6 @@ def run_list(args: argparse.Namespace) -> int:
 
     if not found:
         _err(render.fail("no worktree matches"))
-        return 1
-    if len(rows) < 2:
-        _err(render.fail("this is the only worktree; gwa NAME makes another"))
         return 1
     # The main checkout is offered even to somebody standing in it: from a
     # subdirectory it is the way back to the top. Any other worktree you
@@ -1056,7 +1062,7 @@ def _listed(names: list[str]) -> str:
     return f"{', '.join(names[:-1])} and {names[-1]}"
 
 
-def run_help(args: argparse.Namespace) -> int:
+def _guide() -> int:
     """Every name this package installs, and what each one answers."""
     o = render.out
     print(
@@ -1070,14 +1076,14 @@ def run_help(args: argparse.Namespace) -> int:
     rows: list[Row] = [(Cell("COMMAND", BOLD), Cell("GW", BOLD), Cell("DOES", BOLD))]
     for name, c in command_rows():
         aliases = f" ({', '.join(c.aliases)})" if c.aliases else ""
+        usage = f" {c.usage}" if c.usage and not c.binary else ""
         rows.append(
             (
-                # A row installing no binary has nothing for this column:
-                # `gw version` is the only way to type it.
+                # Commands without a console script use only their gw spelling.
                 Cell.of((c.binary, BOLD + GREEN), (f" {c.usage}", DIM))
                 if c.binary and c.usage
                 else Cell(c.binary or "\u2014", BOLD + GREEN if c.binary else DIM),
-                Cell.of(("gw ", DIM), (name, BLUE), (aliases, DIM)),
+                Cell.of(("gw ", DIM), (name, BLUE), (usage, DIM), (aliases, DIM)),
                 Cell(c.about),
             )
         )
@@ -1087,13 +1093,16 @@ def run_help(args: argparse.Namespace) -> int:
     def names(binaries: list[str]) -> str:
         return _listed([o(b, BOLD + GREEN) for b in binaries])
 
-    lands = [c.binary for _, c in command_rows() if c.lands]
+    lands = ["gw", *(c.binary for _, c in command_rows() if c.lands and c.binary)]
     print(
         f"{names(lands)} change the directory you are "
         "standing in.\nA binary cannot do that, so each needs the shell function "
         "of the same name\nfrom the plugin; the rest need nothing but $PATH."
     )
-    print("gw NAME selects a worktree; subcommands take precedence.")
+    print("gw list is the default; gw NAME means gw list NAME.")
+    print("In a terminal, pick a destination; subcommands take precedence.")
+    print("Without a terminal, or with --json or --list, print metadata.")
+    print("gw list NAME selects names that collide with subcommands.")
     print("gwp! skips confirmation; gwr! deletes ignored files.")
     print("gwp!! deletes empty branches, ignored files and branch stashes.")
     text, same = plugin_state()
@@ -1112,7 +1121,7 @@ def _complete_commands() -> int:
     """Every subcommand and shorthand, for the shell completions.
 
     Name and description, tab-separated, which is what fish reads directly
-    and what zsh splits for `_describe`. It comes from the same table `gwh`
+    and what zsh splits for `_describe`. It comes from the same table `gw --help`
     prints, so a command added there needs no edit in either shell file.
     """
     for name, c in _COMMANDS.items():
@@ -1269,10 +1278,8 @@ _COMMANDS: dict[str, _Command] = {
     "list": _Command(
         run_list,
         _add_list_flags,
-        "pick a worktree and land you in it",
-        "gwl",
+        "list worktrees or pick a destination",
         usage="[QUERY]",
-        aliases=("l", "ls"),
         lands=True,
     ),
     "move": _Command(
@@ -1299,13 +1306,6 @@ _COMMANDS: dict[str, _Command] = {
         "the next branch in a series",
         "gwrot",
         aliases=("rot",),
-    ),
-    "help": _Command(
-        run_help,
-        None,
-        "every command and alias, this list",
-        "gwh",
-        aliases=("h",),
     ),
     # Version is available through the tool's name without a separate binary.
     "version": _Command(
@@ -1373,8 +1373,12 @@ class _Parser(argparse.ArgumentParser):
 
     def print_help(self, file=None) -> None:
         if file is None:
-            lands = {c.binary for c in _COMMANDS.values() if c.lands}
-            file = sys.stderr if self.prog in lands else sys.stdout
+            lands = {c.binary for c in _COMMANDS.values() if c.lands and c.binary}
+            file = (
+                sys.stderr
+                if self.prog in lands or self.prog.endswith(" list")
+                else sys.stdout
+            )
         # argparse decides colour by asking whether sys.stdout is a terminal,
         # whatever stream the help goes to, so it is asked about this one.
         saved, sys.stdout = sys.stdout, file
@@ -1436,13 +1440,6 @@ def gwa(argv: list[str] | None = None) -> int:
     return _dispatch(p, argv, run_add)
 
 
-def gwl(argv: list[str] | None = None) -> int:
-    """The same, for one that already exists."""
-    p = _parser("gwl", "Pick one of this repository's worktrees and print its path.")
-    _add_list_flags(p)
-    return _dispatch(p, argv, run_list)
-
-
 def gwm(argv: list[str] | None = None) -> int:
     """Renaming the directory you stand in is why this one is not optional."""
     p = _parser("gwm", "Rename this worktree's branch to NEW and move it to match.")
@@ -1464,38 +1461,9 @@ def gwrot(argv: list[str] | None = None) -> int:
     return _dispatch(p, argv, run_rotate)
 
 
-def gwh(argv: list[str] | None = None) -> int:
-    """One name that answers "what did this install?"."""
-    p = _parser("gwh", "List every command and shorthand worktrees installs.")
-    return _dispatch(p, argv, run_help)
-
-
 def gw(argv: list[str] | None = None) -> int:
     """The short name. Its own prog, so a usage error names what was typed."""
     return main(argv, prog="gw")
-
-
-def _unknown_command(prog: str, typed: str) -> int:
-    """A name no row answers to, and the nearest one that does.
-
-    argparse spells every command twice for this, once in a usage line and
-    once in the choices, so the name worth reading arrives last. The pool is
-    the same table `gwh` prints, plus `--help`, which people type as a
-    command.
-    """
-    # difflib costs 0.8 ms to import and only a mistyped command needs it,
-    # so the run that made the typo pays for it and no other run does.
-    import difflib
-
-    render.setup()  # reached before _dispatch, which does this for the rest
-    lines = [f"{prog}: there is no command {typed!r}"]
-    pool = [*_CANONICAL, "--help"]
-    near = difflib.get_close_matches(typed, pool, n=1)
-    if near:
-        lines.append(f"the closest is: {prog} {near[0]}")
-    lines.append(f"{prog} help lists every command")
-    _err(render.fail("\n".join(lines)))
-    return 2
 
 
 def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
@@ -1503,48 +1471,20 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     args_in = sys.argv[1:] if argv is None else argv
     if args_in and args_in[0] == "--complete":
         return _complete_commands()
-    if (
-        args_in
-        and args_in[0].startswith("-")
-        and args_in[0]
-        not in (
-            "-h",
-            "--help",
-        )
-    ):
-        args_in = ["prune", "--dry-run", *args_in]
-    if not args_in:
-        args_in = ["prune", "--dry-run"]
-    if args_in and not args_in[0].startswith("-") and args_in[0] not in _CANONICAL:
-        if len(args_in) == 1:
-            return gwl(args_in)
-        return _unknown_command(prog, args_in[0])
+    if args_in in (["-h"], ["--help"]):
+        render.setup()
+        return _guide()
+    if not args_in or args_in[0] not in _CANONICAL:
+        args_in = ["list", *args_in]
 
     p = _parser(prog, "Git worktree commands that refuse to lose work.")
     subs = p.add_subparsers(dest="command")
-    for name in _needed(args_in):
-        command = _COMMANDS[name]
-        sub = subs.add_parser(name, aliases=list(command.aliases), help=command.about)
-        if command.flags:
-            command.flags(sub)
+    name = _CANONICAL[args_in[0]]
+    command = _COMMANDS[name]
+    sub = subs.add_parser(name, aliases=list(command.aliases), help=command.about)
+    if command.flags:
+        command.flags(sub)
     return _dispatch(p, args_in, None)
-
-
-def _needed(args_in: list[str]) -> list[str]:
-    """Which subparsers this invocation has to have built.
-
-    One, normally. Building all eleven and their shorthands is 1.5 ms of a
-    47 ms run, and ten of them answer a question nobody asked.
-
-    Two invocations need the whole set. `gw --help` prints the list, and a
-    name is checked against `_CANONICAL` before this is reached, so anything
-    else reaching the else-branch is argparse's to report.
-    """
-    if not args_in:
-        return []  # `gw` on its own prints the help table and parses nothing
-    if args_in[0] in _CANONICAL:
-        return [_CANONICAL[args_in[0]]]
-    return list(_COMMANDS)
 
 
 def _dispatch(
@@ -1564,7 +1504,7 @@ def _dispatch(
         args.prog += f" {args.branch_command}"
     if run is None:
         if command is None:
-            return run_help(args)
+            return _guide()
         run = _COMMANDS[_CANONICAL[command]].run
     try:
         if getattr(args, "quiet", False) and getattr(args, "verbose", False):
@@ -1582,7 +1522,7 @@ def _dispatch(
         if run is run_prune and args.only and not args.dry_run:
             raise _Stop("--only requires --dry-run", 2)
         if (
-            run not in (run_help, run_version, run_sync)
+            run not in (run_version, run_sync)
             and not getattr(args, "explain", False)
             and not getattr(args, "complete", False)
             and not (hasattr(args, "name") and not args.name)

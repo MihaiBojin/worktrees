@@ -235,9 +235,9 @@ def snapshot(path: Path) -> dict[str, bytes]:
     [
         ("gwp", ("--dry-run",)),
         ("gwp", ("--dry-run", "--yes")),
-        ("gw", ()),
-        ("gw", ("--yes",)),
-        ("gw", ("-y",)),
+        ("gw", ("prune", "--dry-run")),
+        ("gw", ("prune", "--dry-run", "--yes")),
+        ("gw", ("prune", "--dry-run", "-y")),
     ],
 )
 def test_preview_preserves_repository_files_refs_stashes_and_stale_records(
@@ -281,9 +281,6 @@ def test_empty_filter_preserves_ineligible_empty_rows(world):
 @pytest.mark.parametrize(
     "args",
     [
-        ("status", "--json"),
-        ("s", "--json"),
-        ("st", "--json"),
         ("prune", "done"),
         ("prune", "--branch", "done"),
     ],
@@ -300,7 +297,7 @@ def test_retired_status_names_select_exact_worktrees(world, name):
     target = world.worktree(name)
     result = run(world, "gw", name)
     assert result.returncode == 0, result.stderr
-    assert result.stdout == str(target.resolve()) + "\n"
+    assert "WORKTREE" in result.stdout and str(target.resolve()) in result.stdout
     assert target.is_dir()
 
 

@@ -22,7 +22,7 @@ import pytest
 from conftest import World, env_for
 
 ROOT = Path(__file__).resolve().parents[1]
-CD_COMMANDS = ("gw", "gwa", "gwl", "gwm", "gwr")
+CD_COMMANDS = ("gw", "gwa", "gwm", "gwr")
 # A shortcut calls a command with its flags fixed, and nothing else.
 SHORTCUTS = {
     "gwr!": "gwr --delete ignored-files",
@@ -479,7 +479,7 @@ def _drive(
 def _cli_binaries(world: World) -> Path:
     bin_dir = world.root / "bin"
     bin_dir.mkdir()
-    for name in ("gw", "gwl", "gwr"):
+    for name in ("gw", "gwr"):
         binary = bin_dir / name
         binary.write_text(
             f"#!{sys.executable}\nfrom worktrees.cli import {name}\n"
@@ -491,12 +491,12 @@ def _cli_binaries(world: World) -> Path:
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
 @pytest.mark.parametrize("query", ["fix-parser", "fxpr", "path"])
-def test_gw_navigates_through_gwl_matching(world, shell, query):
+def test_gw_navigates_through_list_matching(world, shell, query):
     target = world.root / "path with spaces "
     world.git("worktree", "add", "-b", "fix-parser", str(target), "main")
     words = ["gw", str(target) if query == "path" else query]
     process, cwd = _drive(
-        shell, _cli_binaries(world), words, world.repo, env_for(world)
+        shell, _cli_binaries(world), words, world.repo, env_for(world), answer=b""
     )
     assert process.returncode == 0, process.stderr
     assert process.stdout == b""
@@ -505,20 +505,22 @@ def test_gw_navigates_through_gwl_matching(world, shell, query):
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
 @pytest.mark.parametrize("name", ["version", "v"])
-def test_gw_subcommands_take_precedence_and_gwl_is_the_escape(world, shell, name):
+def test_gw_subcommands_take_precedence_and_list_is_the_escape(world, shell, name):
     target = world.worktree(name)
     bin_dir = _cli_binaries(world)
     process, cwd = _drive(shell, bin_dir, ["gw", name], world.repo, env_for(world))
     assert process.returncode == 0, process.stderr
     assert process.stdout
     assert cwd == os.fsencode(world.repo.resolve())
-    process, cwd = _drive(shell, bin_dir, ["gwl", name], world.repo, env_for(world))
+    process, cwd = _drive(
+        shell, bin_dir, ["gw", "list", name], world.repo, env_for(world), answer=b""
+    )
     assert process.returncode == 0, process.stderr
     assert cwd == os.fsencode(target.resolve())
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("entry", ["gw", "gwl"])
+@pytest.mark.parametrize("entry", ["gw"])
 def test_ambiguous_navigation_lists_matching_paths_without_a_terminal(
     world, shell, entry
 ):
@@ -526,9 +528,9 @@ def test_ambiguous_navigation_lists_matching_paths_without_a_terminal(
     process, cwd = _drive(
         shell, _cli_binaries(world), [entry, "fix"], world.repo, env_for(world)
     )
-    assert process.returncode == 3, process.stderr
-    assert process.stdout == b""
-    assert all(os.fsencode(path.resolve()) in process.stderr for path in targets)
+    assert process.returncode == 0, process.stderr
+    assert b"WORKTREE" in process.stdout
+    assert all(os.fsencode(path.resolve()) in process.stdout for path in targets)
     assert cwd == os.fsencode(world.repo.resolve())
 
 
@@ -544,7 +546,7 @@ def test_gw_missing_name_does_not_move(world, shell):
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("name", ["gw", "gwl", "gwr", "gwa", "gwm"])
+@pytest.mark.parametrize("name", ["gw", "gwr", "gwa", "gwm"])
 @pytest.mark.parametrize("suffix", [" space \t", "line\nbreak", "final\n"])
 def test_navigation_preserves_exact_destination_bytes(tmp_path, shell, name, suffix):
     target = tmp_path / suffix
@@ -557,7 +559,7 @@ def test_navigation_preserves_exact_destination_bytes(tmp_path, shell, name, suf
         f"    os.write(1, {os.fsencode(target.resolve())!r} + b'\\n')\n"
     )
     bin_dir = _fake(tmp_path, name, binary)
-    process, cwd = _drive(shell, bin_dir, [name, "target"], tmp_path)
+    process, cwd = _drive(shell, bin_dir, [name, "target"], tmp_path, answer=b"")
     assert process.returncode == 0, process.stderr
     assert process.stdout == b""
     assert cwd == os.fsencode(target.resolve())
@@ -579,7 +581,7 @@ def test_gwr_lands_after_partial_failure_and_keeps_the_exit_code(tmp_path, shell
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("name", ["gw", "gwr", "gwl", "gwa", "gwm"])
+@pytest.mark.parametrize("name", ["gw", "gwr", "gwa", "gwm"])
 def test_adapter_preserves_data_output_on_failure(tmp_path, shell, name):
     payload = b'{"error": "cleanup failed"}\n\n'
     bin_dir = _fake(
@@ -600,9 +602,7 @@ def test_adapter_preserves_data_output_on_failure(tmp_path, shell, name):
     [
         ["--help"],
         ["--json"],
-        ["--dry-run"],
         ["--complete"],
-        ["list", "x"],
         ["ls"],
         ["custom"],
     ],
@@ -643,14 +643,14 @@ def test_gwp_double_bang_forwards_arguments_and_failure(tmp_path, shell):
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("entry", ["gw", "gwl"])
+@pytest.mark.parametrize("entry", ["gw"])
 def test_navigation_reaches_a_real_main_path_ending_in_newline(world, shell, entry):
     target = world.root / "main\n"
     world.repo.rename(target)
     world.repo = target
     linked = world.worktree("topic")
     process, cwd = _drive(
-        shell, _cli_binaries(world), [entry, "main"], linked, env_for(world)
+        shell, _cli_binaries(world), [entry, "main"], linked, env_for(world), answer=b""
     )
     assert process.returncode == 0, process.stderr
     assert process.stdout == b""
@@ -663,7 +663,6 @@ def test_navigation_reaches_a_real_main_path_ending_in_newline(world, shell, ent
     [
         [],
         ["--json"],
-        ["--dry-run"],
         ["--help"],
         ["--complete"],
         ["list", "one"],
@@ -676,10 +675,10 @@ def test_real_gw_data_and_subcommands_keep_the_callers_directory(world, shell, w
         shell, _cli_binaries(world), ["gw", *words], world.repo, env_for(world)
     )
     assert process.returncode == 0, process.stderr
-    assert process.stdout
+    assert process.stdout or words == ["--help"]
     assert cwd == os.fsencode(world.repo.resolve())
     if words == ["list", "one"]:
-        assert process.stdout == os.fsencode(target.resolve()) + b"\n"
+        assert b"WORKTREE" in process.stdout and os.fsencode(target) in process.stdout
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
@@ -702,28 +701,28 @@ def test_gwp_double_bang_help_names_every_deletion_category(world, shell):
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("entry", ["gwl", "gwr"])
+@pytest.mark.parametrize("entry", ["gw", "gwr"])
 def test_json_after_the_option_separator_is_a_worktree_name(world, shell, entry):
     target = world.root / ".worktrees" / "--json" / "repo"
     target.parent.mkdir(parents=True)
     world.git("worktree", "add", "-b", "topic", str(target), "main")
     words = (
-        ["gwl", "--", "--json"]
-        if entry == "gwl"
+        ["gw", "list", "--", "--json"]
+        if entry == "gw"
         else ["gwr", "--yes", "--delete", "empty", "--", "--json"]
     )
     process, cwd = _drive(
         shell,
         _cli_binaries(world),
         words,
-        world.repo if entry == "gwl" else target,
+        world.repo if entry == "gw" else target,
         env_for(world),
-        answer=None if entry == "gwl" else b"y\n",
+        answer=b"" if entry == "gw" else b"y\n",
     )
     assert process.returncode == 0, process.stderr
     assert process.stdout == b""
-    assert cwd == os.fsencode((target if entry == "gwl" else world.repo).resolve())
-    assert target.exists() == (entry == "gwl")
+    assert cwd == os.fsencode((target if entry == "gw" else world.repo).resolve())
+    assert target.exists() == (entry == "gw")
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
@@ -743,7 +742,7 @@ def test_real_gwr_json_does_not_move_the_caller(world, shell):
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-def test_ambiguous_gw_navigation_uses_the_gwl_picker(world, shell):
+def test_ambiguous_gw_navigation_uses_the_list_picker(world, shell):
     world.worktree("fix-one")
     target = world.worktree("fix-two")
     process, cwd = _drive(
@@ -764,14 +763,14 @@ def test_ambiguous_gw_navigation_uses_the_gwl_picker(world, shell):
 def test_json_is_forwarded_when_a_relative_directory_has_its_name(world, shell):
     bin_dir = _cli_binaries(world)
     payload = subprocess.check_output(
-        [str(bin_dir / "gwl"), "--json"], cwd=world.repo, env=env_for(world)
+        [str(bin_dir / "gw"), "--json"], cwd=world.repo, env=env_for(world)
     )
     target = world.repo / os.fsdecode(payload.removesuffix(b"\n"))
     target.mkdir(parents=True)
     assert payload == subprocess.check_output(
-        [str(bin_dir / "gwl"), "--json"], cwd=world.repo, env=env_for(world)
+        [str(bin_dir / "gw"), "--json"], cwd=world.repo, env=env_for(world)
     )
-    process, cwd = _drive(shell, bin_dir, ["gwl", "--json"], world.repo, env_for(world))
+    process, cwd = _drive(shell, bin_dir, ["gw", "--json"], world.repo, env_for(world))
     assert process.returncode == 0, process.stderr
     assert process.stdout == payload
     assert cwd == os.fsencode(world.repo.resolve())

@@ -90,7 +90,7 @@ def test_listing_marks_exact_current_root(world, suffix):
     original = world.worktree("topic")
     target = world.root / ("linked" + suffix)
     world.git("worktree", "move", str(original), str(target))
-    result = run(world, "gwl", "--json", at=target)
+    result = run(world, "gw", "list", "--json", at=target)
     assert result.returncode == 0, result.stderr
     row = next(
         row

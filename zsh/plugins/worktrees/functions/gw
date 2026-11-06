@@ -1,11 +1,14 @@
-if (( $# != 1 )) || [[ $1 == -* ]]; then
-    command gw "$@"
-    return $?
-fi
-local -a commands
-commands=("${(@f)$(command gw --complete)}")
+local -a commands=("${(@f)$(command gw --complete)}")
 commands=("${commands[@]%%$'\t'*}")
-if (( ${commands[(Ie)$1]} )); then
+local navigation=1 arg
+if (( $# )) && (( ${commands[(Ie)$1]} )) && [[ $1 != list ]]; then
+    navigation=0
+fi
+for arg in "$@"; do
+    [[ $arg != -- ]] || break
+    case $arg in --json|--list|-l|--help|-h|--complete|--explain) navigation=0 ;; esac
+done
+if [[ ! -t 0 ]] || (( ! navigation )); then
     command gw "$@"
     return $?
 fi

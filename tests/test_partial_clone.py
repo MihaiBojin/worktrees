@@ -63,7 +63,8 @@ def trace_children(path: Path) -> list[list[str]]:
 
 
 @pytest.mark.parametrize(
-    "entry,args", [("gw", ()), ("gwp", ("--dry-run",)), ("gwbs", ())]
+    "entry,args",
+    [("gw", ("prune", "--dry-run")), ("gwp", ("--dry-run",)), ("gwbs", ())],
 )
 def test_partial_clone_assessment_never_fetches_or_writes(world, entry, args):
     partial = partial_clone(world)
@@ -130,7 +131,9 @@ def test_unsafe_git_partial_clone_refuses_before_object_commands(world, version)
     env = env_for(partial)
     result = cli(
         partial,
+        "--dry-run",
         "--json",
+        entry="gwp",
         env={
             **env,
             "PATH": f"{stub}{os.pathsep}{env['PATH']}",
@@ -171,7 +174,9 @@ def test_patched_git_partial_clone_policy_accepts_supported_releases(world, vers
     before = git_snapshot(partial.repo)
     result = cli(
         partial,
+        "--dry-run",
         "--json",
+        entry="gwp",
         env={
             **env,
             "PATH": f"{stub}{os.pathsep}{env['PATH']}",
@@ -191,7 +196,11 @@ def test_old_git_full_clone_remains_usable(world):
     stub = git_version_stub(world, "2.43.0")
     env = env_for(world)
     result = cli(
-        world, "--json", env={**env, "PATH": f"{stub}{os.pathsep}{env['PATH']}"}
+        world,
+        "--dry-run",
+        "--json",
+        entry="gwp",
+        env={**env, "PATH": f"{stub}{os.pathsep}{env['PATH']}"},
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["verdicts"]
@@ -250,7 +259,11 @@ def test_false_promisor_flag_does_not_restrict_full_clones(world, value):
     stub = git_version_stub(world, "2.43.0")
     env = env_for(world)
     result = cli(
-        world, "--json", env={**env, "PATH": f"{stub}{os.pathsep}{env['PATH']}"}
+        world,
+        "--dry-run",
+        "--json",
+        entry="gwp",
+        env={**env, "PATH": f"{stub}{os.pathsep}{env['PATH']}"},
     )
     assert result.returncode == 0, result.stderr
 

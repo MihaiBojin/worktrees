@@ -72,7 +72,7 @@ have more than one blocker, so show every required permission.
 
 A checked-out branch is already represented by its worktree and is absent
 from `gwbs`. Never target the current checkout, even if the user names it;
-identify it from the current working directory or `gwl --json`'s
+identify it from the current working directory or `gw list --json`'s
 `worktrees[].here` if needed. The main checkout and protected branches remain
 blocked too. Do not infer eligibility from a verdict alone.
 

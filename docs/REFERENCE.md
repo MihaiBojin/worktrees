@@ -1,6 +1,8 @@
 # Runtime contracts
 
-`gw` assesses worktrees without mutation. `gwp` removes eligible worktrees;
+`gw` defaults to `gw list`: terminal input selects a destination; nonterminal
+input prints matching worktree metadata. `--json` and `--list` always print
+metadata. `gw --help` prints the command guide outside a repository. `gwp` removes eligible worktrees;
 `gwr` selects one. `gwbs` assesses loose local branches and `gwbd` deletes
 selected eligible refs. A checked-out branch appears only as a worktree.
 [The README](../README.md) covers invocation, permissions and migration.
@@ -153,7 +155,7 @@ Worktree and branch assessment put rows in `verdicts`. Both retain
 `verdict`, `eligible`, `proof`, `request`, `protections`, `stashes`, `branch`,
 `sha` and `why`. Worktree rows add exact `path` and an ignored-path count;
 branch rows add `paths`, `error` and shell-quoted `undo`.
-`gwl --json` puts navigation rows in `worktrees`, with `branch`, `path`,
+`gw list --json` puts navigation rows in `worktrees`, with `branch`, `path`,
 `main`, `here` and `flags`. Do not apply a top-level array filter.
 
 Removal JSON reports actual outcomes. `gwp` has `removed`, `failed` and

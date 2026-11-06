@@ -3,7 +3,7 @@
 # Flags as `gwr --help` lists them.
 
 # Candidates come from the CLI, never from this file: `gwr --complete` prints
-# the worktrees gwr can reach, which is not gwl's list.
+# the worktrees gwr can reach, which is not list's list.
 (( $+functions[__gwr_targets] )) || __gwr_targets() {
     local -a names descs
     local line
