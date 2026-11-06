@@ -34,7 +34,7 @@ def status_flags(p: argparse.ArgumentParser) -> None:
 def _assessment_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--json", action="store_true", help="verdicts and evidence as data")
     p.add_argument("-q", "--quiet", action="store_true", help="omit the summary")
-    p.add_argument("-v", "--verbose", action="store_true", help="print every command")
+    p.set_defaults(verbose=False)
     p.add_argument(
         "--explain", action="store_true", help="print every git command and exit"
     )
@@ -42,6 +42,7 @@ def _assessment_flags(p: argparse.ArgumentParser) -> None:
 
 
 def delete_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument("-v", "--verbose", action="store_true", help="print every command")
     _add_delete_flags(p, branch=True)
     p.add_argument(
         "names",

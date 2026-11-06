@@ -105,8 +105,9 @@ def test_a_name_is_required(world) -> None:
     assert p.stdout == ""
 
 
-def test_the_binary_reports_what_it_made(world) -> None:
-    p = gwbc(world, "feature")
+@pytest.mark.parametrize("flags", [(), ("-q",), ("--quiet",)])
+def test_the_binary_reports_what_it_made(world, flags) -> None:
+    p = gwbc(world, "feature", *flags)
     assert p.returncode == 0, p.stderr
     sha = world.git("rev-parse", "--short", "refs/heads/main")
     assert p.stdout.strip() == f"feature from main at {sha}"

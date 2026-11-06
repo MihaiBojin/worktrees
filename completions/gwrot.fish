@@ -4,7 +4,7 @@ complete -c gwrot -f
 
 
 complete -c gwrot -l json -d 'the result as data'
-complete -c gwrot -s q -l quiet -d 'say nothing on success'
+complete -c gwrot -s q -l quiet -d 'omit summaries and progress'
 complete -c gwrot -s v -l verbose -d 'print every git command'
 complete -c gwrot -l explain -d 'print every git command and exit'
 

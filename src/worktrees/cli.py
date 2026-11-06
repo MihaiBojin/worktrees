@@ -468,7 +468,9 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
         "name", nargs="?", default="", metavar="NAME", help="the branch to start"
     )
     p.add_argument("--json", action="store_true", help="the result as data")
-    p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
+    p.add_argument(
+        "-q", "--quiet", action="store_true", help="omit summaries and progress"
+    )
     p.add_argument(
         "-v", "--verbose", action="store_true", help="print every git command"
     )
@@ -504,7 +506,7 @@ def run_new_branch(args: argparse.Namespace) -> int:
                 indent=2,
             )
         )
-    elif not args.quiet:
+    else:
         print(
             f"{render.out(started.branch, render.BRANCH)} from "
             f"{render.out(R.ref_name(started.base), BLUE)} at "
@@ -520,7 +522,9 @@ def run_new_branch(args: argparse.Namespace) -> int:
 
 def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--json", action="store_true", help="the result as data")
-    p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
+    p.add_argument(
+        "-q", "--quiet", action="store_true", help="omit summaries and progress"
+    )
     p.add_argument(
         "-v", "--verbose", action="store_true", help="print every git command"
     )
@@ -559,7 +563,7 @@ def run_rotate(args: argparse.Namespace) -> int:
                     indent=2,
                 )
             )
-        elif not args.quiet:
+        else:
             print(
                 _was_now(
                     (result.branch, result.previous_sha, ""),
@@ -586,7 +590,7 @@ def run_rotate(args: argparse.Namespace) -> int:
                 indent=2,
             )
         )
-    elif not args.quiet:
+    else:
         base = R.ref_name(result.base)
         kept = (
             f"kept, {_commits(result.ahead)} not on {base}"
@@ -634,12 +638,16 @@ def _commits(n: int) -> str:
 def _add_cd_flags(p: argparse.ArgumentParser) -> None:
     """Shared by every command whose answer is a directory."""
     p.add_argument("--json", action="store_true", help="the result as data")
+    p.set_defaults(quiet=False, verbose=False)
+    p.add_argument(
+        "--explain", action="store_true", help="print every git command and exit"
+    )
+
+
+def _add_cd_output_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("-q", "--quiet", action="store_true", help="the path alone")
     p.add_argument(
         "-v", "--verbose", action="store_true", help="print every git command"
-    )
-    p.add_argument(
-        "--explain", action="store_true", help="print every git command and exit"
     )
 
 
@@ -649,6 +657,7 @@ def _add_add_flags(p: argparse.ArgumentParser) -> None:
         "base", nargs="?", default="", metavar="BASE", help="what to branch from"
     )
     _add_cd_flags(p)
+    _add_cd_output_flags(p)
 
 
 def _add_list_flags(p: argparse.ArgumentParser) -> None:
@@ -670,6 +679,7 @@ def _add_move_flags(p: argparse.ArgumentParser) -> None:
         "name", nargs="?", default="", metavar="NEW", help="the new branch name"
     )
     _add_cd_flags(p)
+    _add_cd_output_flags(p)
 
 
 def _add_remove_flags(p: argparse.ArgumentParser) -> None:
@@ -687,6 +697,7 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     # on it and offering it would complete to "no worktree matches".
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
     _add_cd_flags(p)
+    _add_cd_output_flags(p)
 
 
 def _landed(args: argparse.Namespace, landed: wt_mod.Landed) -> int:
@@ -1076,17 +1087,11 @@ def run_help(args: argparse.Namespace) -> int:
     text, same = plugin_state()
     print(o(text, "" if same else YELLOW))
     print()
-    # Which commands take the common flags is the table's answer, not a second
-    # list here: a row with no flags takes none, and saying so in prose is how
-    # a help text comes to promise a flag the program refuses.
-    bare = [c.binary or f"gw {name}" for name, c in command_rows() if c.flags is None]
-    scope = f"every command but {names(bare)}" if bare else "every command"
-    flags = _listed([o(f, BOLD) for f in ("--json", "-q", "-v", "--explain")])
     print(
         f"{names(['gwbc', 'gwrot'])} start branches rather than worktrees."
-        f"\n\n{flags} work on {scope}, and\n"
-        f"`{o('gw <command> --help', BOLD)}` has the rest. A non-empty "
-        f"{o('NO_COLOR', BOLD)} turns the colour off."
+        "\n\nOutput flags depend on the command. "
+        f"`{o('gw <command> --help', BOLD)}` lists them.\n"
+        f"A non-empty {o('NO_COLOR', BOLD)} turns the colour off."
     )
     return 0
 
@@ -1549,6 +1554,10 @@ def _dispatch(
             return run_help(args)
         run = _COMMANDS[_CANONICAL[command]].run
     try:
+        if getattr(args, "quiet", False) and getattr(args, "verbose", False):
+            raise _Stop("--quiet and --verbose cannot be combined", 2)
+        if run is run_prune and args.dry_run and args.verbose:
+            raise _Stop("--verbose is not available in preview mode", 2)
         values = getattr(args, "delete", [])
         if getattr(args, "keep_branch", False) and any(
             value != "ignored-files" for value in values
