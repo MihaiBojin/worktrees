@@ -75,11 +75,11 @@ Four rules the CLI does not break:
   refusal. `gws --explain` prints the list, marking the 11 that mutate.
 - There is no configuration. No file, no environment variable beyond
   `NO_COLOR` and `TERM`, and no `git config` key of this program's own. The
-  one git key it reads, `checkout.defaultRemote`, is git's and answers a
-  question git already asks: which remote this repository works against.
-  The one file it writes is `git-worktrees-sync.json` in the git common
-  directory: `gw sync` replaces it whole after a fetch, and it holds state,
-  not settings.
+  two git keys it reads are git's: `checkout.defaultRemote` says which remote
+  this repository works against, and `remote.<name>.url` says which forge
+  repository to ask. The one file it writes is `git-worktrees-sync.json` in
+  the git common directory: `gw sync` replaces it whole after a fetch, and it
+  holds state, not settings.
 
 ## 3. Decisions
 

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import shlex
+import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 from conftest import env_for
@@ -111,6 +113,84 @@ def test_a_worktree_and_a_loose_branch_share_one_proof(world, shape):
     assert branch["proof"] == ("" if shape == "unmerged" else shape)
     assert (worktree["verdict"], worktree["why"]) == (branch["verdict"], branch["why"])
     assert worktree["sha"] == branch["sha"]
+
+
+def failing_git(world, subcommand: str) -> dict[str, str]:
+    """An env whose git fails `subcommand` the way a broken repository does."""
+    env = env_for(world)
+    real = shutil.which("git", path=env["PATH"])
+    bin_dir = world.root / "failing-bin"
+    bin_dir.mkdir(exist_ok=True)
+    exe = bin_dir / "git"
+    exe.write_text(
+        "#!/bin/sh\n"
+        'for a in "$@"; do\n'
+        f'  [ "$a" = {subcommand} ] && {{ echo "fatal: simulated" >&2; exit 129; }}\n'
+        "done\n"
+        f'exec {real} "$@"\n'
+    )
+    exe.chmod(0o755)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    return env
+
+
+def unmerged_worktree(world) -> Path:
+    wt = world.worktree("feature")
+    world.commit("feature", "work\n", at=wt)
+    return wt
+
+
+@pytest.mark.parametrize("subcommand", ["cherry", "status"])
+def test_a_git_failure_in_a_worktree_is_an_error(world, subcommand):
+    unmerged_worktree(world)
+    env = failing_git(world, subcommand)
+    p = cli(world, "status", "--no-fetch", "--no-forge", "--json", env=env)
+    assert p.returncode == 1, p.stderr
+    row = {r["branch"]: r for r in json.loads(p.stdout)["verdicts"]}["feature"]
+    assert row["verdict"] == "unknown"
+    assert row["why"].endswith(" exited 129: fatal: simulated"), row["why"]
+
+
+def test_gwp_reports_a_git_failure_and_removes_nothing_it_could_not_judge(world):
+    wt = unmerged_worktree(world)
+    p = cli(
+        world,
+        "--no-fetch",
+        "--no-forge",
+        "--yes",
+        entry="gwp",
+        env=failing_git(world, "cherry"),
+    )
+    assert p.returncode == 1, p.stderr
+    assert wt.exists()
+
+
+def test_gwr_refuses_a_worktree_it_could_not_judge(world):
+    """--force removes an unfinished checkout, not one nothing could judge."""
+    wt = unmerged_worktree(world)
+    p = cli(
+        world,
+        "feature",
+        "--no-fetch",
+        "--no-forge",
+        "--yes",
+        "--force",
+        entry="gwr",
+        env=failing_git(world, "cherry"),
+    )
+    assert p.returncode == 1, p.stderr
+    assert "exited 129: fatal: simulated" in p.stderr
+    assert wt.exists()
+
+
+def test_a_git_failure_in_a_branch_is_an_error(world):
+    local_branch(world)
+    env = failing_git(world, "cherry")
+    p = cli(world, "branch", "status", "--no-fetch", "--no-forge", "--json", env=env)
+    assert p.returncode == 1, p.stderr
+    row = json.loads(p.stdout)["verdicts"][0]
+    assert (row["verdict"], row["error"]) == ("unknown", True)
+    assert row["why"].endswith(" exited 129: fatal: simulated"), row["why"]
 
 
 def test_branch_status_lists_checked_out_branches_as_kept(world):
