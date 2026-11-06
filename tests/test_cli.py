@@ -489,6 +489,7 @@ def test_a_query_near_a_command_names_it(world) -> None:
     assert p.stderr.splitlines() == [
         "no worktree matches",
         "the closest command is: gw version",
+        "gw -h lists every command",
     ]
 
 
@@ -498,15 +499,20 @@ def test_a_query_near_a_command_names_it_under_either_name(world) -> None:
     assert p.stderr.splitlines() == [
         "no worktree matches",
         "the closest command is: worktrees prune",
+        "worktrees -h lists every command",
     ]
 
 
-@pytest.mark.parametrize("typed", ["help", "ls"])
-def test_a_removed_name_is_a_query(world, typed: str) -> None:
+@pytest.mark.parametrize(("typed", "near"), [("help", "--help"), ("ls", "list")])
+def test_a_removed_name_is_a_query(world, typed: str, near: str) -> None:
     p = run(world, "gw", typed)
     assert p.returncode == 1
     assert p.stdout == ""
-    assert p.stderr.splitlines()[0] == "no worktree matches"
+    assert p.stderr.splitlines() == [
+        "no worktree matches",
+        f"the closest command is: gw {near}",
+        "gw -h lists every command",
+    ]
 
 
 # --------------------------------------------------------------------------
