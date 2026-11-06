@@ -461,14 +461,14 @@ def test_a_bare_flag_means_status(world) -> None:
 
 
 def test_an_unknown_command_names_the_closest_one(world) -> None:
-    """argparse answers this with a usage line and twenty-two choices, and
-    the name worth reading arrives last."""
+    """argparse answers this with a usage line and every choice, and the name
+    worth reading arrives last."""
     p = run(world, "gw", "verison")
     assert p.returncode == 2
     assert p.stderr.splitlines() == [
         "gw: there is no command 'verison'",
         "the closest is: gw version",
-        "gw help lists every command",
+        "gw -h lists every command",
     ]
 
 
@@ -477,8 +477,16 @@ def test_an_unknown_command_near_nothing_still_points_at_help(world) -> None:
     assert p.returncode == 2
     assert p.stderr.splitlines() == [
         "worktrees: there is no command 'xyzzy'",
-        "worktrees help lists every command",
+        "worktrees -h lists every command",
     ]
+
+
+@pytest.mark.parametrize("typed", ["help", "h"])
+def test_help_is_not_a_command(world, typed: str) -> None:
+    p = run(world, "gw", typed)
+    assert p.returncode == 2
+    assert p.stdout == ""
+    assert p.stderr.splitlines()[-1] == "gw -h lists every command"
 
 
 # --------------------------------------------------------------------------
@@ -505,7 +513,6 @@ def test_every_shorthand_reaches_the_same_command(world, spelling: str) -> None:
         ("mv", "move"),
         ("rm", "remove"),
         ("rot", "rotate"),
-        ("h", "help"),
     ],
 )
 def test_a_shorthand_names_the_command_it_stands_for(
@@ -541,14 +548,19 @@ def test_every_command_is_installed_under_its_own_name() -> None:
 
 
 # --------------------------------------------------------------------------
-# gwh
+# gw -h
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("entry", ["gwh", "main"])
-def test_help_names_every_command_and_every_shorthand(world, entry: str) -> None:
-    args = () if entry == "gwh" else ("help",)
-    p = run(world, entry, *args)
+@pytest.mark.parametrize(
+    ("entry", "flag"),
+    [("gw", "-h"), ("gw", "--help"), ("main", "-h"), ("main", "--help")],
+)
+def test_help_names_every_command_and_every_shorthand(
+    world, tmp_path: Path, entry: str, flag: str
+) -> None:
+    """Read outside a repository too, so it asks git nothing."""
+    p = run(world, entry, flag, at=tmp_path)
     assert p.returncode == 0, p.stderr
     from worktrees import cli
 
@@ -557,32 +569,62 @@ def test_help_names_every_command_and_every_shorthand(world, entry: str) -> None
         assert f"gw {name}" in p.stdout, name
         for alias in command.aliases:
             assert alias in p.stdout, alias
+    assert "shell plugin" in p.stdout
+    assert "gw <command> --help" in p.stdout
+
+
+def test_help_runs_no_git(world, tmp_path: Path) -> None:
+    """A PATH with no git on it, so any git the help spawned would fail."""
+    p = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gw; raise SystemExit(gw())",
+            "-h",
+        ],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        env={**env_for(world), "PATH": str(tmp_path)},
+    )
+    assert p.returncode == 0, p.stderr
+    assert "gw version (v)" in p.stdout
 
 
 def test_the_cli_with_no_argument_prints_that_same_help(world) -> None:
     bare = run(world, "main").stdout
-    asked = run(world, "main", "help").stdout
+    asked = run(world, "main", "-h").stdout
     assert bare == asked
     assert "gws" in bare and "gw status (s, st)" in bare
 
 
+@pytest.mark.parametrize(
+    "argv", [("gws", "-h"), ("gwbs", "--help"), ("gw", "status", "-h")]
+)
+def test_every_other_command_keeps_its_own_help(world, argv: tuple[str, ...]) -> None:
+    p = run(world, *argv)
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.startswith("usage: ")
+
+
 @pytest.mark.parametrize("flag", ["--json", "-q", "-v", "--explain"])
 def test_help_promises_no_flag_the_program_refuses(world, flag: str) -> None:
-    """gwh declares no flags, so the footer has to carve it out by name. The
-    footer derives that from the table rather than asserting it in prose."""
-    p = run(world, "gwh", flag)
+    """gw version declares no flags, so the footer has to carve it out by
+    name. The footer derives that from the table rather than asserting it in
+    prose."""
+    p = run(world, "gw", "version", flag)
     assert p.returncode == 2
     assert "unrecognized arguments" in p.stderr
 
-    listed = run(world, "gwh")
-    assert "work on every command but gwh" in listed.stdout
+    listed = run(world, "gw", "-h")
+    assert "work on every command but gw version" in listed.stdout
     # and the flags it does claim are taken by a command that has a row
     assert run(world, "gws", "--no-fetch", flag).returncode == 0
 
 
 def test_help_stays_inside_eighty_columns(world) -> None:
     """It is read at a prompt, next to the commands it describes."""
-    p = run(world, "gwh")
+    p = run(world, "gw", "-h")
     assert p.returncode == 0, p.stderr
     assert [ln for ln in p.stdout.splitlines() if len(ln) > 80] == []
 

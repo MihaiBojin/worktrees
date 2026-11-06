@@ -172,7 +172,7 @@ def test_a_line_the_bump_cannot_find_changes_nothing(tmp_path) -> None:
 
 
 # --------------------------------------------------------------------------
-# what gwh and gw version say about the plugin
+# what gw -h and gw version say about the plugin
 # --------------------------------------------------------------------------
 
 
@@ -226,8 +226,8 @@ def test_gw_version_keeps_stdout_to_the_version(plugin: str | None) -> None:
 
 
 @pytest.mark.parametrize("plugin", [None, "0.0.1", "99.0.0", "0.6.0.post1789247568"])
-def test_gwh_says_what_the_plugin_is_inside_eighty_columns(plugin: str | None) -> None:
-    proc = _gw("help", plugin=plugin)
+def test_help_says_what_the_plugin_is_inside_eighty_columns(plugin: str | None) -> None:
+    proc = _gw("-h", plugin=plugin)
     assert proc.returncode == 0, proc.stderr
     assert "shell plugin" in proc.stdout
     assert [ln for ln in proc.stdout.splitlines() if len(ln) > 80] == []

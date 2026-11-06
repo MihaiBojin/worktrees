@@ -1184,7 +1184,7 @@ def _complete_commands() -> int:
     """Every subcommand and shorthand, for the shell completions.
 
     Name and description, tab-separated, which is what fish reads directly
-    and what zsh splits for `_describe`. It comes from the same table `gwh`
+    and what zsh splits for `_describe`. It comes from the same table `gw -h`
     prints, so a command added there needs no edit in either shell file.
     """
     for name, c in _COMMANDS.items():
@@ -1261,7 +1261,7 @@ class _Command:
     """One command under both its names, and every shorthand for it.
 
     The one place they are written down. `gw status`, `gw st`, `gw s` and
-    `gws` reach the same function because this row says so, and `gw help`
+    `gws` reach the same function because this row says so, and `gw -h`
     prints the row rather than a second list that can disagree with it.
     """
 
@@ -1380,16 +1380,9 @@ _COMMANDS: dict[str, _Command] = {
         "gwrot",
         aliases=("rot",),
     ),
-    "help": _Command(
-        run_help,
-        None,
-        "every command and alias, this list",
-        "gwh",
-        aliases=("h",),
-    ),
     # The one row with no console script. Asking a tool its version is done
-    # through the tool's name, and a tenth binary for it would be a name
-    # nobody types.
+    # through the tool's name, and a binary for it would be a name nobody
+    # types.
     "version": _Command(
         run_version,
         None,
@@ -1554,12 +1547,6 @@ def gwrot(argv: list[str] | None = None) -> int:
     return _dispatch(p, argv, run_rotate)
 
 
-def gwh(argv: list[str] | None = None) -> int:
-    """One name that answers "what did this install?"."""
-    p = _parser("gwh", "List every command and shorthand worktrees installs.")
-    return _dispatch(p, argv, run_help)
-
-
 def gw(argv: list[str] | None = None) -> int:
     """The short name. Its own prog, so a usage error names what was typed."""
     return main(argv, prog="gw")
@@ -1570,7 +1557,7 @@ def _unknown_command(prog: str, typed: str) -> int:
 
     argparse spells every command twice for this, once in a usage line and
     once in the choices, so the name worth reading arrives last. The pool is
-    the same table `gwh` prints, plus `--help`, which people type as a
+    the same table `gw -h` prints, plus `--help`, which people type as a
     command.
     """
     # difflib costs 0.8 ms to import and only a mistyped command needs it,
@@ -1583,7 +1570,7 @@ def _unknown_command(prog: str, typed: str) -> int:
     near = difflib.get_close_matches(typed, pool, n=1)
     if near:
         lines.append(f"the closest is: {prog} {near[0]}")
-    lines.append(f"{prog} help lists every command")
+    lines.append(f"{prog} -h lists every command")
     _err(render.fail("\n".join(lines)))
     return 2
 
@@ -1593,15 +1580,10 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     args_in = sys.argv[1:] if argv is None else argv
     if args_in and args_in[0] == "--complete":
         return _complete_commands()
-    if (
-        args_in
-        and args_in[0].startswith("-")
-        and args_in[0]
-        not in (
-            "-h",
-            "--help",
-        )
-    ):
+    if args_in and args_in[0] in ("-h", "--help"):
+        render.setup()  # reached before _dispatch, which does this for the rest
+        return run_help(argparse.Namespace())
+    if args_in and args_in[0].startswith("-"):
         # `worktrees --explain` is not about one command; status answers it.
         args_in = ["status", *args_in]
     if args_in and not args_in[0].startswith("-") and args_in[0] not in _CANONICAL:
@@ -1618,20 +1600,15 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
 
 
 def _needed(args_in: list[str]) -> list[str]:
-    """Which subparsers this invocation has to have built.
+    """The one subparser this invocation has to have built.
 
-    One, normally. Building all eleven and their shorthands is 1.5 ms of a
-    47 ms run, and ten of them answer a question nobody asked.
-
-    Two invocations need the whole set. `gw --help` prints the list, and a
-    name is checked against `_CANONICAL` before this is reached, so anything
-    else reaching the else-branch is argparse's to report.
+    Building every one and its shorthands is 1.5 ms of a 47 ms run, and all
+    but one answer a question nobody asked. `main` has already answered `-h`
+    and refused a name no row answers to, so a first argument here names a
+    command.
     """
-    if not args_in:
-        return []  # `gw` on its own prints the help table and parses nothing
-    if args_in[0] in _CANONICAL:
-        return [_CANONICAL[args_in[0]]]
-    return list(_COMMANDS)
+    # `gw` on its own prints the help table and parses nothing
+    return [_CANONICAL[args_in[0]]] if args_in else []
 
 
 def _dispatch(

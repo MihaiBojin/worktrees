@@ -40,7 +40,7 @@ function too, so this is the agent path as much as the human one.
 
 | | changes directory | ships as |
 | --- | --- | --- |
-| `gws`, `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`, `gwh` | no | a console script, and nothing else |
+| `gws`, `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot` | no | a console script, and nothing else |
 | a command that lands you somewhere | yes | a console script, plus a function of the same name |
 
 A binary cannot `cd` its caller. That is the only thing shell code is here for,
@@ -116,7 +116,7 @@ Neither manager puts a binary on `$PATH`. The console scripts arrive through
 
 Both plugins export `WORKTREES_PLUGIN_VERSION`, the release they came from:
 `conf.d/worktrees.fish` and `worktrees.plugin.zsh`, one assignment each.
-`gwh` and `gw version` compare it with `__version__`, in Python; the shell
+`gw -h` and `gw version` compare it with `__version__`, in Python; the shell
 files hold the value and no logic. Nothing built can stamp a file a plugin
 manager copies from git, so `scripts/bump_version.py` writes it at release,
 along with the tag in the README's install lines, and `tests/test_version.py`
@@ -130,7 +130,8 @@ A completion asks the CLI for its candidates rather than deriving them, and
 `--complete` is how: `gw --complete` prints every subcommand and shorthand,
 `gwl --complete` prints every worktree, both as name and description separated
 by a tab, which fish reads directly and zsh splits for `_describe`. Hidden from
-`--help`, because a person has `gwh` and `--list` for the same answers.
+`--help`, because a person has the command table and `--list` for the same
+answers.
 
 No shell file holds a candidate or a rank. What each file does carry is its own
 command's flags, and `tests/test_completions.py` diffs those against `--help`
@@ -240,10 +241,10 @@ executable commands for help and completion checks. A row carries the function, 
 the one-line description, the console script, the argument shape, the
 shorthands and whether the command changes the caller's directory. `gws`,
 `gw status`, `gw st` and `gw s` reach the same function because that row says
-so, and `gwh` prints the table rather than a second list that can disagree
+so, and `gw -h` prints the table rather than a second list that can disagree
 with it.
 
-`version` is the one row that installs no console script, and `gwh` prints a
+`version` is the one row that installs no console script, and `gw -h` prints a
 `—` in its first column to say so. A tool's version is asked through the
 tool's name, so `gw version` and `gw v` are the two spellings and no parser
 carries a `--version` flag.

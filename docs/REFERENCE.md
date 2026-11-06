@@ -35,8 +35,8 @@ What is here:
 | the fish half | `functions/`, `completions/`, `conf.d/` |
 | the zsh half | `zsh/plugins/worktrees/` |
 
-Thirteen console scripts: `gws`, `gwp`, `gwbs`, `gwbd`, `gwa`, `gwl`, `gwm`,
-`gwr`, `gwbc`, `gwrot`, `gwh`, `gw`, and `worktrees`. Four ship a shell function of
+Twelve console scripts: `gws`, `gwp`, `gwbs`, `gwbd`, `gwa`, `gwl`, `gwm`,
+`gwr`, `gwbc`, `gwrot`, `gw`, and `worktrees`. Four ship a shell function of
 the same name, one per shell, because a binary cannot `cd` its caller.
 
 The distribution is `git-worktrees` on PyPI, installed with
@@ -54,9 +54,9 @@ One CLI holds the behaviour. Everything else is a thin caller.
 
 | consumer | what it gets | what it must never need |
 | --- | --- | --- |
-| a person at a terminal | nine `gw`-prefixed names and `gw` itself, an arrow-key picker, colour, `cd` | to know a Python package is under it |
+| a person at a terminal | ten `gw`-prefixed names and `gw` itself, an arrow-key picker, colour, `cd` | to know a Python package is under it |
 | a shell | one path on stdout, `--complete` for candidates | to hold a candidate, a rank or a format string |
-| an agent | `--json` on every command but `gwh`, and refusals on stderr | to parse a table meant for a person |
+| an agent | `--json` on every command but `gw version`, and refusals on stderr | to parse a table meant for a person |
 
 Four rules the CLI does not break:
 
@@ -140,7 +140,7 @@ nobody re-derives the first.
 | The CLI prints candidates and the shim runs fzf | the CLI runs the picker and the shim only reads a path | dropping fzf removes the spawn, the tty rules around it and the fallback branch a machine without it needs |
 | Go, once the command surface stops moving | Python | the surface did not stop moving, and the case for Go was made against a bash CLI with a shell shim around it. Python costs 28 ms an invocation on 3.11 and 41 ms on 3.14, paid once per command a person types, and buys a standard library that answers every question this asks with no dependency and no build |
 | Completions are generated from the CLI's own flag declarations | completion files are written by hand and hold their own command's flags; candidates come from `--complete` | `tests/test_completions.py` diffs the flags against `--help` in both directions for both shells, so a renamed flag fails there rather than going quiet |
-| Every command takes `--json` on one envelope carrying `schema`, `command`, `ok`, `refusals`, `losing` and `result` | every command but `gwh` takes `--json`, and each prints the shape its own answer has | no envelope, no `schema` field, and no version on the payload |
+| Every command takes `--json` on one envelope carrying `schema`, `command`, `ok`, `refusals`, `losing` and `result` | every command but `gw version` takes `--json`, and each prints the shape its own answer has | no envelope, no `schema` field, and no version on the payload |
 | `--force` retires into `--remove-unfinished-checkout` and `--remove-detached-checkout`, and `--keep-branch` opts out of a branch delete | `gwr --force` removes the checkout and keeps the branch | the worktree was in the way, the work was not. There is one flag and it names one outcome |
 | The spinner lives in the binary and animates when stdout is a terminal | there is no spinner | |
 | The binary is called `origin`, and the plugin is `origin@origin-plugin` | the CLI is `worktrees`, reachable as `gw`, and there is no plugin | the two repositories split instead of merging |

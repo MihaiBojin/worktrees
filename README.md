@@ -5,7 +5,7 @@
 
 Git worktree commands that refuse to lose work.
 
-`gws`, `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`, and `gwh` run as console
+`gws`, `gwp`, `gwbs`, `gwbd`, `gwbc` and `gwrot` run as console
 scripts. `gwa`, `gwl`, `gwm`, and `gwr` change the caller's directory and need
 a shell function of the same name.
 
@@ -23,7 +23,6 @@ a shell function of the same name.
 | `gwp!` | `gwp --force-refresh --delete-ignored --yes`, a shell function in fish and zsh |
 | `gwbc NAME` | fetch, then branch `NAME` off the head branch and check it out |
 | `gwrot` | start the next branch after this one, or catch the head branch up |
-| `gwh` | print that table, with every name each command answers to |
 
 `gw` takes the same commands as subcommands, each with shorthands, so `gwl`,
 `gw list`, `gw ls` and `gw l` are one command:
@@ -40,9 +39,10 @@ a shell function of the same name.
 | `gwr` | `gw remove`, `rm` |
 | `gwbc` | `gw branch create` |
 | `gwrot` | `gw rotate`, `rot` |
-| `gwh` | `gw help`, `h`, and `gw` with no subcommand |
 
-`worktrees` is the same program under its long name.
+`gw -h` prints that table with every name each command answers to, and so
+does `gw` with no subcommand. `worktrees` is the same program under its long
+name.
 
 The command reference covers [branch status](docs/commands/branch-status.md)
 and [branch delete](docs/commands/branch-delete.md), including content proofs,
@@ -103,13 +103,13 @@ Python 3.11 or newer, and no dependencies. The standard library answers every
 question this asks, so an invocation pays for the interpreter and nothing
 else.
 
-That installs `gws`, `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`, and `gwh`. The
+That installs `gws`, `gwp`, `gwbs`, `gwbd`, `gwbc` and `gwrot`. The
 four that land you somewhere need a shell function too, and every command has
 a completion, both of which arrive through a plugin manager.
 
 Install the plugin at the tag of the release `uv` installed. Without a tag
 both managers take `main`, which can be ahead of the last release, and the
-functions then call commands they were not tested against. `gwh` says which
+functions then call commands they were not tested against. `gw -h` says which
 release the plugin here came from, and whether it is the same one.
 
 To upgrade, move both: `uv tool upgrade git-worktrees` for the commands, then
@@ -164,14 +164,14 @@ without a tag onto one.
 Each function runs `command <name>` and `cd`s to what it printed, provided
 that is a directory. `--json` and `--list` print what was asked for on the
 same stream a destination arrives on, so the shim asks whether what it has is
-somewhere to go and stays put when it is not. `gws`, `gwp`, `gwbc`, `gwrot` and `gwh`
+somewhere to go and stays put when it is not. `gws`, `gwp`, `gwbc` and `gwrot`
 change no directory, so they ship as console scripts alone and answer the same
 from a prompt and from a script.
 
 Both plugins export `WORKTREES_PLUGIN_VERSION`, the release they came from,
-since the environment is all a binary sees of the shell that started it. `gwh`
+since the environment is all a binary sees of the shell that started it. `gw -h`
 and `gw version` compare it with their own and say whether the two match,
-which is older, and what to run: `gwh` in its text, `gw version` on stderr, so
+which is older, and what to run: `gw -h` in its text, `gw version` on stderr, so
 its stdout stays the version alone for a script to read.
 
 A shell without the variable has no plugin loaded, or one older than the
@@ -503,10 +503,10 @@ head branch is the class this tooling refuses everywhere else. Commits the
 remote does not have are refused and listed, because they are a change of
 their own and `gwbc` puts them on a branch.
 
-## gwh
+## gw -h
 
 ```console
-$ gwh
+$ gw -h
 worktrees 0.7.0: git worktree commands that refuse to lose work
 
 COMMAND          GW                 DOES
@@ -517,7 +517,6 @@ gwl [QUERY]      gw list (l, ls)    pick a worktree and land you in it
 gwm NEW          gw move (m, mv)    rename this branch and move it
 gwr [QUERY]      gw remove (rm)     remove one whose branch is finished
 gwrot            gw rotate (rot)    the next branch in a series
-gwh              gw help (h)        every command and alias, this list
 —                gw version (v)     the version this package installs
 gwbc NAME        gw branch create   branch off the head branch
 gwbs [NAME ...]  gw branch status   which branches are finished, and why
@@ -529,16 +528,16 @@ from the plugin; the rest need nothing but $PATH.
 The shell plugin here is 0.7.0, the same release as these commands.
 ```
 
-`gw help`, `gw h` and `gw` with no subcommand print the same thing. One table
-in `cli.py` carries the names, so what `gwh` prints and what `gw` accepts
-cannot disagree, and it raises at import if two commands ever claim one name.
+`gw --help`, `worktrees -h` and `gw` with no subcommand print the same thing,
+inside a repository or out of one. One table in `cli.py` carries the names, so
+what `gw -h` prints and what `gw` accepts cannot disagree, and it raises at
+import if two commands ever claim one name.
 
 ## Flags
 
 `gw version`, or `gw v`, prints the version. No command takes a `--version`
-flag. Every command but that one and `gwh`, which
-print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
-`-v` and `--explain`. Beyond those:
+flag. Every command but that one, which prints one thing and has nothing to
+be quiet about, takes `--json`, `-q`, `-v` and `--explain`. Beyond those:
 
 | | |
 | --- | --- |
@@ -550,7 +549,7 @@ print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
 | `gwbs` | `--no-fetch`, `-f`/`--force-refresh`, `--no-forge`, `--only VERDICT` |
 | `gwbd` | `--no-fetch`, `--force-refresh`, `--no-forge`, `--all`, `--dry-run` and `-y` |
 | `gwl` | `-l` |
-| `gwm`, `gwh` | none |
+| `gwm` | none |
 
 `--only` takes `remove`, `keep` or `unknown` and can be given more than
 once. It narrows the table and `--json`; the counts under the table still
