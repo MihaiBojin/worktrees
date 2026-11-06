@@ -1347,7 +1347,7 @@ _CANONICAL = _canonical()
 
 
 _PRUNE_HELP = "Assess worktrees and remove eligible ones, or preview with --dry-run."
-_NEW_BRANCH_HELP = "Fetch, then branch NAME off the head branch and check it out."
+_NEW_BRANCH_HELP = "Branch NAME off the head ref and check it out, without fetching."
 _ROTATE_HELP = (
     "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
     "head branch there is no chain to continue, so it catches that up to the "

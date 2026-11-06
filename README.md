@@ -160,6 +160,13 @@ and `gw version` compare it with their own and say whether the two match,
 which is older, and what to run: `gwh` in its text, `gw version` on stderr, so
 its stdout stays the version alone for a script to read.
 
+An excerpt of `gwh`'s release lines with matching CLI and shell releases:
+
+```console
+worktrees 0.7.0: git worktree commands that refuse to lose work
+The shell plugin here is 0.7.0, the same release as these commands.
+```
+
 A shell without the variable has no plugin loaded, or one older than the
 release that started exporting it, and nothing can tell those two apart. A
 bash started from fish or zsh inherits the variable without the functions.
@@ -414,6 +421,20 @@ gwl --json | jq -r '.worktrees[].path'
 `empty` requires explicit permission. `main` and `master` always remain
 protected. Update scripts that assume a `remove` verdict alone permits
 deletion to check `eligible` too.
+
+## What it refuses
+
+The CLI refuses these Git operations regardless of command flags:
+
+```
+reset --hard
+a forced checkout or switch
+clean -f
+push --force
+worktree remove --force
+branch -D
+an update-ref delete that names no full sha
+```
 
 ## Agent plugin
 
