@@ -116,10 +116,10 @@ the shell.
 
 Never `git branch -D`, `git worktree remove`, `git update-ref -d` or `rm`.
 Never pass `--force`, whatever a refusal suggests: it removes a worktree that
-is not proved finished. Never run `gwp --yes`, whatever `gwp` prints: it
-removes every eligible worktree, not the ones the user chose. Never pass `--delete-ignored` unless the user asked
-for it by name: it deletes the gitignored files in the worktree, and nothing
-restores them. When they do ask for a worktree in `ignored`, it is
+is not proved finished. Never run `gwp --yes`: it removes every eligible
+worktree, not the ones the user chose. Never pass `--delete-ignored` unless
+the user asked for it by name: it deletes the gitignored files in the
+worktree, and nothing restores them. When they do ask for a worktree in `ignored`, it is
 `command gwr 'PATH' --delete-ignored --yes 2>&1`.
 
 What the output means:
@@ -127,7 +127,9 @@ What the output means:
 - `gwr` prints the branch and its path, then `restore with: git branch NAME
   SHA`, before removing, and `removed NAME` after. When the worktree is no
   longer proved finished it removes nothing, prints `NAME is not finished:
-  REASON` or `NAME is finished: REASON` and exits 1.
+  REASON` or `NAME is finished: REASON` and exits 1. A path that matches no
+  worktree, such as one already removed, prints `no worktree matches` and
+  exits 1 with nothing removed.
 - `gwbd` prints `each comes back with:` and one `git branch NAME SHA` per
   branch, then `deleted N branch: ...`. A branch it refuses prints
   `NAME kept: REASON` and the command exits 3; the others are still deleted.

@@ -422,7 +422,7 @@ def run_prune(args: argparse.Namespace) -> int:
             print(json.dumps(result, indent=2))
         if not go:
             _err(render.note("nothing to remove"))
-        else:
+        elif not args.json:
             _err(render.note(f"{len(go)} would be removed; gwp --yes removes them"))
         return errors
 
@@ -928,7 +928,7 @@ def run_move(args: argparse.Namespace) -> int:
 def run_remove(args: argparse.Namespace) -> int:
     import json
 
-    from . import pick, prune
+    from . import layout, pick, prune
     from . import repo as R
     from . import worktree as wt_mod
     from .git import options
@@ -949,11 +949,15 @@ def run_remove(args: argparse.Namespace) -> int:
     head = _assessment_head(args)
     _require(head[0])
     rows, _, _, _, records = _assess(args, head, judge=wt_mod.removable)
-    found = pick.matches(
-        args.query, [R.Worktree(v.path, "", v.branch, frozenset()) for v in rows]
-    )
-    by_path = {v.path: v for v in rows}
-    candidates = [by_path[w.path] for w in found if w.path in by_path]
+    # Exact and nothing looser: the closest match to a worktree already
+    # removed is somebody else's.
+    q = args.query
+    candidates = [
+        v
+        for v in rows
+        if not q or q in (layout.name_of(v.path), v.label, v.path) or _same(q, v.path)
+    ]
+    by_path = {v.path: v for v in candidates}
 
     if not candidates:
         _err(
@@ -968,6 +972,12 @@ def run_remove(args: argparse.Namespace) -> int:
     # The main checkout is listed and never offered: `git worktree remove`
     # refuses it whatever flag it is given. The worktree you stand in is
     # highlighted first, since it is the one you most likely came to remove.
+    if q and len(candidates) > 1 and not sys.stdin.isatty():
+        paths = "\n".join(v.path for v in candidates)
+        raise Refused(
+            f"{len(candidates)} worktrees answer to {q} and this is not a "
+            f"terminal; name one by its path:\n{paths}"
+        )
     here = R.toplevel().out.strip()
     offered = [R.Worktree(v.path, "", v.branch, frozenset()) for v in candidates]
     picked = pick.choose(
@@ -1649,9 +1659,10 @@ def _dispatch(
 ) -> int:
     render.setup()
     raw = sys.argv[1:] if argv is None else argv
-    # gwp previews worktrees; branch deletion has a --dry-run of its own.
-    branch_delete = run is run_branch_delete or raw[:2] == ["branch", "delete"]
-    if "--dry-run" in raw and not branch_delete:
+    # gwp previews without a terminal, so a --dry-run there is answered by
+    # name. Anywhere else argparse refuses it like any unknown flag.
+    asks_prune = run is run_prune or (run is None and raw[:1] in (["prune"], ["p"]))
+    if "--dry-run" in raw and asks_prune:
         _err(
             render.fail(
                 "there is no --dry-run: gwp reports without a terminal and asks at one"

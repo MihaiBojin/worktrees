@@ -226,7 +226,7 @@ def test_a_worktree_is_named_by_its_directory_under_the_root() -> None:
 
 
 def test_an_exact_name_or_path_is_that_worktree_alone() -> None:
-    """`gwr one` with `one-more` beside it is not a question."""
+    """`gw one` with `one-more` beside it is not a question."""
     rows = [
         Worktree("/w/one", "a", "one", frozenset()),
         Worktree("/w/one-more", "a", "one-more", frozenset()),
@@ -298,6 +298,72 @@ def test_move_leaves_no_empty_directory_behind(world) -> None:
 # --------------------------------------------------------------------------
 # gwr
 # --------------------------------------------------------------------------
+
+
+def _gwr(world, *args: str) -> subprocess.CompletedProcess[str]:
+    """gwr as an agent runs it, with no terminal to ask at."""
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gwr; raise SystemExit(gwr())",
+            *args,
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=env_for(world),
+        stdin=subprocess.DEVNULL,
+    )
+
+
+def _add(world, name: str, branch: str) -> Path:
+    """A worktree whose directory name and branch differ."""
+    path = world.parent / ".worktrees" / name / world.repo.name
+    world.git("worktree", "add", "--quiet", "-b", branch, str(path))
+    return path
+
+
+@pytest.mark.parametrize("by", ["name", "branch", "path"])
+def test_remove_resolves_a_name_a_branch_or_a_path(world, by) -> None:
+    wt = _add(world, "dir", "topic")
+    p = _gwr(world, {"name": "dir", "branch": "topic", "path": str(wt)}[by], "--yes")
+    assert p.returncode == 0, p.stderr
+    assert not wt.exists()
+
+
+def test_remove_takes_no_substring(world) -> None:
+    wt = world.worktree("fix-parser")
+    p = _gwr(world, "parse", "--yes")
+    assert p.returncode == 1
+    assert "no worktree matches" in p.stderr
+    assert wt.exists()
+
+
+def test_remove_by_a_path_already_gone_leaves_its_prefix_sibling(world) -> None:
+    """Asked twice for `fix`, the second call must not settle on `fix-more`."""
+    fix = world.worktree("fix")
+    more = world.worktree("fix-more")
+    assert _gwr(world, str(fix), "--yes").returncode == 0
+    assert not fix.exists()
+
+    p = _gwr(world, str(fix), "--yes")
+    assert p.returncode == 1
+    assert "no worktree matches" in p.stderr
+    assert more.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/fix-more")
+
+
+def test_remove_refuses_several_exact_matches_without_a_terminal(world) -> None:
+    named = _add(world, "x", "a")
+    branched = _add(world, "b", "x")
+    p = _gwr(world, "x", "--yes")
+    assert p.returncode == 3
+    assert "2 worktrees answer to x" in p.stderr
+    assert str(named) in p.stderr
+    assert str(branched) in p.stderr
+    assert named.exists()
+    assert branched.exists()
 
 
 def test_remove_prints_nothing_when_you_were_not_standing_in_it(world) -> None:

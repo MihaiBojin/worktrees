@@ -440,9 +440,12 @@ gw -h lists every command
 ```
 
 `gwr` lists the main checkout dimmed and unnumbered, since git will not
-remove it, and starts the highlight on the worktree you are standing in. A
-name or path that is exactly one worktree's, as `gw --list` and `gw` print
-them, takes that one without asking which.
+remove it, and starts the highlight on the worktree you are standing in.
+A query to `gwr` matches exactly: the WORKTREE name, the branch or the path,
+as `gw --list` prints them, and no substring. One match takes that one
+without asking. Several are offered in the picker at a terminal and
+refused at exit 3 without one, with each path named, so a script can pass
+the one it meant. No match fails at exit 1 and removes nothing.
 
 `gwr` says why a branch is not finished, the same verdict `gwp` prints. At a
 terminal it then asks whether to remove the checkout anyway, and keeps the
