@@ -423,6 +423,7 @@ looks like a mistyped one:
 $ gw prnue
 no worktree matches
 the closest command is: gw prune
+gw -h lists every command
 ```
 
 `gwr` lists the main checkout dimmed and unnumbered, since git will not

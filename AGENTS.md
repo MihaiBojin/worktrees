@@ -46,9 +46,10 @@ function too, so this is the agent path as much as the human one.
 
 `gw` breaks the rule, deliberately. `gw` with no subcommand, or with anything
 that is not one, runs `gw list`, so `gw` lands you somewhere and needs a
-function. Its other subcommands print tables and ask questions, and capturing
-them would hold `gwp`'s table back until after the prompt it asks on stderr,
-and strip its colour, because stdout is then a pipe. So the function reads the
+function. Every other subcommand writes for the terminal: a table, a
+destination the caller asked to see, or `gwp`'s table ahead of its prompt.
+Captured, that table would arrive after the prompt it asks on stderr, without
+its colour, because stdout is then a pipe. So the function reads the
 subcommand names from the first tab-separated field of `command gw
 --complete`, runs every one but `list` as `command gw` with nothing captured,
 and returns its code. Everything else goes through the adapter below.
@@ -267,7 +268,8 @@ version` and `gw v` are the two spellings and no parser carries a
 A first argument that no row answers to is a query: `gw ARGS` runs `gw list
 ARGS`, flags included, and only `-h`, `--help` and `--complete` stay the
 root's. A query that matches nothing names the closest command when difflib
-finds one, which is how a mistyped command is reported.
+finds one among the full names and `--help`, which is how a mistyped command
+is reported, and then points at `gw -h`.
 
 `_canonical()` raises at import when two rows answer to one name. A dict
 comprehension would keep the last one and leave a command reachable under a
