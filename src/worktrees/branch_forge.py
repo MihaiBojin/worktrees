@@ -59,18 +59,35 @@ def _text(row: dict, key: str) -> str:
     return value if isinstance(value, str) else ""
 
 
-def request_for(branch: str, remote: str) -> Request | None:
+def _forge(remote: str) -> tuple[str, str, str]:
+    """The CLI that speaks for the remote's host, the host, and the path."""
     host, path = _repository(R.config_get(f"remote.{remote}.url").out.strip())
     if not host or not path or "/" not in path:
-        return None
+        return "", "", ""
     if host == "github.com" or host.startswith("github."):
-        tool = "gh"
-    elif host == "gitlab.com" or host.startswith("gitlab."):
-        tool = "glab"
-    else:
+        return "gh", host, path
+    if host == "gitlab.com" or host.startswith("gitlab."):
+        return "glab", host, path
+    return "", "", ""
+
+
+def tool_for(remote: str) -> str:
+    """`gh`, `glab`, or empty when the remote's host is not a known forge."""
+    return _forge(remote)[0]
+
+
+def request_for(branch: str, remote: str) -> Request | None:
+    """The newest request from `branch`, or None when there is none.
+
+    None too when the host is not a known forge. Raises forge.Unanswered
+    when the forge CLI is missing, fails, or answers in a shape this cannot
+    read: none of those says there is no request.
+    """
+    tool, host, path = _forge(remote)
+    if not tool:
         return None
     if not shutil.which(tool):
-        return None
+        raise forge.Unanswered(f"{tool} is not installed")
     repository = f"{host}/{path}"
     if tool == "gh":
         argv = [
@@ -114,7 +131,7 @@ def request_for(branch: str, remote: str) -> Request | None:
     row = rows[0]
     number = row.get("number" if tool == "gh" else "iid")
     if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
-        return None
+        raise forge.Unanswered(f"{tool} answered without a request number")
     state = _text(row, "state").upper()
     if state == "OPENED":
         state = "OPEN"
@@ -122,7 +139,7 @@ def request_for(branch: str, remote: str) -> Request | None:
         source = row.get("headRepository") or {}
         commit = row.get("mergeCommit") or {}
         if not isinstance(source, dict) or not isinstance(commit, dict):
-            return None
+            raise forge.Unanswered(f"{tool} answered in a shape this cannot read")
         return Request(
             number,
             state,

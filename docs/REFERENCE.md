@@ -79,7 +79,9 @@ Four rules the CLI does not break:
   this repository works against, and `remote.<name>.url` says which forge
   repository to ask. The one file it writes is `git-worktrees-sync.json` in
   the git common directory: `gw sync` replaces it whole after a fetch, and it
-  holds state, not settings.
+  holds state, not settings: when the default remote was fetched, when the
+  forge last answered, and what it said about each local branch tip, keyed
+  by branch and the SHA asked about.
 
 ## 3. Decisions
 

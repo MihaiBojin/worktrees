@@ -654,7 +654,8 @@ def _add_sync_flags(p: argparse.ArgumentParser) -> None:
 
 
 def run_sync(args: argparse.Namespace) -> int:
-    """Fetch the default remote, ask it for its HEAD, and record when."""
+    """Fetch the default remote, ask it for its HEAD and the forge for every
+    branch tip, and record the answers."""
     from . import repo as R
     from . import sync
     from .git import options
@@ -681,11 +682,15 @@ def run_sync(args: argparse.Namespace) -> int:
             raise _Stop(
                 f"{render.ref(remote)} could not be synced:\n{done.err.strip()}", 1
             )
-    sync.write(remote, sync.now())
+    refs = sync.now()
+    asked, evidence, failed = sync.ask(remote, sync.read())
+    sync.write(remote, refs, asked, evidence)
     if not args.quiet:
         head = R.ref_name(R.symbolic_ref(f"refs/remotes/{remote}/HEAD").out.strip())
         _err(render.note(f"synced {render.ref(remote)}; head is {render.ref(head)}"))
-    return 0
+    for line in failed:
+        _err(render.fail(line))
+    return 1 if failed else 0
 
 
 def _was_now(was: tuple[str, str, str], now: tuple[str, str, str]) -> str:
@@ -1454,7 +1459,7 @@ _COMMANDS: dict[str, _Command] = {
     "sync": _Command(
         run_sync,
         _add_sync_flags,
-        "fetch the default remote and record when",
+        "fetch the default remote and ask the forge",
     ),
     "help": _Command(
         run_help,

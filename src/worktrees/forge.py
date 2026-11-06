@@ -18,6 +18,10 @@ from .git import options
 REDIRECTS = ("GH_REPO", "GITLAB_REPO")
 
 
+class Unanswered(Exception):
+    """The forge was asked and gave no answer to read; the message says why."""
+
+
 def _trace(argv: list[str], code: int, stdout: str, stderr: str) -> None:
     if options.verbose:
         from . import progress, render
@@ -25,8 +29,12 @@ def _trace(argv: list[str], code: int, stdout: str, stderr: str) -> None:
         progress.line(render.trace(argv, code, stdout, stderr, failed=code != 0))
 
 
-def query(argv: list[str]) -> list[dict] | None:
-    """Read a forge response, with repository redirects removed."""
+def query(argv: list[str]) -> list[dict]:
+    """Read a forge response, with repository redirects removed.
+
+    Raises Unanswered when the CLI cannot run, fails, or prints something
+    other than a list of objects.
+    """
     import json
 
     options.log.append(tuple(argv))
@@ -41,15 +49,16 @@ def query(argv: list[str]) -> list[dict] | None:
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         _trace(argv, 1, "", str(exc))
-        return None
+        raise Unanswered(str(exc)) from exc
     _trace(argv, proc.returncode, proc.stdout, proc.stderr)
     if proc.returncode != 0:
-        return None
+        said = proc.stderr.strip().splitlines()
+        raise Unanswered(said[0] if said else f"{argv[0]} exited {proc.returncode}")
 
     try:
         rows = json.loads(proc.stdout or "[]")
-    except json.JSONDecodeError:
-        return None
+    except json.JSONDecodeError as exc:
+        raise Unanswered(f"{argv[0]} printed something other than JSON") from exc
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
-        return None
+        raise Unanswered(f"{argv[0]} printed something other than a list")
     return rows

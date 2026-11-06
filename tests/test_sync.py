@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
+import pytest
 from conftest import env_for
 
 NAME = "git-worktrees-sync.json"
@@ -182,3 +185,210 @@ def test_sync_takes_no_json_and_the_help_says_so(world) -> None:
         env=env_for(world),
     )
     assert "gw sync takes no --json" in listed.stdout
+
+
+# --------------------------------------------------------------------------
+# what the forge says about each branch tip
+# --------------------------------------------------------------------------
+
+FAKES = {"github": ("gh", "--head"), "gitlab": ("glab", "--source-branch")}
+
+
+def forge_remote(world, provider: str = "github") -> None:
+    """A remote whose URL names the forge and whose fetch reaches a bare
+    repository on disk."""
+    path = world.root / "origin.git"
+    world.git("init", "--quiet", "--bare", "-b", "main", str(path))
+    url = f"git@{provider}.com:owner/repo.git"
+    world.git("config", f"url.{path}.insteadOf", url)
+    world.git("remote", "add", "origin", url)
+    world.git("push", "--quiet", "origin", "main")
+
+
+def fake(world, provider: str, answers: dict[str, str], *, code: int = 0):
+    """A forge CLI that prints `answers[branch]` for the branch it is asked
+    about, and `[]` for any other. A branch whose answer is `fail` exits 1
+    with a reason on stderr. `code` makes every question fail with it."""
+    tool, flag = FAKES[provider]
+    bin_dir = world.root / f"{tool}-bin"
+    bin_dir.mkdir(exist_ok=True)
+    cases = "".join(
+        f"  *' {flag} {name} '*) echo 'boom for {name}' >&2; exit 1;;\n"
+        if answer == "fail"
+        else f"  *' {flag} {name} '*) cat <<'JSON'\n{answer}\nJSON\n  exit 0;;\n"
+        for name, answer in answers.items()
+    )
+    body = (
+        f"echo 'not logged in' >&2\nexit {code}\n"
+        if code
+        else f'case " $* " in\n{cases}esac\necho "[]"\n'
+    )
+    exe = bin_dir / tool
+    exe.write_text(f"#!/bin/sh\n{body}")
+    exe.chmod(0o755)
+    env = env_for(world)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    return env
+
+
+def synced(world, env, *args: str):
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gw; raise SystemExit(gw())",
+            "sync",
+            *args,
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def record(world) -> dict:
+    return json.loads((common(world) / NAME).read_text())
+
+
+def a_request(world, provider: str, branch: str) -> str:
+    from test_branch_forge import evidence
+
+    row = evidence(world, provider)
+    tip = world.git("rev-parse", branch)
+    key = (
+        ("headRefName", "headRefOid")
+        if provider == "github"
+        else ("source_branch", "sha")
+    )
+    row.update({key[0]: branch, key[1]: tip})
+    return json.dumps([row])
+
+
+@pytest.mark.parametrize("provider", ["github", "gitlab"])
+def test_every_branch_tip_is_recorded_with_its_answer(world, provider) -> None:
+    forge_remote(world, provider)
+    world.git("branch", "feature")
+    world.commit("feature", "f\n", at=world.repo)  # main moves on
+    world.git("branch", "spike")
+    wt = world.worktree("checked-out")
+    world.commit("c.txt", "c\n", at=wt)
+    env = fake(world, provider, {"feature": a_request(world, provider, "feature")})
+
+    p = synced(world, env)
+    assert p.returncode == 0, p.stderr
+    file = record(world)
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", file["forge"])
+    assert sorted(file["evidence"]) == ["checked-out", "feature", "main", "spike"]
+    for name, entry in file["evidence"].items():
+        assert entry["sha"] == world.git("rev-parse", name), name
+    request = file["evidence"]["feature"]["request"]
+    assert request["number"] == 17
+    assert request["source_branch"] == "feature"
+    assert request["source_sha"] == world.git("rev-parse", "feature")
+    assert request["target_branch"] == "main"
+    assert request["same_repository"] is True
+    assert set(request) >= {"state", "url", "repository", "merge_sha", "merged_at"}
+    assert file["evidence"]["spike"]["request"] is None  # no request
+    assert file["evidence"]["checked-out"]["request"] is None
+    assert read(world) == file
+
+
+def test_a_moved_branch_is_recorded_at_its_new_tip(world) -> None:
+    forge_remote(world)
+    world.git("branch", "feature")
+    env = fake(world, "github", {})
+    assert synced(world, env).returncode == 0
+    before = record(world)["evidence"]["feature"]["sha"]
+    world.git("checkout", "--quiet", "feature")
+    world.commit("f.txt", "f\n", at=world.repo)
+    world.git("branch", "-q", "gone", "main")
+    assert synced(world, env).returncode == 0
+    world.git("branch", "-q", "-d", "gone")
+    assert synced(world, env).returncode == 0
+    after = record(world)["evidence"]
+    assert after["feature"]["sha"] == world.git("rev-parse", "feature") != before
+    assert "gone" not in after
+
+
+def test_a_host_that_is_not_a_forge_records_no_forge(world) -> None:
+    bare(world)
+    world.git("branch", "feature")
+    p = sync(world)
+    assert p.returncode == 0, p.stderr
+    file = record(world)
+    assert file["forge"] is None
+    assert file["evidence"] == {}
+    assert file["refs"] is not None
+
+
+def _seeded(world, provider: str = "github") -> dict:
+    """A sync whose forge answered, so a failure after it has something to
+    keep."""
+    forge_remote(world, provider)
+    world.git("branch", "feature")
+    world.git("branch", "spike")
+    env = fake(world, provider, {"feature": a_request(world, provider, "feature")})
+    assert synced(world, env).returncode == 0
+    return record(world)
+
+
+def test_a_missing_forge_cli_keeps_the_last_evidence(world) -> None:
+    before = _seeded(world)
+    time.sleep(1.1)
+    only_git = world.root / "git-bin"
+    only_git.mkdir()
+    (only_git / "git").symlink_to(shutil.which("git"))
+    env = {**env_for(world), "PATH": f"{only_git}:/usr/bin:/bin"}
+    p = synced(world, env)
+    assert p.returncode == 1
+    assert "gh is not installed" in p.stderr
+    after = record(world)
+    assert after["refs"] > before["refs"]
+    assert (after["forge"], after["evidence"]) == (before["forge"], before["evidence"])
+
+
+@pytest.mark.parametrize("provider", ["github", "gitlab"])
+def test_a_signed_out_forge_cli_keeps_the_last_evidence(world, provider) -> None:
+    before = _seeded(world, provider)
+    time.sleep(1.1)
+    p = synced(world, fake(world, provider, {}, code=4))
+    assert p.returncode == 1
+    for name in ("feature", "main", "spike"):
+        assert f"the forge did not answer for {name}: not logged in" in p.stderr
+    after = record(world)
+    assert after["refs"] > before["refs"]
+    assert (after["forge"], after["evidence"]) == (before["forge"], before["evidence"])
+
+
+def test_a_branch_the_forge_fails_on_has_no_evidence(world) -> None:
+    before = _seeded(world)
+    time.sleep(1.1)
+    env = fake(
+        world,
+        "github",
+        {"feature": "fail", "spike": a_request(world, "github", "spike")},
+    )
+    p = synced(world, env)
+    assert p.returncode == 1
+    assert "the forge did not answer for feature: boom for feature" in p.stderr
+    assert "spike" not in p.stderr
+    after = record(world)
+    assert after["refs"] > before["refs"]
+    assert after["forge"] == before["forge"]
+    assert sorted(after["evidence"]) == ["main", "spike"]
+    assert after["evidence"]["spike"]["request"]["source_branch"] == "spike"
+
+
+def test_a_failed_fetch_leaves_the_evidence(world) -> None:
+    before = _seeded(world)
+    url = "git@github.com:owner/repo.git"
+    world.git("config", "--unset", f"url.{world.root / 'origin.git'}.insteadOf")
+    world.git("config", f"url.{world.root / 'gone.git'}.insteadOf", url)
+    marker = world.root / "asked"
+    env = fake(world, "github", {})
+    (world.root / "gh-bin" / "gh").write_text(f"#!/bin/sh\n: > {marker}\necho '[]'\n")
+    p = synced(world, env)
+    assert p.returncode == 1
+    assert record(world) == before
+    assert not marker.exists(), "the forge was asked after a failed fetch"

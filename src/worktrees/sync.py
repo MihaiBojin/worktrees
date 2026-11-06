@@ -1,24 +1,33 @@
-"""What `gw sync` records: which remote it fetched, and when.
+"""What `gw sync` records: which remote it fetched, when, and what the
+forge said about each local branch tip.
 
 One JSON file in the git common directory, so every worktree of a
 repository reads the same one:
 
     {"remote": {"name": "origin", "url": "github.com/org/repo"},
-     "refs": "2026-11-06T12:00:00Z", "forge": null}
+     "refs": "2026-11-06T12:00:00Z", "forge": "2026-11-06T12:00:01Z",
+     "evidence": {"feature": {"sha": "<the tip asked about>",
+                              "request": {"number": 17, ...}},
+                  "spike": {"sha": "...", "request": null}}}
 
 `refs` is when the fetch and `remote set-head` last succeeded. `forge` is
-when the forge was last asked, and null until something asks it. The URL is
-the one `repo.short_url` writes, so no credential reaches the file.
+when the forge last answered for every branch, and null when the remote's
+host is not a known forge. A `request` of null means the forge has no
+request from that branch. The URL is the one `repo.short_url` writes, so no
+credential reaches the file.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
+from . import branch_forge, branches, forge, render
 from . import repo as R
 
 NAME = "git-worktrees-sync.json"
@@ -38,7 +47,7 @@ def now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def write(remote: str, refs: str) -> None:
+def write(remote: str, refs: str, asked: str | None, evidence: dict) -> None:
     """Replace the file whole: a reader sees the old one or the new one."""
     path = _path()
     if path is None:
@@ -46,7 +55,8 @@ def write(remote: str, refs: str) -> None:
     record = {
         "remote": {"name": remote, "url": _url(remote)},
         "refs": refs,
-        "forge": None,
+        "forge": asked,
+        "evidence": evidence,
     }
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{NAME}.")
     try:
@@ -79,8 +89,54 @@ def read() -> dict | None:
         not isinstance(record, dict)
         or not isinstance(record.get("refs"), str)
         or not isinstance(record.get("forge"), (str, type(None)))
+        or not isinstance(record.get("evidence", {}), dict)
     ):
         return None
     if record.get("remote") != {"name": remote, "url": _url(remote)}:
         return None
     return record
+
+
+def ask(remote: str, previous: dict | None) -> tuple[str | None, dict, list[str]]:
+    """Ask the forge about every local branch tip.
+
+    Returns the `forge` time and the evidence to record, and one line for
+    each thing that went unanswered. When nothing answered, because the CLI
+    is missing or every question failed, the previous sync's time and
+    evidence stand. When only some failed, the rest are recorded, the
+    failed branches carry no evidence, and the time stays where it was.
+    """
+    tool = branch_forge.tool_for(remote)
+    if not tool:
+        return None, {}, []
+    kept = previous or {}
+    asked, evidence = kept.get("forge"), kept.get("evidence", {})
+    if not shutil.which(tool):
+        return asked, evidence, [f"{tool} is not installed, so the forge was not asked"]
+    tips = {
+        name: sha for name, (sha, symref) in branches.local_refs().items() if not symref
+    }
+
+    def one(name: str) -> tuple[str, dict | None, str]:
+        try:
+            request = branch_forge.request_for(name, remote)
+        except forge.Unanswered as exc:
+            return name, None, str(exc)
+        return name, request.data() if request else None, ""
+
+    # Each answer is a round trip; threads overlap the waits.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        answers = list(pool.map(one, sorted(tips)))
+    failed = [
+        f"the forge did not answer for {render.branch(name)}: {why}"
+        for name, _, why in answers
+        if why
+    ]
+    if failed and len(failed) == len(answers):
+        return asked, evidence, failed
+    found = {
+        name: {"sha": tips[name], "request": request}
+        for name, request, why in answers
+        if not why
+    }
+    return (asked if failed else now()), found, failed

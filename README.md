@@ -518,7 +518,9 @@ synced origin; head is origin/main
 ```
 
 `gw sync` fetches the default remote, asks it which branch it serves with
-`git remote set-head <remote> --auto`, and records when both succeeded. The
+`git remote set-head <remote> --auto`, then asks the forge about every local
+branch tip, eight branches at a time, including branches checked out in
+worktrees. `gh` answers for a GitHub host and `glab` for a GitLab one. The
 record is `git-worktrees-sync.json` in the git common directory, so every
 worktree of the repository reads the same one:
 
@@ -526,21 +528,47 @@ worktree of the repository reads the same one:
 {
   "remote": {"name": "origin", "url": "github.com/org/repo"},
   "refs": "2026-11-06T12:00:00Z",
-  "forge": null
+  "forge": "2026-11-06T12:00:02Z",
+  "evidence": {
+    "feature": {
+      "sha": "4f1c0de9...",
+      "request": {
+        "number": 17, "state": "MERGED", "noun": "pull request",
+        "url": "https://github.com/org/repo/pull/17",
+        "repository": "github.com/org/repo",
+        "source_branch": "feature", "source_sha": "4f1c0de9...",
+        "target_branch": "main", "merge_sha": "9a0b7e21...",
+        "merged_at": "2026-11-05T09:00:00Z", "same_repository": true
+      }
+    },
+    "spike": {"sha": "c3d2e1f0...", "request": null}
+  }
 }
 ```
 
-`refs` is the UTC time of the last success, and `forge` is null: sync does
-not ask the forge. The URL is written the way
-`gw` prints one elsewhere, without a user or token. A record naming another
-remote, or another URL for this one, counts as no sync at all.
+`refs` is the UTC time of the last fetch and `set-head` that succeeded.
+`forge` is the time the forge last answered for every branch, and null when
+the remote's host is neither GitHub nor GitLab. Each entry under `evidence`
+is keyed by branch and holds the tip that was asked about, so a branch that
+moves after a sync has an entry for a commit it no longer points at. A
+`request` of null means the forge has no request from that branch. The URL
+is written the way `gw` prints one elsewhere, without a user or token. A
+record naming another remote, or another URL for this one, counts as no sync
+at all.
 
-| | exit | the record |
-| --- | --- | --- |
-| fetched and set the head | 0 | replaced |
-| the fetch or `set-head` failed | 1 | untouched; git's reason is on stderr |
-| no remote | 0 | not written |
-| several remotes, no `checkout.defaultRemote` | 1 | untouched; the message lists them |
+| | exit | `refs` | `forge` and `evidence` |
+| --- | --- | --- | --- |
+| fetched, and the forge answered for every branch | 0 | advances | advances; replaced |
+| the host is not a known forge | 0 | advances | null; empty |
+| `gh` or `glab` missing, or every question failed | 1 | advances | kept from the last sync |
+| the forge failed for some branches | 1 | advances | time kept; those branches have no entry |
+| the fetch or `set-head` failed | 1 | untouched | untouched; git's reason is on stderr |
+| no remote | 0 | not written | not written |
+| several remotes, no `checkout.defaultRemote` | 1 | untouched | untouched; the message lists them |
+
+Every branch the forge did not answer for is named on stderr with the
+reason, such as the first line `gh` printed. A signed-out `gh` fails every
+question, so it keeps the last sync's evidence the way a missing one does.
 
 It takes `-q`, `-v` and `--explain`, and no `--json`. It has no console
 script of its own.
@@ -559,7 +587,7 @@ gwl [QUERY]      gw list (l, ls)    pick a worktree and land you in it
 gwm NEW          gw move (m, mv)    rename this branch and move it
 gwr [QUERY]      gw remove (rm)     remove one whose branch is finished
 gwrot            gw rotate (rot)    the next branch in a series
-—                gw sync            fetch the default remote and record when
+—                gw sync            fetch the default remote and ask the forge
 gwh              gw help (h)        every command and alias, this list
 —                gw version (v)     the version this package installs
 gwbc NAME        gw branch create   branch off the head branch

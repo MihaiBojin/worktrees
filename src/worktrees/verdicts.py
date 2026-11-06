@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import branch_forge, merged, progress
+from . import branch_forge, forge, merged, progress
 from . import repo as R
 from .git import GitError
 
@@ -121,7 +121,10 @@ def prove(
     found = Proof(UNKNOWN, "no proof that its change is in the head branch")
     if ask_forge and remote:
         say("asking the forge for its pull request")
-        request = branch_forge.request_for(branch, remote)
+        try:
+            request = branch_forge.request_for(branch, remote)
+        except forge.Unanswered:
+            request = None
         if request is not None:
             found.request = request.data()
             if request.state == "MERGED":
