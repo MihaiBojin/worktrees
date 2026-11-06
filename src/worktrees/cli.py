@@ -671,8 +671,14 @@ def run_sync(args: argparse.Namespace) -> int:
         return 0
     remote = R.remote()
     if not remote:
+        stated = R.config_get("checkout.defaultRemote").out.strip()
+        why = (
+            f"checkout.defaultRemote names {stated}, which is none of them"
+            if stated
+            else "nothing says which to sync"
+        )
         raise _Stop(
-            f"{_listed(names)} are all remotes, and nothing says which to sync.\n"
+            f"{_listed(names)} are all remotes, and {why}.\n"
             "Pick one with: git config checkout.defaultRemote <name>",
             1,
         )
@@ -1669,7 +1675,12 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     subs = p.add_subparsers(dest="command")
     for name in _needed(args_in):
         command = _COMMANDS[name]
-        sub = subs.add_parser(name, aliases=list(command.aliases), help=command.about)
+        sub = subs.add_parser(
+            name,
+            aliases=list(command.aliases),
+            help=command.about,
+            description=command.about,
+        )
         if command.flags:
             command.flags(sub)
     return _dispatch(p, args_in, None)

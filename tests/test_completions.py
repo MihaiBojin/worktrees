@@ -250,17 +250,20 @@ def test_a_path_holding_a_tab_is_still_offered(world) -> None:
 
 @pytest.mark.skipif(not shutil.which("zsh"), reason="zsh is not installed")
 @pytest.mark.parametrize(
-    ("prefix", "needle"),
+    ("prefix", "needle", "absent"),
     [
-        ("gw branch delete --dry", b"--dry-run"),
-        ("gwbd --dry", b"--dry-run"),
-        ("gw --li", b"pick none"),
-        ("gw list --li", b"pick none"),
-        ("gw fix-p", b"fix-parser"),
-        ("gw list fix-p", b"fix-parser"),
+        ("gw branch delete --dry", b"--dry-run", None),
+        ("gwbd --dry", b"--dry-run", None),
+        ("gw --li", b"pick none", None),
+        ("gw list --li", b"pick none", None),
+        ("gw fix-p", b"fix-parser", None),
+        ("gw list fix-p", b"fix-parser", None),
+        ("gw status --", b"--json", None),
+        # The last candidate in the list, so the whole list has arrived.
+        ("gw sync --", b"--verbose", b"--json"),
     ],
 )
-def test_zsh_completes_gw_without_errors(world, prefix, needle) -> None:
+def test_zsh_completes_gw_without_errors(world, prefix, needle, absent) -> None:
     world.worktree("fix-parser")
     bin_dir = world.root / "bin"
     bin_dir.mkdir()
@@ -307,12 +310,36 @@ def test_zsh_completes_gw_without_errors(world, prefix, needle) -> None:
         # would insert the rest of one and leave only a suffix to look for.
         os.write(parent, (prefix + "\x04").encode())
         output = read_until(needle)
+        if absent:
+            assert absent not in output, output
         assert b"bad option" not in output, output
         assert b"command not found" not in output, output
     finally:
         process.kill()
         process.wait(timeout=5)
         os.close(parent)
+
+
+@pytest.mark.skipif(not shutil.which("fish"), reason="fish is not installed")
+def test_fish_offers_no_json_after_gw_sync() -> None:
+    def offered(prefix: str) -> list[str]:
+        p = subprocess.run(
+            [
+                "fish",
+                "--no-config",
+                "-c",
+                f"source {FISH / 'gw.fish'}; complete -C '{prefix}'",
+            ],
+            capture_output=True,
+            text=True,
+            env={"PATH": PATH},
+        )
+        assert p.returncode == 0, p.stderr
+        return [line.split("\t")[0] for line in p.stdout.splitlines()]
+
+    assert "--json" not in offered("gw sync --")
+    assert "--explain" in offered("gw sync --")
+    assert "--json" in offered("gw status --")
 
 
 @pytest.mark.skipif(not shutil.which("fish"), reason="fish is not installed")

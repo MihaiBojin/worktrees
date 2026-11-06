@@ -146,9 +146,10 @@ def fetch(remote: str) -> None:
     """Refresh every remote-tracking ref, dropping the ones that are gone."""
 
 
-# The other call that reaches the network, and 128 is how it says it could
-# not. head_ref already reads the result rather than assuming it worked.
-@git("remote set-head $remote --auto", ok=(0, 128), mutates=True)
+# The other call that reaches the network. 128 is how it says it could not
+# reach the server, and 1 is a server with no branch to name. head_ref and
+# gw sync read the result rather than assuming it worked.
+@git("remote set-head $remote --auto", ok=(0, 1, 128), mutates=True)
 def set_head_auto(remote: str) -> None:
     """Ask the server which branch it serves by default."""
 
