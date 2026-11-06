@@ -35,7 +35,7 @@ The plugin needs `jq` too. It installs neither tool.
 
 ## Cleanup
 
-The skill reads `gwp --dry-run --json` and `gwbs --json`. These commands stay
+The skill reads `gwp --json` and `gwbs --json`. These commands stay
 offline. If remote state is never synced or older than 10 minutes, it asks
 whether to run `gw sync`; it runs sync only on your answer. A previous
 approval or refusal remains in force for that cleanup.

@@ -318,7 +318,7 @@ COMMAND_COMPLETIONS = [
     ("gw topic", "gw", ("list",)),
     ("gw version", "gw", ("version",)),
     ("gw v", "gw", ("version",)),
-    ("gwp --dry-run", "gwp", ()),
+    ("gwp --list", "gwp", ()),
     ("gw sync", "main", ("sync",)),
     ("gw prune", "gwp", ()),
     ("gw p", "gwp", ()),
@@ -335,7 +335,7 @@ COMMAND_COMPLETIONS = [
     ("gw branch create", "gwbc", ()),
     ("gw branch status", "gwbs", ()),
     ("gw branch delete", "gwbd", ()),
-    ("gw prune --dry-run", "gwp", ()),
+    ("gw prune --list", "gwp", ()),
 ]
 
 
@@ -344,8 +344,6 @@ def test_fish_dispatches_each_command_to_its_own_flags(world, prefix, entry, arg
     wanted = _parsed_flags(entry, *args) | set(
         re.findall(r"(?:^|\s)(-[a-z])(?:,|\s)", _help(entry, *args))
     )
-    if prefix in ("gwp --dry-run", "gw prune --dry-run"):
-        wanted -= {"--verbose", "-v"}
     offered = {
         word for word in _fish_complete(world, prefix + " -") if word.startswith("-")
     }
@@ -431,8 +429,6 @@ def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry, args
     wanted = _parsed_flags(entry, *args) | set(
         re.findall(r"(?:^|\s)(-[a-z])(?:,|\s)", _help(entry, *args))
     )
-    if prefix in ("gwp --dry-run", "gw prune --dry-run"):
-        wanted -= {"--verbose", "-v"}
     wanted -= set(prefix.split())
     offered = {
         word for word in _zsh_complete(world, prefix + " -") if word.startswith("-")

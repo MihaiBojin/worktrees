@@ -124,7 +124,7 @@ going quiet in a completion nobody is watching.
 
 ## The agent plugin reads `--json`
 
-`plugin/` ships with the CLI. Its skill reads `gwp --dry-run --json` and
+`plugin/` ships with the CLI. Its skill reads `gwp --json` and
 `gwbs --json`, preserving head/sync state and full rows for eligible, empty,
 stash-blocked and ignored-file cases. `tests/test_plugin.py` extracts the
 actual jq filters and applies them to real CLI output. Checked-out branches

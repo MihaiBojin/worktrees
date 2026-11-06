@@ -47,7 +47,7 @@ def test_reimported_content_is_removable_without_a_worktree_or_upstream(world):
     world.git("add", "feature")
     world.git("commit", "--amend", "--no-edit", "--quiet")
     assert world.git("cherry", "main", "feature").startswith("+")
-    old = cli(world, "prune", "--dry-run", "--json")
+    old = cli(world, "prune", "--json")
     assert "feature" not in {r["branch"] for r in json.loads(old.stdout)["verdicts"]}
     rows = status(world, "feature")["verdicts"]
     assert len(rows) == 1

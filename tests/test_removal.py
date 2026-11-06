@@ -641,7 +641,7 @@ def test_nested_current_worktree_is_protected(world):
     tip = world.commit("nested/tracked", at=path)
     world.git("merge", "--no-ff", "-qm", "merge", "topic")
     nested = path / "nested"
-    preview = run(world, "gwp", "--dry-run", "--delete", "all", "--json", at=nested)
+    preview = run(world, "gwp", "--delete", "all", "--json", at=nested)
     assert preview.returncode == 0, preview.stderr
     row = next(
         r for r in json.loads(preview.stdout)["verdicts"] if r["branch"] == "topic"

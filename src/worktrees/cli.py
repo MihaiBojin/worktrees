@@ -102,6 +102,26 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
     return table([head, *body])
 
 
+def _verdict_data(rows: list[verdicts.Verdict]) -> list[dict]:
+    """Assessment fields shared by metadata and removal results."""
+    return [
+        {
+            "verdict": v.verdict,
+            "eligible": v.eligible,
+            "proof": v.proof,
+            "request": v.request,
+            "protections": v.protections,
+            "stashes": v.stashes,
+            "branch": v.branch,
+            "path": v.path,
+            "why": v.why,
+            "ignored": v.ignored,
+            "sha": v.sha,
+        }
+        for v in rows
+    ]
+
+
 def _counted(rows: list[verdicts.Verdict]) -> str:
     """How many of each verdict, in the verdicts' own colours."""
     eligible = sum(v.eligible for v in rows)
@@ -207,7 +227,9 @@ def _add_delete_flags(p: argparse.ArgumentParser, *, branch: bool = False) -> No
 
 def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     _add_delete_flags(p)
-    p.add_argument("--json", action="store_true", help="verdicts as data")
+    p.add_argument(
+        "--json", action="store_true", help="assess as JSON; --yes approves removal"
+    )
     p.add_argument("-q", "--quiet", action="store_true", help="verdicts only")
     p.add_argument(
         "-v", "--verbose", action="store_true", help="print every git command"
@@ -336,22 +358,7 @@ def run_preview(args: argparse.Namespace) -> int:
                     # pass --delete ignored-files wants the count, not a sentence
                     # that happens to contain it, and the sha is what the
                     # verdict was formed against.
-                    "verdicts": [
-                        {
-                            "verdict": v.verdict,
-                            "eligible": v.eligible,
-                            "proof": v.proof,
-                            "request": v.request,
-                            "protections": v.protections,
-                            "stashes": v.stashes,
-                            "branch": v.branch,
-                            "path": v.path,
-                            "why": v.why,
-                            "ignored": v.ignored,
-                            "sha": v.sha,
-                        }
-                        for v in _only(args, rows)
-                    ],
+                    "verdicts": _verdict_data(_only(args, rows)),
                 },
                 indent=2,
             )
@@ -372,7 +379,7 @@ def run_preview(args: argparse.Namespace) -> int:
     if stale:
         _warn(
             f"{len(stale)} stale record(s) for directories that are gone; "
-            "gwp clears them"
+            "approved pruning clears them"
         )
     if others:
         root = layout.worktrees_root(main)
@@ -385,7 +392,7 @@ def run_preview(args: argparse.Namespace) -> int:
         names = ", ".join(render.branch(v.label) for v in unknown)
         _warn(f"unclear, and gwp does not touch these: {names}")
     if go:
-        _err(render.note(f"gwp removes the {len(go)} marked removable"))
+        _err(render.note(f"gwp --yes removes the {len(go)} marked removable"))
     return 0
 
 
@@ -395,7 +402,7 @@ def run_preview(args: argparse.Namespace) -> int:
 
 
 def run_prune(args: argparse.Namespace) -> int:
-    """Preview the assessment or remove eligible worktrees after confirmation."""
+    """Assess worktrees and remove eligible targets after approval."""
 
     from . import prune, verdicts
     from .git import options
@@ -404,7 +411,11 @@ def run_prune(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    if args.dry_run:
+    if args.list:
+        render.out.on = False
+    if args.only or (
+        not args.yes and (args.json or args.list or not sys.stdin.isatty())
+    ):
         return run_preview(args)
 
     # git's own bookkeeping for worktrees whose directories somebody removed
@@ -424,7 +435,12 @@ def run_prune(args: argparse.Namespace) -> int:
         # The reason each one stayed, here, rather than the name of the
         # command that would have printed it.
         if args.json:
-            print(_json({"removed": [], "failed": 0}, indent=2))
+            print(
+                _json(
+                    {"verdicts": _verdict_data(rows), "removed": [], "failed": 0},
+                    indent=2,
+                )
+            )
         else:
             if not args.quiet:
                 print()
@@ -459,6 +475,7 @@ def run_prune(args: argparse.Namespace) -> int:
         print(
             _json(
                 {
+                    "verdicts": _verdict_data(rows),
                     "removed": removed,
                     "failed": failed,
                     "outcomes": [vars(o) for o in outcomes],
@@ -1139,10 +1156,16 @@ def _complete_commands() -> int:
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
     add_status_flags(p)
+    p.description = _PRUNE_HELP
     p.epilog = "gwp!! deletes empty branches, ignored files and branch stashes."
-    p.add_argument("--dry-run", action="store_true", help="report without deleting")
     p.add_argument(
-        "-y", "--yes", action="store_true", help="do not ask before removing"
+        "--list", action="store_true", help="assess without prompting; uncoloured table"
+    )
+    p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="approve removal, including with --json or --list",
     )
 
 
@@ -1348,7 +1371,12 @@ _CANONICAL = _canonical()
 # --------------------------------------------------------------------------
 
 
-_PRUNE_HELP = "Assess worktrees and remove eligible ones, or preview with --dry-run."
+_PRUNE_HELP = (
+    "Assess worktrees; terminal input asks before removing eligible ones. "
+    "Nonterminal input, --json and --list assess without removing; "
+    "--yes approves removal. "
+    "--only always assesses and cannot be combined with --yes."
+)
 _NEW_BRANCH_HELP = "Branch NAME off the head ref and check it out, without fetching."
 _ROTATE_HELP = (
     "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
@@ -1509,8 +1537,6 @@ def _dispatch(
     try:
         if getattr(args, "quiet", False) and getattr(args, "verbose", False):
             raise _Stop("--quiet and --verbose cannot be combined", 2)
-        if run is run_prune and args.dry_run and args.verbose:
-            raise _Stop("--verbose is not available in preview mode", 2)
         values = getattr(args, "delete", [])
         if getattr(args, "keep_branch", False) and any(
             value != "ignored-files" for value in values
@@ -1519,8 +1545,8 @@ def _dispatch(
         args.permissions = frozenset(
             ("empty", "ignored-files", "stashes") if "all" in values else values
         )
-        if run is run_prune and args.only and not args.dry_run:
-            raise _Stop("--only requires --dry-run", 2)
+        if run is run_prune and args.only and args.yes:
+            raise _Stop("--only cannot be combined with --yes", 2)
         if (
             run not in (run_version, run_sync)
             and not getattr(args, "explain", False)

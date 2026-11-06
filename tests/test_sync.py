@@ -301,7 +301,7 @@ def test_branch_creation_refuses_unresolved_inferred_head(world, network, entry,
 @pytest.mark.parametrize(
     "entry, args",
     [
-        ("gw", ["prune", "--dry-run", "--json"]),
+        ("gw", ["prune", "--json"]),
         ("gwp", ["--yes", "--json"]),
         ("gwbs", ["--json"]),
         ("gwbc", ["new", "--json"]),
@@ -364,7 +364,7 @@ def test_stale_notice_boundary_and_units(
         assert error.count("Last sync:") == 1
     else:
         assert "Last sync:" not in error
-    assert C.gwp(["--dry-run", "-q"]) == 0
+    assert C.gwp(["-q"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
     assert C.gw(["--json"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
@@ -373,9 +373,7 @@ def test_stale_notice_boundary_and_units(
 @pytest.mark.parametrize("quiet", [False, True])
 def test_never_synced_and_inferred_notices_survive_quiet(world, network, quiet):
     origin(world)
-    proc = cli(
-        world, "--dry-run", *(["-q"] if quiet else []), entry="gwp", env=network.env()
-    )
+    proc = cli(world, *(["-q"] if quiet else []), entry="gwp", env=network.env())
     assert proc.returncode == 0, proc.stderr
     assert (
         "Never synced: verdicts use refs from the clone or last fetch "
@@ -700,7 +698,6 @@ def test_inferred_head_notice_paints_both_branch_names_on_stderr(world, network)
             sys.executable,
             "-c",
             "from worktrees.cli import gwp; raise SystemExit(gwp())",
-            "--dry-run",
             "-q",
         ],
         cwd=world.repo,
@@ -890,7 +887,6 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
     preview = cli(
         world,
         "--json",
-        *(["--dry-run"] if entry != "gwbd" else []),
         entry="gwp" if entry != "gwbd" else "gwbs",
         env=network.env(),
     )
@@ -993,9 +989,7 @@ def test_unresolved_head_marks_real_preview_rows_unknown(world, network, head_so
     world.git("branch", "-m", "main", "feature")
     refs = world.git("for-each-ref", "--format=%(refname) %(objectname)")
     records = world.git("worktree", "list", "--porcelain")
-    preview = cli(
-        world, "--dry-run", "--json", "--delete", "all", entry="gwp", env=network.env()
-    )
+    preview = cli(world, "--json", "--delete", "all", entry="gwp", env=network.env())
     assert preview.returncode == 0, preview.stderr
     data = json.loads(preview.stdout)
     assert data["head"] == {"ref": None, "source": head_source}

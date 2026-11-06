@@ -19,7 +19,7 @@ def test_separator_branch_stashes_require_explicit_permission(world, separator, 
     if entry == "gwbd":
         world.git("worktree", "remove", str(path))
     preview = (
-        run(world, "gwp", "--dry-run", "--json")
+        run(world, "gwp", "--json")
         if entry == "gwp"
         else run(world, "gwbs", name, "--json")
     )
@@ -51,7 +51,15 @@ def test_exact_remote_head_counterpart_stays_protected(world, separator, entry):
     if entry == "gwbd":
         world.git("worktree", "remove", str(path))
     args = [] if entry == "gwp" else [name]
-    preview = run(world, entry, *args, "--dry-run", "--delete", "all", "--json")
+    preview = run(
+        world,
+        entry,
+        *args,
+        *(["--dry-run"] if entry == "gwbd" else []),
+        "--delete",
+        "all",
+        "--json",
+    )
     assert preview.returncode == 0, preview.stderr
     row = next(v for v in json.loads(preview.stdout)["verdicts"] if v["branch"] == name)
     assert not row["eligible"]

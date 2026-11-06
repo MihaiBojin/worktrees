@@ -11,8 +11,7 @@ from test_cli import run
 
 
 def rows(world, entry="gwp", *flags, at=None) -> list[dict]:
-    args = ("--dry-run",) if entry == "gwp" else ()
-    result = run(world, entry, *args, "--json", *flags, at=at)
+    result = run(world, entry, "--json", *flags, at=at)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)["verdicts"]
 
@@ -233,11 +232,10 @@ def snapshot(path: Path) -> dict[str, bytes]:
 @pytest.mark.parametrize(
     "entry,flags",
     [
-        ("gwp", ("--dry-run",)),
-        ("gwp", ("--dry-run", "--yes")),
-        ("gw", ("prune", "--dry-run")),
-        ("gw", ("prune", "--dry-run", "--yes")),
-        ("gw", ("prune", "--dry-run", "-y")),
+        ("gwp", ()),
+        ("gwp", ("--list",)),
+        ("gw", ("prune",)),
+        ("gw", ("prune", "--list")),
     ],
 )
 def test_preview_preserves_repository_files_refs_stashes_and_stale_records(
@@ -307,7 +305,7 @@ def test_first_parent_history_is_read_once_per_assessment(world):
 
     for name in ("one", "two", "three"):
         world.worktree(name)
-    assert cli.gwp(["--dry-run", "--json"]) == 0
+    assert cli.gwp(["--json"]) == 0
     calls = [argv for argv in options.log if "--first-parent" in argv]
     assert len(calls) == 1, calls
 
@@ -328,7 +326,7 @@ def test_validated_forge_precedes_fast_forward_empty(world, network):
     assert row["proof"] == "forge"
     wt = world.root / "feature"
     world.git("worktree", "add", "--quiet", str(wt), "feature")
-    preview = cli(world, "prune", "--dry-run", "--json", env=env)
+    preview = cli(world, "prune", "--json", env=env)
     assert preview.returncode == 0, preview.stderr
     attached = next(
         r for r in json.loads(preview.stdout)["verdicts"] if r["branch"] == "feature"
@@ -517,7 +515,7 @@ def test_invalid_merged_request_preserves_independent_proof(
     assert row["verdict"] == want
     wt = world.root / "feature"
     world.git("worktree", "add", "--quiet", str(wt), "feature")
-    preview = cli(world, "prune", "--dry-run", "--json", env=env)
+    preview = cli(world, "prune", "--json", env=env)
     assert preview.returncode == 0, preview.stderr
     attached = next(
         r for r in json.loads(preview.stdout)["verdicts"] if r["branch"] == "feature"
@@ -635,7 +633,7 @@ def test_mutating_prune_rejects_only_before_any_changes(world, entry, prefix):
     refs = world.git("show-ref")
     result = run(world, entry, *prefix, "--only", "empty", "--yes", "--json")
     assert result.returncode == 2, result.stderr
-    assert "--only" in result.stderr and "--dry-run" in result.stderr
+    assert "--only" in result.stderr and "--yes" in result.stderr
     assert done.exists()
     assert snapshot(world.repo) == before
     assert world.git("worktree", "list", "--porcelain") == records
@@ -682,3 +680,84 @@ def test_validated_forge_proof_precedes_unrelated_history(world, network):
     row = json.loads(result.stdout)["verdicts"][0]
     assert row["verdict"] == "remove"
     assert row["proof"] == "forge"
+
+
+@pytest.mark.parametrize("entry,prefix", [("gwp", ()), ("gw", ("prune",))])
+@pytest.mark.parametrize("mode", [(), ("--json",), ("--list",)])
+def test_prune_metadata_preserves_eligible_rows_and_stale_registration(
+    world, network, entry, prefix, mode
+):
+    from test_branches import cli as invoke
+
+    world.commit(".gitignore", "*.secret\n")
+    eligible = world.merged_worktree("eligible")
+    blocked = world.merged_worktree("blocked")
+    (blocked / "kept.secret").write_bytes(b"ignored\nbytes\x00")
+    (blocked / "README").write_text("pending")
+    world.git("stash", "push", "-qm", "pending", at=blocked)
+    gone = world.worktree("gone")
+    shutil.rmtree(gone)
+    cache = world.repo / ".git" / "git-worktrees-sync.json"
+    cache.write_text('{"sentinel": true}\n')
+    before = snapshot(world.repo)
+    worktrees_before = {str(p): snapshot(p) for p in (eligible, blocked)}
+    records = world.git("worktree", "list", "--porcelain")
+    refs = world.git("show-ref")
+    stashes = world.git("stash", "list", "--format=%H")
+    result = invoke(world, *prefix, *mode, entry=entry, env=network.env())
+    assert result.returncode == 0, result.stderr
+    assert snapshot(world.repo) == before
+    assert {str(p): snapshot(p) for p in (eligible, blocked)} == worktrees_before
+    assert world.git("worktree", "list", "--porcelain") == records
+    assert world.git("show-ref") == refs
+    assert world.git("stash", "list", "--format=%H") == stashes
+    assert network.network_calls() == []
+    assert not any(call[-2:] == ["worktree", "prune"] for call in network.calls())
+    assert "git branch eligible " not in result.stderr
+    assert "[y/N]" not in result.stderr
+    if "--json" in mode:
+        data = json.loads(result.stdout)
+        row = next(v for v in data["verdicts"] if v["branch"] == "eligible")
+        assert row["eligible"] and row["verdict"] == "remove"
+        assert str(gone) in data["stale"]
+        assert "head" in data and "lastSync" in data
+    else:
+        assert "VERDICT" in result.stdout and "ELIGIBLE" in result.stdout
+        assert str(eligible) in result.stdout and str(blocked) in result.stdout
+
+
+@pytest.mark.parametrize("mode", [(), ("--json",), ("--list",)])
+@pytest.mark.parametrize("permission", [False, True])
+def test_prune_yes_approves_metadata_modes_with_category_permissions(
+    world, mode, permission
+):
+    world.commit(".gitignore", "*.secret\n")
+    done = world.merged_worktree("done")
+    (done / "kept.secret").write_bytes(b"keep until approved\n")
+    tip = world.git("rev-parse", "done")
+    result = run(
+        world,
+        "gwp",
+        *mode,
+        "--yes",
+        *(["--delete", "ignored-files"] if permission else []),
+    )
+    assert result.returncode == 0, result.stderr
+    assert "[y/N]" not in result.stderr
+    if "--json" in mode:
+        data = json.loads(result.stdout)
+        row = next(v for v in data["verdicts"] if v["branch"] == "done")
+        assert row["verdict"] == "remove" and row["eligible"] == permission
+        assert data["removed"] == (["done"] if permission else [])
+        assert data["failed"] == 0
+        assert "head" in data and "lastSync" in data
+    else:
+        assert "VERDICT" in result.stdout
+    if permission:
+        assert not done.exists()
+        assert not world.git("branch", "--list", "done")
+        assert f"git branch done {tip}" in result.stderr
+        assert "ignored" in result.stderr
+    else:
+        assert (done / "kept.secret").read_bytes() == b"keep until approved\n"
+        assert world.git("rev-parse", "done") == tip

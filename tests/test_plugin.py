@@ -1,5 +1,5 @@
 """The agent plugin in `plugin/`: its manifests agree, and the jq filters its
-skill runs read the JSON `gwp --dry-run` and `gwbs` print."""
+skill runs read the JSON `gwp` and `gwbs` print."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def test_the_portable_manifest_is_the_claude_one_rewritten() -> None:
 
 def _filter(entry: str) -> str:
     """Read the actual assessment pipeline from the installed skill."""
-    command = "gwp --dry-run" if entry == "worktrees" else "gwbs"
+    command = "gwp" if entry == "worktrees" else "gwbs"
     found = re.search(
         rf"^{command} --json \| jq -c '(.*?)'\n```",
         SKILL.read_text(),
@@ -104,7 +104,7 @@ def test_filters_preserve_exact_targets_permissions_and_restore_commands(world) 
     world.git("branch", "loose-empty")
     current = world.merged_worktree("current")
 
-    raw = json.loads(_json(world, "gwp", "--dry-run", cwd=current))
+    raw = json.loads(_json(world, "gwp", cwd=current))
     out = _jq(_filter("worktrees"), json.dumps(raw))
     assert out["head"] == raw["head"]
     assert out["lastSync"] == raw["lastSync"]
@@ -147,13 +147,13 @@ def test_filters_keep_ignored_and_stash_permissions_distinct(world) -> None:
     world.git("worktree", "remove", str(stashed))
     world.worktree("empty")
 
-    out = _jq(_filter("worktrees"), _json(world, "gwp", "--dry-run"))
+    out = _jq(_filter("worktrees"), _json(world, "gwp"))
     assert not out["worktrees"]
     assert [v["branch"] for v in out["ignored"]] == ["ignored"]
     assert out["ignored"][0]["ignored"] == 1
     permitted = _jq(
         _filter("worktrees"),
-        _json(world, "gwp", "--dry-run", "--delete", "ignored-files"),
+        _json(world, "gwp", "--delete", "ignored-files"),
     )
     assert [v["branch"] for v in permitted["worktrees"]] == ["ignored"]
     assert not permitted["worktrees"][0]["protections"]

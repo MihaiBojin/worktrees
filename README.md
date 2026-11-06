@@ -185,14 +185,18 @@ separate.
 
 ## Assess and remove
 
-`gwp --dry-run` prints the assessment without writing refs, cache entries
-or directories. `--yes` and `-y` do not change that assessment mode. `gwp` asks before removing every eligible row;
+`gwp` prints the assessment and asks before removing eligible worktrees on a
+terminal. Nonterminal input, `--json` and `--list` print the assessment without
+writing refs, cache entries or directories. `--list` prints an uncoloured table.
+`--yes` and `-y` approve removal in any of those modes and grant no deletion
+category. `--only VERDICT` filters an assessment and cannot be combined with
+`--yes`. `--quiet` and `--verbose` work in every pruning mode, separately.
 `gwr` selects one exact worktree name or path. Several exact name matches
 open a picker on a terminal; without one, `gwr` refuses and lists the paths.
 A missing name fails. Use a quoted full path to identify a target exactly.
 
 ```console
-gwp --dry-run --json
+gwp --json
 gwr '/home/you/git/.worktrees/fix-parser/repo' --yes
 gwbs --json
 gwbd old-fix another-fix --yes
@@ -380,7 +384,7 @@ both is a usage error.
 | Commands | `-q` | `-v` |
 | --- | --- | --- |
 | `gw sync`, `gwp`, `gwr`, `gwbd`, `gwa`, `gwbc`, `gwrot` | yes | yes |
-| `gwp --dry-run`, `gwbs` | yes | no |
+| `gwbs` | yes | no |
 | `gw`, `gw list`, `gw NAME` | no | no |
 
 Other commands retain their own flags; use `--help`. Help, version and
@@ -403,7 +407,7 @@ null. Worktree assessment has `verdicts`, with `verdict`, `eligible`,
 `gw list --json` puts its rows in `worktrees`.
 
 ```console
-gwp --dry-run --json | jq '.verdicts[] | select(.eligible)'
+gwp --json | jq '.verdicts[] | select(.eligible)'
 gw list --json | jq -r '.worktrees[].path'
 ```
 
@@ -411,7 +415,8 @@ gw list --json | jq -r '.worktrees[].path'
 
 | Removed interface | Current interface |
 | --- | --- |
-| `gws`, `gw status`, `gw s`, `gw st` | `gwp --dry-run` |
+| `gws`, `gw status`, `gw s`, `gw st` | `gwp --json` |
+| `gwp --dry-run` | `gwp --json` or `gwp --list` |
 | `gwp --branch NAME` | `gwr NAME` or a quoted exact path |
 | `--delete-ignored` | `--delete ignored-files` |
 | `gwr --force`, `gwr -f` | `gwr --keep-branch` |

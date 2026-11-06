@@ -2,9 +2,12 @@
 
 `gw` defaults to `gw list`: terminal input selects a destination; nonterminal
 input prints matching worktree metadata. `--json` and `--list` always print
-metadata. `gw --help` prints the command guide outside a repository. `gwp` removes eligible worktrees;
-`gwr` selects one. `gwbs` assesses loose local branches and `gwbd` deletes
-selected eligible refs. A checked-out branch appears only as a worktree.
+metadata. `gw --help` prints the command guide outside a repository. `gwp`
+assesses worktrees and asks before removal on a terminal. Nonterminal input,
+`--json` and `--list` assess without mutation; `--yes` approves removal in any
+mode. `--list` prints an uncoloured table. `--only` filters assessment rows and
+rejects `--yes`. `gwr` selects one. `gwbs` assesses loose local branches and
+`gwbd` deletes selected eligible refs. A checked-out branch appears only as a worktree.
 [The README](../README.md) covers invocation, permissions and migration.
 
 ## Head and evidence
@@ -99,8 +102,11 @@ The shell functions move to it and preserve that status. JSON includes
 `path` and `outcome.destination`. The agent plugin never targets its current
 checkout.
 
-`gwp` may prune stale Git worktree bookkeeping. `gw` and `gwp --dry-run`
-never write refs, cache files or directories.
+Approved pruning may clear stale Git worktree bookkeeping. `gw` and pruning
+assessment modes never write refs, cache files or directories. Assessment
+returns before stale-record pruning, deletion disclosure and confirmation.
+Pruning JSON with `--yes` includes the assessment verdicts and the actual
+removed, failed and per-target outcomes in one object with head and sync state.
 
 ## Sync cache
 

@@ -21,7 +21,7 @@ def test_current_whitespace_root_is_protected_from_pruning(world, suffix):
     original = world.merged_worktree("topic")
     target = world.root / ("linked" + suffix)
     world.git("worktree", "move", str(original), str(target))
-    p = run(world, "gwp", "--dry-run", "--json", at=target)
+    p = run(world, "gwp", "--json", at=target)
     assert p.returncode == 0, p.stderr
     row = next(
         row for row in json.loads(p.stdout)["verdicts"] if row["branch"] == "topic"

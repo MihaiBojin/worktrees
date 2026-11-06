@@ -16,7 +16,7 @@ missing, report that and stop. Work inside the requested repository.
 Read worktrees, then loose branches, using these pipelines:
 
 ```sh
-gwp --dry-run --json | jq -c '{
+gwp --json | jq -c '{
   head, lastSync,
   worktrees: [.verdicts[] | select(.eligible)],
   empty: [.verdicts[] | select(.verdict == "empty")],

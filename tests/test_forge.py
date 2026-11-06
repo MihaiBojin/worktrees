@@ -26,7 +26,7 @@ def synced_worktree(world, network) -> Path:
 
 
 def worktree_status(world, network) -> dict:
-    proc = cli(world, "--dry-run", "--json", entry="gwp", env=network.env())
+    proc = cli(world, "--json", entry="gwp", env=network.env())
     assert proc.returncode == 0, proc.stderr
     return next(
         row for row in json.loads(proc.stdout)["verdicts"] if row["branch"] == "feature"
@@ -58,7 +58,6 @@ def test_cached_forge_proof_keeps_worktree_protections(world, network, protectio
                 sys.executable,
                 "-c",
                 "from worktrees.cli import gwp; raise SystemExit(gwp())",
-                "--dry-run",
                 "--json",
             ],
             cwd=wt,
