@@ -714,9 +714,10 @@ def test_an_unreachable_remote_still_makes_the_branch(world) -> None:
     """Off the refs already here, and without a word about the remote."""
     _unreachable(world)
     world.git("update-ref", "refs/remotes/origin/main", "main")
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     p = run(world, "gwbc", "spike")
     assert p.returncode == 0, p.stderr
-    assert p.stderr == ""
+    assert p.stderr == "Head: origin/main (clone)\n"
     assert "spike from origin/main" in p.stdout
     assert world.git("rev-parse", "--verify", "refs/heads/spike")
 
@@ -724,6 +725,7 @@ def test_an_unreachable_remote_still_makes_the_branch(world) -> None:
 def test_an_unreachable_remote_still_makes_the_worktree(world) -> None:
     _unreachable(world)
     world.git("update-ref", "refs/remotes/origin/main", "main")
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     p = run(world, "gwa", "fix-parser")
     assert p.returncode == 0, p.stderr
     assert "fetch" not in p.stderr
@@ -745,10 +747,14 @@ def test_an_unreachable_remote_still_answers_status(world) -> None:
 
 
 def _remotes(world, *names: str) -> None:
-    """Remotes that cannot be reached, each with a main of its own."""
+    """Remotes that cannot be reached, each with a main of its own and a
+    HEAD naming it, the way a clone leaves one."""
     for name in names:
         world.git("remote", "add", name, str(world.root / f"{name}.git"))
         world.git("update-ref", f"refs/remotes/{name}/main", "main")
+        world.git(
+            "symbolic-ref", f"refs/remotes/{name}/HEAD", f"refs/remotes/{name}/main"
+        )
 
 
 def test_checkout_default_remote_picks_among_several(world) -> None:

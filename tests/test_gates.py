@@ -198,9 +198,10 @@ def test_a_tag_cannot_answer_for_a_branch(world) -> None:
 def test_the_head_ref_is_never_a_bare_name(world) -> None:
     """A3. The prefix is needed on the head ref as well as on the branch."""
     world.git("tag", "main", "main")
-    assert R.full_ref("main") == "refs/heads/main"
+    assert R.head_ref("").ref == "refs/heads/main"
     world.git("update-ref", "refs/remotes/origin/main", "main")
-    assert R.full_ref("origin/main") == "refs/remotes/origin/main"
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    assert R.head_ref("origin").ref == "refs/remotes/origin/main"
 
 
 def test_every_printed_sha_is_a_commit(world) -> None:
@@ -268,15 +269,12 @@ def test_a_tag_shadowing_the_head_branch_does_not_shadow_it(world) -> None:
     world.worktree("feature")
     world.commit("f.txt", "f\n", at=world.parent / ".worktrees" / "feature" / "repo")
     world.git("update-ref", "refs/remotes/origin/main", "main")
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     world.git("tag", "origin/main", "refs/heads/feature")
 
-    assert R.full_ref("origin/main") == "refs/remotes/origin/main"
-    v = {
-        x.branch: x
-        for x in verdicts.assess(
-            R.worktrees(), "", R.full_ref("origin/main"), "main", False
-        )
-    }
+    head = R.head_ref("origin").ref
+    assert head == "refs/remotes/origin/main"
+    v = {x.branch: x for x in verdicts.assess(R.worktrees(), "", head, "main", False)}
     assert v["feature"].verdict != verdicts.REMOVE
 
 

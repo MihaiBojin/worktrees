@@ -1,7 +1,7 @@
 """Start a branch off the head branch.
 
-The base is <remote>/<head> as the last `gw sync` or clone left it, not the
-local copy of it, so the branch starts on top of what the server had then.
+The base is `repo.head_ref`, so after a `gw sync` it is <remote>/<head> as the
+server had it then, not the local copy of it.
 """
 
 from __future__ import annotations
@@ -50,9 +50,24 @@ class Refusal(Exception):
     """Why no branch was made. The message is the whole answer."""
 
 
+def head(
+    remote: str,
+    show: object = None,
+    repo: str | os.PathLike[str] | None = None,
+) -> R.Head:
+    """The head ref, handed to `show` first, or a Refusal when it does not
+    resolve."""
+    found = R.head_ref(remote, repo=repo)
+    if callable(show):
+        show(found)
+    if not found.resolves:
+        raise Refusal(found.problem())
+    return found
+
+
 def create(
     name: str,
-    warn: object = None,
+    show: object = None,
     repo: str | os.PathLike[str] | None = None,
 ) -> Started:
     """Branch `name` off the head branch and check it out."""
@@ -66,17 +81,7 @@ def create(
             f"git switch {shlex.quote(name)} checks it out"
         )
 
-    remote = R.remote(repo=repo)
-    base, warning = R.head_ref(remote, repo=repo)
-    if warning and callable(warn):
-        warn(warning)
-    if not base:
-        hint = remote or "origin"
-        raise Refusal(
-            "cannot tell which branch this repository branches from; record it "
-            f"with: git remote set-head {hint} --auto"
-        )
-
+    base = head(R.remote(repo=repo), show, repo=repo).ref
     sha = short_sha(base, repo=repo)
     switch_create(name, base, repo=repo)
     return Started(name, base, sha.out.strip() if sha else "")

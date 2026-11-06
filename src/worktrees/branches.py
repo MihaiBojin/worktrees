@@ -41,18 +41,33 @@ def local_refs() -> dict[str, tuple[str, str]]:
     }
 
 
-def assess(names: list[str], head_sha: str, head_branch: str) -> list[Verdict]:
-    refs = local_refs()
-    evidence = (sync.read() or {}).get("evidence", {})
+def _named(names: list[str], refs: dict[str, tuple[str, str]]) -> list[str]:
+    """The branches asked for, or every one when none were."""
     missing = [name for name in names if name not in refs]
     if missing:
         raise ValueError("no local branch: " + ", ".join(missing))
+    return list(dict.fromkeys(names or refs))
+
+
+def unresolved(names: list[str], why: str) -> list[Verdict]:
+    """Every branch `unknown`: with no head ref there is nothing to measure
+    any of them against."""
+    refs = local_refs()
+    return [
+        Verdict(name, refs[name][0], "unknown", why, error=True)
+        for name in _named(names, refs)
+    ]
+
+
+def assess(names: list[str], head_sha: str, head_branch: str) -> list[Verdict]:
+    refs = local_refs()
+    evidence = (sync.read() or {}).get("evidence", {})
+    wanted = _named(names, refs)
     checked: dict[str, list[str]] = {}
     for wt in R.worktrees():
         if wt.branch:
             checked.setdefault(wt.branch, []).append(wt.path)
     rows = []
-    wanted = list(dict.fromkeys(names or refs))
     for i, name in enumerate(wanted, 1):
         sha, symbolic = refs[name]
         row = Verdict(

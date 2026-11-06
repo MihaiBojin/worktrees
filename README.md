@@ -465,14 +465,16 @@ Both start branches rather than worktrees.
 
 ```console
 $ gwbc fix-parser
+Head: origin/main (remote)
 fix-parser from origin/main at 4a91c02
 ```
 
-The base is `<remote>/<head>` as the last `gw sync` or clone left it, not the
-local copy of it, so the branch starts on top of what the server had then. Run
-`gw sync` first for what it has now. It travels as a full ref, because git resolves a bare name
-as a tag first and a repository holding a tag called `origin/main` would branch
-from the tag. `--no-track`, so the head branch does not become the new branch's
+The base is the [head branch](#the-head-branch), so after a `gw sync` it is
+`<remote>/<head>` as the server had it then rather than the local copy. Run
+`gw sync` first for what it has now. When the head branch does not resolve,
+`gwbc` and `gwrot` fail at exit 1 and make nothing. The base travels as a full
+ref, because git resolves a bare name as a tag first and a repository holding a
+tag called `origin/main` would branch from the tag. `--no-track`, so the head branch does not become the new branch's
 upstream and `git push` does not target it. The line at the end names the
 commit it got.
 
@@ -664,8 +666,39 @@ Every command works against one remote, the default remote:
 `checkout.defaultRemote` when it names a remote, otherwise the only remote. A
 repository with several remotes and no `checkout.defaultRemote` has none, and
 is treated like a repository with no remote at all: no forge evidence is
-read, and the head branch comes from the local `main`,
-`master` or `trunk`. `git config checkout.defaultRemote origin` picks one.
+read, and the head branch comes from the local `main` or `master`.
+`git config checkout.defaultRemote origin` picks one.
+
+### The head branch
+
+Every verdict is measured against one branch, the head branch. It is the first
+of these that applies:
+
+| source | when | the head branch |
+| --- | --- | --- |
+| `remote` | `gw sync` has succeeded for the default remote | `<remote>/HEAD`, which the sync set |
+| `clone` | no sync, but `<remote>/HEAD` exists, as `git clone` leaves it | that ref |
+| `inferred` | neither | `main` or `master`, whichever exists; with both, the one whose tip was committed later, and `main` on a tie |
+
+A `<remote>/HEAD` naming a branch that is gone is still the answer, and it
+does not resolve. Nothing falls through from it to a local branch.
+
+`gws`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwbc` and `gwrot` print the
+head branch and its source on stderr:
+
+```console
+Head: origin/main (remote)
+Head: main (inferred; master also exists)
+```
+
+`--json` leaves the line out. `-q` leaves it out too, unless the head branch
+was inferred.
+
+When the head branch does not resolve, every row `gws` and `gwbs` print is
+`unknown` and they exit 1. `gwp`, `gwr` and `gwbd` refuse at exit 1 and change
+nothing, and `gwa`, `gwbc` and `gwrot` fail at exit 1. The message is
+`No main or master branch.` when the head branch was inferred, and otherwise
+names the ref and `gw sync`, which sets it again.
 
 Data goes to stdout and diagnostics to stderr, the prompt included, so `--json`
 is parseable in every mode. Colour is decided per stream and only for a

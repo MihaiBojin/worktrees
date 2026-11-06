@@ -13,7 +13,10 @@ worktrees branch status --json
 
 The head branch and branches checked out in any worktree are `keep`. The
 report includes the worktree paths. Branches without worktrees are assessed
-against a pinned commit on the repository's head branch.
+against a pinned commit on the repository's
+[head branch](../../README.md#the-head-branch), which the command names on
+stderr first, as in `Head: origin/main (remote)`. When the head branch does
+not resolve, every branch is `unknown` and the command exits 1.
 
 `gws` judges the branch of each worktree with these same checks, after its
 own worktree protections, so a worktree and a loose branch at the same
@@ -99,7 +102,7 @@ deletion.
 | Flag | Behaviour |
 | --- | --- |
 | `--json` | Print structured evidence on stdout. Diagnostics use stderr. |
-| `-q`, `--quiet` | Omit the summary. |
+| `-q`, `--quiet` | Omit the summary, and the `Head:` line unless the head branch was inferred. |
 | `-v`, `--verbose` | Print executed commands on stderr. |
 | `--explain` | Print the declared git commands and safety rules, then exit. |
 

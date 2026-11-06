@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import NamedTuple
 
 from .git import git
 
@@ -259,26 +260,6 @@ def main_worktree(repo: str | os.PathLike[str] | None = None) -> str:
 # --------------------------------------------------------------------------
 
 
-def full_ref(name: str, repo: str | os.PathLike[str] | None = None) -> str:
-    """The full ref naming branch `name`.
-
-    A bare name used as a revision is resolved as a tag before a branch, so a
-    tag called `origin/main` is what `origin/main` means to merge-base, cherry
-    and ^{tree}. Point that tag at a commit containing an unmerged branch and
-    the branch reads as merged: deleted, at exit 0, with nothing to say it
-    happened.
-
-    Remote-tracking first, because that is what a head branch normally is. A
-    name with no remote-tracking ref is spelled under refs/heads/ whether or
-    not it exists: a name resolving to nothing beats one resolving to a tag.
-    """
-    if not name:
-        return ""
-    if ref_exists(f"refs/remotes/{name}", repo=repo):
-        return f"refs/remotes/{name}"
-    return f"refs/heads/{name}"
-
-
 def ref_name(ref: str) -> str:
     """The ref as a person says it."""
     return ref.removeprefix("refs/remotes/").removeprefix("refs/heads/")
@@ -301,52 +282,69 @@ def remote(repo: str | os.PathLike[str] | None = None) -> str:
     return stated if stated in names else ""
 
 
+class Head(NamedTuple):
+    """The ref everything is measured against, and where it came from.
+
+    `ref` is a full ref, never `origin/main`: every merge question uses it as
+    a revision, and a bare name resolves to a tag first. `source` is
+    `remote` (the last `gw sync`), `clone` (a `<remote>/HEAD` nothing has
+    synced) or `inferred` (from the local `main` and `master`). `also` names
+    the conventional branch that lost, when both exist.
+    """
+
+    ref: str
+    source: str
+    resolves: bool
+    also: str = ""
+
+    @property
+    def name(self) -> str:
+        return ref_name(self.ref)
+
+    def problem(self) -> str:
+        if self.source == "inferred":
+            return "No main or master branch."
+        return f"{self.name} does not resolve; gw sync updates it"
+
+
+@git("for-each-ref --format=%(committerdate:unix) $ref")
+def committed_at(ref: str) -> None:
+    """When the commit a full ref names was committed, or nothing."""
+
+
 def head_ref(
     remote_name: str,
     repo: str | os.PathLike[str] | None = None,
-) -> tuple[str, str]:
-    """The full ref this repository branches from, and a warning or ''.
+) -> Head:
+    """The first of: the last sync's `<remote>/HEAD`, a `<remote>/HEAD`
+    some clone left, or whichever of `main` and `master` is here.
 
-    Returns a full ref, never `origin/main`: every merge question below uses
-    it as a revision, and a bare name resolves to a tag first.
+    A `<remote>/HEAD` pointing at nothing is still the answer, and does not
+    resolve: falling through to a local branch would measure against
+    something nobody chose.
     """
-    if remote_name:
-        # 1. The repository's own answer, recorded at clone time from what the
-        #    server advertises, so it tells master from main without guessing.
-        #    Ignored when it dangles, which is what a server-side rename
-        #    leaves behind.
-        symref = symbolic_ref(f"refs/remotes/{remote_name}/HEAD", repo=repo).out.strip()
-        if symref and ref_exists(symref, repo=repo):
-            return symref, ""
+    from . import sync
 
-    # 2. Conventional names, decisive only when exactly one exists.
-    #    Remote-tracking first: a repository can have a remote and no
-    #    refs/remotes at all, because a remote added by hand was never fetched.
-    found: list[str] = []
     if remote_name:
-        found = [
-            f"{remote_name}/{c}"
-            for c in ("main", "master", "trunk")
-            if ref_exists(f"refs/remotes/{remote_name}/{c}", repo=repo)
-        ]
-    if not found:
-        found = [
-            c
-            for c in ("main", "master", "trunk")
-            if ref_exists(f"refs/heads/{c}", repo=repo)
-        ]
-    if not found:
-        return "", ""
+        symref = symbolic_ref(f"refs/remotes/{remote_name}/HEAD", repo=repo)
+        target = symref.out.strip() or f"refs/remotes/{remote_name}/HEAD"
+        if sync.read():
+            return Head(target, "remote", bool(ref_exists(target, repo=repo)))
+        if symref.out.strip():
+            return Head(target, "clone", bool(ref_exists(target, repo=repo)))
 
-    # 3. Guess, and be honest that it is one.
-    warning = ""
-    if len(found) > 1:
-        warning = (
-            f"{remote_name}/HEAD is unset and " if remote_name else ""
-        ) + f"{', '.join(found)} all exist, guessing {found[0]}"
-        if remote_name:
-            warning += f"; settle it with: git remote set-head {remote_name} --auto"
-    return full_ref(found[0], repo=repo), warning
+    dates = {
+        name: committed_at(f"refs/heads/{name}", repo=repo).out.strip()
+        for name in ("main", "master")
+    }
+    found = [name for name, date in dates.items() if date]
+    if not found:
+        return Head("refs/heads/main", "inferred", False)
+    if len(found) == 1:
+        return Head(f"refs/heads/{found[0]}", "inferred", True)
+    newer = "master" if int(dates["master"]) > int(dates["main"]) else "main"
+    other = "main" if newer == "master" else "master"
+    return Head(f"refs/heads/{newer}", "inferred", True, also=other)
 
 
 # --------------------------------------------------------------------------

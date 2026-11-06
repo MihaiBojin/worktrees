@@ -110,7 +110,7 @@ def test_the_binary_reports_what_it_made(world) -> None:
     assert p.returncode == 0, p.stderr
     sha = world.git("rev-parse", "--short", "refs/heads/main")
     assert p.stdout.strip() == f"feature from main at {sha}"
-    assert p.stderr == ""
+    assert p.stderr == "Head: main (inferred)\n"
 
 
 def test_json_is_data_on_stdout(world) -> None:

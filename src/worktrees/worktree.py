@@ -13,7 +13,7 @@ from pathlib import Path
 from . import layout, render
 from . import repo as R
 from .git import GitError, Refused, git
-from .new_branch import Refusal, check_ref_format
+from .new_branch import Refusal, check_ref_format, head
 from .prune import _prune_empty_parents, ref_delete, worktree_remove
 from .verdicts import REMOVE, Verdict, assess
 
@@ -59,6 +59,7 @@ def add(
     name: str,
     base: str = "",
     warn: object = None,
+    show: object = None,
     repo: str | os.PathLike[str] | None = None,
 ) -> Landed:
     """Create a worktree for `name` and say where it is."""
@@ -80,8 +81,10 @@ def add(
             raise Refusal(f"{dest} belongs to {owner}, not to this repository")
         raise Refusal(f"{dest} already exists and this repository does not own it")
 
-    remote = R.remote(repo=repo)
     existing = bool(R.ref_exists(f"refs/heads/{name}", repo=repo))
+    # Before any directory goes in, so a head that does not resolve leaves
+    # nothing behind.
+    start = "" if existing else base or head(R.remote(repo=repo), show, repo=repo).ref
     made = _first_absent(dest.parent, main)
     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -90,7 +93,6 @@ def add(
             worktree_add_existing(str(dest), name, repo=repo)
             return Landed(str(dest), name, created=False)
 
-        start = base or _head(remote, warn, repo=repo)
         worktree_add(name, str(dest), start, repo=repo)
     except (GitError, Refusal, Refused):
         # The directories went in before git was asked, so a refusal leaves
@@ -120,23 +122,6 @@ def _first_absent(dest_parent: Path, main: str) -> Path | None:
         made = d
         d = d.parent
     return made
-
-
-def _head(
-    remote: str,
-    warn: object,
-    repo: str | os.PathLike[str] | None = None,
-) -> str:
-    ref, warning = R.head_ref(remote, repo=repo)
-    if warning and callable(warn):
-        warn(warning)
-    if not ref:
-        hint = remote or "origin"
-        raise Refusal(
-            "cannot tell which branch this repository branches from; record it "
-            f"with: git remote set-head {hint} --auto"
-        )
-    return ref
 
 
 def move(

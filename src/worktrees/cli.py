@@ -173,18 +173,21 @@ class _Stop(Exception):
 
 def _assess(
     args: argparse.Namespace,
+    head: tuple[R.Head, str],
     judge: Callable[..., list[verdicts.Verdict]] | None = None,
 ) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
     """`_judge_all`, with a spinner on stderr saying what it is checking."""
     with progress.running(not args.quiet and not args.verbose):
-        return _judge_all(args, judge)
+        return _judge_all(args, head, judge)
 
 
 def _judge_all(
     args: argparse.Namespace,
+    head: tuple[R.Head, str],
     judge: Callable[..., list[verdicts.Verdict]] | None,
 ) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
-    """Resolve the head branch and judge every worktree.
+    """Judge every worktree against `_assessment_head`'s answer, and every
+    one `unknown` when that does not resolve.
 
     The one path every command takes, so `prune` can only ever act on what
     `status` printed. `judge` is how `remove` asks for the one you stand in
@@ -193,18 +196,21 @@ def _judge_all(
     from . import repo as R
     from . import verdicts
 
-    head, head_branch, _ = _assessment_head(args)
+    found, head_branch = head
+    ref = found.ref
 
     only = getattr(args, "branch", "")
     ignored = getattr(args, "delete_ignored", False)
     records = R.worktrees()
     rows = (
-        judge(only, head, head_branch, ignored)
+        verdicts.unresolved(records, only, found.problem())
+        if not found.resolves
+        else judge(only, ref, head_branch, ignored)
         if judge
         else verdicts.assess(
             records,
             only,
-            head,
+            ref,
             head_branch,
             ignored,
             # `gws` and `gwp` report; `gwr` acts, and takes this list as its
@@ -212,25 +218,42 @@ def _judge_all(
             include_main=True,
         )
     )
-    return rows, verdicts.stale(records), head, head_branch, records
+    return rows, verdicts.stale(records), ref, head_branch, records
 
 
-def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
-    """Resolve the shared assessment target and report offline operation."""
+def _assessment_head(args: argparse.Namespace) -> tuple[R.Head, str]:
+    """The head ref, shown, and the branch name it stands for."""
     from . import repo as R
 
     remote = R.remote()
     progress.say("finding the head branch")
-    head, warning = R.head_ref(remote)
-    if warning and not args.quiet:
-        _warn(warning)
-    if not head:
-        raise _Stop("cannot tell which branch this repository branches from", 2)
-    head_branch = R.ref_name(head)
+    head = R.head_ref(remote)
+    _shower(args)(head)
+    head_branch = head.name
     if remote:
         head_branch = head_branch.removeprefix(remote + "/")
+    return head, head_branch
 
-    return head, head_branch, remote
+
+def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
+    """What prints the head line: on stderr, never beside --json, and under
+    -q only when the head was inferred, since that one is a guess."""
+
+    def show(head: R.Head) -> None:
+        if getattr(args, "json", False):
+            return
+        if args.quiet and head.source != "inferred":
+            return
+        detail = f"; {head.also} also exists" if head.also else ""
+        _err(render.note(f"Head: {render.ref(head.name)} ({head.source}{detail})"))
+
+    return show
+
+
+def _require(head: R.Head) -> None:
+    """A command that changes something refuses without a head ref."""
+    if not head.resolves:
+        raise _Stop(head.problem(), 1)
 
 
 # --------------------------------------------------------------------------
@@ -249,7 +272,7 @@ def run_status(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    rows, stale, head, _, records = _assess(args)
+    rows, stale, head, _, records = _assess(args, _assessment_head(args))
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
     failed = int(any(v.error for v in rows))
@@ -340,12 +363,15 @@ def run_prune(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
+    # Before anything changes, so a refusal leaves the records as they were.
+    head = _assessment_head(args)
+    _require(head[0])
     # git's own bookkeeping for worktrees whose directories somebody removed
     # by hand. A stale record answers for a directory that is not there, and
     # neither command may propose removing one.
     prune.worktree_prune()
 
-    rows, _, _, _, _ = _assess(args)
+    rows, _, _, _, _ = _assess(args, head)
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
     errors = int(any(v.error for v in rows))
@@ -433,9 +459,8 @@ def run_new_branch(args: argparse.Namespace) -> int:
         # answer with the name of its own alias.
         return _needs(args, "NAME")
 
-    warn = None if args.quiet else _warn
     try:
-        started = new_branch.create(args.name, warn=warn)
+        started = new_branch.create(args.name, show=_shower(args))
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -484,9 +509,8 @@ def run_rotate(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    warn = None if args.quiet else _warn
     try:
-        result = rotate_mod.rotate(warn=warn)
+        result = rotate_mod.rotate(show=_shower(args))
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -725,7 +749,7 @@ def run_add(args: argparse.Namespace) -> int:
 
     warn = None if args.quiet else _warn
     try:
-        landed = wt_mod.add(args.name, args.base, warn=warn)
+        landed = wt_mod.add(args.name, args.base, warn=warn, show=_shower(args))
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -883,7 +907,9 @@ def run_remove(args: argparse.Namespace) -> int:
                 print(f"{w.label}\t{w.path}")
         return 0
 
-    rows, _, _, _, records = _assess(args, judge=wt_mod.removable)
+    head = _assessment_head(args)
+    _require(head[0])
+    rows, _, _, _, records = _assess(args, head, judge=wt_mod.removable)
     found = pick.matches(
         args.query, [R.Worktree(v.path, "", v.branch, frozenset()) for v in rows]
     )

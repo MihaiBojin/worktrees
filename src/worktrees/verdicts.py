@@ -166,6 +166,18 @@ def prove(
     return found
 
 
+def unresolved(records: list[R.Worktree], only: str, why: str) -> list[Verdict]:
+    """Every worktree `unknown`, the main checkout too: with no head ref
+    there is nothing to measure any of them against."""
+    return [
+        Verdict(UNKNOWN, wt.branch, wt.path, why, sha=wt.sha, error=True)
+        for wt in records
+        if "bare" not in wt.flags
+        and "prunable" not in wt.flags
+        and (not only or wt.branch == only)
+    ]
+
+
 def assess(
     records: list[R.Worktree],
     only: str,

@@ -36,6 +36,7 @@ def forge_worktree(world) -> Path:
     world.commit("feature", "later edits\n")
     world.git("remote", "add", "origin", "git@github.com:owner/repo.git")
     world.git("update-ref", "refs/remotes/origin/main", "main")
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     return wt
 
 

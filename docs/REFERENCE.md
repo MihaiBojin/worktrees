@@ -109,7 +109,8 @@ Flags and commands.
 | `gwbd --dry-run` assesses branches without deleting them; worktree commands use `gws` for assessment | the branch selector and batch deletion share one preview | `branch_cli.delete`, `cli._dispatch` |
 | `gwp` with nothing removable prints the verdict table | the reason each worktree stayed is the answer to the question, and naming another command puts it one round trip away | `cli.run_prune` |
 | One row per command carries its function, flags, description, aliases, and directory behaviour | help and dispatch read the same rows | `cli._COMMANDS`, `cli._BRANCH_COMMANDS`, and `cli.command_rows()` |
-| The head-branch ladder tries `refs/remotes/<remote>/<b>` before `refs/heads/<b>` and returns a full ref | returning a bare name is what lets a tag named `origin/main` answer for the head branch | `repo.full_ref`, `repo.head_ref` |
+| The head ref is the last sync's `<remote>/HEAD`, a clone's, or the local `main` or `master`, and is always a full ref | a bare name is what lets a tag named `origin/main` answer for the head branch, and a `<remote>/main` nothing named the head is a guess about the server | `repo.head_ref` |
+| A head ref that does not resolve makes every row `unknown` and every mutating or branch-starting command stop at exit 1 | measuring against nothing proves nothing, and a dangling `<remote>/HEAD` falling through to a local branch measures against a branch nobody chose | `cli._require`, `new_branch.head`, `verdicts.unresolved`, `branches.unresolved` |
 | Only `gw sync` runs `git fetch` or `git remote set-head`; every other command reads `<remote>/<head>` as the last sync or clone left it | a command that reaches the network on its way to something else pays the round trip on every run, and its answer depends on whether the remote could be reached | `cli.run_sync`, `repo.fetch` |
 | `gw sync` fetches the whole remote with `--prune` rather than the head branch alone | base-only fetching forks a second divergent branch where the remote already had one, and the network cost is the round trip rather than the ref count | `repo.fetch` |
 | Branches this tool starts do not track the head branch | a branch off `refs/remotes/<remote>/main` that tracked it would take it as its upstream, and `git push` would target the head branch | `--no-track` on `worktree_add` and `switch_create` |
@@ -179,7 +180,7 @@ passes while the bug is live. Every printed sha has to satisfy
 `git cat-file -t` = `commit`.
 
 `prune.restore_line` does that check. Every merge question names
-`refs/heads/<branch>`, and `repo.full_ref` returns a full ref for the head
+`refs/heads/<branch>`, and `repo.head_ref` returns a full ref for the head
 branch.
 
 **Gate 2: the head branch survives whatever the verdict says.**
@@ -231,7 +232,7 @@ involved.
 | --- | --- | --- | --- |
 | A1 | tag `feature`, unmerged branch `feature` | held, `keep` | `test_a_tag_cannot_answer_for_a_branch` |
 | A2 | the same, annotated | held: the restore line carries the branch's commit, not the tag object | `test_every_printed_sha_is_a_commit` |
-| A3 | tag `main`, no remote, head ref is the bare name | held: `full_ref("main")` is `refs/heads/main` | `test_the_head_ref_is_never_a_bare_name` |
+| A3 | tag `main`, no remote, head ref is the bare name | held: the inferred head ref is `refs/heads/main` | `test_the_head_ref_is_never_a_bare_name` |
 | A4 | branch `x` and branch `heads/x` | held, both `keep` | none |
 | A5 | tag `foo` and branch `tags/foo` | held, `keep` | none |
 | A6 | branch named a full 40-hex sha | held: judged `remove` by squash, and the restore line carries the branch's own sha | none |
@@ -246,13 +247,13 @@ unmerged work" passes while it holds.
 | --- | --- | --- | --- |
 | B1 | head branch `main` in a linked worktree | held: not proposed | `test_the_head_branch_is_never_proposed` |
 | B2 | plus a tag named `origin/main` | held | `test_a_tag_shadowing_the_head_branch_does_not_shadow_it` |
-| B3 | plus a branch named `origin/main` | held: `refs/remotes/origin/main` wins the ladder | none |
+| B3 | plus a branch named `origin/main` | held: the head ref is `origin/HEAD`'s full target, `refs/remotes/origin/main` | none |
 | B4 | `git config git-worktree-plugin.headBranch origin/main` | gone. There is no such key | |
 | B5 | `headBranch` naming a ref that does not exist | gone with B4 | |
-| B6 | `origin/HEAD` unset, no remote-tracking refs, remote unreachable | held: only `gw sync` reaches the remote, and it stops with git's reason; every other command judges from the refs already here | `test_an_unreachable_remote_still_answers_status` |
+| B6 | `origin/HEAD` unset, no remote-tracking refs, remote unreachable | held: only `gw sync` reaches the remote, and it stops with git's reason; every other command infers the head from the local `main` or `master` | `test_an_unreachable_remote_still_answers_status` |
 | B7 | detached-HEAD worktree | held: named, and judged on whether a ref reaches its commit | `test_a_detached_worktree_is_named_not_mistaken` |
 
-B2 and B3 are why the head-branch ladder returns a full ref.
+B2 and B3 are why the head ref is a full ref.
 `git symbolic-ref --quiet --short` shortens to the shortest *unambiguous*
 form and returns `remotes/origin/main`, which an `origin/` strip then misses.
 `git tag origin/main main` puts the tag where both candidate answers agree, so

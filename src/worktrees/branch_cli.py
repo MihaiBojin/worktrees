@@ -5,11 +5,23 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from typing import TYPE_CHECKING
 
 from . import branches, progress, prune, render
-from .cli import _assessment_head, _err, _explain, _only, _Stop, add_status_flags
+from .cli import (
+    _assessment_head,
+    _err,
+    _explain,
+    _only,
+    _require,
+    _Stop,
+    add_status_flags,
+)
 from .git import GitError, Refused, options
 from .render import BOLD, DIM, YELLOW, Cell, table
+
+if TYPE_CHECKING:  # names used in annotations, which never run
+    from . import repo as R
 
 
 def status_flags(p: argparse.ArgumentParser) -> None:
@@ -52,7 +64,7 @@ def delete_flags(p: argparse.ArgumentParser) -> None:
 
 def _prepare(
     args: argparse.Namespace,
-) -> tuple[str, str, str, list[branches.Verdict]] | None:
+) -> tuple[R.Head, str, str, list[branches.Verdict]] | None:
     options.verbose = args.verbose
     if args.complete:
         for name, (sha, _) in branches.local_refs().items():
@@ -64,16 +76,18 @@ def _prepare(
     # A spinner and the question being asked, on a terminal: --all may hold
     # dozens of branches.
     with progress.running(not args.quiet and not args.verbose):
-        head, head_branch, _ = _assessment_head(args)
-        head_sha = prune.sha_of(head).out.strip()
-        if not head_sha:
-            raise GitError(f"cannot resolve {head}")
+        found, head_branch = _assessment_head(args)
+        head_sha = prune.sha_of(found.ref).out.strip() if found.resolves else ""
         progress.say("reading local branches")
         try:
-            rows = branches.assess(args.names, head_sha, head_branch)
+            rows = (
+                branches.assess(args.names, head_sha, head_branch)
+                if head_sha
+                else branches.unresolved(args.names, found.problem())
+            )
         except ValueError as exc:
             raise _Stop(str(exc), 2) from exc
-    return head, head_sha, head_branch, rows
+    return found, head_sha, head_branch, rows
 
 
 def _table(rows: list[branches.Verdict]) -> str:
@@ -163,8 +177,8 @@ def status(args: argparse.Namespace) -> int:
     prepared = _prepare(args)
     if prepared is None:
         return 0
-    head, head_sha, _, rows = prepared
-    _report(args, head, head_sha, rows)
+    found, head_sha, _, rows = prepared
+    _report(args, found.ref, head_sha, rows)
     return int(any(v.error for v in rows))
 
 
@@ -233,7 +247,9 @@ def delete(args: argparse.Namespace) -> int:
     prepared = _prepare(args)
     if prepared is None:
         return 0
-    head, head_sha, head_branch, rows = prepared
+    found, head_sha, head_branch, rows = prepared
+    _require(found)
+    head = found.ref
     if args.names or args.all or args.dry_run:
         go = [v for v in rows if v.verdict == "remove"]
     else:

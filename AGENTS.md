@@ -333,7 +333,7 @@ for `gh` and `glab`.
 
 A fetch would be most of what an assessment costs: about 1.1 s of a 1.9 s
 `gws` here, 750 ms of it the SSH handshake. `gwa`, `gwbc` and `gwrot` branch from
-`<remote>/<head>` as the last sync or clone left it.
+the head ref, which reads what the last sync or clone left.
 
 `gw sync` records the forge's answer for every branch tip in that file,
 keyed by branch and the SHA it asked about. Assessment reads it once per run
@@ -420,6 +420,21 @@ moment `update-ref` was added, and nothing failed.
 
 `verdicts.py` declares no mutating command. A read-only command may not call
 one: a test reads the verbose log and asserts it.
+
+## The head ref comes from three places
+
+`repo.head_ref` returns a `Head`: the full ref, its source and whether it
+resolves. The source is `remote` when `sync.read()` has a record, `clone`
+when `<remote>/HEAD` exists without one, and `inferred` otherwise, from
+`refs/heads/main` and `refs/heads/master` alone. Nothing else is a candidate,
+`<remote>/main` included: a remote-tracking branch nobody named the head is a
+guess about the server.
+
+A `<remote>/HEAD` that dangles is the answer and does not resolve, rather
+than a reason to try the next rung. `cli._shower` prints the `Head:` line for
+every command that reads it, and `cli._require` is where a mutating command
+refuses; `new_branch.head` does both jobs for the three commands that start a
+branch. `tests/test_head.py` holds each rung and each refusal.
 
 ## Content cannot settle a stacked branch
 

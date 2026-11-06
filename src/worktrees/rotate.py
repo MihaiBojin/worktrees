@@ -15,7 +15,7 @@ from datetime import date
 from . import render
 from . import repo as R
 from .git import git
-from .new_branch import Refusal, short_sha, switch_create
+from .new_branch import Refusal, head, short_sha, switch_create
 
 # <stem>-YYYY-MM-DD_NNN. Three digits, so the sequence cannot be read as
 # another field of the date the way a two-digit one beside -09-10 can.
@@ -117,7 +117,7 @@ def next_name(
 
 
 def rotate(
-    warn: object = None,
+    show: object = None,
     repo: str | os.PathLike[str] | None = None,
 ) -> Rotated | CaughtUp:
     """Start the next branch after this one, or catch the head branch up."""
@@ -129,15 +129,7 @@ def rotate(
         )
 
     remote = R.remote(repo=repo)
-    base, warning = R.head_ref(remote, repo=repo)
-    if warning and callable(warn):
-        warn(warning)
-    if not base:
-        hint = remote or "origin"
-        raise Refusal(
-            "cannot tell which branch this repository branches from; record it "
-            f"with: git remote set-head {hint} --auto"
-        )
+    base = head(remote, show, repo=repo).ref
 
     head_name = R.ref_name(base)
     if remote:
