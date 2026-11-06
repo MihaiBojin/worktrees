@@ -989,6 +989,12 @@ def run_remove(args: argparse.Namespace) -> int:
         _err(render.note("nothing picked"))
         return 0
     chosen = by_path[picked.path]
+    standing_in = _same(chosen.path, here)
+    if standing_in and not sys.stdin.isatty():
+        raise Refused(
+            f"{chosen.path} is the worktree you are in, and only a terminal "
+            "can confirm removing it"
+        )
 
     if chosen.error:
         _err(
@@ -1040,6 +1046,13 @@ def run_remove(args: argparse.Namespace) -> int:
 
     never = prune.plan([chosen], _err)
     if not args.yes and not prune.confirm(1, never=never):
+        _err(render.note("nothing removed"))
+        return 0
+    # The second question, which --yes does not answer: the caller's shell
+    # is in this directory.
+    if standing_in and prune._prompt(
+        render.ask(f"you are in {chosen.path}; remove it?", "[y/N]")
+    ).strip().lower() not in ("y", "yes"):
         _err(render.note("nothing removed"))
         return 0
 
