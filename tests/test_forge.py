@@ -114,16 +114,25 @@ def test_gwr_removes_a_worktree_the_sync_proved(world) -> None:
 
 
 def _recording(world) -> tuple[dict[str, str], Path]:
-    """An env whose `gh` and `glab` write each call down and answer nothing."""
+    """An env whose `gh` and `glab` write each call down and answer nothing.
+
+    Each line ends with the redirect variables as the CLI saw them, and the
+    env sets both, so a line ending `unset unset` shows they were dropped.
+    """
     log = world.root / "forge-calls"
     bin_dir = world.root / "recording-bin"
     bin_dir.mkdir()
     for tool in ("gh", "glab"):
         exe = bin_dir / tool
-        exe.write_text(f'#!/bin/sh\necho "{tool} $*" >> {log}\necho "[]"\n')
+        exe.write_text(
+            "#!/bin/sh\n"
+            f'echo "{tool} $* ${{GH_REPO-unset}} ${{GITLAB_REPO-unset}}" >> {log}\n'
+            'echo "[]"\n'
+        )
         exe.chmod(0o755)
     env = env_for(world)
     env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    env["GH_REPO"] = env["GITLAB_REPO"] = "someone/else"
     return env, log
 
 
@@ -159,12 +168,24 @@ def test_assessment_never_asks_the_forge(world, provider, entry, args) -> None:
 
 @pytest.mark.parametrize("provider", ["github", "gitlab"])
 def test_sync_asks_the_forge(world, provider) -> None:
-    """The control for the test above: the same repository, the same fake."""
+    """The control for the test above: the same repository, the same fake.
+    Every question names the remote's repository, and no redirect reaches
+    the CLI."""
     _unsettled(world, provider)
     env, log = _recording(world)
     p = cli(world, "sync", env=env)
     assert p.returncode == 0, p.stderr
-    assert log.read_text().startswith("gh " if provider == "github" else "glab ")
+    tool, repo = (
+        ("gh", "github.com/owner/repo")
+        if provider == "github"
+        else ("glab", "https://gitlab.com/owner/repo")
+    )
+    calls = log.read_text().splitlines()
+    assert len(calls) == 3, calls  # feature, loose and main
+    for call in calls:
+        assert call.startswith(f"{tool} "), call
+        assert f" --repo {repo} " in call, call
+        assert call.endswith(" unset unset"), call
 
 
 @pytest.mark.parametrize("entry", ["gws", "gwp", "gwr", "gwbs", "gwbd"])
