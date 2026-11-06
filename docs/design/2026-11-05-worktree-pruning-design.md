@@ -81,8 +81,9 @@ Checked in this order; the first match wins:
 3. `remove`: completion proved locally by ancestry, squash or content against the head ref. A branch
    merged through a merge commit is an ancestor without being on the first-parent history, so it lands
    here.
-4. `keep`: the branch has commits the head ref does not contain.
-5. `unknown`: evidence is missing, malformed or does not match. Never treated as `remove`.
+4. `unknown`: a merged request is recorded for the branch but does not match it, or the branch shares
+   no history with the head ref. Never treated as `remove`.
+5. `keep`: the branch has commits the head ref does not contain.
 
 Branch and worktree assessment use the same proof. Assessment computes the first-parent commit set of
 the assessed head ref once per run. A divergent local counterpart does not extend that set.
@@ -230,6 +231,8 @@ the last sync has no forge evidence until the next one; local proof still applie
 | Several remotes, no `checkout.defaultRemote` | unchanged | unchanged | nonzero | none |
 
 The last row's message lists the remotes and prints `git config checkout.defaultRemote <name>`.
+When every branch's query fails, `gw sync` cannot tell that from a CLI that is not signed in, and
+takes the `gh` or `glab` row: previous evidence only.
 Missing, malformed or mismatched cache entries are never proof.
 
 ## 12. Offline rule
