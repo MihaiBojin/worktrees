@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -95,7 +96,7 @@ def git_version_stub(world, version: str) -> Path:
     real_git = shutil.which("git")
     binary = directory / "git"
     binary.write_text(
-        "#!/usr/bin/env python3\n"
+        f"#!{sys.executable}\n"
         "import os, sys\n"
         f"real_git = {real_git!r}\n"
         "if sys.argv[1:] == ['--version']:\n"
@@ -161,8 +162,9 @@ def test_unsafe_git_partial_clone_refuses_before_object_commands(world, version)
         "2.55.0",
     ],
 )
-def test_patched_git_partial_clone_uses_local_objects_only(world, version):
+def test_patched_git_partial_clone_policy_accepts_supported_releases(world, version):
     partial = partial_clone(world)
+    partial.git("fetch", "--no-filter", "--refetch", "origin")
     stub = git_version_stub(world, version)
     env = env_for(partial)
     trace = world.root / "patched-trace.jsonl"
@@ -177,7 +179,8 @@ def test_patched_git_partial_clone_uses_local_objects_only(world, version):
             "GIT_NO_LAZY_FETCH": "0",
         },
     )
-    assert result.returncode != 0, result.stdout
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["verdicts"]
     assert "partial clone requires" not in result.stderr.lower()
     assert git_snapshot(partial.repo) == before
     assert not any("fetch" in child for child in trace_children(trace))
@@ -286,9 +289,23 @@ def test_partial_clone_metadata_commands_do_not_require_patched_git(world, args)
 def test_command_environment_cannot_enable_lazy_fetch(world, monkeypatch):
     from worktrees.git import git
 
-    partial = partial_clone(world)
-    blob = world.git("rev-parse", "feature:feature")
+    blob = world.git("rev-parse", "HEAD:README")
     trace = world.root / "object-trace.jsonl"
+    emitted = world.root / "git-environment.json"
+    directory = world.root / "git-environment-bin"
+    directory.mkdir()
+    real_git = shutil.which("git")
+    binary = directory / "git"
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, pathlib, sys\n"
+        f"real_git = {real_git!r}\n"
+        f"pathlib.Path({str(emitted)!r}).write_text(json.dumps("
+        "{'GIT_NO_LAZY_FETCH': os.environ.get('GIT_NO_LAZY_FETCH')}))\n"
+        "os.execv(real_git, [real_git, *sys.argv[1:]])\n"
+    )
+    binary.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{directory}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
     monkeypatch.setenv("GIT_NO_LAZY_FETCH", "0")
 
@@ -296,9 +313,10 @@ def test_command_environment_cannot_enable_lazy_fetch(world, monkeypatch):
     def has_object(sha: str) -> None:
         """Check local availability without retrieving a missing object."""
 
-    before = git_snapshot(partial.repo)
-    assert has_object(blob, repo=partial.repo).code == 1
-    assert git_snapshot(partial.repo) == before
+    before = git_snapshot(world.repo)
+    assert has_object(blob, repo=world.repo).code == 0
+    assert json.loads(emitted.read_text()) == {"GIT_NO_LAZY_FETCH": "1"}
+    assert git_snapshot(world.repo) == before
     assert not any("fetch" in child for child in trace_children(trace))
 
 

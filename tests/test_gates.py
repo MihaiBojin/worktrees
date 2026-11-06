@@ -418,7 +418,8 @@ def test_no_unexpected_git_command_ran(world) -> None:
         rest = list(argv[1:])
         if rest[:1] == ["-C"]:
             del rest[:2]
-        while rest and rest[0].startswith("--"):
+        # --version is Git's standalone metadata query.
+        while rest and rest[0].startswith("--") and rest[0] != "--version":
             del rest[0]
         return rest[0]
 
