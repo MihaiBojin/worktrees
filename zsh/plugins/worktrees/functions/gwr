@@ -5,7 +5,7 @@ code=$?
 output=${output%.}
 dest=${output%$'\n'}
 # A destination means removal succeeded, even if later cleanup failed.
-if [[ -n $dest && -d $dest ]]; then
+if [[ $dest == /* && -d $dest ]]; then
     cd -- "$dest" || return $?
 else
     printf '%s' "$output"

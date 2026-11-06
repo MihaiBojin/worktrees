@@ -758,3 +758,20 @@ def test_ambiguous_gw_navigation_uses_the_gwl_picker(world, shell):
     assert process.stdout == b""
     assert b"which?" in process.stderr
     assert cwd == os.fsencode(target.resolve())
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+def test_json_is_forwarded_when_a_relative_directory_has_its_name(world, shell):
+    bin_dir = _cli_binaries(world)
+    payload = subprocess.check_output(
+        [str(bin_dir / "gwl"), "--json"], cwd=world.repo, env=env_for(world)
+    )
+    target = world.repo / os.fsdecode(payload.removesuffix(b"\n"))
+    target.mkdir(parents=True)
+    assert payload == subprocess.check_output(
+        [str(bin_dir / "gwl"), "--json"], cwd=world.repo, env=env_for(world)
+    )
+    process, cwd = _drive(shell, bin_dir, ["gwl", "--json"], world.repo, env_for(world))
+    assert process.returncode == 0, process.stderr
+    assert process.stdout == payload
+    assert cwd == os.fsencode(world.repo.resolve())
