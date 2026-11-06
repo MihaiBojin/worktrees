@@ -5,7 +5,7 @@ from __future__ import annotations
 import shlex
 from dataclasses import asdict, dataclass, field
 
-from . import progress, prune, sync, verdicts
+from . import branch_forge, progress, prune, sync, verdicts
 from . import repo as R
 from .git import GitError, Refused, git
 
@@ -44,6 +44,7 @@ def local_refs() -> dict[str, tuple[str, str]]:
 def assess(names: list[str], head_sha: str, head_branch: str) -> list[Verdict]:
     refs = local_refs()
     evidence = (sync.read() or {}).get("evidence", {})
+    repository = branch_forge.repository_for(R.remote())
     missing = [name for name in names if name not in refs]
     if missing:
         raise ValueError("no local branch: " + ", ".join(missing))
@@ -75,7 +76,9 @@ def assess(names: list[str], head_sha: str, head_branch: str) -> list[Verdict]:
                 progress.say(f"{name}: {question}{of}")
 
             try:
-                found = verdicts.prove(sha, name, head_sha, head_branch, evidence, say)
+                found = verdicts.prove(
+                    sha, name, head_sha, head_branch, evidence, repository, say
+                )
                 row.verdict, row.why = found.verdict, found.why
                 row.proof, row.request = found.proof, found.request
             except GitError as exc:
