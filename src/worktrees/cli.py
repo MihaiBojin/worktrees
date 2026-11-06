@@ -325,6 +325,7 @@ def run_status(args: argparse.Namespace) -> int:
     rows, stale, head, _, records = _assess(args)
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
+    failed = int(any(v.error for v in rows))
 
     # Every repository beside this one shares the same `.worktrees` root, and
     # nothing else says which of the directories there are somebody else's.
@@ -363,12 +364,12 @@ def run_status(args: argparse.Namespace) -> int:
                 indent=2,
             )
         )
-        return 0
+        return failed
 
     print(_verdict_table(_only(args, rows)))
 
     if args.quiet:
-        return 0
+        return failed
 
     # Every row counted, --only or not, so a filtered table still says what
     # it is not showing.
@@ -393,7 +394,7 @@ def run_status(args: argparse.Namespace) -> int:
         _warn(f"unclear, and gwp does not touch these: {names}")
     if go:
         _err(render.note(f"gwp removes the {len(go)} marked removable"))
-    return 0
+    return failed
 
 
 # --------------------------------------------------------------------------
@@ -420,6 +421,7 @@ def run_prune(args: argparse.Namespace) -> int:
     rows, _, _, _, _ = _assess(args)
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
+    errors = int(any(v.error for v in rows))
 
     if not go:
         # The reason each one stayed, here, rather than the name of the
@@ -437,7 +439,7 @@ def run_prune(args: argparse.Namespace) -> int:
                             "no worktrees besides the main checkout; gwa NAME makes one"
                         )
                     )
-        return 0
+        return errors
 
     if unknown and not args.quiet:
         names = ", ".join(render.branch(v.label) for v in unknown)
@@ -467,7 +469,7 @@ def run_prune(args: argparse.Namespace) -> int:
     else:
         names = ", ".join(render.out(v.label, render.BRANCH) for v in go)
         print(f"removed {len(go)} worktree(s): {names}")
-    return 1 if failed else 0
+    return 1 if failed or errors else 0
 
 
 # --------------------------------------------------------------------------
@@ -992,6 +994,14 @@ def run_remove(args: argparse.Namespace) -> int:
             )
         if judged:
             chosen = judged[0]
+
+    if chosen.error:
+        _err(
+            render.fail(
+                f"{render.branch(chosen.label)} could not be judged: {chosen.why}"
+            )
+        )
+        return 1
 
     if (
         chosen.verdict != prune.REMOVE

@@ -235,7 +235,7 @@ word.
 | --- | --- |
 | `remove` | finished, and safe to remove. The reason says how it was proved: by ancestry, by squash, by content, by a merged request on the forge, or by a ref reaching a detached commit |
 | `keep` | something says no. Uncommitted work, the head branch, a lock, the worktree you are standing in, ignored files, or a branch sharing history with the head branch and holding work it lacks |
-| `unknown` | it could not tell. A branch with no common history with the head branch, or forge evidence that does not match this tip |
+| `unknown` | it could not tell. A branch with no common history with the head branch, forge evidence that does not match this tip, or a git command that failed while judging it, which also makes the command exit 1 |
 
 A worktree's branch is judged by the proof `gwbs` uses for a loose branch,
 and a worktree and a branch at the same commit read the same verdict and the
@@ -253,10 +253,13 @@ commit the head branch contains. Anything less reads `unknown`. The forge
 is asked on every run for each branch git cannot settle. `--no-forge`
 decides from git alone, and so does a run whose fetch just failed.
 
-The question goes to the repository the command is standing in and nowhere
-else. `GH_REPO` and `GITLAB_REPO` beat that directory, so both are dropped
-before `gh` or `glab` runs; everything else in the environment, the token
-included, is passed through.
+The remote's URL picks the forge and the repository. A host of
+`github.com` or `github.*` is asked through `gh`, and `gitlab.com` or
+`gitlab.*` through `glab`, each passed that host and path and nothing else.
+Any other host, an ssh alias among them, gets git's answer alone.
+`GH_REPO` and `GITLAB_REPO` would override the repository passed, so both
+are dropped before `gh` or `glab` runs; everything else in the environment,
+the token included, is passed through.
 
 A record left behind by a directory somebody deleted by hand is nobody's
 verdict. `gws` names how many there are; clearing them is `git worktree prune`,

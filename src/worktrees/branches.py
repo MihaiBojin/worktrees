@@ -82,7 +82,7 @@ def assess(
                 row.verdict, row.why = found.verdict, found.why
                 row.proof, row.request = found.proof, found.request
             except GitError as exc:
-                row.error, row.why = True, str(exc)
+                row.error, row.why = True, exc.line()
     return rows
 
 
