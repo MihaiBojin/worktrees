@@ -109,6 +109,12 @@ A linked worktree whose branch is protected by rule 1 is not eligible for `gwp`;
 `gwr --keep-branch` can remove it and keeps the branch. Detached worktrees get the same checks as
 attached ones. A finished branch does not make a protected worktree eligible.
 
+The main checkout and the head branch are not judged; their verdict is `keep`. Every other row keeps
+its verdict, and a protection or a missing permission (section 6) only clears `eligible`. In the
+assessment table the VERDICT column is the verdict. A row whose verdict allows deletion but which is
+not eligible names the protection, or the permission it needs, in its WHY column after the proof.
+The summary under the table counts eligible rows.
+
 ## 6. Delete permissions
 
 `--delete VALUE` is repeatable and the values combine. An unknown value, or a value the command does not
