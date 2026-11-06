@@ -313,8 +313,9 @@ commands that fetch on the way to something else; `gw sync` fetches every
 time it runs, and is the only command that writes `git-worktrees-sync.json`. FETCH_HEAD is written per worktree, so
 `repo.fetched_at` reads every copy.
 
-Nothing keeps a forge answer between runs, so a branch git cannot settle
-costs one round trip on every run that asks.
+`gw sync` records the forge's answer for every branch tip in that file,
+keyed by branch and the SHA it asked about. No assessment reads it, so a
+branch git cannot settle costs one round trip on every run that asks.
 
 The per-worktree checks run on eight threads. Each is independent, and the
 time goes waiting on git and on `gh`, one round trip per branch git cannot
