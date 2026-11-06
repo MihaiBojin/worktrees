@@ -84,7 +84,8 @@ def test_a_merged_request_keeps_worktree_protections(world, protection) -> None:
         (wt / "cache").write_text("keep\n")
     else:
         world.git("worktree", "lock", str(wt))
-    assert gwp(world)["feature"]["verdict"] == "keep"
+    row = gwp(world)["feature"]
+    assert (row["verdict"], row["eligible"]) == ("remove", False)
 
 
 def test_prune_removes_a_worktree_the_sync_proved(world) -> None:

@@ -36,6 +36,8 @@ def _same(a: str, b: str) -> bool:
 def _verdict_table(rows: list[verdicts.Verdict], plain: bool = False) -> str:
     """The table `gwp` prints. `plain` is `gwp --list`'s, never
     coloured, since like --json it is what a script reads."""
+    from .verdicts import REMOVE
+
     if plain:
         return table(
             [
@@ -49,34 +51,18 @@ def _verdict_table(rows: list[verdicts.Verdict], plain: bool = False) -> str:
         Cell("VERDICT", BOLD),
         Cell("WHY", BOLD),
     )
+    # A `remove` row that a protection holds back keeps its verdict's colour
+    # and dims the rest, so it reads as finished and not removable.
     body: list[Row] = [
         (
-            Cell(v.label, render.BRANCH),
+            Cell(v.label, DIM if held else render.BRANCH),
             Cell(v.path, DIM),
             Cell(v.verdict, render.VERDICT.get(v.verdict, "")),
-            Cell(v.why),
+            Cell(v.why, DIM if held else ""),
         )
-        for v in rows
+        for v, held in ((v, v.verdict == REMOVE and not v.eligible) for v in rows)
     ]
     return table([head, *body])
-
-
-def _counted(rows: list[verdicts.Verdict]) -> str:
-    """How many of each verdict, in the verdicts' own colours."""
-    from . import prune, verdicts
-
-    # `removable` rather than the verdict, so the count is what gwp removes.
-    go = {id(v) for v in prune.removable(rows)}
-    return render.counted(
-        [
-            verdicts.REMOVE
-            if id(v) in go
-            else verdicts.UNKNOWN
-            if v.verdict == verdicts.UNKNOWN
-            else verdicts.KEEP
-            for v in rows
-        ]
-    )
 
 
 def add_status_flags(p: argparse.ArgumentParser) -> None:
@@ -154,7 +140,7 @@ def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--delete-ignored",
         action="store_true",
-        help="count a worktree holding gitignored files as removable; nothing "
+        help="count a worktree holding gitignored files as eligible; nothing "
         "restores them",
     )
     p.add_argument("--json", action="store_true", help="verdicts as data")
@@ -313,13 +299,14 @@ def _assessment(
         # Nothing here reads or removes a neighbour; a caller counting
         # directories needs to know they are not all this repository's.
         "neighbours": _neighbours(records),
-        # `ignored` and `sha` are fields rather than facts to parse back out
-        # of `why`. A caller deciding whether to pass --delete-ignored wants
-        # the count, not a sentence that happens to contain it, and the sha
-        # is what the verdict was formed against.
+        # `eligible`, `ignored` and `sha` are fields rather than facts to
+        # parse back out of `why`. A caller deciding whether to pass
+        # --delete-ignored wants the count, not a sentence that happens to
+        # contain it, and the sha is what the verdict was formed against.
         "verdicts": [
             {
                 "verdict": v.verdict,
+                "eligible": v.eligible,
                 "branch": v.branch,
                 "path": v.path,
                 "why": v.why,
@@ -350,7 +337,7 @@ def _report(
     # it is not showing.
     if not plain:
         print()
-        print(_counted(rows))
+        print(render.counted(rows))
     if len(rows) < 2:
         _err(render.note("no worktrees besides the main checkout; gwa NAME makes one"))
     if stale:
@@ -378,7 +365,7 @@ def _report(
 
 
 def run_prune(args: argparse.Namespace) -> int:
-    """Print the assessment, then remove what it marks removable: having
+    """Print the assessment, then remove the eligible rows: having
     asked, at a terminal, or under --yes. Anything else only reports."""
     import json
 
@@ -980,7 +967,7 @@ def run_remove(args: argparse.Namespace) -> int:
         return 1
 
     if (
-        chosen.verdict != prune.REMOVE
+        not chosen.eligible
         and chosen.ignored
         and not args.force
         and not args.yes
@@ -994,15 +981,20 @@ def run_remove(args: argparse.Namespace) -> int:
             f"{chosen.ignored} ignored path(s); they go with it"
         )
         chosen = prune.Verdict(
-            prune.REMOVE, chosen.branch, chosen.path, chosen.why, 0, chosen.sha
+            wt_mod.REMOVE,
+            chosen.branch,
+            chosen.path,
+            chosen.why,
+            sha=chosen.sha,
+            eligible=True,
         )
 
-    if chosen.verdict != prune.REMOVE and not args.force:
+    if not chosen.eligible and not args.force:
         # A finished branch held back by ignored files is not an unfinished
         # branch. Saying so would contradict the reason printed beside it,
         # and --force is the wrong answer to it: it deletes those files just
         # the same, and keeps a branch whose work already landed.
-        state = "is finished" if chosen.ignored else "is not finished"
+        state = "is finished" if chosen.verdict == wt_mod.REMOVE else "is not finished"
         why = f"{render.branch(chosen.label)} {state}: {chosen.why}"
         if chosen.ignored:
             _err(render.fail(why))
@@ -1024,7 +1016,7 @@ def run_remove(args: argparse.Namespace) -> int:
         _err(render.note("nothing removed"))
         return 0
 
-    keep_branch = chosen.verdict != prune.REMOVE
+    keep_branch = not chosen.eligible
     # --force keeps the branch: the worktree was in the way, the work was not.
     destination = wt_mod.remove(
         prune.Verdict(chosen.verdict, "", chosen.path, chosen.why)
@@ -1440,7 +1432,7 @@ _CANONICAL = _canonical()
 _PRUNE_HELP = (
     "Say which of this repository's worktrees are finished, and why. At a "
     "terminal, ask before removing the "
-    "worktrees it marks removable, and their branches; elsewhere only report, "
+    "eligible worktrees, and their branches; elsewhere only report, "
     "unless --yes."
 )
 _NEW_BRANCH_HELP = "Branch NAME off the head branch and check it out."

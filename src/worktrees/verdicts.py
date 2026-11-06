@@ -25,12 +25,24 @@ MAIN_OR_MASTER = "it is main or master"
 
 
 class Verdict:
-    __slots__ = ("branch", "error", "ignored", "path", "sha", "verdict", "why")
+    __slots__ = (
+        "branch",
+        "eligible",
+        "error",
+        "ignored",
+        "path",
+        "sha",
+        "verdict",
+        "why",
+    )
 
     verdict: str
     branch: str  # empty when detached
     path: str
     why: str
+    # The verdict is `remove` and no protection applies: what gwp removes.
+    # A protection never changes the verdict, only this.
+    eligible: bool
     # How many ignored paths held back a branch that is otherwise done, and 0
     # everywhere else. Whether the work landed and whether the directory is
     # safe to delete are two questions, and only the second one answers to
@@ -53,6 +65,7 @@ class Verdict:
         ignored: int = 0,
         sha: str = "",
         error: bool = False,
+        eligible: bool = False,
     ) -> None:
         self.verdict = verdict
         self.branch = branch
@@ -61,6 +74,7 @@ class Verdict:
         self.ignored = ignored
         self.sha = sha
         self.error = error
+        self.eligible = eligible
 
     @property
     def label(self) -> str:
@@ -200,14 +214,16 @@ def assess(
     here: str | None = None,
     include_main: bool = False,
 ) -> list[Verdict]:
-    """Every worktree, in the order `git worktree remove` would refuse them.
+    """Every worktree, judged, with `eligible` cleared by any protection
+    `git worktree remove` or this program would refuse it for.
 
     Proposing something that would then be refused is a bug here, not a
     surprise at the confirmation.
 
-    `here` is the checkout the caller is standing in, which is kept rather
-    than proposed. Pass "" to judge it like any other: `gwr` is asked for one
-    by name and steps out of it first, where a listing has no way to.
+    `here` is the checkout the caller is standing in, which keeps its
+    verdict and is never eligible. Pass "" to judge it like any other: `gwr`
+    is asked for one by name and steps out of it first, where a listing has
+    no way to.
 
     `include_main` puts the main checkout in the list, kept and never
     proposed. A listing leaving it out shows one row where `git worktree
@@ -221,57 +237,58 @@ def assess(
         here = R.toplevel().out.strip()
 
     def judge(wt: R.Worktree) -> Verdict | None:
-        def say(verdict: str, why: str, ignored: int = 0) -> Verdict:
-            return Verdict(verdict, wt.branch, wt.path, why, ignored, wt.sha)
+        def say(verdict: str, why: str) -> Verdict:
+            return Verdict(verdict, wt.branch, wt.path, why, sha=wt.sha)
 
         if "bare" in wt.flags or "prunable" in wt.flags:
             return None
         if wt.path == main:
-            # Said before the standing-in rule below, because which one is
-            # the main checkout is the more useful of the two facts and the
-            # only one that is true from anywhere.
-            if include_main:
-                return say(KEEP, MAIN_CHECKOUT)
-            return None
-
-        if here and Path(wt.path).resolve() == Path(here).resolve():
-            return say(KEEP, "you are standing in it")
-        if "locked" in wt.flags:
-            return say(KEEP, "it is locked")
+            return say(KEEP, MAIN_CHECKOUT) if include_main else None
         if wt.branch and wt.branch == head_branch:
             return say(KEEP, HEAD_BRANCH)
+
         # One read, both answers. Asking again further down was half of
         # every assessment's git calls.
         progress.say(f"{wt.label}: reading its status")
         status = R.status_of(wt.path)
-        if status.dirty:
-            return say(KEEP, "it has uncommitted changes")
-
         if not wt.branch:
             # Detached: finished when some ref already reaches the commit,
             # which is the question `git worktree remove` asks of one.
             if R.refs_containing(wt.sha).out.strip():
-                return say(REMOVE, "its commit is reached by a ref")
-            return say(UNKNOWN, f"no ref reaches {wt.sha}")
-
-        found = prove(
-            wt.sha,
-            wt.branch,
-            head,
-            head_branch,
-            evidence,
-            repository,
-            lambda question: progress.say(f"{wt.label}: {question}"),
-        )
-        ignored = status.ignored
-        if found.verdict == REMOVE and ignored and not delete_ignored:
-            return say(
-                KEEP,
-                f"{found.why}, but holds {len(ignored)} ignored path(s); "
-                "pass --delete-ignored",
-                len(ignored),
+                found = Proof(REMOVE, "its commit is reached by a ref")
+            else:
+                found = Proof(UNKNOWN, f"no ref reaches {wt.sha}")
+        else:
+            found = prove(
+                wt.sha,
+                wt.branch,
+                head,
+                head_branch,
+                evidence,
+                repository,
+                lambda question: progress.say(f"{wt.label}: {question}"),
             )
-        return say(found.verdict, found.why)
+        row = say(found.verdict, found.why)
+        if found.verdict != REMOVE:
+            return row
+
+        # The first protection that applies, in the order `git worktree
+        # remove` would refuse them.
+        ignored = 0 if delete_ignored else len(status.ignored)
+        if here and Path(wt.path).resolve() == Path(here).resolve():
+            block = "you are standing in it"
+        elif "locked" in wt.flags:
+            block = "it is locked"
+        elif status.dirty:
+            block = "it has uncommitted changes"
+        elif ignored:
+            block = f"it holds {ignored} ignored path(s), and needs --delete-ignored"
+            row.ignored = ignored
+        else:
+            row.eligible = True
+            return row
+        row.why = f"{found.why}; {block}"
+        return row
 
     def judged(wt: R.Worktree) -> Verdict | None:
         try:

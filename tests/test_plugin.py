@@ -105,6 +105,7 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
         world.git("merge", "--quiet", "--squash", branch)
         world.git("commit", "--quiet", "-m", f"{branch} (#1)")
     world.worktree("started")
+    world.worktree("dirty").joinpath("wip").write_text("x")
 
     branches = _jq(_filter("gwbs"), _json(world, "gwbs"))
     out = _jq(_filter("gwp"), _json(world, "gwp"), branches["head_sha"])
@@ -114,13 +115,14 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
     assert worktrees["squashed"]["at_head"] is False
     assert worktrees["started"]["at_head"] is True
     assert worktrees["squashed"]["path"] == str(squashed)
-    assert (out["kept"], out["unknown"], out["ignored"]) == (1, 0, [])
+    # The main checkout, and a finished worktree with uncommitted changes.
+    assert (out["kept"], out["unknown"], out["ignored"]) == (2, 0, [])
 
     # Checked out in a worktree, so gwbs keeps it and only gwp may take it.
     assert [row["branch"] for row in branches["branches"]] == ["loose"]
     assert branches["branches"][0]["proof"] == "squash"
     assert branches["branches"][0]["undo"].startswith("git branch loose ")
-    assert (branches["kept"], branches["unknown"]) == (3, 0)
+    assert (branches["kept"], branches["unknown"]) == (4, 0)
 
 
 def test_the_skill_removes_a_chosen_worktree_by_its_path(world) -> None:

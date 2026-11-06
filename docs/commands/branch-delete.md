@@ -14,14 +14,14 @@ gwbd old-fix --yes --json
 
 | Selection | Behaviour |
 | --- | --- |
-| `NAME ...` | Assess exact local names and offer those proved removable. |
+| `NAME ...` | Assess exact local names and offer the eligible ones. |
 | No names | Show a numbered selector. Enter space-separated numbers, or blank to cancel. |
-| `--all` | Assess every local branch and offer the removable set for confirmation. |
+| `--all` | Assess every local branch and offer the eligible set for confirmation. |
 | `--dry-run` | Report the assessment and undo commands without deleting. With no names, assess all branches without a selector. |
 
 `--all` and names cannot be combined. An unknown name stops the entire request
-before any deletion. The selector shows protected branches without numbers;
-only removable branches can be selected. Selection is followed by a separate
+before any deletion. The selector shows branches that are not eligible without
+numbers; only eligible branches can be selected. Selection is followed by a separate
 confirmation. Blank input, a negative confirmation, or Ctrl-C at either
 prompt deletes nothing.
 

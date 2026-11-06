@@ -25,6 +25,9 @@ class Verdict:
     paths: list[str] = field(default_factory=list)
     request: dict | None = None
     error: bool = False
+    # The verdict is `remove` and the branch is not checked out: what gwbd
+    # deletes. Being checked out never changes the verdict, only this.
+    eligible: bool = False
 
     @property
     def undo(self) -> str:
@@ -32,6 +35,9 @@ class Verdict:
 
     def data(self) -> dict:
         return {**asdict(self), "undo": self.undo}
+
+
+CHECKED_OUT = "it is checked out in a worktree"
 
 
 def local_refs() -> dict[str, tuple[str, str]]:
@@ -46,7 +52,10 @@ def assess(
 ) -> list[Verdict]:
     """Every branch asked for, judged against `head_sha`. With no head sha,
     `no_head` says why, and every branch a head would have to prove is
-    `unknown`, `main` and `master` apart."""
+    `unknown`, `main` and `master` apart.
+
+    The head branch and a symbolic ref are not judged. A branch checked out
+    in a worktree is judged and never eligible."""
     refs = local_refs()
     evidence = (sync.read() or {}).get("evidence", {})
     repository = branch_forge.repository_for(R.remote())
@@ -68,8 +77,8 @@ def assess(
         rows.append(row)
         if name == head_branch:
             row.verdict, row.why = "keep", "it is the head branch"
-        elif row.paths:
-            row.verdict, row.why = "keep", "checked out in a worktree"
+        elif not head_sha and row.paths:
+            row.verdict, row.why = "keep", CHECKED_OUT
         elif symbolic:
             row.verdict, row.why = "keep", "it is a symbolic branch ref"
         elif not head_sha and name in ("main", "master"):
@@ -90,6 +99,9 @@ def assess(
                 )
                 row.verdict, row.why = found.verdict, found.why
                 row.proof, row.request = found.proof, found.request
+                row.eligible = found.verdict == verdicts.REMOVE and not row.paths
+                if found.verdict == verdicts.REMOVE and row.paths:
+                    row.why = f"{found.why}; {CHECKED_OUT}"
             except GitError as exc:
                 row.error, row.why = True, exc.line()
     return rows
@@ -107,7 +119,7 @@ def delete(
     fresh = assess([row.branch], head_sha, head_branch)[0]
     if fresh.sha != row.sha:
         raise Refused(f"{row.branch} changed after assessment; run the command again")
-    if fresh.verdict != "remove":
+    if not fresh.eligible:
         raise Refused(f"{row.branch}: {fresh.why}")
     if prune.sha_of(head_ref).out.strip() != head_sha:
         raise Refused(

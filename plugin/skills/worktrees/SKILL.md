@@ -31,8 +31,8 @@ Branches first:
 ```sh
 gwbs --json | jq -c '{
   head_sha,
-  branches: [.verdicts[] | select(.verdict == "remove") | {branch, proof, undo}],
-  kept: [.verdicts[] | select(.verdict == "keep")] | length,
+  branches: [.verdicts[] | select(.eligible) | {branch, proof, undo}],
+  kept: [.verdicts[] | select((.eligible | not) and .verdict != "unknown")] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length
 }'
 ```
@@ -42,11 +42,11 @@ Then worktrees, with the `head_sha` that printed written in place of
 
 ```sh
 gwp --json | jq -c '{
-  worktrees: [.verdicts[] | select(.verdict == "remove")
+  worktrees: [.verdicts[] | select(.eligible)
     | {branch, path, why, at_head: (.sha == "HEAD_SHA")}],
-  kept: [.verdicts[] | select(.verdict == "keep")] | length,
+  kept: [.verdicts[] | select((.eligible | not) and .verdict != "unknown")] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length,
-  ignored: [.verdicts[] | select(.verdict == "keep" and .ignored > 0) | .branch]
+  ignored: [.verdicts[] | select((.eligible | not) and .ignored > 0) | .branch]
 }'
 ```
 
@@ -60,12 +60,14 @@ gwp --json | jq -c '{
 - `at_head` is true when the worktree's branch sits exactly on the head
   branch's tip. That is a worktree with no commits of its own, which is what
   one somebody has just started looks like.
-- `ignored` names worktrees kept only because they hold gitignored files.
-- `kept` and `unknown` count the rest. The main checkout and the head branch
-  are always among the kept.
+- `ignored` names finished worktrees held back only because they hold
+  gitignored files.
+- `kept` and `unknown` count the rest. `kept` includes finished rows that a
+  protection holds back, such as uncommitted changes or a lock. The main
+  checkout and the head branch are always among the kept.
 
-A branch checked out in a worktree is `keep` in `branches` and appears in
-`worktrees` instead, so nothing is listed twice.
+A branch checked out in a worktree is never eligible in `branches` and
+appears in `worktrees` instead, so nothing is listed twice.
 
 ## 2. Show
 

@@ -11,25 +11,30 @@ gwbs feature old-fix
 worktrees branch status --json
 ```
 
-The head branch and branches checked out in any worktree are `keep`. The
-report includes the worktree paths. Branches without worktrees are assessed
-against a pinned commit on the repository's
+The head branch is `keep` and not judged. A branch checked out in a worktree
+is judged like any other and is never eligible, since it goes with its
+worktree; a `remove` row says so after the proof, as in `its tip is an
+ancestor of the head branch; it is checked out in a worktree`. The report
+includes the worktree paths. Branches are assessed against a pinned commit on the repository's
 [head branch](../../README.md#the-head-branch), which the command names on
 stderr first, as in `Head: origin/main (remote)`. When the head branch does
 not resolve, the command names why on stderr instead and exits 1. The head
 branch, `main`, `master` and checked-out branches stay `keep`; every other
 branch is `unknown`.
 
-`gwp` judges the branch of each worktree with these same checks, after its
-own worktree protections, so a worktree and a loose branch at the same
-commit read the same verdict and the same `why`.
+`gwp` judges the branch of each worktree with these same checks, so a
+worktree and a loose branch at the same commit read the same verdict.
+
+A row is eligible when its verdict is `remove` and it is not checked out.
+`gwbd` deletes only eligible rows, and the summary counts them:
+`1 eligible, 2 kept, 0 unclear`.
 
 ## Verdicts and evidence
 
 | Verdict | Meaning |
 | --- | --- |
 | `remove` | A check proves the branch's work is in the head branch. |
-| `keep` | A protection applies, or the available checks do not prove the work is finished. |
+| `keep` | The available checks do not prove the work is finished, or it is the head branch. |
 | `unknown` | History or merge evidence is insufficient to decide. |
 
 The checks run in this order and stop at the first proof:
@@ -114,7 +119,8 @@ JSON contains `lastSync`, `head`, `head_sha`, and `verdicts`. `lastSync` and
 `head` are the fields every `--json` result carries, described in the
 [README](../../README.md#the-head-branch); `head_sha` is the commit the
 head ref named. Each verdict has `branch`,
-`sha`, `verdict`, `why`, `proof`, `paths`, `request`, `error`, and `undo`.
+`sha`, `verdict`, `eligible`, `why`, `proof`, `paths`, `request`, `error`, and
+`undo`.
 `request` is null when the last sync recorded no usable request for this tip,
 or a git check proved the branch. Otherwise it records the request number,
 URL, state, repository, source branch and SHA, target branch, merge SHA, and
@@ -124,4 +130,4 @@ Exit 0 means assessment completed, including `keep` and `unknown` results.
 Exit 1 means a git operation failed. Exit 2 means invalid usage. Ctrl-C exits
 130.
 
-Use [branch delete](branch-delete.md) to act on the removable branches.
+Use [branch delete](branch-delete.md) to act on the eligible branches.

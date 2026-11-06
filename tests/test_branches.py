@@ -187,15 +187,19 @@ def test_a_git_failure_in_a_branch_is_an_error(world):
     assert row["why"].endswith(" exited 129: fatal: simulated"), row["why"]
 
 
-def test_branch_status_lists_checked_out_branches_as_kept(world):
+def test_a_checked_out_branch_keeps_its_verdict_and_is_not_eligible(world):
     world.worktree("occupied")
     world.git("branch", "done")
     rows = {r["branch"]: r for r in status(world)["verdicts"]}
     assert set(rows) == {"main", "occupied", "done"}
-    assert rows["main"]["verdict"] == "keep"
-    assert rows["occupied"]["verdict"] == "keep"
-    assert rows["occupied"]["paths"]
-    assert rows["done"]["verdict"] == "remove"
+    occupied = rows["occupied"]
+    assert occupied["paths"]
+    assert (occupied["verdict"], occupied["eligible"]) == ("remove", False)
+    assert occupied["why"] == (
+        "its tip is an ancestor of the head branch; it is checked out in a worktree"
+    )
+    assert (rows["done"]["verdict"], rows["done"]["eligible"]) == ("remove", True)
+    assert (rows["main"]["verdict"], rows["main"]["eligible"]) == ("keep", False)
 
 
 @pytest.mark.parametrize("entry", ["gwbs", "gwbd"])
@@ -474,3 +478,13 @@ def test_the_spinner_line_names_each_branch_and_how_far_along(world, monkeypatch
     branches.assess([], head, "main")
     assert "one: is it merged into main? (2 of 3)" in said
     assert "two: is it merged into main? (3 of 3)" in said
+
+
+def test_branch_delete_holds_back_a_checked_out_branch(world):
+    world.worktree("occupied")
+    world.git("branch", "done")
+    p = cli(world, "branch", "delete", "occupied", "done", "--yes")
+    assert p.returncode == 3, p.stderr
+    assert "occupied kept: its tip is an ancestor" in p.stderr
+    assert world.git("rev-parse", "--verify", "refs/heads/occupied")
+    assert world.git("branch", "--list", "done") == ""

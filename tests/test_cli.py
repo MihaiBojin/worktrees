@@ -130,7 +130,7 @@ def test_status_leaves_a_removable_worktree_alone(world) -> None:
     p = run(world, "gwp")
     assert p.returncode == 0, p.stderr
     assert "remove" in p.stdout
-    assert "1 removable, 1 kept, 0 unclear" in p.stdout  # the main checkout
+    assert "1 eligible, 1 kept, 0 unclear" in p.stdout  # the main checkout
     assert "1 would be removed; gwp --yes removes them" in p.stderr
     assert wt.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/done")
@@ -172,7 +172,7 @@ def test_json_carries_the_ignored_count_as_a_number(world) -> None:
     rows = {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
     row = rows["holds-secrets"]
     assert row["ignored"] == 1
-    assert row["verdict"] == "keep"
+    assert (row["verdict"], row["eligible"]) == ("remove", False)
     assert rows["main"]["ignored"] == 0
     # and the sentence still says it, for the person reading the table
     assert "1 ignored path(s)" in row["why"]
@@ -252,9 +252,7 @@ def test_prune_removes_exactly_what_status_marks(world, extra: tuple[str, ...]) 
     p = run(world, "gwp", "--json", *extra)
     assert p.returncode == 0, p.stderr
     marked = sorted(
-        v["branch"]
-        for v in json.loads(p.stdout)["verdicts"]
-        if v["verdict"] == "remove"
+        v["branch"] for v in json.loads(p.stdout)["verdicts"] if v["eligible"]
     )
 
     p = run(world, "gwp", "--yes", "--json", *extra)
@@ -301,7 +299,7 @@ def test_without_a_terminal_it_reports_and_removes_nothing(world) -> None:
     p = run(world, "gwp")
     assert p.returncode == 0, p.stderr
     assert "done" in p.stdout and "remove" in p.stdout
-    assert "1 removable, 1 kept, 0 unclear" in p.stdout
+    assert "1 eligible, 1 kept, 0 unclear" in p.stdout
     assert "1 would be removed; gwp --yes removes them" in p.stderr
     assert "[y/N]" not in p.stderr
     assert "restore with" not in p.stderr
@@ -399,7 +397,7 @@ def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
     assert p.returncode == 0, p.stderr
     assert "busy" in p.stdout
     assert "it has uncommitted changes" in p.stdout
-    assert "0 removable, 2 kept, 0 unclear" in p.stdout
+    assert "0 eligible, 2 kept, 0 unclear" in p.stdout
     assert "nothing to remove" in p.stderr
 
 
@@ -480,7 +478,7 @@ def test_gwp_prints_the_table_before_it_asks(world) -> None:
     code, out = run_on_a_terminal(world, "gwp", answer="n\n")
     assert code == 0, out
     assert "nothing removed" in out
-    assert out.index("1 removable, 1 kept, 0 unclear") < out.index("restore with")
+    assert out.index("1 eligible, 1 kept, 0 unclear") < out.index("restore with")
     assert out.index("restore with") < out.index("remove 1 worktree(s)? [y/N]")
 
 
@@ -536,8 +534,7 @@ def test_gwp_list_is_never_coloured(world) -> None:
 
 def test_gwp_only_narrows_the_table_and_not_the_targets(world) -> None:
     wt = world.worktree("done")
-    world.worktree("busy")
-    (world.parent / ".worktrees" / "busy" / "repo" / "wip").write_text("x")
+    world.commit("wip", at=world.worktree("busy"))
     p = run(world, "gwp", "--only", "keep", "--yes")
     assert p.returncode == 0, p.stderr
     table_rows = p.stdout.split("removed")[0]
@@ -548,12 +545,15 @@ def test_gwp_only_narrows_the_table_and_not_the_targets(world) -> None:
 
 
 def test_gwp_only_narrows_the_json_rows(world) -> None:
+    """By verdict, so a protected `remove` row is among them."""
     world.worktree("done")
     world.worktree("busy")
+    world.commit("wip", at=world.worktree("mine"))
     (world.parent / ".worktrees" / "busy" / "repo" / "wip").write_text("x")
     p = run(world, "gwp", "--only", "remove", "--json")
     assert p.returncode == 0, p.stderr
-    assert [v["branch"] for v in json.loads(p.stdout)["verdicts"]] == ["done"]
+    rows = [(v["branch"], v["eligible"]) for v in json.loads(p.stdout)["verdicts"]]
+    assert rows == [("done", True), ("busy", False)]
     assert "1 would be removed" in p.stderr
 
 
@@ -1161,7 +1161,7 @@ def test_ctrl_c_at_every_prompt(world, entry, args, prompt) -> None:
     assert proc.returncode == 130, stderr
     # gwp prints its assessment before it asks; nothing else prints a result.
     if prompt.startswith("remove 2"):
-        assert b"2 removable" in out and b"removed" not in out, out
+        assert b"2 eligible" in out and b"removed" not in out, out
     else:
         assert out == b""
     assert stderr.endswith(prompt + "\n"), stderr
@@ -1178,7 +1178,7 @@ def test_status_lists_the_main_checkout_and_never_proposes_it(world) -> None:
     assert p.returncode == 0, p.stderr
     assert "it is the main checkout, and never removable" in p.stdout
     assert p.stdout.count("keep") == 1
-    assert "1 removable, 1 kept, 0 unclear" in p.stdout
+    assert "1 eligible, 1 kept, 0 unclear" in p.stdout
     rows = {
         v["branch"]: v
         for v in json.loads(run(world, "gwp", "--json").stdout)["verdicts"]
@@ -1506,3 +1506,121 @@ def test_gw_help_is_coloured_on_a_terminal_when_stdout_is_captured(world) -> Non
     os.close(parent)
     assert stdout == b""
     assert "\x1b[1mworktrees\x1b[0m" in b"".join(chunks).decode()
+
+
+# --------------------------------------------------------------------------
+# a protection clears eligible and leaves the verdict alone
+# --------------------------------------------------------------------------
+
+
+def _rows(world, *args: str, at: Path | None = None) -> dict[str, dict]:
+    p = run(world, "gwp", "--json", *args, at=at)
+    assert p.returncode == 0, p.stderr
+    return {v["branch"] or "(detached)": v for v in json.loads(p.stdout)["verdicts"]}
+
+
+def _ignoring_env(world, wt: Path) -> None:
+    world.repo.joinpath(".gitignore").write_text(".env\n")
+    world.git("add", ".gitignore")
+    world.git("commit", "--quiet", "-m", "ignore")
+    world.git("merge", "--quiet", "--ff-only", "main", at=wt)
+    wt.joinpath(".env").write_text("S=1\n")
+
+
+PROOF = "its tip is an ancestor of the head branch"
+
+
+def test_each_protection_keeps_the_verdict_and_clears_eligible(world) -> None:
+    dirty = world.worktree("dirty")
+    dirty.joinpath("README").write_text("changed\n")
+    world.worktree("untracked").joinpath("new").write_text("x")
+    locked = world.worktree("locked")
+    world.git("worktree", "lock", str(locked))
+    _ignoring_env(world, world.worktree("secrets"))
+    here = world.worktree("here")
+    world.worktree("done")
+
+    rows = _rows(world, at=here)
+    blocks = {
+        "dirty": "it has uncommitted changes",
+        "untracked": "it has uncommitted changes",
+        "locked": "it is locked",
+        "secrets": "it holds 1 ignored path(s), and needs --delete-ignored",
+        "here": "you are standing in it",
+    }
+    for name, block in blocks.items():
+        row = rows[name]
+        assert (row["verdict"], row["eligible"]) == ("remove", False), row
+        assert row["why"] == f"{PROOF}; {block}", row
+    assert (rows["done"]["verdict"], rows["done"]["eligible"]) == ("remove", True)
+    assert (rows["main"]["verdict"], rows["main"]["eligible"]) == ("keep", False)
+
+
+def test_a_detached_worktree_is_protected_the_same_way(world) -> None:
+    wt = world.parent / ".worktrees" / "loose" / world.repo.name
+    world.git("worktree", "add", "--quiet", "--detach", str(wt), "main")
+    wt.joinpath("wip").write_text("x")
+    row = _rows(world)["(detached)"]
+    assert (row["verdict"], row["eligible"]) == ("remove", False), row
+    assert row["why"] == "its commit is reached by a ref; it has uncommitted changes"
+
+
+def test_delete_ignored_makes_the_ignored_row_eligible(world) -> None:
+    _ignoring_env(world, world.worktree("secrets"))
+    row = _rows(world, "--delete-ignored")["secrets"]
+    assert (row["verdict"], row["eligible"], row["why"]) == ("remove", True, PROOF)
+
+
+def test_a_protection_on_an_unfinished_branch_adds_nothing_to_why(world) -> None:
+    wt = world.worktree("busy")
+    world.commit("work", at=wt)
+    wt.joinpath("wip").write_text("x")
+    row = _rows(world)["busy"]
+    assert (row["verdict"], row["eligible"]) == ("keep", False)
+    assert "uncommitted" not in row["why"]
+
+
+def test_the_head_branch_worktree_is_not_judged(world) -> None:
+    world.git("checkout", "--quiet", "--detach")
+    wt = world.parent / ".worktrees" / "main" / world.repo.name
+    world.git("worktree", "add", "--quiet", str(wt), "main")
+    row = _rows(world)["main"]
+    assert (row["verdict"], row["eligible"], row["why"]) == (
+        "keep",
+        False,
+        "it is the head branch",
+    )
+
+
+def test_the_counts_count_eligible_rows(world) -> None:
+    world.worktree("done")
+    world.worktree("dirty").joinpath("wip").write_text("x")
+    p = run(world, "gwp")
+    assert p.returncode == 0, p.stderr
+    assert "1 eligible, 2 kept, 0 unclear" in p.stdout
+    assert "1 would be removed; gwp --yes removes them" in p.stderr
+
+
+def test_prune_yes_removes_only_eligible_rows(world) -> None:
+    done = world.worktree("done")
+    dirty = world.worktree("dirty")
+    dirty.joinpath("wip").write_text("x")
+    locked = world.worktree("locked")
+    world.git("worktree", "lock", str(locked))
+
+    p = run(world, "gwp", "--yes", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["removed"] == ["done"]
+    assert not done.exists()
+    assert dirty.exists() and locked.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/dirty")
+    assert world.git("rev-parse", "--verify", "refs/heads/locked")
+
+
+def test_a_protected_remove_row_is_dimmed_on_a_terminal(world) -> None:
+    world.worktree("dirty").joinpath("wip").write_text("x")
+    code, out = run_with_a_terminal_on_stdout(world, "gwp")
+    assert code == 0, out
+    line = next(ln for ln in out.splitlines() if "dirty" in ln)
+    assert "\x1b[32mremove" in line, "the verdict keeps its colour"
+    assert "\x1b[2m" + f"{PROOF}; it has uncommitted changes" in line

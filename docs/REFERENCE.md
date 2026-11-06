@@ -97,7 +97,7 @@ Scope and safety.
 | what | why | where |
 | --- | --- | --- |
 | Every command acts on the repository `$PWD` is in, and a checkout belonging to another is refused by name | a tool that can act on a repository it is not in can do so by mistake | `layout.owner_of`. `git worktree list` cannot answer this: another repository's worktree is one this one never heard of, so the list comes back empty and reads as "nothing is there" |
-| Nothing removes a worktree holding uncommitted work, and no flag overrides it | the checkout is the only place that work exists | `verdicts.assess` keeps it, and `--force` does not reach git: the removal is always plain `git worktree remove`, which refuses a dirty worktree itself |
+| Nothing removes a worktree holding uncommitted work, and no flag overrides it | the checkout is the only place that work exists | `verdicts.assess` makes it ineligible, and `--force` does not reach git: the removal is always plain `git worktree remove`, which refuses a dirty worktree itself |
 | Every removal names the ignored paths it is about to delete, whatever flag got the worktree that far | `git worktree remove` takes the whole directory, so consent and contents are two questions | `prune.plan`. `--delete-ignored` decides consent alone |
 | `gwr` on the worktree you are standing in steps out, removes it, and prints the main checkout for the shim to `cd` to | refusing would make the common case need a `cd` first, and the `cd` out is the shim's job | `worktree.remove` |
 | The main checkout is never removable, and no escape-hatch flag is printed | `git worktree remove` answers `fatal: '<path>' is a main working tree` and no flag gets past it, so there is nothing to offer | `verdicts.assess` skips it before judging |
@@ -123,6 +123,7 @@ Output and machine surface.
 | what | why | where |
 | --- | --- | --- |
 | Three verdicts, and `unknown` is not `keep` with a softer word | "no common history with the head branch" is a different fact from "holds work the head branch lacks", and printing them alike invites somebody to act on the wrong one | `verdicts.py` |
+| A protection clears `eligible` and leaves the verdict alone | whether the work landed and whether this run may delete it are two questions, and a finished worktree with uncommitted changes is still finished | `verdicts.assess`, `branches.assess`, `prune.removable` |
 | Colour is decided per stream, once, and only for a terminal | stdout carries the path `cd $(gwa x)` reads and the JSON `jq` parses | `render.setup`. `NO_COLOR` is tested for a non-empty value, which is the no-color.org rule |
 | Padding runs on the text and painting after it | the other order counts an escape sequence as width, and every column under a coloured cell sits crooked by the length of the code | `render.table` |
 | Help asked for goes to stdout at exit 0; a usage printed because the invocation was wrong goes to stderr at exit 2 | `--help \| less` on an empty screen is the failure this avoids | argparse, plus the hand-written `usage:` lines |
@@ -187,7 +188,7 @@ passes while the bug is live. Every printed sha has to satisfy
 branch.
 
 **Gate 2: the head branch survives whatever the verdict says.**
-`verdicts.assess` drops it before judging, and the head ref it compares
+`verdicts.assess` marks it `keep` without judging it, and the head ref it compares
 against is a full ref, so a tag or a local branch called `origin/main` cannot
 answer for it.
 

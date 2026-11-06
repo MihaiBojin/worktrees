@@ -97,15 +97,19 @@ def _table(rows: list[branches.Verdict]) -> str:
                 Cell("WHY", BOLD),
                 Cell("WORKTREE", BOLD),
             ),
+            # A `remove` row held back keeps its verdict's colour and dims
+            # the rest, the way gwp's table does.
             *[
                 (
                     _verdict(v),
-                    Cell(v.branch, render.BRANCH),
-                    Cell(v.sha[:12], YELLOW),
-                    Cell(v.why),
+                    Cell(v.branch, DIM if held else render.BRANCH),
+                    Cell(v.sha[:12], DIM if held else YELLOW),
+                    Cell(v.why, DIM if held else ""),
                     Cell(", ".join(v.paths), DIM),
                 )
-                for v in rows
+                for v, held in (
+                    (v, v.verdict == "remove" and not v.eligible) for v in rows
+                )
             ],
         ]
     )
@@ -134,7 +138,7 @@ def _report(
         if not args.quiet:
             # Every row counted, --only or not, so a filtered table still
             # says what it is not showing.
-            print("\n" + render.counted([v.verdict for v in rows]))
+            print("\n" + render.counted(rows))
 
 
 def _branches(n: int) -> str:
@@ -181,14 +185,14 @@ def status(args: argparse.Namespace) -> int:
 
 
 def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:
-    candidates = [v for v in rows if v.verdict == "remove"]
+    candidates = [v for v in rows if v.eligible]
     if not candidates:
         return []
     if not sys.stdin.isatty():
         raise Refused("not a terminal; pass branch names or --all, or use gwbs --json")
     # The ones that cannot be picked first and grey, so the numbered rows
     # sit together above the prompt.
-    others = [v for v in rows if v.verdict != "remove"]
+    others = [v for v in rows if not v.eligible]
     _err(
         table(
             [
@@ -249,7 +253,7 @@ def delete(args: argparse.Namespace) -> int:
     _require(found)
     head = found.ref
     if args.names or args.all or args.dry_run:
-        go = [v for v in rows if v.verdict == "remove"]
+        go = [v for v in rows if v.eligible]
     else:
         go = _select(rows)
     removed: list[str] = []
@@ -310,7 +314,7 @@ def delete(args: argparse.Namespace) -> int:
                 _err(f"  {render.restore(row.branch, row.sha)}")
     # A named branch that was not proved finished says why, rather than
     # leaving exit 3 to speak for it.
-    held = [v for v in rows if args.names and v.verdict != "remove"]
+    held = [v for v in rows if args.names and not v.eligible]
     for v in held:
         _err(render.fail(f"{render.branch(v.branch)} kept: {v.why}"))
     if failures or any(v.error for v in rows):

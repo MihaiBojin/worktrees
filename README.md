@@ -201,12 +201,12 @@ $ gwp < /dev/null
 Head: origin/main (remote)
 BRANCH         PATH                                         VERDICT  WHY
 main           /home/you/git/repo                           keep     it is the main checkout, and never removable
-dirty-work     /home/you/git/.worktrees/dirty-work/repo     keep     it has uncommitted changes
-holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     its tip is an ancestor of the head branch, but holds 2 ignored path(s); pass --delete-ignored
+dirty-work     /home/you/git/.worktrees/dirty-work/repo     remove   its tip is an ancestor of the head branch; it has uncommitted changes
+holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  remove   its tip is an ancestor of the head branch; it holds 2 ignored path(s), and needs --delete-ignored
 never-pushed   /home/you/git/.worktrees/never-pushed/repo   keep     no proof that its change is in the head branch
 squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   its tree or combined patch is already in the head branch
 
-1 removable, 4 kept, 0 unclear
+1 eligible, 4 kept, 0 unclear
 2 worktree(s) under /home/you/git/.worktrees belong to another repository
 1 would be removed; gwp --yes removes them
 ```
@@ -226,7 +226,9 @@ carries the same count as `neighbours`. No command here reads or removes
 them, and the count comes from walking the root rather than from asking git.
 
 On a terminal the verdict carries its own colour, `remove` green, `keep` blue
-and `unknown` yellow, with the branch in bold and the path dimmed. That
+and `unknown` yellow, with the branch in bold and the path dimmed. A `remove`
+row that is not eligible keeps its green verdict and dims the rest of the
+row, so it reads as finished and not removable. That
 decision is made per stream: redirect it, pipe it, set `NO_COLOR` to anything
 non-empty or run under `TERM=dumb` and the bytes are the ones above.
 
@@ -238,14 +240,26 @@ word.
 | | means |
 | --- | --- |
 | `remove` | finished, and safe to remove. The reason says how it was proved: by a merged request the last `gw sync` recorded, by ancestry, by squash, by content, or by a ref reaching a detached commit |
-| `keep` | something says no. Uncommitted work, the head branch, a lock, the worktree you are standing in, ignored files, or a branch sharing history with the head branch and holding work it lacks |
+| `keep` | the branch shares history with the head branch and holds work it lacks. The main checkout and the head branch are `keep` too, and are not judged |
 | `unknown` | it could not tell. A branch with no common history with the head branch, forge evidence that does not match this tip, or a git command that failed while judging it, which also makes the command exit 1 |
 
 A worktree's branch is judged by the proof `gwbs` uses for a loose branch,
 and a worktree and a branch at the same commit read the same verdict and the
-same reason. The worktree checks come first: the main checkout, the one you
-stand in, a lock, the head branch and uncommitted changes each keep it before
-the proof runs, and ignored files hold back a `remove` after it.
+same reason.
+
+### Eligible
+
+A verdict says whether the work landed. Eligible says whether this run may
+delete it: the verdict is `remove` and no protection applies. `gwp` removes
+the eligible rows, the counts line counts them, and `--json` carries
+`eligible` on every row.
+
+A protection never changes the verdict. For a worktree they are the one you
+are standing in, a lock, uncommitted changes or untracked files, and ignored
+files without `--delete-ignored`. A `remove` row held back by one names the
+first that applies after the proof, as in `its tip is an ancestor of the head
+branch; it has uncommitted changes`. In `gwbs` the protection is being checked
+out in a worktree, since that branch goes with its worktree.
 
 The forge's evidence comes first, and it comes from the last
 [`gw sync`](#gw-sync). No other command runs `gh` or `glab`. A branch
@@ -273,7 +287,7 @@ BRANCH         PATH                                         VERDICT  WHY
 main           /home/you/git/repo                           keep     it is the main checkout, and never removable
 squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   its tree or combined patch is already in the head branch
 
-1 removable, 1 kept, 0 unclear
+1 eligible, 1 kept, 0 unclear
 squash-merged  /home/you/git/.worktrees/squash-merged/repo
   restore with: git branch squash-merged a2b41ad1fb271bd7d84256f0d35ee5d58c29dd08
 remove 1 worktree(s)? [y/N] y
@@ -281,8 +295,8 @@ removed 1 worktree(s): squash-merged
 ```
 
 At a terminal it prints the assessment first, the table, the counts and the
-notes, then removes exactly the rows marked `remove`. One function returns
-that set for both the counts and the removal. What goes and what puts it back is printed before
+notes, then removes exactly the eligible rows. One function returns that set
+for both the counts and the removal. What goes and what puts it back is printed before
 anything does, and neither `--quiet` nor `--yes` silences it. The sha in the
 restore line is full length, because that line is meant to be pasted.
 
@@ -309,8 +323,9 @@ A run that removes nothing writes nothing: no ref, no directory, and no
 prints the disclosure first. `--json` prints the assessment as an object,
 with `removed` and `failed` added under `--yes`; `gwp --yes --json` is what an
 agent runs. `--list` prints the table uncoloured and nothing else on stdout.
-`--only VERDICT` narrows the table and the JSON rows, and never the set
-removed: the disclosure names every target.
+`--only VERDICT` narrows the table and the JSON rows by verdict, so
+`--only remove` shows protected rows too, and never narrows the set removed:
+the disclosure names every target.
 
 With nothing to remove it prints the same table and says so. The reason each
 worktree stayed is the answer to the question, and naming another command puts
@@ -321,11 +336,11 @@ $ gwp
 Head: origin/main (remote)
 BRANCH         PATH                                         VERDICT  WHY
 main           /home/you/git/repo                           keep     it is the main checkout, and never removable
-dirty-work     /home/you/git/.worktrees/dirty-work/repo     keep     it has uncommitted changes
-holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     its tip is an ancestor of the head branch, but holds 2 ignored path(s); pass --delete-ignored
+dirty-work     /home/you/git/.worktrees/dirty-work/repo     remove   its tip is an ancestor of the head branch; it has uncommitted changes
+holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  remove   its tip is an ancestor of the head branch; it holds 2 ignored path(s), and needs --delete-ignored
 never-pushed   /home/you/git/.worktrees/never-pushed/repo   keep     no proof that its change is in the head branch
 
-0 removable, 4 kept, 0 unclear
+0 eligible, 4 kept, 0 unclear
 nothing to remove
 ```
 
@@ -443,7 +458,9 @@ remove it, and starts the highlight on the worktree you are standing in. A
 name or path that is exactly one worktree's, as `gw --list` and `gw` print
 them, takes that one without asking which.
 
-`gwr` says why a branch is not finished, the same verdict `gwp` prints. At a
+`gwr` says why a worktree is not eligible, with the same verdict and reason
+`gwp` prints: `is not finished` for a branch with work left, and `is
+finished` for one a protection holds back. At a
 terminal it then asks whether to remove the checkout anyway, and keeps the
 branch: the worktree was in the way, the work was not. `--force` is the same
 answer without the question, and `--yes` on its own refuses.
@@ -454,7 +471,7 @@ as finished, because it is:
 ```console
 $ gwr holds-secrets
 Head: origin/main (remote)
-holds-secrets is finished: its tip is an ancestor of the head branch, but holds 2 ignored path(s); pass --delete-ignored
+holds-secrets is finished: its tip is an ancestor of the head branch; it holds 2 ignored path(s), and needs --delete-ignored
 ```
 
 At a terminal, and without `--yes`, `gwr` asks instead: it names every

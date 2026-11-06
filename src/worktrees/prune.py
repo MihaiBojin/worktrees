@@ -1,4 +1,4 @@
-"""Removing the worktrees `status` marked `remove`, and nothing else."""
+"""Removing the eligible worktrees, and nothing else."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 from . import render, sync
 from . import repo as R
 from .git import GitError, Refused, git
-from .verdicts import REMOVE, Verdict
+from .verdicts import Verdict
 
 
 @git("worktree prune", mutates=True)
@@ -49,12 +49,12 @@ def stash_list() -> None:
 
 
 def removable(verdicts: list[Verdict]) -> list[Verdict]:
-    """The `remove` rows, which is the whole of what prune may touch.
+    """The eligible rows, which is the whole of what gwp may touch.
 
-    The one place the set is derived. `status` prints these as `remove` and
-    `prune` removes these, so the two cannot drift.
+    The one place the set is derived. The counts line counts these and gwp
+    removes these, so the two cannot drift.
     """
-    return [v for v in verdicts if v.verdict == REMOVE]
+    return [v for v in verdicts if v.eligible]
 
 
 def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str:

@@ -478,8 +478,17 @@ protections.
 `remove` was proved finished, `keep` has a reason not to be, and `unknown` could
 not tell. "No common history with the head branch" is a different fact from
 "holds work the head branch lacks", and printing them the same way invites
-somebody to act on the wrong one. `prune.removable()` returns the `remove` set and both commands
-call it, so what one prints and the other removes cannot drift.
+somebody to act on the wrong one.
+
+Eligible is a second answer, not a fourth verdict. A row is eligible when its
+verdict is `remove` and no protection applies: the worktree you stand in, a
+lock, uncommitted or untracked files, ignored files without
+`--delete-ignored`, and for `gwbs` a branch checked out in a worktree. A
+protection clears `eligible` and leaves the verdict and its proof alone, and
+`why` names the first one after the proof. The main checkout and the head
+branch are not judged and read `keep`. `prune.removable()` returns the
+eligible rows; the counts line and the removal both use it, so what one
+prints and the other removes cannot drift.
 
 ## Reproduce a failure before asserting its fix
 

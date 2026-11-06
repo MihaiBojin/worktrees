@@ -112,7 +112,7 @@ def test_git_takes_ignored_files_without_a_word(world) -> None:
     assert not wt.exists()
 
 
-def test_ignored_files_stop_the_verdict(world) -> None:
+def test_ignored_files_stop_eligibility(world) -> None:
     (world.repo / ".gitignore").write_text(".env\nnode_modules\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
@@ -125,7 +125,7 @@ def test_ignored_files_stop_the_verdict(world) -> None:
         x.branch: x
         for x in verdicts.assess(R.worktrees(), "refs/heads/main", "main", False)
     }["holds"]
-    assert v.verdict == verdicts.KEEP
+    assert (v.verdict, v.eligible) == (verdicts.REMOVE, False)
     assert "2 ignored path(s)" in v.why
     assert "--delete-ignored" in v.why
 
@@ -134,7 +134,7 @@ def test_ignored_files_stop_the_verdict(world) -> None:
         x.branch: x
         for x in verdicts.assess(R.worktrees(), "refs/heads/main", "main", True)
     }["holds"]
-    assert v.verdict == verdicts.REMOVE
+    assert (v.verdict, v.eligible) == (verdicts.REMOVE, True)
 
 
 def test_ignored_directory_collapses_to_one_entry(world) -> None:
