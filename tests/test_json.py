@@ -91,7 +91,7 @@ def test_the_other_payloads_carry_both_fields(world) -> None:
     world.git("branch", "done")
     expected = {
         ("gwrot",): {"branch", "at", "previous_sha", "sha"},
-        ("gwp", "--yes"): {"removed", "failed"},
+        ("gwp", "--yes"): {"stale", "neighbours", "verdicts", "removed", "failed"},
         ("gwbd", "--all", "--dry-run"): {
             "head_sha",
             "verdicts",
