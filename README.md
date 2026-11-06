@@ -603,7 +603,8 @@ The first appears when the default remote has no sync record with a `refs`
 time, and `-q` keeps it. A remote with no branches can never record one, so
 it always shows this line. The second appears when the older of `refs` and
 `forge` is more than ten minutes old; a null `forge` leaves `refs` to decide.
-`-q` drops it. Neither appears under `--json`, for `gw sync` or `gw list`,
+`-q` drops it. Neither appears for `gw sync` or `gw list`, under `--json`,
+which carries `lastSync` instead,
 or without a default remote. The plan `gwp`, `gwr` and `gwbd` print before
 deleting repeats the never-synced line, and their question becomes
 `Never synced. Delete anyway? [y/N]`. `--yes` still skips the question.
@@ -716,8 +717,8 @@ Head: origin/main (remote)
 Head: main (inferred; master also exists)
 ```
 
-`--json` leaves the line out. `-q` leaves it out too, unless the head branch
-was inferred.
+`--json` leaves the line out and carries `head` instead. `-q` leaves it out
+too, unless the head branch was inferred.
 
 When the head branch does not resolve, every row `gws` and `gwbs` print is
 `unknown` and they exit 1. `gwp`, `gwr` and `gwbd` refuse at exit 1 and change
@@ -731,6 +732,24 @@ terminal, so a redirect, a pipe, a non-empty `NO_COLOR` or `TERM=dumb` give the
 bytes a pipe would have got. `--json` and `gw --list` are never coloured, even
 on a terminal. `NO_COLOR=` is not a request to
 turn it off, which is the no-color.org rule.
+
+Every `--json` result is an object, and each carries two fields beside its
+own:
+
+```json
+{
+  "lastSync": {"refs": "2026-11-06T12:00:00Z", "forge": null},
+  "head": {"ref": "refs/remotes/origin/main", "source": "remote"}
+}
+```
+
+`lastSync.refs` is the UTC time of the last `gw sync` whose fetch succeeded,
+and `lastSync.forge` the last one whose forge queries did. Each is null when
+none did, and `forge` stays null for a host that is no forge. A time does not
+mean every branch has evidence. `head.source` is `remote`, `clone` or
+`inferred`, as the `Head:` line says it, and `head.ref` is the full ref, or
+null when it does not resolve. `gw list --json` puts its rows under
+`worktrees`.
 
 Every command is a console script, so a script reaches it with no shell loaded
 at all:

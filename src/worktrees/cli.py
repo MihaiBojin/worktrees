@@ -239,17 +239,17 @@ def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
     """What prints the sync warning and the head line: on stderr, never
     beside --json. Under -q the never-synced line stays, the stale one goes,
     and the head line stays only when the head was inferred, since that one
-    is a guess."""
+    is a guess. The head is kept on `args` for `_envelope`."""
     from datetime import UTC, datetime
 
-    from . import repo as R
     from . import sync
 
     def show(head: R.Head) -> None:
+        args.found_head = head
         if getattr(args, "json", False):
             return
-        record = sync.read()
-        if record is None and R.remote():
+        record = head.synced
+        if record is None and head.remote:
             _warn(sync.NEVER)
         elif record and not args.quiet:
             stale = sync.stale(record, datetime.now(UTC))
@@ -261,6 +261,20 @@ def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
         _err(render.note(f"Head: {render.ref(head.name)} ({head.source}{detail})"))
 
     return show
+
+
+def _envelope(args: argparse.Namespace) -> dict[str, object]:
+    """What every --json result starts with: when each part of the last
+    sync succeeded, and the head ref with its source. A command that read
+    no head reads it here."""
+    from . import repo as R
+
+    head = getattr(args, "found_head", None) or R.head_ref(R.remote())
+    synced = head.synced or {}
+    return {
+        "lastSync": {"refs": synced.get("refs"), "forge": synced.get("forge")},
+        "head": {"ref": head.ref if head.resolves else None, "source": head.source},
+    }
 
 
 def _require(head: R.Head) -> None:
@@ -285,7 +299,7 @@ def run_status(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    rows, stale, head, _, records = _assess(args, _assessment_head(args))
+    rows, stale, _, _, records = _assess(args, _assessment_head(args))
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
     failed = int(any(v.error for v in rows))
@@ -300,7 +314,7 @@ def run_status(args: argparse.Namespace) -> int:
         print(
             json.dumps(
                 {
-                    "head": head,
+                    **_envelope(args),
                     "stale": [w.path for w in stale],
                     # How many worktrees under the shared root are a
                     # sibling repository's. Nothing here reads or removes
@@ -393,7 +407,7 @@ def run_prune(args: argparse.Namespace) -> int:
         # The reason each one stayed, here, rather than the name of the
         # command that would have printed it.
         if args.json:
-            print(json.dumps({"removed": [], "failed": 0}, indent=2))
+            print(json.dumps({**_envelope(args), "removed": [], "failed": 0}, indent=2))
         else:
             print(_verdict_table(rows))
             if not args.quiet:
@@ -425,7 +439,11 @@ def run_prune(args: argparse.Namespace) -> int:
     failed = prune.sweep(go, _err)
     removed = [v.label for v in go]
     if args.json:
-        print(json.dumps({"removed": removed, "failed": failed}, indent=2))
+        print(
+            json.dumps(
+                {**_envelope(args), "removed": removed, "failed": failed}, indent=2
+            )
+        )
     elif failed:
         _err(
             render.fail(
@@ -481,7 +499,12 @@ def run_new_branch(args: argparse.Namespace) -> int:
     if args.json:
         print(
             json.dumps(
-                {"branch": started.branch, "base": started.base, "sha": started.sha},
+                {
+                    **_envelope(args),
+                    "branch": started.branch,
+                    "base": started.base,
+                    "sha": started.sha,
+                },
                 indent=2,
             )
         )
@@ -533,6 +556,7 @@ def run_rotate(args: argparse.Namespace) -> int:
             print(
                 json.dumps(
                     {
+                        **_envelope(args),
                         "branch": result.branch,
                         "at": result.at,
                         "previous_sha": result.previous_sha,
@@ -558,6 +582,7 @@ def run_rotate(args: argparse.Namespace) -> int:
         print(
             json.dumps(
                 {
+                    **_envelope(args),
                     "branch": result.branch,
                     "stem": result.stem,
                     "base": result.base,
@@ -737,6 +762,7 @@ def _landed(args: argparse.Namespace, landed: wt_mod.Landed) -> int:
         print(
             json.dumps(
                 {
+                    **_envelope(args),
                     "path": landed.path,
                     "branch": landed.branch,
                     "created": landed.created,
@@ -808,16 +834,19 @@ def run_list(args: argparse.Namespace) -> int:
     if args.json:
         print(
             json.dumps(
-                [
-                    {
-                        "branch": w.branch,
-                        "path": w.path,
-                        "main": w.main,
-                        "here": _same(w.path, here),
-                        "flags": sorted(w.flags),
-                    }
-                    for w in found
-                ],
+                {
+                    **_envelope(args),
+                    "worktrees": [
+                        {
+                            "branch": w.branch,
+                            "path": w.path,
+                            "main": w.main,
+                            "here": _same(w.path, here),
+                            "flags": sorted(w.flags),
+                        }
+                        for w in found
+                    ],
+                },
                 indent=2,
             )
         )
@@ -1018,7 +1047,12 @@ def run_remove(args: argparse.Namespace) -> int:
     if not args.quiet and not args.json:
         _err(render.note(f"removed {render.branch(chosen.label)}"))
     if args.json:
-        print(json.dumps({"removed": chosen.label, "path": destination}, indent=2))
+        print(
+            json.dumps(
+                {**_envelope(args), "removed": chosen.label, "path": destination},
+                indent=2,
+            )
+        )
         return 0
     if destination:
         print(destination)

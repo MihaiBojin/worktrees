@@ -142,7 +142,7 @@ def test_list_offers_the_main_checkout(world) -> None:
     """It is where a finished branch leaves you, so it is a destination."""
     world.worktree("one")
     p = run(world, "gw", "--json")
-    payload = json.loads(p.stdout)
+    payload = json.loads(p.stdout)["worktrees"]
     assert [w["branch"] for w in payload] == ["main", "one"]
     assert [w["main"] for w in payload] == [True, False]
 

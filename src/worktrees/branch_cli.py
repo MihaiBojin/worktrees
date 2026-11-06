@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from . import branches, progress, prune, render, sync
 from .cli import (
     _assessment_head,
+    _envelope,
     _err,
     _explain,
     _only,
@@ -116,7 +117,6 @@ def _table(rows: list[branches.Verdict]) -> str:
 
 def _report(
     args: argparse.Namespace,
-    head: str,
     head_sha: str,
     rows: list[branches.Verdict],
     **outcomes: object,
@@ -125,7 +125,7 @@ def _report(
         print(
             json.dumps(
                 {
-                    "head": head,
+                    **_envelope(args),
                     "head_sha": head_sha,
                     "verdicts": [v.data() for v in _only(args, rows)],
                     **outcomes,
@@ -177,8 +177,8 @@ def status(args: argparse.Namespace) -> int:
     prepared = _prepare(args)
     if prepared is None:
         return 0
-    found, head_sha, _, rows = prepared
-    _report(args, found.ref, head_sha, rows)
+    _, head_sha, _, rows = prepared
+    _report(args, head_sha, rows)
     return int(any(v.error for v in rows))
 
 
@@ -257,9 +257,7 @@ def delete(args: argparse.Namespace) -> int:
     removed: list[str] = []
     failures: list[dict[str, str]] = []
     if args.dry_run:
-        _report(
-            args, head, head_sha, rows, removed=removed, failed=failures, dry_run=True
-        )
+        _report(args, head_sha, rows, removed=removed, failed=failures, dry_run=True)
         if not args.json:
             # After the table, even when stdout is a pipe that buffers it.
             sys.stdout.flush()
@@ -286,7 +284,7 @@ def delete(args: argparse.Namespace) -> int:
                 "[y/N]",
             )
         ).strip().lower() not in ("y", "yes"):
-            _report(args, head, head_sha, rows, removed=removed, failed=failures)
+            _report(args, head_sha, rows, removed=removed, failed=failures)
             return 0
     # Each one is judged again before it goes, which costs what assessing it
     # did the first time.
@@ -303,7 +301,7 @@ def delete(args: argparse.Namespace) -> int:
             else:
                 removed.append(row.branch)
     if args.json:
-        _report(args, head, head_sha, rows, removed=removed, failed=failures)
+        _report(args, head_sha, rows, removed=removed, failed=failures)
     elif removed:
         names = ", ".join(render.out(name, render.BRANCH) for name in removed)
         print(f"deleted {_branches(len(removed))}: {names}")

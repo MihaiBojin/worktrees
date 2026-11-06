@@ -151,7 +151,7 @@ def test_status_json_is_data_on_stdout(world) -> None:
     p = run(world, "gws", "--json")
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
-    assert payload["head"] == "refs/heads/main"
+    assert payload["head"] == {"ref": "refs/heads/main", "source": "inferred"}
     rows = {v["branch"]: v for v in payload["verdicts"]}
     assert rows["done"]["verdict"] == "remove"
     assert rows["main"]["why"] == "it is the main checkout, and never removable"
@@ -485,7 +485,7 @@ def test_a_command_beats_a_worktree_of_the_same_name(world) -> None:
     assert p.returncode == 0, p.stderr
     assert "verdicts" in json.loads(p.stdout)
     listed = json.loads(run(world, "gw", "list", "status", "--json").stdout)
-    assert [w["branch"] for w in listed] == ["status"]
+    assert [w["branch"] for w in listed["worktrees"]] == ["status"]
 
 
 def test_a_query_near_a_command_names_it(world) -> None:
@@ -1231,7 +1231,7 @@ def test_list_orders_worktrees_by_when_they_were_made(world) -> None:
 
     p = run(world, "gw", "--json")
     assert p.returncode == 0, p.stderr
-    listed = [w["path"] for w in json.loads(p.stdout)]
+    listed = [w["path"] for w in json.loads(p.stdout)["worktrees"]]
     assert listed == [str(world.repo), *map(str, reversed(paths))]
 
 

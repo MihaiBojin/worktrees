@@ -108,7 +108,10 @@ deletion.
 
 A run reaches no remote. It judges from the refs already here.
 
-JSON contains `head`, `head_sha`, and `verdicts`. Each verdict has `branch`,
+JSON contains `lastSync`, `head`, `head_sha`, and `verdicts`. `lastSync` and
+`head` are the fields every `--json` result carries, described in the
+[README](../../README.md#the-head-branch); `head_sha` is the commit the
+head ref named. Each verdict has `branch`,
 `sha`, `verdict`, `why`, `proof`, `paths`, `request`, `error`, and `undo`.
 `request` is null when the last sync recorded no usable request for this tip,
 or a git check proved the branch. Otherwise it records the request number,

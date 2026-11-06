@@ -81,7 +81,7 @@ def test_of_main_and_master_the_newer_tip_is_the_head(world, newer, older) -> No
     tip_at(world, older, 1700000100)
     tip_at(world, newer, 1700000200)
     p = run(world, "gwbs", "--json")
-    assert json.loads(p.stdout)["head"] == f"refs/heads/{newer}"
+    assert json.loads(p.stdout)["head"]["ref"] == f"refs/heads/{newer}"
     p = run(world, "gwbs")
     assert head_line(p) == f"Head: {newer} (inferred; {older} also exists)"
 

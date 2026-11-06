@@ -289,13 +289,17 @@ class Head(NamedTuple):
     a revision, and a bare name resolves to a tag first. `source` is
     `remote` (the last `gw sync`), `clone` (a `<remote>/HEAD` nothing has
     synced) or `inferred` (from the local `main` and `master`). `also` names
-    the conventional branch that lost, when both exist.
+    the conventional branch that lost, when both exist. `remote` is the
+    default remote it was looked up for, and `synced` the sync record of it,
+    None when there is none to trust.
     """
 
     ref: str
     source: str
     resolves: bool
     also: str = ""
+    remote: str = ""
+    synced: dict | None = None
 
     @property
     def name(self) -> str:
@@ -331,10 +335,12 @@ def head_ref(
     if remote_name:
         symref = symbolic_ref(f"refs/remotes/{remote_name}/HEAD", repo=repo)
         target = symref.out.strip() or f"refs/remotes/{remote_name}/HEAD"
-        if sync.read():
-            return Head(target, "remote", bool(ref_exists(target, repo=repo)))
+        resolves = bool(ref_exists(target, repo=repo))
+        record = sync.read()
+        if record:
+            return Head(target, "remote", resolves, "", remote_name, record)
         if symref.out.strip():
-            return Head(target, "clone", bool(ref_exists(target, repo=repo)))
+            return Head(target, "clone", resolves, "", remote_name)
 
     found = [
         name
@@ -342,15 +348,15 @@ def head_ref(
         if ref_exists(f"refs/heads/{name}", repo=repo)
     ]
     if not found:
-        return Head("refs/heads/main", "inferred", False)
+        return Head("refs/heads/main", "inferred", False, "", remote_name)
     if len(found) == 1:
-        return Head(f"refs/heads/{found[0]}", "inferred", True)
+        return Head(f"refs/heads/{found[0]}", "inferred", True, "", remote_name)
     main, master = (
         int(committed_at(f"refs/heads/{name}", repo=repo).out) for name in found
     )
     if master > main:
-        return Head("refs/heads/master", "inferred", True, also="main")
-    return Head("refs/heads/main", "inferred", True, also="master")
+        return Head("refs/heads/master", "inferred", True, "main", remote_name)
+    return Head("refs/heads/main", "inferred", True, "master", remote_name)
 
 
 # --------------------------------------------------------------------------
