@@ -139,13 +139,29 @@ def _explain() -> int:
 # --------------------------------------------------------------------------
 
 
-def _add_assess_flags(p: argparse.ArgumentParser) -> None:
+# What --delete takes on gwp and gwr. `all` is every other value.
+DELETE_VALUES = ("ignored-files", "all")
+
+
+def _add_delete_flag(p: argparse.ArgumentParser, text: str) -> None:
     p.add_argument(
-        "--delete-ignored",
-        action="store_true",
-        help="count a worktree holding gitignored files as eligible; nothing "
-        "restores them",
+        "--delete",
+        action="append",
+        default=[],
+        choices=DELETE_VALUES,
+        metavar="VALUE",
+        help=f"{text}: ignored-files or all; repeatable",
     )
+
+
+def _permits(args: argparse.Namespace, value: str) -> bool:
+    """Whether --delete granted `value`. --yes never does."""
+    given = getattr(args, "delete", [])
+    return value in given or "all" in given
+
+
+def _add_assess_flags(p: argparse.ArgumentParser) -> None:
+    _add_delete_flag(p, "count a worktree as eligible though this goes with it")
     p.add_argument("--json", action="store_true", help="verdicts as data")
     p.add_argument("-q", "--quiet", action="store_true", help="verdicts only")
     p.add_argument(
@@ -192,7 +208,7 @@ def _judge_all(
     found, head_branch = head
     ref = found.ref
 
-    ignored = getattr(args, "delete_ignored", False)
+    ignored = _permits(args, "ignored-files")
     records = R.worktrees()
     rows = (
         verdicts.unresolved(records, head_branch, found.problem())
@@ -304,7 +320,7 @@ def _assessment(
         "neighbours": _neighbours(records),
         # `eligible`, `ignored` and `sha` are fields rather than facts to
         # parse back out of `why`. A caller deciding whether to pass
-        # --delete-ignored wants the count, not a sentence that happens to
+        # --delete ignored-files wants the count, not a sentence that happens to
         # contain it, and the sha is what the verdict was formed against.
         "verdicts": [
             {
@@ -724,11 +740,7 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "-f", "--force", action="store_true", help="remove it even when unfinished"
     )
-    p.add_argument(
-        "--delete-ignored",
-        action="store_true",
-        help="also delete its gitignored files; nothing restores them",
-    )
+    _add_delete_flag(p, "also delete this; nothing restores it")
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
     # Its own, not gw list's: assess skips the main checkout, so gwr can never act
     # on it and offering it would complete to "no worktree matches".
@@ -1002,7 +1014,7 @@ def run_remove(args: argparse.Namespace) -> int:
         and not args.yes
         and sys.stdin.isatty()
     ):
-        # Somebody at a terminal can consent to what --delete-ignored would
+        # Somebody at a terminal can consent to what --delete ignored-files would
         # have. The plan below names every path before the question, and
         # --yes never stands in for that consent.
         _warn(

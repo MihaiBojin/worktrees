@@ -119,10 +119,11 @@ the shell.
 Never `git branch -D`, `git worktree remove`, `git update-ref -d` or `rm`.
 Never pass `--force`, whatever a refusal suggests: it removes a worktree that
 is not proved finished. Never run `gwp --yes`: it removes every eligible
-worktree, not the ones the user chose. Never pass `--delete-ignored` unless
-the user asked for it by name: it deletes the gitignored files in the
-worktree, and nothing restores them. When they do ask for a worktree in `ignored`, it is
-`command gwr 'PATH' --delete-ignored --yes 2>&1`.
+worktree, not the ones the user chose. Never pass `--delete all`. Never pass
+`--delete ignored-files` unless the user asked for it by name: it deletes the
+gitignored files in the worktree, and nothing restores them. When they do
+ask for a worktree in `ignored`, it is
+`command gwr 'PATH' --delete ignored-files --yes 2>&1`.
 
 What the output means:
 

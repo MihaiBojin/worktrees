@@ -19,8 +19,8 @@ a shell function of the same name.
 | `gw [QUERY]` | pick one of this repository's worktrees and land you in it |
 | `gwm NEW` | rename this worktree's branch and move the checkout to match |
 | `gwr [QUERY]` | remove a worktree whose branch is finished, and the branch |
-| `gwr! [QUERY]` | `gwr --delete-ignored`, a shell function in fish and zsh |
-| `gwp!` | `gwp --delete-ignored --yes`, a shell function in fish and zsh |
+| `gwr! [QUERY]` | `gwr --delete ignored-files`, a shell function in fish and zsh |
+| `gwp!` | `gwp --delete ignored-files --yes`, a shell function in fish and zsh |
 | `gwbc NAME` | branch `NAME` off the head branch and check it out |
 | `gwrot` | start the next branch after this one, or catch the head branch up |
 
@@ -84,7 +84,7 @@ With `.env` and `node_modules/` present, `git status --porcelain` prints
 nothing, `git worktree remove` exits 0 with no `--force`, and both are gone.
 Nothing in git brings them back: no ref ever pointed at them. `gwp` reads
 `--ignored=traditional`, counts what would go, and marks the worktree `keep`
-until you pass `--delete-ignored`.
+until you pass `--delete ignored-files`.
 
 ## Install
 
@@ -202,7 +202,7 @@ Head: origin/main (remote)
 BRANCH         PATH                                         VERDICT  WHY
 main           /home/you/git/repo                           keep     it is the main checkout, and never removable
 dirty-work     /home/you/git/.worktrees/dirty-work/repo     remove   its tip is an ancestor of the head branch; it has uncommitted changes
-holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  remove   its tip is an ancestor of the head branch; it holds 2 ignored path(s), and needs --delete-ignored
+holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  remove   its tip is an ancestor of the head branch; it holds 2 ignored path(s), and needs --delete ignored-files
 never-pushed   /home/you/git/.worktrees/never-pushed/repo   keep     no proof that its change is in the head branch
 squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   its tree or combined patch is already in the head branch
 
@@ -273,10 +273,17 @@ the eligible rows, the counts line counts them, and `--json` carries
 
 A protection never changes the verdict. For a worktree they are the one you
 are standing in, a lock, uncommitted changes or untracked files, an
-initialized submodule, and ignored files without `--delete-ignored`. A `remove` row held back by one names the
-first that applies after the proof, as in `its tip is an ancestor of the head
-branch; it has uncommitted changes`. In `gwbs` the protection is being checked
+initialized submodule, and ignored files without `--delete ignored-files`. A
+`remove` row held back by one names the first that applies after the proof,
+as in `its tip is an ancestor of the head branch; it has uncommitted
+changes`. In `gwbs` the protection is being checked
 out in a worktree, since that branch goes with its worktree.
+
+`--delete VALUE` is the permission to delete something a verdict alone does
+not cover. `gwp` and `gwr` take `ignored-files` and `all`, which grants every
+value the command takes. It repeats, and the values add up. An unknown value
+is a usage error at exit 2 before anything is judged, and `gwbs` and `gwbd`
+take no `--delete`. `--yes` skips the question and grants nothing.
 
 ### Removing
 
@@ -338,7 +345,7 @@ Head: origin/main (remote)
 BRANCH         PATH                                         VERDICT  WHY
 main           /home/you/git/repo                           keep     it is the main checkout, and never removable
 dirty-work     /home/you/git/.worktrees/dirty-work/repo     remove   its tip is an ancestor of the head branch; it has uncommitted changes
-holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  remove   its tip is an ancestor of the head branch; it holds 2 ignored path(s), and needs --delete-ignored
+holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  remove   its tip is an ancestor of the head branch; it holds 2 ignored path(s), and needs --delete ignored-files
 never-pushed   /home/you/git/.worktrees/never-pushed/repo   keep     no proof that its change is in the head branch
 
 0 eligible, 4 kept, 0 unclear
@@ -475,12 +482,12 @@ as finished, because it is:
 ```console
 $ gwr holds-secrets
 Head: origin/main (remote)
-holds-secrets is finished: its tip is an ancestor of the head branch; it holds 2 ignored path(s), and needs --delete-ignored
+holds-secrets is finished: its tip is an ancestor of the head branch; it holds 2 ignored path(s), and needs --delete ignored-files
 ```
 
 At a terminal, and without `--yes`, `gwr` asks instead: it names every
 ignored path and removes the worktree on a `y`. `--yes` never answers that
-question, so a script still needs `--delete-ignored`.
+question, so a script still needs `--delete ignored-files`.
 
 A worktree with an initialized submodule is refused whatever flag is given,
 because `git worktree remove` refuses it too. The refusal says to run `git
@@ -489,9 +496,9 @@ submodule deinit --all` in it and retry.
 `--force` is not the answer to the ignored files. It deletes those files just the same,
 since `git worktree remove` takes the whole directory, and it keeps a branch
 whose work already landed. Every ignored path is named before anything is
-deleted, under `--delete-ignored` and under `--force` alike.
+deleted, under `--delete ignored-files` and under `--force` alike.
 
-`gwr!` is `gwr --delete-ignored`, for when the ignored files are ones you meant
+`gwr!` is `gwr --delete ignored-files`, for when the ignored files are ones you meant
 to lose. It is a shell function in fish and zsh, not a console script, and it
 calls the `gwr` function so you still land where `gwr` says.
 
@@ -690,8 +697,8 @@ takes all of them but `--json`. Beyond those:
 
 | | |
 | --- | --- |
-| `gwp` | `--delete-ignored`, `--only VERDICT`, `-l` and `-y` |
-| `gwr` | `-f`, `--delete-ignored`, `-y` |
+| `gwp` | `--delete VALUE`, `--only VERDICT`, `-l` and `-y` |
+| `gwr` | `-f`, `--delete VALUE`, `-y` |
 | `gwbs` | `--only VERDICT` |
 | `gwbd` | `--all`, `--dry-run` and `-y` |
 | `gw`, `gw list` | `-l` |

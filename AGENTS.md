@@ -90,8 +90,9 @@ failed.
 
 One other kind of function exists: a shortcut, a banged name that calls a
 command with its flags fixed and does nothing else. `gwr!` is `gwr
---delete-ignored`, and `gwp!` is `gwp --delete-ignored --yes`. A shortcut
-calls its command by its plain name, so `gwr!` reaches the `gwr` function rather than `command gwr` and the caller still lands where the
+--delete ignored-files`, and `gwp!` is `gwp --delete ignored-files --yes`.
+A shortcut calls its command by its plain name, so `gwr!` reaches the `gwr`
+function rather than `command gwr` and the caller still lands where the
 binary says. No binary carries a banged name, so a shortcut shadows nothing,
 and none has a console script of its own.
 `SHORTCUTS` in `tests/test_shims.py` lists them and holds each to one line.
@@ -490,9 +491,8 @@ somebody to act on the wrong one.
 Eligible is a second answer, not a fourth verdict. A row is eligible when its
 verdict is `remove` and no protection applies: the worktree you stand in, a
 lock, uncommitted or untracked files, an initialized submodule, ignored
-files without `--delete-ignored`, and for `gwbs` a branch checked out in a
-worktree. A
-protection clears `eligible` and leaves the verdict and its proof alone, and
+files without `--delete ignored-files`, and for `gwbs` a branch checked out
+in a worktree. A protection clears `eligible` and leaves the verdict and its proof alone, and
 `why` names the first one after the proof. The main checkout and the head
 branch are not judged and read `keep`. `prune.removable()` returns the
 eligible rows; the counts line and the removal both use it, so what one

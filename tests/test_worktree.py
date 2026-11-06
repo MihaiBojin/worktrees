@@ -397,7 +397,7 @@ def test_remove_refuses_an_unfinished_branch(world) -> None:
 def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     world,
 ) -> None:
-    """The branch landed. The directory is what --delete-ignored answers for."""
+    """The branch landed. The directory is what --delete ignored-files answers for."""
     (world.repo / ".gitignore").write_text(".env\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
@@ -408,11 +408,11 @@ def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     assert p.returncode == 1
     assert "is finished" in p.stderr
     assert "is not finished" not in p.stderr
-    assert "--delete-ignored" in p.stderr
+    assert "--delete ignored-files" in p.stderr
     assert "--force" not in p.stderr
     assert wt.exists()
 
-    p = run(world, "gwr", "holds", "--yes", "--delete-ignored")
+    p = run(world, "gwr", "holds", "--yes", "--delete", "ignored-files")
     assert p.returncode == 0, p.stderr
     assert "deleting ignored, unrecoverable: .env" in p.stderr
     assert not wt.exists()

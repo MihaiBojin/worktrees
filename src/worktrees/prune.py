@@ -114,7 +114,7 @@ def plan(
     --quiet and --yes do not silence this.
 
     Every ignored path is named, whatever flag got the worktree this far:
-    `git worktree remove` takes the whole directory, so --delete-ignored
+    `git worktree remove` takes the whole directory, so --delete ignored-files
     decides consent and never decides what is deleted.
     """
     entries = stash_list(repo=repo).lines

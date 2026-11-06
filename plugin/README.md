@@ -55,8 +55,8 @@ them.
 
 Remove anything before you answer, or anything the CLI did not prove. Delete a
 remote branch. Run `git branch -D`, `git worktree remove` or `rm`. Pass
-`--delete-ignored`, which deletes a worktree's gitignored files for good,
-unless you ask for it.
+`--delete ignored-files`, which deletes a worktree's gitignored files for
+good, unless you ask for it, or `--delete all` at all.
 
 ## Versions
 

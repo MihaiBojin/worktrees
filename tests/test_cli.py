@@ -158,7 +158,7 @@ def test_status_json_is_data_on_stdout(world) -> None:
 
 
 def test_json_carries_the_ignored_count_as_a_number(world) -> None:
-    """A caller deciding whether to pass --delete-ignored wants the count, not
+    """A caller deciding whether to pass --delete ignored-files wants the count, not
     a sentence it has to find the count inside."""
     wt = world.worktree("holds-secrets")
     world.repo.joinpath(".gitignore").write_text(".env\n")
@@ -234,7 +234,7 @@ def test_json_carries_the_neighbour_count_as_a_number(world) -> None:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("extra", [(), ("--delete-ignored",)])
+@pytest.mark.parametrize("extra", [(), ("--delete", "ignored-files")])
 def test_prune_removes_exactly_what_status_marks(world, extra: tuple[str, ...]) -> None:
     """The invariant. Same flags in, same set out."""
     (world.repo / ".gitignore").write_text(".env\n")
@@ -1580,7 +1580,7 @@ def test_each_protection_keeps_the_verdict_and_clears_eligible(world) -> None:
         "dirty": "it has uncommitted changes",
         "untracked": "it has uncommitted changes",
         "locked": "it is locked",
-        "secrets": "it holds 1 ignored path(s), and needs --delete-ignored",
+        "secrets": "it holds 1 ignored path(s), and needs --delete ignored-files",
         "here": "you are standing in it",
     }
     for name, block in blocks.items():
@@ -1600,10 +1600,49 @@ def test_a_detached_worktree_is_protected_the_same_way(world) -> None:
     assert row["why"] == "its commit is reached by a ref; it has uncommitted changes"
 
 
-def test_delete_ignored_makes_the_ignored_row_eligible(world) -> None:
+@pytest.mark.parametrize(
+    "delete",
+    [
+        ("--delete", "ignored-files"),
+        ("--delete", "all"),
+        ("--delete", "ignored-files", "--delete", "all"),
+        ("--delete=all",),
+    ],
+)
+def test_delete_ignored_files_makes_the_ignored_row_eligible(world, delete) -> None:
     _ignoring_env(world, world.worktree("secrets"))
-    row = _rows(world, "--delete-ignored")["secrets"]
+    row = _rows(world, *delete)["secrets"]
     assert (row["verdict"], row["eligible"], row["why"]) == ("remove", True, PROOF)
+
+
+def test_yes_grants_no_permission(world) -> None:
+    wt = world.worktree("secrets")
+    _ignoring_env(world, wt)
+    p = run(world, "gwp", "--yes", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["removed"] == []
+    assert wt.exists()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("gwp", "--yes", "--delete", "bogus"),
+        ("gwp", "--yes", "--delete-ignored"),
+        ("gwr", "secrets", "--yes", "--delete", "bogus"),
+        ("gwr", "secrets", "--yes", "--delete-ignored"),
+        ("gwbs", "--delete", "all"),
+        ("gwbd", "secrets", "--yes", "--delete", "all"),
+    ],
+)
+def test_a_delete_value_a_command_does_not_take_is_a_usage_error(world, argv) -> None:
+    wt = world.worktree("secrets")
+    _ignoring_env(world, wt)
+    p = run(world, *argv)
+    assert p.returncode == 2, p.stderr
+    assert "--delete" in p.stderr
+    assert wt.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/secrets")
 
 
 def test_a_protection_on_an_unfinished_branch_adds_nothing_to_why(world) -> None:

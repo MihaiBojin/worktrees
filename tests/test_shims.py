@@ -27,8 +27,8 @@ CD_COMMANDS = ("gwa", "gw", "gwm", "gwr")
 ADAPTERS = tuple(name for name in CD_COMMANDS if name != "gw")
 # A shortcut calls a command with its flags fixed, and nothing else.
 SHORTCUTS = {
-    "gwr!": "gwr --delete-ignored",
-    "gwp!": "gwp --delete-ignored --yes",
+    "gwr!": "gwr --delete ignored-files",
+    "gwp!": "gwp --delete ignored-files --yes",
 }
 
 
@@ -216,7 +216,7 @@ def test_the_fish_shortcut_lands_where_gwr_says_with_the_flag(tmp_path) -> None:
     )
     assert code == 0, out
     assert str(target.resolve()) in out
-    assert seen.read_text().split() == ["--delete-ignored", "x"]
+    assert seen.read_text().split() == ["--delete", "ignored-files", "x"]
 
 
 def _run_zsh(bin_dir: Path, line: str) -> tuple[int, str]:
@@ -258,7 +258,7 @@ def test_the_zsh_shortcut_lands_where_gwr_says_with_the_flag(tmp_path) -> None:
     code, out = _run_zsh(bin_dir, "gwr! x >/dev/null; pwd")
     assert code == 0, out
     assert str(target.resolve()) in out
-    assert seen.read_text().split() == ["--delete-ignored", "x"]
+    assert seen.read_text().split() == ["--delete", "ignored-files", "x"]
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
@@ -275,7 +275,8 @@ def test_gwp_bang_runs_gwp_with_its_flags_and_its_exit_code(tmp_path, shell) -> 
         _, out = _run_zsh(bin_dir, "gwp! --only remove; echo code=$?")
     assert "code=4" in out, out
     assert seen.read_text().split() == [
-        "--delete-ignored",
+        "--delete",
+        "ignored-files",
         "--yes",
         "--only",
         "remove",

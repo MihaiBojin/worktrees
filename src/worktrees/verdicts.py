@@ -47,7 +47,7 @@ class Verdict:
     # How many ignored paths held back a branch that is otherwise done, and 0
     # everywhere else. Whether the work landed and whether the directory is
     # safe to delete are two questions, and only the second one answers to
-    # --delete-ignored, so a caller that prints a refusal needs them apart.
+    # --delete ignored-files, so a caller that prints a refusal needs them apart.
     ignored: int
     # The commit the verdict was formed against. Deleting the branch names it
     # as the value the ref must still hold, so a commit made between the
@@ -287,7 +287,8 @@ def assess(
                 block = SUBMODULE
             elif ignored:
                 block = (
-                    f"it holds {ignored} ignored path(s), and needs --delete-ignored"
+                    f"it holds {ignored} ignored path(s), "
+                    "and needs --delete ignored-files"
                 )
                 row.ignored = ignored
             else:
