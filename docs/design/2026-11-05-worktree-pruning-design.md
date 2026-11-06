@@ -230,6 +230,8 @@ the last sync has no forge evidence until the next one; local proof still applie
 | Several remotes, no `checkout.defaultRemote` | unchanged | unchanged | nonzero | none |
 
 The last row's message lists the remotes and prints `git config checkout.defaultRemote <name>`.
+When every branch's query fails, `gw sync` cannot tell that from a CLI that is not signed in, and
+takes the `gh` or `glab` row: previous evidence only.
 Missing, malformed or mismatched cache entries are never proof.
 
 ## 12. Offline rule
