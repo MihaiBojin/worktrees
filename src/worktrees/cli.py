@@ -243,16 +243,14 @@ def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
     inferred, since that one is a guess."""
     from datetime import UTC, datetime
 
-    from . import repo as R
     from . import sync
 
     def show(head: R.Head) -> None:
         if getattr(args, "json", False):
             return
-        record = sync.read()
-        if record is None and R.remote():
+        if sync.never():
             _warn(sync.NEVER)
-        elif record and not args.quiet:
+        elif not args.quiet and (record := sync.read()):
             stale = sync.stale(record, datetime.now(UTC))
             if stale:
                 _warn(stale)

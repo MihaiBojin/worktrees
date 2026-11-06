@@ -278,9 +278,7 @@ def delete(args: argparse.Namespace) -> int:
             raise Refused("not a terminal; pass --yes to confirm deletion")
         if prune._prompt(
             render.ask(
-                "Never synced. Delete anyway?"
-                if never
-                else f"delete {_branches(len(go))}?",
+                sync.ASK if never else f"delete {_branches(len(go))}?",
                 "[y/N]",
             )
         ).strip().lower() not in ("y", "yes"):
