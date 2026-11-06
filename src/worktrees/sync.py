@@ -39,13 +39,13 @@ NEVER = (
 _FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 
-def _path() -> Path | None:
-    common = R.common_dir().out.strip()
+def _path(repo: str | os.PathLike[str] | None = None) -> Path | None:
+    common = R.common_dir(repo=repo).out.strip()
     return Path(common) / NAME if common else None
 
 
-def _url(remote: str) -> str:
-    return dict(R.remote_urls()).get(remote, "")
+def _url(remote: str, repo: str | os.PathLike[str] | None = None) -> str:
+    return dict(R.remote_urls(repo=repo)).get(remote, "")
 
 
 def now() -> str:
@@ -75,7 +75,7 @@ def write(remote: str, refs: str, asked: str | None, evidence: dict) -> None:
         raise
 
 
-def read() -> dict | None:
+def read(repo: str | os.PathLike[str] | None = None) -> dict | None:
     """The last sync, or None when there is none to trust.
 
     None for a missing or malformed file, for a repository with no default
@@ -83,8 +83,8 @@ def read() -> dict | None:
     default remote has now: refs fetched from somewhere else say nothing
     about this one.
     """
-    path = _path()
-    remote = R.remote()
+    path = _path(repo)
+    remote = R.remote(repo=repo)
     if path is None or not remote:
         return None
     try:
@@ -98,7 +98,7 @@ def read() -> dict | None:
         or not isinstance(record.get("evidence", {}), dict)
     ):
         return None
-    if record.get("remote") != {"name": remote, "url": _url(remote)}:
+    if record.get("remote") != {"name": remote, "url": _url(remote, repo)}:
         return None
     return record
 

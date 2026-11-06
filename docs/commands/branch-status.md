@@ -16,7 +16,9 @@ report includes the worktree paths. Branches without worktrees are assessed
 against a pinned commit on the repository's
 [head branch](../../README.md#the-head-branch), which the command names on
 stderr first, as in `Head: origin/main (remote)`. When the head branch does
-not resolve, every branch is `unknown` and the command exits 1.
+not resolve, the command names why on stderr instead and exits 1. The head
+branch, `main`, `master` and checked-out branches stay `keep`; every other
+branch is `unknown`.
 
 `gws` judges the branch of each worktree with these same checks, after its
 own worktree protections, so a worktree and a loose branch at the same

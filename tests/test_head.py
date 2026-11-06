@@ -11,6 +11,9 @@ import pytest
 from test_cli import run
 from test_sync import bare, sync
 
+from worktrees import repo as R
+from worktrees.sync import NEVER
+
 INFERRED = "No main or master branch."
 SYNC = "origin/main does not resolve; gw sync updates it"
 
@@ -60,6 +63,13 @@ def test_a_clone_head_is_the_head_before_any_sync(world) -> None:
     assert p.returncode == 0, p.stderr
     assert head_line(p) == "Head: origin/main (clone)"
     assert not (clone / ".git" / "git-worktrees-sync.json").exists()
+
+
+def test_the_sync_read_is_the_one_of_the_repository_asked(world, monkeypatch) -> None:
+    bare(world)
+    assert sync(world).returncode == 0
+    monkeypatch.chdir(world.root)
+    assert R.head_ref("origin", repo=world.repo).source == "remote"
 
 
 def test_only_main_is_the_head(world) -> None:
@@ -140,20 +150,58 @@ UNRESOLVED = [
 ]
 
 
+def refusal(setup, message: str) -> str:
+    """What a refusing command prints: the never-synced line first, for a
+    remote nothing has synced, then the refusal alone."""
+    return f"{NEVER}\n{message}\n" if setup is cloned_then_gone else f"{message}\n"
+
+
 @pytest.mark.parametrize(("setup", "message"), UNRESOLVED)
-def test_every_row_is_unknown(world, setup, message) -> None:
-    world.worktree("feature")
+def test_every_row_a_head_would_judge_is_unknown(world, setup, message) -> None:
+    """The main checkout, the head branch and a checked-out branch keep
+    their rows, since none of those answers measures anything."""
+    feature = world.worktree("feature")
+    world.git("branch", "loose", "main")
     setup(world)
     p = run(world, "gws", "--json")
     assert p.returncode == 1, p.stderr
-    rows = gws_rows(p)
-    assert len(rows) == 2
-    assert {(v["verdict"], v["why"]) for v in rows} == {("unknown", message)}
+    assert p.stderr == f"{message}\n"
+    worktrees = {v["path"]: (v["verdict"], v["why"]) for v in gws_rows(p)}
+    assert worktrees == {
+        str(world.repo): ("keep", "it is the main checkout, and never removable"),
+        str(feature): ("unknown", message),
+    }
 
     p = run(world, "gwbs", "--json")
     assert p.returncode == 1, p.stderr
-    rows = json.loads(p.stdout)["verdicts"]
-    assert {(v["verdict"], v["why"]) for v in rows} == {("unknown", message)}
+    assert p.stderr == f"{message}\n"
+    rows = {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
+    assert (rows["loose"]["verdict"], rows["loose"]["why"]) == ("unknown", message)
+    assert rows["feature"]["verdict"] == "keep"
+    assert rows["feature"]["paths"] == [str(feature)]
+    here = world.git("branch", "--show-current")
+    assert rows[here]["verdict"] == "keep"
+    assert rows[here]["paths"] == [str(world.repo)]
+
+
+def test_an_unresolved_head_fails_with_only_the_main_checkout(world) -> None:
+    no_main_or_master(world)
+    p = run(world, "gws")
+    assert p.returncode == 1
+    assert p.stderr.startswith(f"{INFERRED}\n")
+    assert "Head:" not in p.stderr
+
+
+def test_main_and_master_are_kept_beside_a_dangling_head(world) -> None:
+    world.git("branch", "master", "main")
+    world.git("remote", "add", "origin", str(world.root / "nowhere.git"))
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+    p = run(world, "gwbs", "--json")
+    assert p.returncode == 1
+    rows = {
+        v["branch"]: (v["verdict"], v["why"]) for v in json.loads(p.stdout)["verdicts"]
+    }
+    assert rows["master"] == ("keep", "it is main or master")
 
 
 @pytest.mark.parametrize(("setup", "message"), UNRESOLVED)
@@ -167,7 +215,8 @@ def test_a_command_that_changes_something_refuses(world, setup, message, argv) -
     setup(world)
     p = run(world, *argv)
     assert p.returncode == 1, p.stderr
-    assert message in p.stderr
+    # The refusal alone: no head line, and no row judged before it.
+    assert p.stderr == refusal(setup, message)
     assert world.git("rev-parse", "--verify", "refs/heads/feature")
     assert (world.parent / ".worktrees" / "feature" / "repo").is_dir()
 
@@ -189,8 +238,7 @@ def test_a_command_that_starts_a_branch_fails(world, setup, message, argv) -> No
     setup(world)
     p = run(world, *argv)
     assert p.returncode == 1, p.stderr
-    assert message in p.stderr
-    assert "set-head" not in p.stderr
+    assert p.stderr == refusal(setup, message)
     assert world.git("branch", "--list", "spike*") == ""
     assert not (world.parent / ".worktrees").exists()
 
