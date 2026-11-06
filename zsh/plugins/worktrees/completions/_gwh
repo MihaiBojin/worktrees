@@ -1,6 +1,0 @@
-#compdef gwh
-
-# Flags as `gwh --help` lists them.
-
-_arguments -s \
-    '(-h --help)'{-h,--help}'[show the help and exit]'

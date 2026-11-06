@@ -35,9 +35,11 @@ What is here:
 | the fish half | `functions/`, `completions/`, `conf.d/` |
 | the zsh half | `zsh/plugins/worktrees/` |
 
-Thirteen console scripts: `gws`, `gwp`, `gwbs`, `gwbd`, `gwa`, `gwl`, `gwm`,
-`gwr`, `gwbc`, `gwrot`, `gwh`, `gw`, and `worktrees`. Four ship a shell function of
-the same name, one per shell, because a binary cannot `cd` its caller.
+Eleven console scripts: `gws`, `gwp`, `gwbs`, `gwbd`, `gwa`, `gwm`, `gwr`,
+`gwbc`, `gwrot`, `gw`, and `worktrees`. Four ship a shell function of the
+same name, one per shell, because a binary cannot `cd` its caller: `gwa`,
+`gwm`, `gwr`, and `gw`, which runs `gw list` when its first argument is not a
+subcommand and captures only that.
 
 The distribution is `git-worktrees` on PyPI, installed with
 `uv tool install`. The shell half arrives separately, through Fisher for fish
@@ -54,9 +56,9 @@ One CLI holds the behaviour. Everything else is a thin caller.
 
 | consumer | what it gets | what it must never need |
 | --- | --- | --- |
-| a person at a terminal | nine `gw`-prefixed names and `gw` itself, an arrow-key picker, colour, `cd` | to know a Python package is under it |
+| a person at a terminal | ten `gw`-prefixed names and `gw` itself, an arrow-key picker, colour, `cd` | to know a Python package is under it |
 | a shell | one path on stdout, `--complete` for candidates | to hold a candidate, a rank or a format string |
-| an agent | `--json` on every command but `gwh`, `gw version` and `gw sync`, and refusals on stderr | to parse a table meant for a person |
+| an agent | `--json` on every command but `gw version` and `gw sync`, and refusals on stderr | to parse a table meant for a person |
 
 Four rules the CLI does not break:
 
@@ -119,9 +121,9 @@ Output and machine surface.
 | Colour is decided per stream, once, and only for a terminal | stdout carries the path `cd $(gwa x)` reads and the JSON `jq` parses | `render.setup`. `NO_COLOR` is tested for a non-empty value, which is the no-color.org rule |
 | Padding runs on the text and painting after it | the other order counts an escape sequence as width, and every column under a coloured cell sits crooked by the length of the code | `render.table` |
 | Help asked for goes to stdout at exit 0; a usage printed because the invocation was wrong goes to stderr at exit 2 | `--help \| less` on an empty screen is the failure this avoids | argparse, plus the hand-written `usage:` lines |
-| Completions hold no candidate of their own | `gw --complete`, `gwl --complete` and `gwr --complete` print name and description, tab separated, which fish reads directly and zsh splits for `_describe` | a command added to the table needs no edit in either shell |
+| Completions hold no candidate of their own | `gw --complete`, `gw list --complete` and `gwr --complete` print name and description, tab separated, which fish reads directly and zsh splits for `_describe` | a command added to the table needs no edit in either shell |
 | The picker is Python's, and there is no fzf | the largest number of linked worktrees in one repository here is four, and at that size a list moved through with the arrow keys reads faster and costs no spawn and no absent-fzf fallback | `pick.py`, about twenty lines of substring-then-subsequence matching |
-| No terminal, no prompt | an agent or a pipe reaching a prompt would hang forever holding the repository's worktrees | `pick.choose` and `prune.confirm` both refuse and name the flag that answers without one |
+| No terminal, no prompt | an agent or a pipe reaching a prompt would hang forever holding the repository's worktrees | `pick.choose` and `prune.confirm` both refuse at exit 3. `gw list` prints the `--list` table of every match instead, since a list is an answer a script can read |
 
 Language, distribution, packaging.
 
@@ -145,7 +147,7 @@ nobody re-derives the first.
 | The CLI prints candidates and the shim runs fzf | the CLI runs the picker and the shim only reads a path | dropping fzf removes the spawn, the tty rules around it and the fallback branch a machine without it needs |
 | Go, once the command surface stops moving | Python | the surface did not stop moving, and the case for Go was made against a bash CLI with a shell shim around it. Python costs 28 ms an invocation on 3.11 and 41 ms on 3.14, paid once per command a person types, and buys a standard library that answers every question this asks with no dependency and no build |
 | Completions are generated from the CLI's own flag declarations | completion files are written by hand and hold their own command's flags; candidates come from `--complete` | `tests/test_completions.py` diffs the flags against `--help` in both directions for both shells, so a renamed flag fails there rather than going quiet |
-| Every command takes `--json` on one envelope carrying `schema`, `command`, `ok`, `refusals`, `losing` and `result` | every command but `gwh` takes `--json`, and each prints the shape its own answer has | no envelope, no `schema` field, and no version on the payload |
+| Every command takes `--json` on one envelope carrying `schema`, `command`, `ok`, `refusals`, `losing` and `result` | every command but `gw version` takes `--json`, and each prints the shape its own answer has | no envelope, no `schema` field, and no version on the payload |
 | `--force` retires into `--remove-unfinished-checkout` and `--remove-detached-checkout`, and `--keep-branch` opts out of a branch delete | `gwr --force` removes the checkout and keeps the branch | the worktree was in the way, the work was not. There is one flag and it names one outcome |
 | The spinner lives in the binary and animates when stdout is a terminal | there is no spinner | |
 | The binary is called `origin`, and the plugin is `origin@origin-plugin` | the CLI is `worktrees`, reachable as `gw`, and there is no plugin | the two repositories split instead of merging |
@@ -160,7 +162,7 @@ nobody re-derives the first.
 | "A worktree that is not clean is never removed without an explicit flag" | uncommitted work is refused unconditionally. No flag exists, and `gwr --force` does not reach one: the removal is plain `git worktree remove`, which refuses it itself |
 | "`gwl --list` is 58 ms against `origin gwl`'s 1.94 s" | not like-for-like then, and not a live comparison now. §7 has today's figures |
 | "The bats suite is the specification for the port" | there is no port and no bats suite. `tests/` is the specification, and it was written against this code |
-| `origin worktree path <branch>` | not built. `gwl --list` and `gwl --json` answer it |
+| `origin worktree path <branch>` | not built. `gw --list` and `gw --json` answer it |
 | `origin prune` is read-only until `--yes` | `gwp` runs `git worktree prune` and `git fetch --prune` before it assesses. Both mutate. `--yes` gates the checkout and the branch delete, and nothing else |
 | "Every mutation stays serial" as a property of the program | true within one process and asserted nowhere across two. Nothing takes a cross-process lock |
 

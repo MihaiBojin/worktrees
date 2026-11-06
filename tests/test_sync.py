@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,7 @@ from conftest import env_for
 NAME = "git-worktrees-sync.json"
 
 
-def sync(world, *args: str, at: Path | None = None):
+def sync(world, *args: str, at: Path | None = None, **env: str):
     return subprocess.run(
         [
             sys.executable,
@@ -28,7 +29,7 @@ def sync(world, *args: str, at: Path | None = None):
         cwd=str(at or world.repo),
         capture_output=True,
         text=True,
-        env=env_for(world),
+        env={**env_for(world), **env},
     )
 
 
@@ -68,7 +69,9 @@ def leftovers(world) -> list[Path]:
 
 def test_sync_fetches_sets_head_and_records_the_remote(world) -> None:
     path = bare(world)
-    p = sync(world)
+    # Nine hours east of UTC, so a local time would be off by more than the
+    # few seconds allowed below.
+    p = sync(world, TZ="Asia/Tokyo")
     assert p.returncode == 0, p.stderr
     assert p.stdout == ""
     assert p.stderr.strip() == "synced origin; head is origin/main"
@@ -80,6 +83,8 @@ def test_sync_fetches_sets_head_and_records_the_remote(world) -> None:
     assert record["remote"] == {"name": "origin", "url": str(path).removesuffix(".git")}
     assert record["forge"] is None
     assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", record["refs"])
+    refs = datetime.strptime(record["refs"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    assert abs((datetime.now(UTC) - refs).total_seconds()) < 60
     assert read(world) == record
     assert leftovers(world) == []
 
@@ -105,6 +110,17 @@ def test_an_unreachable_remote_fails_and_leaves_the_file(world) -> None:
     assert leftovers(world) == []
 
 
+def test_a_remote_with_no_branch_fails_and_writes_nothing(world) -> None:
+    empty = world.root / "empty.git"
+    world.git("init", "--quiet", "--bare", "-b", "main", str(empty))
+    world.git("remote", "add", "origin", str(empty))
+    p = sync(world)
+    assert p.returncode == 1
+    assert "origin could not be synced" in p.stderr
+    assert "Cannot determine remote HEAD" in p.stderr  # git's own reason
+    assert not (common(world) / NAME).exists()
+
+
 def test_no_remote_is_a_note_and_writes_nothing(world) -> None:
     p = sync(world)
     assert p.returncode == 0, p.stderr
@@ -121,6 +137,16 @@ def test_several_remotes_without_the_setting_refuse(world) -> None:
     assert "origin and upstream" in p.stderr
     assert "git config checkout.defaultRemote <name>" in p.stderr
     assert "fetch" not in sync(world, "-v").stderr
+    assert not (common(world) / NAME).exists()
+
+
+def test_a_default_remote_that_is_not_a_remote_is_named(world) -> None:
+    bare(world, "origin")
+    bare(world, "upstream")
+    world.git("config", "checkout.defaultRemote", "nope")
+    p = sync(world)
+    assert p.returncode == 1
+    assert "checkout.defaultRemote names nope, which is none of them" in p.stderr
     assert not (common(world) / NAME).exists()
 
 
@@ -145,10 +171,23 @@ def test_the_file_is_shared_by_every_worktree(world) -> None:
 
 
 def test_a_malformed_file_reads_as_never_synced_and_is_replaced(world) -> None:
-    bare(world)
-    for junk in ("{", "[]", '{"refs": 3}', '{"refs": "x", "forge": null}'):
+    path = bare(world)
+    # The right remote, so these are refused for their types and not for it.
+    remote = {"name": "origin", "url": str(path).removesuffix(".git")}
+    for junk in (
+        "{",
+        "[]",
+        '{"refs": 3}',
+        '{"refs": "x", "forge": null}',
+        json.dumps({"remote": remote, "refs": 3, "forge": None}),
+        json.dumps({"remote": remote, "refs": "x", "forge": 3}),
+    ):
         (common(world) / NAME).write_text(junk)
         assert read(world) is None, junk
+    (common(world) / NAME).write_text(
+        json.dumps({"remote": remote, "refs": "x", "forge": None})
+    )
+    assert read(world) is not None
     assert sync(world).returncode == 0
     assert read(world) is not None
 
@@ -171,20 +210,27 @@ def test_a_renamed_remote_reads_as_never_synced(world) -> None:
     assert read(world) is None
 
 
+def test_sync_help_says_what_it_does(world) -> None:
+    p = sync(world, "--help")
+    assert p.returncode == 0
+    assert "fetch the default remote and ask the forge" in p.stdout + p.stderr
+
+
 def test_sync_takes_no_json_and_the_help_says_so(world) -> None:
     assert sync(world, "--json").returncode == 2
     listed = subprocess.run(
         [
             sys.executable,
             "-c",
-            "from worktrees.cli import gwh; raise SystemExit(gwh())",
+            "from worktrees.cli import gw; raise SystemExit(gw())",
+            "-h",
         ],
         cwd=str(world.repo),
         capture_output=True,
         text=True,
         env=env_for(world),
     )
-    assert "gw sync takes no --json" in listed.stdout
+    assert "gw sync takes no --json" in listed.stderr
 
 
 # --------------------------------------------------------------------------

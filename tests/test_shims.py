@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import pty
+import re
 import shlex
 import shutil
 import subprocess
@@ -20,7 +21,10 @@ from typing import NoReturn
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-CD_COMMANDS = ("gwa", "gwl", "gwm", "gwr")
+CD_COMMANDS = ("gwa", "gw", "gwm", "gwr")
+# `gw` runs every subcommand uncaptured and only lands for `gw list`, so it
+# is held to its own tests below rather than to a pure adapter's.
+ADAPTERS = tuple(name for name in CD_COMMANDS if name != "gw")
 # A shortcut calls a command with its flags fixed, and nothing else.
 SHORTCUTS = {
     "gwr!": "gwr --delete-ignored",
@@ -81,14 +85,16 @@ def test_a_shim_calls_its_own_binary_and_nothing_else(name: str) -> None:
         ROOT / "functions" / f"{name}.fish",
         ROOT / "zsh/plugins/worktrees/functions" / name,
     ):
-        body = path.read_text()
-        assert f"command {name}" in body, path
-        for other in CD_COMMANDS:
-            if other != name:
-                assert f"command {other}" not in body, f"{path} calls {other}"
+        code = [
+            line
+            for line in path.read_text().splitlines()
+            if not line.strip().startswith("#")
+        ]
+        called = set(re.findall(r"\bcommand (\S+)", "\n".join(code)))
+        assert called == {name}, f"{path} calls {called}"
 
 
-@pytest.mark.parametrize("name", CD_COMMANDS)
+@pytest.mark.parametrize("name", ADAPTERS)
 def test_a_shim_is_ten_lines_of_shell_or_fewer(name: str) -> None:
     """Whatever grows past that is logic, and logic belongs in the CLI."""
     for path in (
@@ -107,7 +113,7 @@ def test_no_shim_exists_for_a_command_that_does_not_cd() -> None:
     """gws, gwp, gwbc and gwrot answer the same from a prompt and a script,
     and a function would make those two different programs."""
     shimmed = {f.stem for f in (ROOT / "functions").glob("*.fish")}
-    for name in ("gws", "gwp", "gwbc", "gwrot", "gw", "worktrees"):
+    for name in ("gws", "gwp", "gwbc", "gwrot", "worktrees"):
         assert name not in shimmed
 
 
@@ -138,7 +144,7 @@ def _missing(shell: str) -> NoReturn:  # pragma: no cover
     pytest.skip(f"{shell} is not installed")
 
 
-def _run_fish(bin_dir: Path, line: str) -> tuple[int, str]:
+def _run_fish(bin_dir: Path, line: str, shim: str = "gwa") -> tuple[int, str]:
     fish = shutil.which("fish")
     if not fish:  # pragma: no cover
         _missing("fish")
@@ -148,7 +154,7 @@ def _run_fish(bin_dir: Path, line: str) -> tuple[int, str]:
             fish,
             "--no-config",
             "-c",
-            f"source {ROOT / 'functions' / 'gwa.fish'}; {line}",
+            f"source {ROOT / 'functions' / f'{shim}.fish'}; {line}",
         ],
         capture_output=True,
         text=True,
@@ -224,7 +230,7 @@ def _run_zsh(bin_dir: Path, line: str) -> tuple[int, str]:
             zsh,
             "-f",
             "-c",
-            f"fpath=({fns} $fpath); autoload -Uz gwa gwr 'gwr!' 'gwp!'; {line}",
+            f"fpath=({fns} $fpath); autoload -Uz gw gwa gwr 'gwr!' 'gwp!'; {line}",
         ],
         capture_output=True,
         text=True,
@@ -355,6 +361,76 @@ def test_the_zsh_shim_prints_output_that_is_not_a_directory(tmp_path) -> None:
     code, out = _run_zsh(bin_dir, "cd /; gwa --json; pwd")
     assert code == 0, out
     assert out.splitlines() == [payload, "/"], out
+
+
+# --------------------------------------------------------------------------
+# gw: every subcommand straight through, and gw list lands
+# --------------------------------------------------------------------------
+
+_JSON = '{"path": "/nowhere", "branch": "x"}'
+
+
+def _fake_gw(tmp_path: Path, target: Path) -> Path:
+    """A `gw` that knows two subcommands, prints `target` for `prune` at exit
+    4, and otherwise answers as `gw list` would."""
+    return _fake(
+        tmp_path,
+        "gw",
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        "  --complete) printf 'list\\tpick one\\nprune\\tremove them\\n' ;;\n"
+        f"  prune) printf '%s\\n' '{target}'; exit 4 ;;\n"
+        f"  --json) printf '%s\\n' '{_JSON}' ;;\n"
+        f"  *) printf '%s\\n' '{target}' ;;\n"
+        "esac\n",
+    )
+
+
+def _run_gw(shell: str, bin_dir: Path, line: str) -> tuple[int, str]:
+    if shell == "fish":
+        return _run_fish(bin_dir, line.replace("$?", "$status"), shim="gw")
+    return _run_zsh(bin_dir, line)
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+def test_gw_passes_a_subcommand_through_uncaptured(tmp_path, shell: str) -> None:
+    """Captured, the path would be a place to go, or swallowed at exit 4.
+    Printed with the code intact and the caller where it was, it reached the
+    terminal untouched."""
+    target = tmp_path / "landing"
+    target.mkdir()
+    bin_dir = _fake_gw(tmp_path, target)
+    _, out = _run_gw(shell, bin_dir, "cd /; gw prune; echo code=$?; pwd")
+    assert out.splitlines() == [str(target), "code=4", "/"], out
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+@pytest.mark.parametrize("args", ["one", "list one", ""])
+def test_gw_lands_where_a_query_says(tmp_path, shell: str, args: str) -> None:
+    target = tmp_path / "landing"
+    target.mkdir()
+    bin_dir = _fake_gw(tmp_path, target)
+    code, out = _run_gw(shell, bin_dir, f"gw {args} >/dev/null; pwd")
+    assert code == 0, out
+    assert out.strip() == str(target.resolve()), out
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+def test_gw_prints_json_and_stays_put(tmp_path, shell: str) -> None:
+    bin_dir = _fake_gw(tmp_path, tmp_path)
+    code, out = _run_gw(shell, bin_dir, "cd /; gw --json; pwd")
+    assert code == 0, out
+    assert out.splitlines() == [_JSON, "/"], out
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+def test_gw_lands_in_a_path_holding_spaces(tmp_path, shell: str) -> None:
+    target = tmp_path / "with  two spaces"
+    target.mkdir()
+    bin_dir = _fake_gw(tmp_path, target)
+    code, out = _run_gw(shell, bin_dir, "gw two >/dev/null; pwd")
+    assert code == 0, out
+    assert out.strip() == str(target.resolve()), out
 
 
 @pytest.mark.parametrize(

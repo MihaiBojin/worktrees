@@ -30,18 +30,31 @@ prompt and from a script unless the function is a pure adapter.
 The rule: **a function exists only for a command that must change the caller's
 directory, it carries the same name as the binary, and its body does nothing but
 call `command <name>` and `cd` to what that prints, when that is a directory,
-and print it otherwise.**
+and print it otherwise.** `gw` is the one exception, below.
 
 The last clause is not a hedge. `--json` and `--list` print what was asked for
 on the same stream a destination arrives on. A shim that cannot tell them
 apart tries to `cd` into a JSON object, and one that only refuses to prints
-nothing at all. `fish -c 'gwl --json'` reaches the
+nothing at all. `fish -c 'gw --json'` reaches the
 function too, so this is the agent path as much as the human one.
 
 | | changes directory | ships as |
 | --- | --- | --- |
-| `gws`, `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`, `gwh` | no | a console script, and nothing else |
-| a command that lands you somewhere | yes | a console script, plus a function of the same name |
+| `gws`, `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot` | no | a console script, and nothing else |
+| `gwa`, `gwm`, `gwr` | yes | a console script, plus a function of the same name |
+| `gw` | for `gw list` only | a console script, plus a function that captures `gw list` alone |
+
+`gw` breaks the rule, deliberately. `gw` with no subcommand, or with anything
+that is not one, runs `gw list`, so `gw` lands you somewhere and needs a
+function. Every other subcommand writes for the terminal: a table, a
+destination the caller asked to see, or `gwp`'s table ahead of its prompt.
+Captured, that table would arrive after the prompt it asks on stderr, without
+its colour, because stdout is then a pipe. So the function reads the
+subcommand names from the first tab-separated field of `command gw
+--complete`, runs every one but `list` as `command gw` with nothing captured,
+and returns its code. Everything else goes through the adapter below.
+`tests/test_shims.py` holds `gw` to its own tests rather than to the ten-line
+limit the others keep.
 
 A binary cannot `cd` its caller. That is the only thing shell code is here for,
 and any logic that reaches a shell file is logic a script cannot call.
@@ -116,7 +129,7 @@ Neither manager puts a binary on `$PATH`. The console scripts arrive through
 
 Both plugins export `WORKTREES_PLUGIN_VERSION`, the release they came from:
 `conf.d/worktrees.fish` and `worktrees.plugin.zsh`, one assignment each.
-`gwh` and `gw version` compare it with `__version__`, in Python; the shell
+`gw -h` and `gw version` compare it with `__version__`, in Python; the shell
 files hold the value and no logic. Nothing built can stamp a file a plugin
 manager copies from git, so `scripts/bump_version.py` writes it at release,
 along with the tag in the README's install lines, and `tests/test_version.py`
@@ -128,9 +141,10 @@ clone at a known path is wrong here.
 
 A completion asks the CLI for its candidates rather than deriving them, and
 `--complete` is how: `gw --complete` prints every subcommand and shorthand,
-`gwl --complete` prints every worktree, both as name and description separated
+`gw list --complete` prints every worktree, both as name and description separated
 by a tab, which fish reads directly and zsh splits for `_describe`. Hidden from
-`--help`, because a person has `gwh` and `--list` for the same answers.
+`--help`, because a person has the command table and `--list` for the same
+answers.
 
 No shell file holds a candidate or a rank. What each file does carry is its own
 command's flags, and `tests/test_completions.py` diffs those against `--help`
@@ -187,7 +201,7 @@ code where it would show up as text.
 
 A query that is exactly one worktree's branch or path is that worktree
 alone. `gwr one` beside `one-more` is not a question, and neither is
-`gwr "$(gwl two)"`.
+`gwr "$(gw two)"`.
 
 Dropping `fzf` is less code, not more. It removes the spawn and the fallback
 branch a machine without `fzf` would otherwise need.
@@ -206,9 +220,11 @@ Two rules, both the shape `gwp`'s prompt already has:
 
 - A query that narrows to one takes it outright, with no prompt at all. No
   query asks however many there are, because being moved without being asked
-  is not what `gwl` with no argument means.
-- No terminal, no prompt. Refuse at exit 3 and name the flag that answers
-  without one, rather than blocking on something nothing can drive.
+  is not what `gw` with no argument means.
+- No terminal, no prompt. `gwp`, `gwr` and `gwbd` refuse at exit 3 rather
+  than block on something nothing can drive. `gw list` prints the `--list`
+  table of every match instead and selects nothing, one match included,
+  since a list is an answer a script can read.
 
 Two more about what is in the list at all:
 
@@ -216,7 +232,7 @@ Two more about what is in the list at all:
   the one a finished branch leaves you in, so leaving it out leaves out the
   only answer that is always right. `main` finds it whatever branch it stands
   on, because its label carries the word, once.
-- In `gwl`, a linked worktree you are standing in is shown and never
+- In `gw list`, a linked worktree you are standing in is shown and never
   offered. It carries a `*` rather than a number and the highlight skips it,
   because picking it is the one answer that takes you nowhere. Leaving it
   out of the list entirely is worse: the list then shows fewer rows than
@@ -240,13 +256,20 @@ executable commands for help and completion checks. A row carries the function, 
 the one-line description, the console script, the argument shape, the
 shorthands and whether the command changes the caller's directory. `gws`,
 `gw status`, `gw st` and `gw s` reach the same function because that row says
-so, and `gwh` prints the table rather than a second list that can disagree
+so, and `gw -h` prints the table rather than a second list that can disagree
 with it.
 
-`version` is the one row that installs no console script, and `gwh` prints a
-`—` in its first column to say so. A tool's version is asked through the
-tool's name, so `gw version` and `gw v` are the two spellings and no parser
-carries a `--version` flag.
+`list` and `version` install no console script. `gw` alone runs `gw list`,
+so `gw -h` prints `gw [QUERY]` in that row's first column, and `—` in
+`version`'s. A tool's version is asked through the tool's name, so `gw
+version` and `gw v` are the two spellings and no parser carries a
+`--version` flag.
+
+A first argument that no row answers to is a query: `gw ARGS` runs `gw list
+ARGS`, flags included, and only `-h`, `--help` and `--complete` stay the
+root's. A query that matches nothing names the closest command when difflib
+finds one among the full names and `--help`, which is how a mistyped command
+is reported, and then points at `gw -h`.
 
 `_canonical()` raises at import when two rows answer to one name. A dict
 comprehension would keep the last one and leave a command reachable under a
@@ -269,7 +292,7 @@ stdout carries the path `cd $(gwa x)` reads and the JSON `jq` parses, so a
 redirect, a pipe, a non-empty `NO_COLOR`, or `TERM=dumb` mean the bytes go out
 as they would have without the module. `NO_COLOR=` is not a request to turn it
 off: that is the no-color.org rule, and it is why `supported` tests the value
-and not the key. `--json` and `gwl --list` are never painted at all, even
+and not the key. `--json` and `gw --list` are never painted at all, even
 on a terminal: both are what a script reads. The colour is applied at the
 call site that formats a table, and neither path passes a code to one.
 

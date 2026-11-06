@@ -8,10 +8,12 @@ diffed against `--help` in both directions.
 
 from __future__ import annotations
 
+import itertools
 import os
 import pty
 import re
 import select
+import shlex
 import shutil
 import subprocess
 import sys
@@ -31,12 +33,13 @@ ZSH = ROOT / "zsh" / "plugins" / "worktrees" / "completions"
 BINARIES = sorted(c.binary for _, c in command_rows() if c.binary)
 
 
-def _help(entry: str) -> str:
+def _help(entry: str, *args: str) -> str:
     p = subprocess.run(
         [
             sys.executable,
             "-c",
             f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            *args,
             "--help",
         ],
         capture_output=True,
@@ -47,9 +50,9 @@ def _help(entry: str) -> str:
     return p.stdout + p.stderr
 
 
-def _parsed_flags(entry: str) -> set[str]:
+def _parsed_flags(entry: str, *args: str) -> set[str]:
     """Every long flag `entry --help` lists, minus the hidden ones."""
-    return set(re.findall(r"(--[a-z][a-z-]+)", _help(entry)))
+    return set(re.findall(r"(--[a-z][a-z-]+)", _help(entry, *args)))
 
 
 def _fish_flags(binary: str) -> set[str]:
@@ -88,6 +91,61 @@ def test_zsh_offers_exactly_the_flags_the_command_parses(binary: str) -> None:
     assert _zsh_flags(binary) == _parsed_flags(entry)
 
 
+def test_fish_offers_exactly_the_flags_gw_parses() -> None:
+    """`gw list`'s, since `gw --json` is `gw list --json`, and the branch
+    commands' under `gw branch`."""
+    assert _fish_flags("gw") == (
+        _parsed_flags("main", "list")
+        | _parsed_flags("main", "branch", "status")
+        | _parsed_flags("main", "branch", "delete")
+    )
+
+
+def test_zsh_offers_exactly_the_flags_gw_parses() -> None:
+    """`gw list`'s. Under `gw branch` zsh calls `_gwbs` and `_gwbd`, which
+    are held to their own binaries' flags above."""
+    assert _zsh_flags("gw") == _parsed_flags("main", "list")
+
+
+def _fish_conditions(flag: str) -> list[str]:
+    """The `-n` condition of every `complete -c gw` line offering `flag`."""
+    text = (FISH / "gw.fish").read_text().replace("\\\n", " ")
+    found = []
+    for line in text.splitlines():
+        words = shlex.split(line, comments=True)
+        if words[:3] == ["complete", "-c", "gw"] and f"--{flag}" in [
+            f"--{b}" for a, b in itertools.pairwise(words) if a == "-l"
+        ]:
+            found.append(words[words.index("-n") + 1] if "-n" in words else "")
+    return found
+
+
+def test_fish_offers_list_only_at_the_root_and_after_gw_list() -> None:
+    conditions = _fish_conditions("list")
+    assert conditions, "no --list"
+    for c in conditions:
+        assert "branch" not in c, c
+        assert "__fish_use_subcommand" in c or "from list" in c, c
+
+
+def test_fish_offers_only_after_gw_branch_status() -> None:
+    conditions = _fish_conditions("only")
+    assert conditions, "no --only"
+    for c in conditions:
+        assert "from branch" in c and "from status" in c and "delete" not in c, c
+
+
+def test_zsh_offers_list_only_at_the_root_and_after_gw_list() -> None:
+    """The root `_arguments` block, or a line guarded by `== list`."""
+    lines = (ZSH / "_gw").read_text().splitlines()
+    root = next(i for i, x in enumerate(lines) if "_arguments -C \\" in x)
+    end = next(i for i in range(root, len(lines)) if not lines[i].endswith("\\"))
+    at = [i for i, x in enumerate(lines) if "--list" in x]
+    assert at, "no --list"
+    for i in at:
+        assert root < i <= end or "== list ]]" in lines[i - 1], lines[i]
+
+
 def test_complete_lists_every_command_and_shorthand(world) -> None:
     p = subprocess.run(
         [
@@ -114,7 +172,8 @@ def test_complete_lists_the_worktree_you_are_standing_in(world) -> None:
         [
             sys.executable,
             "-c",
-            "from worktrees.cli import gwl; raise SystemExit(gwl())",
+            "from worktrees.cli import main; raise SystemExit(main())",
+            "list",
             "--complete",
         ],
         cwd=str(here),
@@ -127,12 +186,13 @@ def test_complete_lists_the_worktree_you_are_standing_in(world) -> None:
     assert offered == {"main", "fix-parser"}
 
 
-def _complete(entry: str, world, at=None) -> list[str]:
+def _complete(entry: str, world, *args: str, at=None) -> list[str]:
     p = subprocess.run(
         [
             sys.executable,
             "-c",
             f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            *args,
             "--complete",
         ],
         cwd=str(at or world.repo),
@@ -144,15 +204,15 @@ def _complete(entry: str, world, at=None) -> list[str]:
     return [line.split("\t")[0] for line in p.stdout.splitlines()]
 
 
-def test_gwl_offers_the_main_checkout_and_gwr_does_not(world) -> None:
+def test_gw_list_offers_the_main_checkout_and_gwr_does_not(world) -> None:
     """assess skips the main checkout, so gwr can never act on it."""
     world.worktree("one")
-    offered_by_gwl = _complete("gwl", world)
+    offered_by_list = _complete("main", world, "list")
     offered_by_gwr = _complete("gwr", world)
 
-    assert any("(main)" in name or name == "main" for name in offered_by_gwl)
+    assert any("(main)" in name or name == "main" for name in offered_by_list)
     assert not [n for n in offered_by_gwr if "(main)" in n]
-    assert "one" in offered_by_gwl
+    assert "one" in offered_by_list
     assert offered_by_gwr == ["one"]
 
 
@@ -194,8 +254,8 @@ def _at(world, path: Path, branch: str) -> None:
     world.git("worktree", "add", "--quiet", "-b", branch, str(path), "main")
 
 
-@pytest.mark.parametrize("entry", ["gwl", "gwr"])
-def test_a_path_holding_a_newline_is_not_offered(world, entry: str) -> None:
+@pytest.mark.parametrize("argv", [("main", "list"), ("gwr",)])
+def test_a_path_holding_a_newline_is_not_offered(world, argv) -> None:
     """Both shells split records on the newline, so such a row arrives as
     two and its tail becomes a candidate of its own."""
     _at(world, world.parent / ".worktrees" / "fine" / "repo", "fine")
@@ -205,7 +265,8 @@ def test_a_path_holding_a_newline_is_not_offered(world, entry: str) -> None:
         [
             sys.executable,
             "-c",
-            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            f"from worktrees.cli import {argv[0]}; raise SystemExit({argv[0]}())",
+            *argv[1:],
             "--complete",
         ],
         cwd=str(world.repo),
@@ -224,13 +285,27 @@ def test_a_path_holding_a_newline_is_not_offered(world, entry: str) -> None:
 def test_a_path_holding_a_tab_is_still_offered(world) -> None:
     """A row is split at its first tab, so a later one is description."""
     _at(world, world.root / "ta\tbbed", "tabbed")
-    rows = _complete("gwl", world)
+    rows = _complete("main", world, "list")
     assert "tabbed" in rows
 
 
 @pytest.mark.skipif(not shutil.which("zsh"), reason="zsh is not installed")
-@pytest.mark.parametrize("prefix", ["gw branch delete --dry", "gwbd --dry"])
-def test_zsh_completes_branch_flags_without_errors(world, prefix) -> None:
+@pytest.mark.parametrize(
+    ("prefix", "needle", "absent"),
+    [
+        ("gw branch delete --dry", b"--dry-run", None),
+        ("gwbd --dry", b"--dry-run", None),
+        ("gw --li", b"pick none", None),
+        ("gw list --li", b"pick none", None),
+        ("gw fix-p", b"fix-parser", None),
+        ("gw list fix-p", b"fix-parser", None),
+        ("gw status --", b"--json", None),
+        # The last candidate in the list, so the whole list has arrived.
+        ("gw sync --", b"--verbose", b"--json"),
+    ],
+)
+def test_zsh_completes_gw_without_errors(world, prefix, needle, absent) -> None:
+    world.worktree("fix-parser")
     bin_dir = world.root / "bin"
     bin_dir.mkdir()
     for entry in ("gw", "gwbs", "gwbd"):
@@ -272,11 +347,66 @@ def test_zsh_completes_branch_flags_without_errors(world, prefix) -> None:
         )
         os.write(parent, setup.encode())
         read_until(b"READY> ")
-        os.write(parent, (prefix + "\t").encode())
-        output = read_until(b"--dry-run")
+        # ctrl-d lists the candidates with their descriptions, where a tab
+        # would insert the rest of one and leave only a suffix to look for.
+        os.write(parent, (prefix + "\x04").encode())
+        output = read_until(needle)
+        if absent:
+            assert absent not in output, output
         assert b"bad option" not in output, output
         assert b"command not found" not in output, output
     finally:
         process.kill()
         process.wait(timeout=5)
         os.close(parent)
+
+
+@pytest.mark.skipif(not shutil.which("fish"), reason="fish is not installed")
+def test_fish_offers_no_json_after_gw_sync() -> None:
+    def offered(prefix: str) -> list[str]:
+        p = subprocess.run(
+            [
+                "fish",
+                "--no-config",
+                "-c",
+                f"source {FISH / 'gw.fish'}; complete -C '{prefix}'",
+            ],
+            capture_output=True,
+            text=True,
+            env={"PATH": PATH},
+        )
+        assert p.returncode == 0, p.stderr
+        return [line.split("\t")[0] for line in p.stdout.splitlines()]
+
+    assert "--json" not in offered("gw sync --")
+    assert "--explain" in offered("gw sync --")
+    assert "--json" in offered("gw status --")
+
+
+@pytest.mark.skipif(not shutil.which("fish"), reason="fish is not installed")
+@pytest.mark.parametrize("prefix", ["gw fix-p", "gw list fix-p"])
+def test_fish_completes_a_worktree_after_gw_and_gw_list(world, prefix) -> None:
+    world.worktree("fix-parser")
+    bin_dir = world.root / "bin"
+    bin_dir.mkdir()
+    wrapper = bin_dir / "gw"
+    wrapper.write_text(
+        f"#!{sys.executable}\nfrom worktrees.cli import gw\nraise SystemExit(gw())\n"
+    )
+    wrapper.chmod(0o755)
+    env = env_for(world)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    p = subprocess.run(
+        [
+            "fish",
+            "--no-config",
+            "-c",
+            f"source {FISH / 'gw.fish'}; complete -C '{prefix}'",
+        ],
+        cwd=world.repo,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert p.returncode == 0, p.stderr
+    assert [line.split("\t")[0] for line in p.stdout.splitlines()] == ["fix-parser"]
