@@ -171,13 +171,24 @@ def _explain() -> int:
 # --------------------------------------------------------------------------
 
 
-def _add_assess_flags(p: argparse.ArgumentParser) -> None:
+def _add_delete_flags(p: argparse.ArgumentParser, *, branch: bool = False) -> None:
     p.add_argument(
-        "--delete-ignored",
-        action="store_true",
-        help="count a worktree holding gitignored files as removable; nothing "
-        "restores them",
+        "--delete",
+        action="append",
+        choices=("empty", "stashes", "all")
+        if branch
+        else ("empty", "ignored-files", "stashes", "all"),
+        default=[],
+        metavar="VALUE",
+        help="permit empty branches or stashes"
+        if branch
+        else "permit empty branches, ignored-files or stashes; "
+        "all permits every category; repeat to combine",
     )
+
+
+def _add_assess_flags(p: argparse.ArgumentParser) -> None:
+    _add_delete_flags(p)
     p.add_argument("--json", action="store_true", help="verdicts as data")
     p.add_argument("-q", "--quiet", action="store_true", help="verdicts only")
     p.add_argument(
@@ -223,14 +234,24 @@ def _judge_all(
     head, head_branch, _ = _assessment_head(args)
 
     only = getattr(args, "branch", "")
-    ignored = getattr(args, "delete_ignored", False)
+    permissions: frozenset[str] = getattr(args, "permissions", frozenset())
+    keep_branch = getattr(args, "keep_branch", False)
+    ignored = "ignored-files" in permissions
     records = R.worktrees()
     # Cached forge evidence can settle a branch whose stacked changes differ
     # from the head branch's final content.
     if ask_forge is None:
         ask_forge = True
     rows = (
-        judge(only, head, head_branch, ignored, ask_forge=ask_forge)
+        judge(
+            only,
+            head,
+            head_branch,
+            ignored,
+            ask_forge=ask_forge,
+            permissions=permissions,
+            keep_branch=keep_branch,
+        )
         if judge
         else verdicts.assess(
             records,
@@ -241,6 +262,7 @@ def _judge_all(
             ask_forge=ask_forge,
             # Targeted removal supplies its own candidate assessment.
             include_main=True,
+            permissions=permissions,
         )
     )
     return rows, verdicts.stale(records), head, head_branch, records
@@ -293,7 +315,7 @@ def run_preview(args: argparse.Namespace) -> int:
                     "neighbours": others,
                     # `ignored` and `sha` are fields rather than facts to
                     # parse back out of `why`. A caller deciding whether to
-                    # pass --delete-ignored wants the count, not a sentence
+                    # pass --delete ignored-files wants the count, not a sentence
                     # that happens to contain it, and the sha is what the
                     # verdict was formed against.
                     "verdicts": [
@@ -406,14 +428,24 @@ def run_prune(args: argparse.Namespace) -> int:
 
     # A Refused from here goes to _dispatch, which exits 3 for every refusal.
     # No terminal is one condition, so it is one code wherever it is met.
-    if not args.yes and not prune.confirm(len(go)):
+    if not args.yes and not prune.confirm(len(go), never=prune.never_synced(go)):
         _err(render.note("nothing removed"))
         return 0
 
-    failed = prune.sweep(go, _err)
-    removed = [v.label for v in go]
+    outcomes = prune.sweep(go, _err)
+    failed = sum(bool(o.failed) for o in outcomes)
+    removed = [v.label for v, o in zip(go, outcomes, strict=True) if o.worktree_removed]
     if args.json:
-        print(_json({"removed": removed, "failed": failed}, indent=2))
+        print(
+            _json(
+                {
+                    "removed": removed,
+                    "failed": failed,
+                    "outcomes": [vars(o) for o in outcomes],
+                },
+                indent=2,
+            )
+        )
     elif failed:
         _err(
             render.fail(
@@ -645,13 +677,11 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
         "query", nargs="?", default="", metavar="PATH|QUERY", help="which one"
     )
     p.add_argument(
-        "-f", "--force", action="store_true", help="remove it even when unfinished"
-    )
-    p.add_argument(
-        "--delete-ignored",
+        "--keep-branch",
         action="store_true",
-        help="also delete its gitignored files; nothing restores them",
+        help="remove the checkout and retain its branch and stashes",
     )
+    _add_delete_flags(p)
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
     # Its own, not gwl's: assess skips the main checkout, so gwr can never act
     # on it and offering it would complete to "no worktree matches".
@@ -830,7 +860,7 @@ def run_move(args: argparse.Namespace) -> int:
 
 def run_remove(args: argparse.Namespace) -> int:
 
-    from . import pick, prune
+    from . import layout, pick, prune
     from . import repo as R
     from . import worktree as wt_mod
     from .git import options
@@ -851,9 +881,19 @@ def run_remove(args: argparse.Namespace) -> int:
     # Assess cached evidence and protections before offering candidates.
     _require_head()
     rows, _, _, _, records = _assess(args, judge=wt_mod.removable, ask_forge=True)
-    found = pick.matches(
-        args.query, [R.Worktree(v.path, "", v.branch, frozenset()) for v in rows]
-    )
+    worktrees = [R.Worktree(v.path, "", v.branch, frozenset()) for v in rows]
+    found = worktrees
+    if args.query:
+        found = [w for w in worktrees if _same(w.path, args.query)]
+        if not found:
+            found = [
+                w for w in worktrees if args.query in (layout.name_of(w.path), w.branch)
+            ]
+        if len(found) > 1 and not sys.stdin.isatty():
+            raise Refused(
+                "ambiguous worktree name; use an exact path:\n"
+                + "\n".join(w.path for w in found)
+            )
     by_path = {v.path: v for v in rows}
     candidates = [by_path[w.path] for w in found if w.path in by_path]
 
@@ -882,45 +922,45 @@ def run_remove(args: argparse.Namespace) -> int:
         return 0
     chosen = by_path[picked.path]
 
-    if chosen.protections:
-        _err(render.fail(f"{render.branch(chosen.label)} kept: {chosen.why}"))
+    if not chosen.eligible:
+        _err(
+            render.fail(
+                f"{render.branch(chosen.label)} kept: {chosen.why}; "
+                "--keep-branch retains the branch"
+            )
+        )
         return 1
 
-    if chosen.verdict != prune.REMOVE and not args.force:
-        why = f"{render.branch(chosen.label)} is not finished: {chosen.why}"
-        if args.yes or not sys.stdin.isatty():
-            _err(
-                render.fail(
-                    f"{why}\npass --force to remove the worktree anyway; "
-                    "the branch is kept"
-                )
-            )
-            return 1
-        # Somebody at a terminal is asked instead, the way --force would have
-        # answered: the checkout goes and the branch stays.
-        _warn(f"{why}\nremoving the worktree keeps the branch")
-
-    prune.plan([chosen], _err)
-    if not args.yes and not prune.confirm(1):
+    prune.plan([chosen], _err, keep_branch=args.keep_branch)
+    if not args.yes and not prune.confirm(1, never=prune.never_synced([chosen])):
         _err(render.note("nothing removed"))
         return 0
-
-    keep_branch = chosen.verdict != prune.REMOVE
-    # --force keeps the branch: the worktree was in the way, the work was not.
-    destination = wt_mod.remove(
-        prune.Verdict(chosen.verdict, "", chosen.path, chosen.why)
-        if keep_branch
-        else chosen,
-        _err,
-    )
-    if not args.quiet and not args.json:
-        _err(render.note(f"removed {render.branch(chosen.label)}"))
+    if _same(chosen.path, here):
+        if not sys.stdin.isatty():
+            raise Refused(
+                f"not a terminal; removing current worktree {chosen.path} "
+                "requires a second confirmation"
+            )
+        if prune._prompt(
+            render.ask(f"remove current worktree {chosen.path}?", "[y/N]")
+        ).strip().lower() not in ("y", "yes"):
+            _err(render.note("nothing removed"))
+            return 0
+    outcome = wt_mod.remove(chosen, _err)
     if args.json:
-        print(_json({"removed": chosen.label, "path": destination}, indent=2))
-        return 0
-    if destination:
-        print(destination)
-    return 0
+        print(
+            _json(
+                {
+                    "removed": chosen.label if outcome.worktree_removed else None,
+                    "path": outcome.destination,
+                    "outcome": vars(outcome),
+                },
+                indent=2,
+            )
+        )
+    elif outcome.destination:
+        print(outcome.destination)
+    return int(bool(outcome.failed))
 
 
 # --------------------------------------------------------------------------
@@ -1509,6 +1549,14 @@ def _dispatch(
             return run_help(args)
         run = _COMMANDS[_CANONICAL[command]].run
     try:
+        values = getattr(args, "delete", [])
+        if getattr(args, "keep_branch", False) and any(
+            value != "ignored-files" for value in values
+        ):
+            raise _Stop("--keep-branch accepts only --delete ignored-files", 2)
+        args.permissions = frozenset(
+            ("empty", "ignored-files", "stashes") if "all" in values else values
+        )
         if run is run_prune and args.only and not args.dry_run:
             raise _Stop("--only requires --dry-run", 2)
         if (

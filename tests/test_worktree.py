@@ -349,9 +349,11 @@ def test_remove_prints_nothing_when_you_were_not_standing_in_it(world) -> None:
 
 def test_remove_prints_the_main_checkout_when_you_were(world) -> None:
     wt = world.merged_worktree("done")
-    p = run(world, "gwr", "--yes", at=wt)
-    assert p.returncode == 0, p.stderr
-    assert p.stdout.strip() == str(world.repo)
+    from test_cli import run_on_a_terminal_at
+
+    code, output = run_on_a_terminal_at(world, wt, "gwr", "done", "--yes", answer="y\n")
+    assert code == 0, output
+    assert output.rstrip().endswith(str(world.repo))
     assert not wt.exists()
 
 
@@ -360,15 +362,15 @@ def test_remove_refuses_an_unfinished_branch(world) -> None:
     world.commit("b.txt", "b\n", at=wt)
     p = run(world, "gwr", "busy", "--yes")
     assert p.returncode == 1
-    assert "is not finished" in p.stderr
-    assert "--force" in p.stderr
+    assert "kept" in p.stderr
+    assert "--keep-branch" in p.stderr
     assert wt.exists()
 
 
 def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     world,
 ) -> None:
-    """The branch landed. The directory is what --delete-ignored answers for."""
+    """The branch landed. The directory is what --delete ignored-files answers for."""
     (world.repo / ".gitignore").write_text(".env\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
@@ -379,17 +381,16 @@ def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     assert p.returncode == 1
     assert "ignored path(s)" in p.stderr
     assert "is not finished" not in p.stderr
-    assert "--delete-ignored" in p.stderr
-    assert "--force" not in p.stderr
+    assert "--delete ignored-files" in p.stderr
     assert wt.exists()
 
-    p = run(world, "gwr", "holds", "--yes", "--delete-ignored")
+    p = run(world, "gwr", "holds", "--yes", "--delete", "ignored-files")
     assert p.returncode == 0, p.stderr
     assert "deleting ignored, unrecoverable: .env" in p.stderr
     assert not wt.exists()
 
 
-def test_force_names_the_ignored_files_it_is_about_to_delete(world) -> None:
+def test_keep_branch_names_the_ignored_files_it_is_about_to_delete(world) -> None:
     """`git worktree remove` takes them whatever flag got it here."""
     (world.repo / ".gitignore").write_text(".env\n")
     world.git("add", "--", ".gitignore")
@@ -398,17 +399,17 @@ def test_force_names_the_ignored_files_it_is_about_to_delete(world) -> None:
     (wt / ".env").write_text("SECRET=1\n")
     world.commit("b.txt", "b\n", at=wt)
 
-    p = run(world, "gwr", "busy", "--yes", "--force", "--delete-ignored")
+    p = run(world, "gwr", "busy", "--yes", "--keep-branch", "--delete", "ignored-files")
     assert p.returncode == 0, p.stderr
     assert "deleting ignored, unrecoverable: .env" in p.stderr
     assert not wt.exists()
 
 
-def test_force_removes_the_checkout_and_keeps_the_branch(world) -> None:
+def test_keep_branch_removes_the_checkout_and_keeps_the_branch(world) -> None:
     """The worktree was in the way. The work was not."""
     wt = world.worktree("busy")
     world.commit("b.txt", "b\n", at=wt)
-    p = run(world, "gwr", "busy", "--yes", "--force")
+    p = run(world, "gwr", "busy", "--yes", "--keep-branch")
     assert p.returncode == 0, p.stderr
     assert not wt.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/busy")

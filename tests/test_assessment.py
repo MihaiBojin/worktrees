@@ -499,8 +499,12 @@ def test_ignored_file_permission_cannot_prove_an_unfinished_branch(world):
     wt = world.worktree("busy")
     sha = world.commit("unfinished", at=wt)
     (wt / ".env").write_text("secret")
+    refused = run(world, "gwr", "busy", "--delete", "ignored-files", "--yes")
+    assert refused.returncode != 0
+    assert wt.exists()
+    assert world.git("rev-parse", "refs/heads/busy") == sha
     code, output = run_on_a_terminal(
-        world, "gwr", "busy", "--delete-ignored", answer="y\n"
+        world, "gwr", "busy", "--delete", "ignored-files", "--keep-branch", answer="y\n"
     )
     assert code == 0, output
     assert not wt.exists()

@@ -157,7 +157,7 @@ def test_status_json_is_data_on_stdout(world) -> None:
 
 
 def test_json_carries_the_ignored_count_as_a_number(world) -> None:
-    """A caller deciding whether to pass --delete-ignored wants the count, not
+    """A caller deciding whether to pass --delete ignored-files wants the count, not
     a sentence it has to find the count inside."""
     wt = world.worktree("holds-secrets")
     world.repo.joinpath(".gitignore").write_text(".env\n")
@@ -234,7 +234,16 @@ def test_json_carries_the_neighbour_count_as_a_number(world) -> None:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("extra", [(), ("--delete-ignored",)])
+@pytest.mark.parametrize(
+    "extra",
+    [
+        (),
+        (
+            "--delete",
+            "ignored-files",
+        ),
+    ],
+)
 def test_prune_removes_exactly_what_status_marks(world, extra: tuple[str, ...]) -> None:
     """The invariant. Same flags in, same set out."""
     (world.repo / ".gitignore").write_text(".env\n")
@@ -931,7 +940,7 @@ def test_remove_confirms_permitted_ignored_files_on_a_terminal(world) -> None:
     (wt / ".env").write_text("SECRET=1\n")
 
     code, out = run_on_a_terminal(
-        world, "gwr", "holds", "--delete-ignored", answer="n\n"
+        world, "gwr", "holds", "--delete", "ignored-files", answer="n\n"
     )
     assert code == 0, out
     assert "deleting ignored, unrecoverable: .env" in out
@@ -939,7 +948,7 @@ def test_remove_confirms_permitted_ignored_files_on_a_terminal(world) -> None:
     assert wt.exists()
 
     code, out = run_on_a_terminal(
-        world, "gwr", "holds", "--delete-ignored", answer="y\n"
+        world, "gwr", "holds", "--delete", "ignored-files", answer="y\n"
     )
     assert code == 0, out
     assert not wt.exists()
@@ -950,13 +959,12 @@ def test_remove_asks_before_removing_an_unfinished_worktree_and_keeps_the_branch
 ) -> None:
     wt = world.worktree("busy")
     world.commit("b.txt", "b\n", at=wt)
-    code, out = run_on_a_terminal(world, "gwr", "busy", answer="n\n")
+    code, out = run_on_a_terminal(world, "gwr", "busy", "--keep-branch", answer="n\n")
     assert code == 0, out
-    assert "is not finished" in out
-    assert "removing the worktree keeps the branch" in out
+    assert "branch and its stashes retained" in out
     assert wt.exists()
 
-    code, out = run_on_a_terminal(world, "gwr", "busy", answer="y\n")
+    code, out = run_on_a_terminal(world, "gwr", "busy", "--keep-branch", answer="y\n")
     assert code == 0, out
     assert not wt.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/busy")
@@ -970,13 +978,13 @@ def test_list_marks_main_when_you_stand_in_it(world) -> None:
     assert re.search(r"^  2\s+one\s+one\s", out, re.M), out
 
 
-def test_remove_lists_main_unnumbered_under_a_query_too(world) -> None:
-    world.worktree("one")
-    world.worktree("two")
+def test_remove_rejects_a_partial_name_without_opening_the_picker(world) -> None:
+    one = world.worktree("one")
+    two = world.worktree("two")
     code, out = run_on_a_terminal(world, "gwr", "o", answer="\x1b")
-    assert code == 0, out
-    assert re.search(r"^  \*\s+repo\s+main\s", out, re.M), out
-    assert "nothing picked" in out
+    assert code == 1, out
+    assert "no worktree matches" in out
+    assert one.exists() and two.exists()
 
 
 def test_list_is_never_coloured_even_on_a_terminal(world) -> None:

@@ -10,11 +10,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from . import layout, render
+from . import layout, prune, render
 from . import repo as R
 from .git import GitError, Refused, git
 from .new_branch import Refusal, check_ref_format
-from .prune import _prune_empty_parents, ref_delete, worktree_remove
+from .prune import _prune_empty_parents
 from .verdicts import REMOVE, Verdict, assess
 
 
@@ -176,38 +176,55 @@ def move(
     return Landed(str(dest), new, created=False)
 
 
-def remove(
-    chosen: Verdict,
-    say: object,
-    repo: str | os.PathLike[str] | None = None,
-) -> str:
-    """Remove one worktree, and say where to go when it was this one.
-
-    Returns the main checkout when the caller was standing in what went, and
-    an empty string otherwise. Empty means stay put.
-
-    What goes and what puts it back is printed by the caller, before this is
-    reached, so that a run which stops at the confirmation has still said it.
-    """
-    here = R.toplevel(repo=repo).out.strip()
+def remove(chosen: Verdict, say, repo=None) -> prune.Outcome:
+    """Recheck the approved worktree before removing its checkout and ref."""
+    outcome = prune.Outcome(
+        path=chosen.path, branch=chosen.branch, retained=list(chosen.stashes)
+    )
     main = R.main_worktree(repo)
-    standing_in = bool(here) and Path(here).resolve() == Path(chosen.path).resolve()
-
-    if standing_in:
-        # git refuses to remove the worktree a process is sitting in only
-        # sometimes; leaving first makes it always safe and gives the shim a
-        # destination to move to.
-        os.chdir(main)
-
-    worktree_remove(chosen.path, repo=main)
-    _prune_empty_parents(Path(chosen.path).parent, main)
-    if chosen.branch:
-        try:
-            ref_delete(f"refs/heads/{chosen.branch}", chosen.sha, repo=main)
-        except (GitError, Refused) as exc:
-            if callable(say):
-                say(render.fail(f"branch {render.branch(chosen.branch)} kept: {exc}"))
-    return main if standing_in else ""
+    try:
+        snapshot = chosen.snapshot
+        if snapshot is None:
+            raise Refused("no assessed deletion snapshot")
+        prune.check_head(snapshot.head, repo)
+        records = [w for w in R.worktrees(repo) if w.path == snapshot.path]
+        if len(records) != 1 or (
+            records[0].branch,
+            records[0].sha,
+            records[0].flags,
+        ) != (snapshot.branch, snapshot.sha, snapshot.flags):
+            raise Refused(f"{chosen.path}: worktree changed after assessment")
+        fresh = assess(
+            records,
+            "",
+            snapshot.head.ref,
+            snapshot.head.branch,
+            False,
+            repo=repo,
+            here="",
+            ask_forge=True,
+            include_main=True,
+            permissions=chosen.permissions,
+            keep_branch=chosen.keep_branch,
+            state=snapshot.head,
+        )[0]
+        if fresh.snapshot != snapshot or not fresh.eligible:
+            raise Refused(f"{chosen.path}: state changed after assessment; {fresh.why}")
+        prune.check_head(snapshot.head, repo)
+        here = R.toplevel(repo=repo).out.strip()
+        standing_in = bool(here) and Path(here).resolve() == Path(chosen.path).resolve()
+        if standing_in:
+            os.chdir(main)
+        prune.worktree_remove(chosen.path, repo=main)
+        outcome.worktree_removed = True
+        outcome.destination = main if standing_in else ""
+        _prune_empty_parents(Path(chosen.path).parent, main)
+        if chosen.branch and not chosen.keep_branch:
+            prune.delete_ref(snapshot, outcome, main)
+    except (GitError, Refused) as exc:
+        outcome.failed.append(str(exc))
+    prune.report(outcome, say)
+    return outcome
 
 
 def removable(
@@ -217,6 +234,8 @@ def removable(
     delete_ignored: bool,
     repo: str | os.PathLike[str] | None = None,
     ask_forge: bool = True,
+    permissions: frozenset[str] = frozenset(),
+    keep_branch: bool = False,
 ) -> list[Verdict]:
     """Every worktree, judging the one you stand in like any other.
 
@@ -233,6 +252,8 @@ def removable(
         repo=repo,
         here="",
         ask_forge=ask_forge,
+        permissions=permissions,
+        keep_branch=keep_branch,
     )
 
 

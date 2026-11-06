@@ -127,9 +127,9 @@ def test_ignored_files_stop_the_verdict(world) -> None:
     assert v.verdict == verdicts.REMOVE
     assert not v.eligible
     assert "2 ignored path(s)" in v.why
-    assert "--delete-ignored" in v.why
+    assert "--delete ignored-files" in v.why
 
-    # --yes must not answer that question; only --delete-ignored does.
+    # --yes must not answer that question; only --delete ignored-files does.
     v = {
         x.branch: x
         for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", True)

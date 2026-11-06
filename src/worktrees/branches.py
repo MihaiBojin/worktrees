@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shlex
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field, fields
 
 from . import merged, progress, prune
 from . import repo as R
@@ -28,13 +28,22 @@ class Verdict:
     eligible: bool = False
     stashes: list[str] = field(default_factory=list)
     protections: list[str] = field(default_factory=list)
+    snapshot: prune.Snapshot | None = None
+    permissions: frozenset[str] = frozenset()
 
     @property
     def undo(self) -> str:
         return f"git branch {shlex.quote(self.branch)} {self.sha}"
 
     def data(self) -> dict:
-        return {**asdict(self), "undo": self.undo}
+        return {
+            **{
+                f.name: getattr(self, f.name)
+                for f in fields(self)
+                if f.name not in ("snapshot", "permissions")
+            },
+            "undo": self.undo,
+        }
 
 
 def local_refs() -> dict[str, tuple[str, str]]:
@@ -52,6 +61,8 @@ def assess(
     ask_forge: bool,
     include_checked: bool = False,
     first_parents: set[str] | None = None,
+    permissions: frozenset[str] = frozenset(),
+    state: prune.HeadState | None = None,
 ) -> list[Verdict]:
     refs = local_refs()
     missing = [name for name in names if name not in refs]
@@ -64,6 +75,10 @@ def assess(
     if first_parents is None:
         first_parents = (
             set(merged.first_parent_history(head_sha).lines) if head_sha else set()
+        )
+    if state is None:
+        state = prune.head_state(
+            R.head().ref or "", head_branch, sha=head_sha, first_parents=first_parents
         )
     entries = prune.stash_list().lines
     rows = []
@@ -91,9 +106,16 @@ def assess(
             if symbolic:
                 row.protections.append("it is a symbolic branch ref")
             row.protections += prune.branch_protections(
-                name, head_branch, row.verdict, row.stashes
+                name, head_branch, row.verdict, row.stashes, permissions
             )
-            row.eligible = row.verdict == "remove" and not row.protections
+            row.permissions = permissions
+            row.snapshot = prune.Snapshot(
+                state, name, sha, stashes=prune.stash_subjects(row.stashes, entries)
+            )
+            row.eligible = (
+                row.verdict == "remove"
+                or (row.verdict == "empty" and "empty" in permissions)
+            ) and not row.protections
             if row.protections:
                 row.why += "; " + "; ".join(row.protections)
         except GitError as exc:
@@ -110,10 +132,12 @@ def delete(
     remote: str,
     ask_forge: bool,
     first_parents: set[str] | None = None,
-) -> None:
-    """Recheck the verdict and delete only the commit the user approved."""
-    if prune.sha_of(head_ref).out.strip() != head_sha:
-        raise Refused("the head branch changed after assessment; run the command again")
+) -> prune.Outcome:
+    """Recheck the approved ref and stashes, then return every cleanup outcome."""
+    snapshot = row.snapshot
+    if snapshot is None:
+        raise Refused("no assessed deletion snapshot")
+    prune.check_head(snapshot.head)
     fresh = assess(
         [row.branch],
         head_sha,
@@ -121,17 +145,16 @@ def delete(
         remote,
         ask_forge,
         include_checked=True,
-        first_parents=first_parents,
+        first_parents=set(snapshot.head.first_parents),
+        permissions=row.permissions,
+        state=snapshot.head,
     )[0]
-    if fresh.sha != row.sha:
-        raise Refused(f"{row.branch} changed after assessment; run the command again")
-    if not fresh.eligible:
-        raise Refused(f"{row.branch}: {fresh.why}")
-    if prune.sha_of(head_ref).out.strip() != head_sha:
-        raise Refused(
-            "the head branch changed during assessment; run the command again"
-        )
-    # update-ref does not enforce git branch's checked-out protection.
-    if any(wt.branch == row.branch for wt in R.worktrees()):
-        raise Refused(f"{row.branch} is checked out in a worktree")
-    prune.ref_delete(f"refs/heads/{row.branch}", row.sha)
+    if fresh.snapshot != snapshot or not fresh.eligible:
+        raise Refused(f"{row.branch} changed after assessment; {fresh.why}")
+    prune.check_head(snapshot.head)
+    outcome = prune.Outcome(branch=row.branch, retained=list(row.stashes))
+    try:
+        prune.delete_ref(snapshot, outcome)
+    except (GitError, Refused) as exc:
+        outcome.failed.append(str(exc))
+    return outcome

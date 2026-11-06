@@ -6,7 +6,16 @@ import argparse
 import sys
 
 from . import branches, merged, progress, prune, render
-from .cli import _assessment_head, _err, _explain, _json, _only, _Stop, add_status_flags
+from .cli import (
+    _add_delete_flags,
+    _assessment_head,
+    _err,
+    _explain,
+    _json,
+    _only,
+    _Stop,
+    add_status_flags,
+)
 from .git import GitError, Refused, options
 from .render import BOLD, DIM, YELLOW, Cell, table
 
@@ -33,6 +42,7 @@ def _assessment_flags(p: argparse.ArgumentParser) -> None:
 
 
 def delete_flags(p: argparse.ArgumentParser) -> None:
+    _add_delete_flags(p, branch=True)
     p.add_argument(
         "names",
         nargs="*",
@@ -67,6 +77,9 @@ def _prepare(
         first_parents = (
             set(merged.first_parent_history(head_sha).lines) if head_sha else set()
         )
+        state = prune.head_state(
+            head, head_branch, sha=head_sha, first_parents=first_parents
+        )
         progress.say("reading local branches")
         try:
             rows = branches.assess(
@@ -77,6 +90,8 @@ def _prepare(
                 True,
                 include_checked=bool(args.names) and hasattr(args, "all"),
                 first_parents=first_parents,
+                permissions=getattr(args, "permissions", frozenset()),
+                state=state,
             )
         except ValueError as exc:
             raise _Stop(str(exc), 2) from exc
@@ -257,6 +272,7 @@ def delete(args: argparse.Namespace) -> int:
         go = _select(rows)
     removed: list[str] = []
     failures: list[dict[str, str]] = []
+    outcomes: list[prune.Outcome] = []
     if args.dry_run:
         _report(
             args, head, head_sha, rows, removed=removed, failed=failures, dry_run=True
@@ -270,16 +286,31 @@ def delete(args: argparse.Namespace) -> int:
                 )
             )
         return int(any(v.error for v in rows))
-    if go and not args.json:
-        _err(render.note(f"deleting {_branches(len(go))}:"))
-        _err(_plan(go))
+    if go:
+        if not args.json:
+            _err(render.note(f"deleting {_branches(len(go))}:"))
+            _err(_plan(go))
+        prune.plan(go, _err)
     if go and not args.yes:
         if not sys.stdin.isatty():
             raise Refused("not a terminal; pass --yes to confirm deletion")
         if prune._prompt(
-            render.ask(f"delete {_branches(len(go))}?", "[y/N]")
+            render.ask(
+                "Never synced. Delete anyway?"
+                if prune.never_synced(go)
+                else f"delete {_branches(len(go))}?",
+                "[y/N]",
+            )
         ).strip().lower() not in ("y", "yes"):
-            _report(args, head, head_sha, rows, removed=removed, failed=failures)
+            _report(
+                args,
+                head,
+                head_sha,
+                rows,
+                removed=removed,
+                failed=failures,
+                outcomes=[vars(o) for o in outcomes],
+            )
             return 0
     # Each one is judged again before it goes, which costs what assessing it
     # did the first time.
@@ -289,16 +320,31 @@ def delete(args: argparse.Namespace) -> int:
                 f"{row.branch}: checking again, then deleting ({i} of {len(go)})"
             )
             try:
-                branches.delete(
+                outcome = branches.delete(
                     row, head, head_sha, head_branch, remote, True, first_parents
                 )
             except (GitError, Refused, ValueError) as exc:
                 failures.append({"branch": row.branch, "why": str(exc)})
                 _err(render.fail(f"{render.branch(row.branch)} kept: {exc}"))
             else:
-                removed.append(row.branch)
+                outcomes.append(outcome)
+                prune.report(outcome, _err)
+                if outcome.branch_removed:
+                    removed.append(row.branch)
+                if outcome.failed:
+                    failures.append(
+                        {"branch": row.branch, "why": "; ".join(outcome.failed)}
+                    )
     if args.json:
-        _report(args, head, head_sha, rows, removed=removed, failed=failures)
+        _report(
+            args,
+            head,
+            head_sha,
+            rows,
+            removed=removed,
+            failed=failures,
+            outcomes=[vars(o) for o in outcomes],
+        )
     elif removed:
         names = ", ".join(render.out(name, render.BRANCH) for name in removed)
         print(f"deleted {_branches(len(removed))}: {names}")

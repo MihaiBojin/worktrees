@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CD_COMMANDS = ("gwa", "gwl", "gwm", "gwr")
 # A shortcut calls a command with its flags fixed, and nothing else.
 SHORTCUTS = {
-    "gwr!": "gwr --delete-ignored",
+    "gwr!": "gwr --delete ignored-files",
     "gwp!": "gwp --yes",
 }
 
@@ -210,7 +210,7 @@ def test_the_fish_shortcut_lands_where_gwr_says_with_the_flag(tmp_path) -> None:
     )
     assert code == 0, out
     assert str(target.resolve()) in out
-    assert seen.read_text().split() == ["--delete-ignored", "x"]
+    assert seen.read_text().split() == ["--delete", "ignored-files", "x"]
 
 
 def _run_zsh(bin_dir: Path, line: str) -> tuple[int, str]:
@@ -252,7 +252,7 @@ def test_the_zsh_shortcut_lands_where_gwr_says_with_the_flag(tmp_path) -> None:
     code, out = _run_zsh(bin_dir, "gwr! x >/dev/null; pwd")
     assert code == 0, out
     assert str(target.resolve()) in out
-    assert seen.read_text().split() == ["--delete-ignored", "x"]
+    assert seen.read_text().split() == ["--delete", "ignored-files", "x"]
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
