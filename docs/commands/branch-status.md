@@ -103,8 +103,7 @@ deletion.
 | `-v`, `--verbose` | Print executed commands on stderr. |
 | `--explain` | Print the declared git commands and safety rules, then exit. |
 
-A run reaches no remote. It judges from the remote-tracking refs as the last
-`gw sync` or clone left them.
+A run reaches no remote. It judges from the refs already here.
 
 JSON contains `head`, `head_sha`, and `verdicts`. Each verdict has `branch`,
 `sha`, `verdict`, `why`, `proof`, `paths`, `request`, `error`, and `undo`.

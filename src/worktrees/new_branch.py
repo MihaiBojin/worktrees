@@ -1,7 +1,8 @@
 """Start a branch off the head branch.
 
-The base is <remote>/<head> as the last `gw sync` or clone left it, not the
-local copy of it, so the branch starts on top of what the server had then.
+The base is <remote>/<head> as the refs already here have it, not the local
+copy of it, so the branch starts on top of what the server had at the last
+fetch.
 """
 
 from __future__ import annotations

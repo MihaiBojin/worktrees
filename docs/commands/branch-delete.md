@@ -39,7 +39,7 @@ full SHA and deletes the named ref without following a symbolic ref.
 
 Deletion affects local branch refs. It does not delete remote branches,
 worktrees, working files, or stashes. It runs no fetch; it judges from the
-remote-tracking refs the last `gw sync` left.
+refs already here.
 
 ## Undo
 
