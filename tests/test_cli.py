@@ -708,12 +708,12 @@ def test_no_color_turns_it_off_on_a_terminal(world) -> None:
 
 def _unreachable(world) -> None:
     world.git("remote", "add", "origin", str(world.root / "nowhere.git"))
-    world.git("update-ref", "refs/remotes/origin/main", "main")
 
 
 def test_an_unreachable_remote_still_makes_the_branch(world) -> None:
     """Off the refs already here, and without a word about the remote."""
     _unreachable(world)
+    world.git("update-ref", "refs/remotes/origin/main", "main")
     p = run(world, "gwbc", "spike")
     assert p.returncode == 0, p.stderr
     assert p.stderr == ""
@@ -723,6 +723,7 @@ def test_an_unreachable_remote_still_makes_the_branch(world) -> None:
 
 def test_an_unreachable_remote_still_makes_the_worktree(world) -> None:
     _unreachable(world)
+    world.git("update-ref", "refs/remotes/origin/main", "main")
     p = run(world, "gwa", "fix-parser")
     assert p.returncode == 0, p.stderr
     assert "fetch" not in p.stderr
