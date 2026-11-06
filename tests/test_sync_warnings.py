@@ -87,6 +87,7 @@ def test_every_head_reading_command_says_it_was_never_synced(world, argv) -> Non
     p = run(world, *argv)
     lines = p.stderr.splitlines()
     assert NEVER in lines, p.stderr
+    assert NEVER not in p.stdout, p.stdout
     assert lines.index(NEVER) < next(
         i for i, line in enumerate(lines) if line.startswith("Head: ")
     ), p.stderr
@@ -171,6 +172,7 @@ def test_an_old_sync_is_named_with_its_age(world) -> None:
     p = run(world, "gwbc", "spike")
     assert p.returncode == 0, p.stderr
     assert "Last synced 2 hours ago. Run: gw sync" in p.stderr.splitlines()
+    assert "Last synced" not in p.stdout, p.stdout
 
 
 def test_quiet_drops_the_stale_line(world) -> None:
@@ -204,6 +206,7 @@ def test_the_plan_repeats_the_never_synced_line(world, argv) -> None:
     p = run(world, *argv)
     assert p.returncode == 0, p.stderr
     assert p.stderr.splitlines().count(NEVER) == 2, p.stderr
+    assert NEVER not in p.stdout, p.stdout
 
 
 @pytest.mark.parametrize("argv", [("gwp",), ("gwr", "done"), ("gwbd", "done")])

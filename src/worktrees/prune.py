@@ -171,7 +171,7 @@ def confirm(
             )
         ask = _prompt
     question = render.ask(
-        "Never synced. Delete anyway?" if never else f"remove {count} worktree(s)?",
+        sync.ASK if never else f"remove {count} worktree(s)?",
         "[y/N]",
     )
     return ask(question).strip().lower() in ("y", "yes")
