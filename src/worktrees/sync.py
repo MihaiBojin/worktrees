@@ -36,6 +36,7 @@ NEVER = (
     "Never synced: verdicts use refs from the clone or last fetch "
     "and no forge evidence. Run: gw sync"
 )
+ASK = "Never synced. Delete anyway?"
 _FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 
