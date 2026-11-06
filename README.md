@@ -462,6 +462,12 @@ without asking. Several are offered in the picker at a terminal and
 refused at exit 3 without one, with each path named, so a script can pass
 the one it meant. No match fails at exit 1 and removes nothing.
 
+Removing the worktree you are standing in takes a second question, which
+names its path, and `--yes` answers only the first. On a yes, `gwr` moves
+into the main checkout before removing, prints that path, and the shell
+function takes you there. Without a terminal it refuses at exit 3,
+whatever the flags, since nothing can answer the second question.
+
 `gwr` says why a worktree is not eligible, with the same verdict and reason
 `gwp` prints: `is not finished` for a branch with work left, and `is
 finished` for one a protection holds back. At a

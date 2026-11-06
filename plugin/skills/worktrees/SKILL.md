@@ -116,6 +116,10 @@ the shell.
   shell function that would change directory.
 - The chosen branches, in one call: `gwbd 'NAME' 'NAME' ... --yes 2>&1`.
 
+The skill cannot remove the worktree it runs in. `gwp` never proposes it,
+and `gwr` refuses it at exit 3 without a terminal: say so, and that the user
+can remove it with `gwr` from their own shell.
+
 Never `git branch -D`, `git worktree remove`, `git update-ref -d` or `rm`.
 Never pass `--force`, whatever a refusal suggests: it removes a worktree that
 is not proved finished. Never run `gwp --yes`: it removes every eligible
