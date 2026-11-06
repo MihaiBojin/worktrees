@@ -2,9 +2,10 @@
 # shorthand with its description, so a command added to the table needs no
 # edit here.
 #
-# Only the flags every subcommand shares are offered after one. The rest are
-# on the binaries, where they are typed: repeating the per-command sets here
-# would be a second copy of nine files that has to change with them.
+# Only the common flags are offered after a subcommand, and --json not
+# after sync, which takes no --json. The rest are on the binaries, where
+# they are typed: repeating the per-command sets here would be a second copy
+# of nine files that has to change with them.
 
 complete -c gw -f
 complete -c gw -n __fish_use_subcommand -a '(command gw --complete)'
@@ -31,7 +32,7 @@ complete -c gw -n '__fish_seen_subcommand_from list l ls' \
 complete -c gw -n '__fish_seen_subcommand_from remove rm' \
     -a '(command gwr --complete)'
 
-complete -c gw -n 'not __fish_use_subcommand' -l json -d 'the result as data'
+complete -c gw -n 'not __fish_use_subcommand; and not __fish_seen_subcommand_from sync' -l json -d 'the result as data'
 complete -c gw -n 'not __fish_use_subcommand' -s q -l quiet -d 'less output'
 complete -c gw -n 'not __fish_use_subcommand' -s v -l verbose -d 'print every git command'
 complete -c gw -n 'not __fish_use_subcommand' -l explain -d 'print every git command and exit'
