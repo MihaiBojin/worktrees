@@ -641,6 +641,51 @@ def run_rotate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_sync_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
+    p.add_argument(
+        "-v", "--verbose", action="store_true", help="print every git command"
+    )
+    p.add_argument(
+        "--explain", action="store_true", help="print every git command and exit"
+    )
+
+
+def run_sync(args: argparse.Namespace) -> int:
+    """Fetch the default remote, ask it for its HEAD, and record when."""
+    from . import repo as R
+    from . import sync
+    from .git import options
+
+    options.verbose = args.verbose
+    if args.explain:
+        return _explain()
+
+    names = R.remotes().lines
+    if not names:
+        if not args.quiet:
+            _err(render.note("no remote, so nothing to sync"))
+        return 0
+    remote = R.remote()
+    if not remote:
+        raise _Stop(
+            f"{_listed(names)} are all remotes, and nothing says which to sync.\n"
+            "Pick one with: git config checkout.defaultRemote <name>",
+            1,
+        )
+    for step in (R.fetch, R.set_head_auto):
+        done = step(remote)
+        if not done:
+            raise _Stop(
+                f"{render.ref(remote)} could not be synced:\n{done.err.strip()}", 1
+            )
+    sync.write(remote, sync.now())
+    if not args.quiet:
+        head = R.ref_name(R.symbolic_ref(f"refs/remotes/{remote}/HEAD").out.strip())
+        _err(render.note(f"synced {render.ref(remote)}; head is {render.ref(head)}"))
+    return 0
+
+
 def _was_now(was: tuple[str, str, str], now: tuple[str, str, str]) -> str:
     """Where HEAD stood before and stands after: branch, sha and a note."""
     return table(
@@ -1172,12 +1217,23 @@ def run_help(args: argparse.Namespace) -> int:
     # Which commands take the common flags is the table's answer, not a second
     # list here: a row with no flags takes none, and saying so in prose is how
     # a help text comes to promise a flag the program refuses.
+    common = ("--json", "-q", "-v", "--explain")
     bare = [c.binary or f"gw {name}" for name, c in command_rows() if c.flags is None]
     scope = f"every command but {names(bare)}" if bare else "every command"
-    flags = _listed([o(f, BOLD) for f in ("--json", "-q", "-v", "--explain")])
+    flags = _listed([o(f, BOLD) for f in common])
+    short = []
+    for name, c in command_rows():
+        if c.flags is not None:
+            p = argparse.ArgumentParser(add_help=False)
+            c.flags(p)
+            # argparse's own index of the flags a parser takes.
+            missing = [f for f in common if f not in p._option_string_actions]
+            if missing:
+                label = c.binary or f"gw {name}"
+                short.append(f"{names([label])} takes no {_listed(missing)}")
     print(
         f"{names(['gwbc', 'gwrot'])} start branches rather than worktrees."
-        f"\n\n{flags} work on {scope}, and\n"
+        f"\n\n{flags} work on {scope}" + "".join(f";\n{s}" for s in short) + ", and\n"
         f"`{o('gw <command> --help', BOLD)}` has the rest. A non-empty "
         f"{o('NO_COLOR', BOLD)} turns the colour off."
     )
@@ -1383,6 +1439,12 @@ _COMMANDS: dict[str, _Command] = {
         "the next branch in a series",
         "gwrot",
         aliases=("rot",),
+    ),
+    # No console script: gws is the status command's.
+    "sync": _Command(
+        run_sync,
+        _add_sync_flags,
+        "fetch the default remote and record when",
     ),
     "help": _Command(
         run_help,

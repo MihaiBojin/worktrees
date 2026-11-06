@@ -308,8 +308,9 @@ its lifetime. It is the one copy: the constant is `cli._FRESH`, and a change
 to it changes that table in the same commit.
 
 The fetch is most of what an assessment costs: about 1.1 s of a 1.9 s `gws`
-here, 750 ms of it the SSH handshake. `_should_fetch` decides for all eight
-commands that fetch. FETCH_HEAD is written per worktree, so
+here, 750 ms of it the SSH handshake. `_should_fetch` decides for the eight
+commands that fetch on the way to something else; `gw sync` fetches every
+time it runs, and is the only command that writes `git-worktrees-sync.json`. FETCH_HEAD is written per worktree, so
 `repo.fetched_at` reads every copy.
 
 Nothing keeps a forge answer between runs, so a branch git cannot settle

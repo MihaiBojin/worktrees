@@ -536,8 +536,8 @@ def test_every_command_is_installed_under_its_own_name() -> None:
     assert declared <= set(scripts)
     # The two that take a subcommand are the only ones with no row of their own.
     assert set(scripts) - declared == {"gw", "worktrees"}
-    # and version is the only row that installs nothing.
-    assert [n for n, c in cli.command_rows() if not c.binary] == ["version"]
+    # and sync and version are the rows that install nothing.
+    assert [n for n, c in cli.command_rows() if not c.binary] == ["sync", "version"]
 
 
 # --------------------------------------------------------------------------

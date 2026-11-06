@@ -507,6 +507,41 @@ head branch is the class this tooling refuses everywhere else. Commits the
 remote does not have are refused and listed, because they are a change of
 their own and `gwbc` puts them on a branch.
 
+## gw sync
+
+```console
+$ gw sync
+synced origin; head is origin/main
+```
+
+`gw sync` fetches the default remote, asks it which branch it serves with
+`git remote set-head <remote> --auto`, and records when both succeeded. The
+record is `git-worktrees-sync.json` in the git common directory, so every
+worktree of the repository reads the same one:
+
+```json
+{
+  "remote": {"name": "origin", "url": "github.com/org/repo"},
+  "refs": "2026-11-06T12:00:00Z",
+  "forge": null
+}
+```
+
+`refs` is the UTC time of the last success, and `forge` is null: sync does
+not ask the forge. The URL is written the way
+`gw` prints one elsewhere, without a user or token. A record naming another
+remote, or another URL for this one, counts as no sync at all.
+
+| | exit | the record |
+| --- | --- | --- |
+| fetched and set the head | 0 | replaced |
+| the fetch or `set-head` failed | 1 | untouched; git's reason is on stderr |
+| no remote | 0 | not written |
+| several remotes, no `checkout.defaultRemote` | 1 | untouched; the message lists them |
+
+It takes `-q`, `-v` and `--explain`, and no `--json`. It has no console
+script of its own.
+
 ## gwh
 
 ```console
@@ -521,6 +556,7 @@ gwl [QUERY]      gw list (l, ls)    pick a worktree and land you in it
 gwm NEW          gw move (m, mv)    rename this branch and move it
 gwr [QUERY]      gw remove (rm)     remove one whose branch is finished
 gwrot            gw rotate (rot)    the next branch in a series
+—                gw sync            fetch the default remote and record when
 gwh              gw help (h)        every command and alias, this list
 —                gw version (v)     the version this package installs
 gwbc NAME        gw branch create   branch off the head branch
@@ -542,7 +578,7 @@ cannot disagree, and it raises at import if two commands ever claim one name.
 `gw version`, or `gw v`, prints the version. No command takes a `--version`
 flag. Every command but that one and `gwh`, which
 print one thing each and have nothing to be quiet about, takes `--json`, `-q`,
-`-v` and `--explain`. Beyond those:
+`-v` and `--explain`, and `gw sync` takes all of them but `--json`. Beyond those:
 
 | | |
 | --- | --- |

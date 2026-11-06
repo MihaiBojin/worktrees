@@ -56,7 +56,7 @@ One CLI holds the behaviour. Everything else is a thin caller.
 | --- | --- | --- |
 | a person at a terminal | nine `gw`-prefixed names and `gw` itself, an arrow-key picker, colour, `cd` | to know a Python package is under it |
 | a shell | one path on stdout, `--complete` for candidates | to hold a candidate, a rank or a format string |
-| an agent | `--json` on every command but `gwh`, and refusals on stderr | to parse a table meant for a person |
+| an agent | `--json` on every command but `gwh`, `gw version` and `gw sync`, and refusals on stderr | to parse a table meant for a person |
 
 Four rules the CLI does not break:
 
@@ -77,6 +77,9 @@ Four rules the CLI does not break:
   `NO_COLOR` and `TERM`, and no `git config` key of this program's own. The
   one git key it reads, `checkout.defaultRemote`, is git's and answers a
   question git already asks: which remote this repository works against.
+  The one file it writes is `git-worktrees-sync.json` in the git common
+  directory: `gw sync` replaces it whole after a fetch, and it holds state,
+  not settings.
 
 ## 3. Decisions
 
