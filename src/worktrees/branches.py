@@ -81,7 +81,7 @@ def assess(
             row.verdict, row.why = "keep", CHECKED_OUT
         elif symbolic:
             row.verdict, row.why = "keep", "it is a symbolic branch ref"
-        elif not head_sha and name in ("main", "master"):
+        elif not head_sha and name in verdicts.PROTECTED:
             row.verdict, row.why = "keep", verdicts.MAIN_OR_MASTER
         elif not head_sha:
             row.error, row.why = True, no_head
@@ -99,9 +99,16 @@ def assess(
                 )
                 row.verdict, row.why = found.verdict, found.why
                 row.proof, row.request = found.proof, found.request
-                row.eligible = found.verdict == verdicts.REMOVE and not row.paths
-                if found.verdict == verdicts.REMOVE and row.paths:
-                    row.why = f"{found.why}; {CHECKED_OUT}"
+                block = (
+                    verdicts.MAIN_OR_MASTER
+                    if name in verdicts.PROTECTED
+                    else CHECKED_OUT
+                    if row.paths
+                    else ""
+                )
+                row.eligible = found.verdict == verdicts.REMOVE and not block
+                if found.verdict == verdicts.REMOVE and block:
+                    row.why = f"{found.why}; {block}"
             except GitError as exc:
                 row.error, row.why = True, exc.line()
     return rows
@@ -128,4 +135,4 @@ def delete(
     # update-ref does not enforce git branch's checked-out protection.
     if any(wt.branch == row.branch for wt in R.worktrees()):
         raise Refused(f"{row.branch} is checked out in a worktree")
-    prune.ref_delete(f"refs/heads/{row.branch}", row.sha)
+    prune.branch_delete(row.branch, row.sha, head_branch)

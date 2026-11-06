@@ -201,7 +201,7 @@ def test_main_and_master_are_kept_beside_a_dangling_head(world) -> None:
     rows = {
         v["branch"]: (v["verdict"], v["why"]) for v in json.loads(p.stdout)["verdicts"]
     }
-    assert rows["master"] == ("keep", "it is main or master")
+    assert rows["master"] == ("keep", "it is main or master, which nothing deletes")
 
 
 @pytest.mark.parametrize(("setup", "message"), UNRESOLVED)

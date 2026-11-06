@@ -271,12 +271,21 @@ delete it: the verdict is `remove` and no protection applies. `gwp` removes
 the eligible rows, the counts line counts them, and `--json` carries
 `eligible` on every row.
 
-A protection never changes the verdict. For a worktree they are the one you
-are standing in, a lock, uncommitted changes or untracked files, and ignored
-files without `--delete-ignored`. A `remove` row held back by one names the
-first that applies after the proof, as in `its tip is an ancestor of the head
-branch; it has uncommitted changes`. In `gwbs` the protection is being checked
-out in a worktree, since that branch goes with its worktree.
+A protection never changes the verdict. The first protection is the
+branch's name: no command
+deletes `main`, `master` or the head branch, whatever the flags, `--yes`
+included. That holds when the head is something else, so a finished `master`
+in a linked worktree reads `its tip is an ancestor of the head branch; it is
+main or master, which nothing deletes`, `gwp` leaves it, and `gwr --force`
+removes the checkout and keeps the branch. `gwbd main` refuses and names the
+rule.
+
+For a worktree the others are the one you are standing in, a lock,
+uncommitted changes or untracked files, and ignored files without
+`--delete-ignored`. A `remove` row held back by one names the first that
+applies after the proof, as in `its tip is an ancestor of the head branch; it
+has uncommitted changes`. In `gwbs` the other protection is being checked out
+in a worktree, since that branch goes with its worktree.
 
 ### Removing
 

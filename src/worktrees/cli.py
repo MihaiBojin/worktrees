@@ -384,7 +384,7 @@ def run_prune(args: argparse.Namespace) -> int:
     elif not head[0].resolves:
         _err(render.fail(head[0].problem()))
 
-    rows, stale, _, _, records = _assess(args, head)
+    rows, stale, _, head_branch, records = _assess(args, head)
     go = prune.removable(rows)
     errors = int(not head[0].resolves or any(v.error for v in rows))
     result = _assessment(args, rows, stale, records) if args.json else {}
@@ -413,7 +413,7 @@ def run_prune(args: argparse.Namespace) -> int:
         _err(render.note("nothing removed"))
         return errors
 
-    failed = prune.sweep(go, _err)
+    failed = prune.sweep(go, head_branch, _err)
     if args.json:
         result |= {"removed": [v.label for v in go], "failed": failed}
         print(json.dumps(result, indent=2))
@@ -1022,6 +1022,7 @@ def run_remove(args: argparse.Namespace) -> int:
         prune.Verdict(chosen.verdict, "", chosen.path, chosen.why)
         if keep_branch
         else chosen,
+        head[1],
         _err,
     )
     if not args.quiet and not args.json:

@@ -14,7 +14,7 @@ from . import layout, render
 from . import repo as R
 from .git import GitError, Refused, git
 from .new_branch import Refusal, check_ref_format, head
-from .prune import _prune_empty_parents, ref_delete, worktree_remove
+from .prune import _prune_empty_parents, branch_delete, worktree_remove
 from .verdicts import REMOVE, Verdict, assess
 
 
@@ -174,6 +174,7 @@ def move(
 
 def remove(
     chosen: Verdict,
+    head_branch: str,
     say: object,
     repo: str | os.PathLike[str] | None = None,
 ) -> str:
@@ -199,7 +200,7 @@ def remove(
     _prune_empty_parents(Path(chosen.path).parent, main)
     if chosen.branch:
         try:
-            ref_delete(f"refs/heads/{chosen.branch}", chosen.sha, repo=main)
+            branch_delete(chosen.branch, chosen.sha, head_branch, repo=main)
         except (GitError, Refused) as exc:
             if callable(say):
                 say(render.fail(f"branch {render.branch(chosen.branch)} kept: {exc}"))

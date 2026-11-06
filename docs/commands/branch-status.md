@@ -25,7 +25,9 @@ branch is `unknown`.
 `gwp` judges the branch of each worktree with these same checks, so a
 worktree and a loose branch at the same commit read the same verdict.
 
-A row is eligible when its verdict is `remove` and it is not checked out.
+A row is eligible when its verdict is `remove`, it is not checked out, and it
+is not `main` or `master`. A finished `main` reads `its tip is an ancestor of
+the head branch; it is main or master, which nothing deletes`.
 `gwbd` deletes only eligible rows, and the summary counts them:
 `1 eligible, 2 kept, 0 unclear`.
 

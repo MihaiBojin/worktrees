@@ -28,7 +28,12 @@ prompt deletes nothing.
 ## Confirmation and protection
 
 `--yes` skips deletion confirmation. It does not choose branches or override
-a verdict. Without a terminal, supply names or `--all`, and `--yes` to delete.
+a verdict.
+
+`main`, `master` and the head branch are never deleted, with any flag.
+`gwbd main` exits 3 and says `main kept: ...; it is main or master, which
+nothing deletes`, and `--all` passes over them. The step that deletes a ref
+refuses these names too, whatever the assessment said. Without a terminal, supply names or `--all`, and `--yes` to delete.
 `--dry-run` needs neither a terminal nor confirmation.
 
 In a repository whose default remote has no [`gw sync`](../../README.md#gw-sync)

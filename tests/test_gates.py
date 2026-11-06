@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -293,6 +294,153 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
     assert v[0].label == "(detached)"
     assert v[0].verdict == verdicts.REMOVE
     assert v[0].why == "its commit is reached by a ref"
+
+
+# --------------------------------------------------------------------------
+# Gate 3: main and master survive whatever the head branch is
+# --------------------------------------------------------------------------
+
+RULE = verdicts.MAIN_OR_MASTER
+
+
+def trunk_head(world) -> None:
+    """A synced remote whose HEAD is trunk, so main and master are not it."""
+    from test_sync import sync
+
+    world.git("branch", "--move", "main", "trunk")
+    origin = world.root / "origin.git"
+    world.git("init", "--quiet", "--bare", "-b", "trunk", str(origin))
+    world.git("remote", "add", "origin", str(origin))
+    world.git("push", "--quiet", "origin", "trunk")
+    p = sync(world)
+    assert p.returncode == 0, p.stderr
+
+
+@pytest.mark.parametrize("name", ["main", "master"])
+def test_a_finished_main_or_master_worktree_is_not_eligible(world, name) -> None:
+    from test_cli import run
+
+    trunk_head(world)
+    path = world.worktree(name, base="trunk")
+    sha = world.git("rev-parse", f"refs/heads/{name}")
+
+    p = run(world, "gwp", "--json")
+    row = next(v for v in json.loads(p.stdout)["verdicts"] if v["branch"] == name)
+    assert row["verdict"] == "remove"
+    assert row["eligible"] is False
+    assert row["why"].endswith(f"; {RULE}")
+
+    p = run(world, "gwp", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert path.exists()
+    assert world.git("rev-parse", f"refs/heads/{name}") == sha
+
+
+def test_rule_1_comes_before_ignored_files(world) -> None:
+    """Otherwise gwr's consent to ignored files would make master eligible."""
+    trunk_head(world)
+    path = world.worktree("master", base="trunk")
+    (path / ".gitignore").write_text("build/\n")
+    world.git("add", ".gitignore", at=path)
+    world.git("commit", "--quiet", "-m", "ignore", at=path)
+    world.git("checkout", "--quiet", "--detach", at=world.repo)
+    world.git("merge", "--quiet", "--ff-only", "master", at=world.repo)
+    world.git("push", "--quiet", "origin", "HEAD:trunk")
+    world.git("update-ref", "refs/remotes/origin/trunk", "master")
+    (path / "build").mkdir()
+    (path / "build" / "out").write_text("x")
+    head = "refs/remotes/origin/trunk"
+    row = {v.branch: v for v in verdicts.assess(R.worktrees(), head, "trunk", False)}
+    assert row["master"].verdict == verdicts.REMOVE
+    assert row["master"].ignored == 0
+    assert row["master"].why.endswith(f"; {RULE}")
+
+
+@pytest.mark.parametrize("name", ["main", "master"])
+def test_gwr_keeps_main_or_master(world, name) -> None:
+    from test_cli import run
+
+    trunk_head(world)
+    path = world.worktree(name, base="trunk")
+    sha = world.git("rev-parse", f"refs/heads/{name}")
+
+    p = run(world, "gwr", name, "--yes")
+    assert p.returncode == 1
+    assert RULE in p.stderr
+    assert path.exists()
+
+    p = run(world, "gwr", name, "--yes", "--force")
+    assert p.returncode == 0, p.stderr
+    assert not path.exists()
+    assert world.git("rev-parse", f"refs/heads/{name}") == sha
+
+
+@pytest.mark.parametrize("name", ["main", "master"])
+@pytest.mark.parametrize("finished", [True, False], ids=["finished", "unfinished"])
+@pytest.mark.parametrize("argv", [(), ("--yes",)], ids=["asked", "yes"])
+def test_gwbd_refuses_main_or_master_by_name(world, name, finished, argv) -> None:
+    from test_cli import run
+
+    trunk_head(world)
+    world.git("branch", name, "trunk")
+    if not finished:
+        world.git("checkout", "--quiet", name)
+        world.commit("more.txt")
+        world.git("checkout", "--quiet", "trunk")
+    sha = world.git("rev-parse", f"refs/heads/{name}")
+
+    p = run(world, "gwbd", name, *argv)
+    assert p.returncode == 3, p.stderr
+    assert RULE in p.stderr
+    assert world.git("rev-parse", f"refs/heads/{name}") == sha
+
+
+def test_gwbd_all_keeps_main_and_master(world) -> None:
+    from test_cli import run
+
+    trunk_head(world)
+    for name in ("main", "master", "done"):
+        world.git("branch", name, "trunk")
+
+    p = run(world, "gwbd", "--all", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert world.git("branch", "--list", "--format=%(refname:short)").split() == [
+        "main",
+        "master",
+        "trunk",
+    ]
+
+
+def test_a_sweep_given_master_keeps_the_branch(world) -> None:
+    """A row that wrongly says master is eligible removes only the worktree."""
+    world.git("branch", "--move", "main", "trunk")
+    path = world.worktree("master", base="trunk")
+    sha = world.git("rev-parse", "refs/heads/master")
+    row = verdicts.Verdict(
+        verdicts.REMOVE, "master", str(path), "", sha=sha, eligible=True
+    )
+    said: list[str] = []
+    assert prune.sweep([row], "trunk", said.append, repo=world.repo) == 0
+    assert not path.exists()
+    assert world.git("rev-parse", "refs/heads/master") == sha
+    assert RULE in said[0]
+
+
+@pytest.mark.parametrize(
+    ("name", "why"),
+    [("main", RULE), ("master", RULE), ("trunk", verdicts.HEAD_BRANCH)],
+)
+def test_the_branch_delete_itself_refuses(world, name, why) -> None:
+    """Below every verdict: nothing reaches update-ref for these names."""
+    world.git("branch", "--move", "main", "trunk")
+    world.git("checkout", "--quiet", "--detach")
+    for other in ("main", "master"):
+        world.git("branch", other, "trunk")
+    sha = world.git("rev-parse", f"refs/heads/{name}")
+    with pytest.raises(Refused) as caught:
+        prune.branch_delete(name, sha, "trunk", repo=world.repo)
+    assert str(caught.value) == why
+    assert world.git("rev-parse", f"refs/heads/{name}") == sha
 
 
 # --------------------------------------------------------------------------
