@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -13,6 +14,7 @@ from pathlib import Path
 
 import pytest
 from conftest import env_for
+from test_branches import cli
 
 NAME = "git-worktrees-sync.json"
 
@@ -461,3 +463,88 @@ def test_a_malformed_answer_records_no_evidence(world, payload) -> None:
     assert p.returncode == 1
     assert "the forge did not answer for feature" in p.stderr
     assert "feature" not in record(world)["evidence"]
+
+
+# --------------------------------------------------------------------------
+# only gw sync reaches the remote
+# --------------------------------------------------------------------------
+
+
+def _logging_git(world) -> tuple[dict[str, str], Path]:
+    """An env whose `git` writes its argv down and runs the real one."""
+    log = world.root / "git-calls"
+    bin_dir = world.root / "logging-bin"
+    bin_dir.mkdir()
+    exe = bin_dir / "git"
+    exe.write_text(f'#!/bin/sh\necho "$*" >> {log}\nexec {shutil.which("git")} "$@"\n')
+    exe.chmod(0o755)
+    env = env_for(world)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    return env, log
+
+
+def _network_calls(log: Path) -> list[str]:
+    calls = log.read_text().splitlines() if log.exists() else []
+    return [c for c in calls if "fetch" in c.split() or "remote set-head" in c]
+
+
+@pytest.mark.parametrize(
+    ("entry", "args"),
+    [
+        ("gws", ()),
+        ("gwp", ("--yes",)),
+        ("gwr", ("feature", "--yes")),
+        ("gwbs", ()),
+        ("gwbd", ("feature", "--dry-run")),
+        ("gwa", ("fresh",)),
+        ("gwbc", ("fresh",)),
+        ("gwrot", ()),
+        ("gw", ("list", "--list")),
+    ],
+)
+def test_only_sync_fetches_or_sets_head(world, entry, args) -> None:
+    """A remote with a branch, no origin/HEAD and no FETCH_HEAD: the state
+    in which a command that fetched on its way would fetch."""
+    bare(world)
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+    world.worktree("feature")
+    env, log = _logging_git(world)
+    p = cli(world, *args, entry=entry, env=env)
+    assert p.returncode in (0, 1, 3), p.stderr
+    assert log.exists()
+    assert _network_calls(log) == []
+
+
+def test_sync_fetches_and_sets_head(world) -> None:
+    """The control for the test above: the same remote, the same git."""
+    bare(world)
+    env, log = _logging_git(world)
+    p = cli(world, "sync", env=env)
+    assert p.returncode == 0, p.stderr
+    assert _network_calls(log) == [
+        "fetch --prune origin",
+        "remote set-head origin --auto",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("entry", "flag"),
+    [
+        *(
+            (entry, flag)
+            for entry in ("gws", "gwp", "gwr", "gwbs", "gwbd", "gwa", "gwbc", "gwrot")
+            for flag in ("--no-fetch", "--force-refresh")
+        ),
+        ("gws", "-f"),
+        ("gwbs", "-f"),
+        ("gwrot", "-f"),
+    ],
+)
+def test_no_command_takes_a_fetch_flag(world, entry, flag) -> None:
+    p = (
+        cli(world, "x", flag, entry=entry)
+        if entry in ("gwa", "gwbc")
+        else cli(world, flag, entry=entry)
+    )
+    assert p.returncode == 2
+    assert f"unrecognized arguments: {flag}" in p.stderr

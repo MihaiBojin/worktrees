@@ -37,7 +37,7 @@ def local_branch(world, name="feature", path="feature", body="branch\n") -> str:
 
 
 def status(world, *names) -> dict:
-    p = cli(world, "branch", "status", *names, "--no-fetch", "--json")
+    p = cli(world, "branch", "status", *names, "--json")
     assert p.returncode == 0, p.stderr
     return json.loads(p.stdout)
 
@@ -49,7 +49,7 @@ def test_reimported_content_is_removable_without_a_worktree_or_upstream(world):
     world.git("add", "feature")
     world.git("commit", "--amend", "--no-edit", "--quiet")
     assert world.git("cherry", "main", "feature").startswith("+")
-    old = cli(world, "status", "--branch", "feature", "--no-fetch", "--json")
+    old = cli(world, "status", "--branch", "feature", "--json")
     assert json.loads(old.stdout)["verdicts"] == []
     rows = status(world, "feature")["verdicts"]
     assert len(rows) == 1
@@ -67,7 +67,7 @@ def reimport(world) -> None:
 
 
 def worktree_status(world) -> dict:
-    p = cli(world, "status", "--no-fetch", "--json")
+    p = cli(world, "status", "--json")
     assert p.returncode == 0, p.stderr
     return {r["branch"]: r for r in json.loads(p.stdout)["verdicts"]}
 
@@ -142,7 +142,7 @@ def unmerged_worktree(world) -> Path:
 def test_a_git_failure_in_a_worktree_is_an_error(world, subcommand):
     unmerged_worktree(world)
     env = failing_git(world, subcommand)
-    p = cli(world, "status", "--no-fetch", "--json", env=env)
+    p = cli(world, "status", "--json", env=env)
     assert p.returncode == 1, p.stderr
     row = {r["branch"]: r for r in json.loads(p.stdout)["verdicts"]}["feature"]
     assert row["verdict"] == "unknown"
@@ -153,7 +153,6 @@ def test_gwp_reports_a_git_failure_and_removes_nothing_it_could_not_judge(world)
     wt = unmerged_worktree(world)
     p = cli(
         world,
-        "--no-fetch",
         "--yes",
         entry="gwp",
         env=failing_git(world, "cherry"),
@@ -168,7 +167,6 @@ def test_gwr_refuses_a_worktree_it_could_not_judge(world):
     p = cli(
         world,
         "feature",
-        "--no-fetch",
         "--yes",
         "--force",
         entry="gwr",
@@ -182,7 +180,7 @@ def test_gwr_refuses_a_worktree_it_could_not_judge(world):
 def test_a_git_failure_in_a_branch_is_an_error(world):
     local_branch(world)
     env = failing_git(world, "cherry")
-    p = cli(world, "branch", "status", "--no-fetch", "--json", env=env)
+    p = cli(world, "branch", "status", "--json", env=env)
     assert p.returncode == 1, p.stderr
     row = json.loads(p.stdout)["verdicts"][0]
     assert (row["verdict"], row["error"]) == ("unknown", True)
@@ -203,7 +201,7 @@ def test_branch_status_lists_checked_out_branches_as_kept(world):
 @pytest.mark.parametrize("entry", ["gwbs", "gwbd"])
 def test_console_aliases_work(world, entry):
     world.git("branch", "done")
-    args = ["done", "--no-fetch", "--json"]
+    args = ["done", "--json"]
     if entry == "gwbd":
         args += ["--dry-run"]
     p = cli(world, *args, entry=entry)
@@ -229,7 +227,6 @@ def test_unknown_name_prevents_any_deletion(world):
         "done",
         "missing",
         "--yes",
-        "--no-fetch",
     )
     assert p.returncode == 2
     assert world.git("rev-parse", "refs/heads/done")
@@ -239,7 +236,7 @@ def test_unknown_name_prevents_any_deletion(world):
 def test_delete_prints_an_executable_undo_command(world, name):
     world.git("branch", name)
     sha = world.git("rev-parse", f"refs/heads/{name}")
-    p = cli(world, "branch", "delete", name, "--yes", "--no-fetch", "--json")
+    p = cli(world, "branch", "delete", name, "--yes", "--json")
     assert p.returncode == 0, p.stderr
     result = json.loads(p.stdout)
     assert result["removed"] == [name]
@@ -254,14 +251,14 @@ def test_delete_prints_an_executable_undo_command(world, name):
 @pytest.mark.parametrize("args", [("--dry-run",), ()])
 def test_a_pipe_cannot_delete_without_yes(world, args):
     world.git("branch", "done")
-    p = cli(world, "branch", "delete", "done", *args, "--no-fetch")
+    p = cli(world, "branch", "delete", "done", *args)
     assert p.returncode == (0 if args else 3), p.stderr
     assert world.git("rev-parse", "refs/heads/done")
 
 
 def test_no_arguments_requires_a_selector_even_with_yes(world):
     world.git("branch", "done")
-    p = cli(world, "branch", "delete", "--yes", "--no-fetch")
+    p = cli(world, "branch", "delete", "--yes")
     assert p.returncode == 3
     assert "terminal" in p.stderr
     assert world.git("rev-parse", "refs/heads/done")
@@ -275,7 +272,6 @@ def test_unmerged_branch_is_not_deleted(world):
         "delete",
         "feature",
         "--yes",
-        "--no-fetch",
         "--json",
     )
     assert p.returncode == 3, p.stderr
@@ -327,7 +323,7 @@ def test_selector_requires_a_selection_then_confirmation(world, answer):
 
     world.git("branch", "one")
     world.git("branch", "two")
-    code, out = run_on_a_terminal(world, "gwbd", "--no-fetch", answer=answer)
+    code, out = run_on_a_terminal(world, "gwbd", answer=answer)
     assert code == (3 if answer == "9\n" else 0), out
     names = world.git(
         "for-each-ref", "--format=%(refname:short)", "refs/heads"
@@ -345,7 +341,6 @@ def test_all_deletes_only_proven_branches(world):
         "delete",
         "--all",
         "--yes",
-        "--no-fetch",
         "--json",
     )
     assert p.returncode == 0, p.stderr
@@ -393,7 +388,6 @@ def test_long_name_and_branch_help(world):
         "branch",
         "status",
         "main",
-        "--no-fetch",
         "--json",
         entry="main",
     )
@@ -436,7 +430,7 @@ def test_json_reports_only_successful_deletions(world, monkeypatch, capsys):
         return original(ref, sha, **kwargs)
 
     monkeypatch.setattr(prune, "ref_delete", fail_one)
-    code = C.gwbd(["one", "two", "--yes", "--json", "--no-fetch"])
+    code = C.gwbd(["one", "two", "--yes", "--json"])
     out = capsys.readouterr()
     assert code == 1
     result = json.loads(out.out)
@@ -447,7 +441,7 @@ def test_json_reports_only_successful_deletions(world, monkeypatch, capsys):
 
 def test_successful_deletion_is_reported_to_a_person(world):
     world.git("branch", "done")
-    p = cli(world, "branch", "delete", "done", "--yes", "--no-fetch")
+    p = cli(world, "branch", "delete", "done", "--yes")
     assert p.returncode == 0, p.stderr
     assert "deleted 1 branch: done" in p.stdout
 
@@ -457,7 +451,7 @@ def test_the_selector_and_the_plan_name_each_verdict(world):
     from test_cli import run_on_a_terminal
 
     world.git("branch", "done")
-    code, out = run_on_a_terminal(world, "gwbd", "--no-fetch", answer="1\nn\n")
+    code, out = run_on_a_terminal(world, "gwbd", answer="1\nn\n")
     assert code == 0, out
     rows = {
         ln.split()[2]: ln.split()[1]

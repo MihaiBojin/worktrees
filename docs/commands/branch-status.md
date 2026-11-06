@@ -7,7 +7,7 @@ An unknown name stops the command with exit 2.
 
 ```console
 gwbs
-gwbs feature old-fix --no-fetch
+gwbs feature old-fix
 worktrees branch status --json
 ```
 
@@ -98,14 +98,13 @@ deletion.
 
 | Flag | Behaviour |
 | --- | --- |
-| `--no-fetch` | Use existing refs. |
 | `--json` | Print structured evidence on stdout. Diagnostics use stderr. |
 | `-q`, `--quiet` | Omit the summary. |
 | `-v`, `--verbose` | Print executed commands on stderr. |
 | `--explain` | Print the declared git commands and safety rules, then exit. |
 
-A run fetches the default remote's refs unless `--no-fetch` is given. A failed
-fetch reports the failure and judges from the refs already here.
+A run reaches no remote. It judges from the remote-tracking refs as the last
+`gw sync` or clone left them.
 
 JSON contains `head`, `head_sha`, and `verdicts`. Each verdict has `branch`,
 `sha`, `verdict`, `why`, `proof`, `paths`, `request`, `error`, and `undo`.

@@ -20,16 +20,10 @@ def status_flags(p: argparse.ArgumentParser) -> None:
         help="exact local branch names; all when omitted",
     )
     _assessment_flags(p)
-    add_status_flags(p, "the same as --force-refresh")
+    add_status_flags(p)
 
 
 def _assessment_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
-    p.add_argument(
-        "--force-refresh",
-        action="store_true",
-        help="fetch even when the last fetch is under 10 minutes old",
-    )
     p.add_argument("--json", action="store_true", help="verdicts and evidence as data")
     p.add_argument("-q", "--quiet", action="store_true", help="omit the summary")
     p.add_argument("-v", "--verbose", action="store_true", help="print every command")

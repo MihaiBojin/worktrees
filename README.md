@@ -20,8 +20,8 @@ a shell function of the same name.
 | `gwm NEW` | rename this worktree's branch and move the checkout to match |
 | `gwr [QUERY]` | remove a worktree whose branch is finished, and the branch |
 | `gwr! [QUERY]` | `gwr --delete-ignored`, a shell function in fish and zsh |
-| `gwp!` | `gwp --force-refresh --delete-ignored --yes`, a shell function in fish and zsh |
-| `gwbc NAME` | fetch, then branch `NAME` off the head branch and check it out |
+| `gwp!` | `gwp --delete-ignored --yes`, a shell function in fish and zsh |
+| `gwbc NAME` | branch `NAME` off the head branch and check it out |
 | `gwrot` | start the next branch after this one, or catch the head branch up |
 
 `gw` takes the same commands as subcommands, each with shorthands, so `gws`,
@@ -468,14 +468,13 @@ $ gwbc fix-parser
 fix-parser from origin/main at 4a91c02
 ```
 
-The base is `<remote>/<head>` as it stands after the fetch, not the local copy
-of it, so the branch starts on top of what the server has and nothing has to be
-rebased afterwards. It travels as a full ref, because git resolves a bare name
+The base is `<remote>/<head>` as the last `gw sync` or clone left it, not the
+local copy of it, so the branch starts on top of what the server had then. Run
+`gw sync` first for what it has now. It travels as a full ref, because git resolves a bare name
 as a tag first and a repository holding a tag called `origin/main` would branch
 from the tag. `--no-track`, so the head branch does not become the new branch's
-upstream and `git push` does not target it. A failed fetch is not fatal: an
-offline machine still gets a branch, off whatever it last saw, and the line at
-the end names the commit it got.
+upstream and `git push` does not target it. The line at the end names the
+commit it got.
 
 `gwrot` takes no argument. The name comes from the branch you are standing on,
 with any suffix a previous rotation added already stripped, so four rotations
@@ -635,48 +634,38 @@ takes all of them but `--json`. Beyond those:
 
 | | |
 | --- | --- |
-| `gws` | `--branch NAME`, `--no-fetch`, `-f`/`--force-refresh`, `--delete-ignored`, `--only VERDICT` |
-| `gwp` | `--branch NAME`, `--no-fetch`, `--force-refresh`, `--delete-ignored`, and `-y` |
-| `gwr` | `-f`, `--delete-ignored`, `--no-fetch`, `--force-refresh`, `-y` |
-| `gwa`, `gwbc` | `--no-fetch`, `--force-refresh` |
-| `gwrot` | `--no-fetch`, `-f`/`--force-refresh` |
-| `gwbs` | `--no-fetch`, `-f`/`--force-refresh`, `--only VERDICT` |
-| `gwbd` | `--no-fetch`, `--force-refresh`, `--all`, `--dry-run` and `-y` |
+| `gws` | `--branch NAME`, `--delete-ignored`, `--only VERDICT` |
+| `gwp` | `--branch NAME`, `--delete-ignored`, and `-y` |
+| `gwr` | `-f`, `--delete-ignored`, `-y` |
+| `gwbs` | `--only VERDICT` |
+| `gwbd` | `--all`, `--dry-run` and `-y` |
 | `gw`, `gw list` | `-l` |
-| `gwm` | none |
+| `gwa`, `gwbc`, `gwrot`, `gwm` | none |
 
 `--only` takes `remove`, `keep` or `unknown` and can be given more than
 once. It narrows the table and `--json`; the counts under the table still
-cover every row. `-f` is on the two status commands only, since on `gwp` and
-`gwbd` it would read as forcing a removal.
+cover every row.
 
 `gw <command> --help` prints one command's own list.
 
-While `gws`, `gwp`, `gwr`, `gwbs` and `gwbd` fetch and judge, a spinner on
+While `gws`, `gwp`, `gwr`, `gwbs` and `gwbd` judge, a spinner on
 stderr names the branch and the check in progress. `gwbs` and `gwbd` judge one
 branch at a time, so their line also counts how far through the list they are:
 `fix-parser: was it squash-merged into main? (4 of 18)`.
 
-### What is reused, and for how long
+### What reaches the network
 
-A fetch is most of what a run costs, so a recent one is reused.
-`--force-refresh` fetches whatever its age, and `--no-fetch` never fetches.
-
-| what | when | reused for |
-| --- | --- | --- |
-| a fetch, by `gws`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwbc`, `gwrot` | from any worktree of the repository | 10 minutes; the command says how old it is |
-| a request on the forge | any state, or no request at all | until the next `gw sync`, and only for the tip it was recorded at |
+Only `gw sync` runs `git fetch`, `git remote set-head`, `gh` or `glab`. Every
+other command reads what the last sync left: the remote-tracking refs, and the
+forge's answer for each branch tip, which holds until the next sync and only
+for the tip it was recorded at.
 
 Every command works against one remote, the default remote:
 `checkout.defaultRemote` when it names a remote, otherwise the only remote. A
 repository with several remotes and no `checkout.defaultRemote` has none, and
-is treated like a repository with no remote at all: nothing is fetched, no
-forge evidence is read, and the head branch comes from the local `main`,
+is treated like a repository with no remote at all: no forge evidence is
+read, and the head branch comes from the local `main`,
 `master` or `trunk`. `git config checkout.defaultRemote origin` picks one.
-
-A remote that cannot be reached is not fatal anywhere. The fetch fails, the
-command says so on stderr, and it answers from the refs already here, which is
-where `--no-fetch` sends it on request.
 
 Data goes to stdout and diagnostics to stderr, the prompt included, so `--json`
 is parseable in every mode. Colour is decided per stream and only for a

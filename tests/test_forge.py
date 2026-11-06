@@ -11,9 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -43,7 +40,7 @@ def forge_worktree(world) -> Path:
 
 
 def gws(world, *args: str) -> dict:
-    p = cli(world, "status", "--no-fetch", "--json", *args)
+    p = cli(world, "status", "--json", *args)
     assert p.returncode == 0, p.stderr
     return {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
 
@@ -92,7 +89,7 @@ def test_a_merged_request_keeps_worktree_protections(world, protection) -> None:
 def test_prune_removes_a_worktree_the_sync_proved(world) -> None:
     wt = forge_worktree(world)
     synced(world, merged(world))
-    p = cli(world, "--no-fetch", "--yes", entry="gwp")
+    p = cli(world, "--yes", entry="gwp")
     assert p.returncode == 0, p.stderr
     assert not wt.exists()
     assert not R.ref_exists("refs/heads/feature")
@@ -102,7 +99,7 @@ def test_prune_removes_a_worktree_the_sync_proved(world) -> None:
 def test_gwr_removes_a_worktree_the_sync_proved(world) -> None:
     wt = forge_worktree(world)
     synced(world, merged(world))
-    p = cli(world, "feature", "--no-fetch", "--yes", entry="gwr")
+    p = cli(world, "feature", "--yes", entry="gwr")
     assert p.returncode == 0, p.stderr
     assert not wt.exists()
     assert not R.ref_exists("refs/heads/feature")
@@ -241,92 +238,3 @@ def test_the_rest_of_the_environment_reaches_the_forge(tmp_path, monkeypatch) ->
 
     assert forge.query(["gh", "pr", "list"]) == []
     assert seen.read_text() == "kept"
-
-
-# --------------------------------------------------------------------------
-# a fetch under 10 minutes old is used as it stands
-# --------------------------------------------------------------------------
-
-
-def _with_origin(world) -> None:
-    bare = world.root / "origin.git"
-    subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
-    world.git("remote", "add", "origin", str(bare))
-    world.git("push", "--quiet", "origin", "main")
-
-
-def _gws_args(world, *args: str):
-    return subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import gws; raise SystemExit(gws())",
-            *args,
-        ],
-        cwd=str(world.repo),
-        capture_output=True,
-        text=True,
-        env=env_for(world),
-    )
-
-
-def test_a_recent_fetch_is_not_repeated(world) -> None:
-    _with_origin(world)
-    first = _gws_args(world)
-    assert first.returncode == 0, first.stderr
-    assert "fetched" not in first.stderr
-
-    second = _gws_args(world, "-v")
-    assert second.returncode == 0, second.stderr
-    assert "fetched 0 min ago; using those refs" in second.stderr
-    assert "+ git fetch" not in second.stderr
-
-
-def test_a_reused_fetch_says_so_once(world) -> None:
-    """Not also the --no-fetch warning, for a flag nobody passed."""
-    _with_origin(world)
-    _gws_args(world)
-    p = _gws_args(world)
-    assert p.returncode == 0, p.stderr
-    assert "fetched 0 min ago; using those refs" in p.stderr
-    assert "--no-fetch" not in p.stderr
-
-
-def test_force_refresh_fetches_whatever_the_age(world) -> None:
-    _with_origin(world)
-    _gws_args(world)
-    p = _gws_args(world, "--force-refresh", "-v")
-    assert p.returncode == 0, p.stderr
-    assert "+ git fetch --prune origin" in p.stderr
-
-
-def test_a_fetch_over_10_minutes_old_is_repeated(world) -> None:
-    _with_origin(world)
-    _gws_args(world)
-    head = Path(world.git("rev-parse", "--git-path", "FETCH_HEAD").strip())
-    head = head if head.is_absolute() else world.repo / head
-    old = time.time() - 11 * 60
-    os.utime(head, (old, old))
-    p = _gws_args(world, "-v")
-    assert "+ git fetch --prune origin" in p.stderr
-
-
-def test_gwa_reuses_a_fetch_another_command_made(world) -> None:
-    _with_origin(world)
-    _gws_args(world)
-    p = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import gwa; raise SystemExit(gwa())",
-            "fresh",
-            "-v",
-        ],
-        cwd=str(world.repo),
-        capture_output=True,
-        text=True,
-        env=env_for(world),
-    )
-    assert p.returncode == 0, p.stderr
-    assert "fetched 0 min ago; using those refs" in p.stderr
-    assert "+ git fetch" not in p.stderr

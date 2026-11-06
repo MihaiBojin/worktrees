@@ -4,9 +4,6 @@
 
 _arguments -s \
     '--branch[consider only that branch]:branch:' \
-    '--no-fetch[use the refs already here]' \
-    '--force-refresh[fetch even when the last fetch is under 10 minutes old]' \
-    '-f[the same as --force-refresh]' \
     '*--only[show only rows with this verdict]:verdict:(remove keep unknown)' \
     '--delete-ignored[count gitignored files as removable]' \
     '--json[verdicts as data]' \

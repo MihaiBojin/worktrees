@@ -96,7 +96,7 @@ def forge_world(world):
 
 
 def assess(world) -> dict:
-    p = cli(world, "branch", "status", "feature", "--no-fetch", "--json")
+    p = cli(world, "branch", "status", "feature", "--json")
     assert p.returncode == 0, p.stderr
     return json.loads(p.stdout)["verdicts"][0]
 
@@ -227,7 +227,7 @@ def test_a_rejected_request_does_not_block_content_proof(forge_world):
 def test_delete_removes_a_branch_the_sync_proved(forge_world):
     world = forge_world
     synced(world, merged(world))
-    p = cli(world, "branch", "delete", "feature", "--yes", "--no-fetch", "--json")
+    p = cli(world, "branch", "delete", "feature", "--yes", "--json")
     assert p.returncode == 0, p.stderr
     assert json.loads(p.stdout)["removed"] == ["feature"]
 
@@ -235,7 +235,7 @@ def test_delete_removes_a_branch_the_sync_proved(forge_world):
 def test_delete_keeps_a_branch_the_sync_did_not_prove(forge_world):
     world = forge_world
     synced(world, merged(world, same_repository=False))
-    p = cli(world, "branch", "delete", "feature", "--yes", "--no-fetch", "--json")
+    p = cli(world, "branch", "delete", "feature", "--yes", "--json")
     assert p.returncode == 3, p.stderr
     assert json.loads(p.stdout)["removed"] == []
     assert world.git("rev-parse", "feature")

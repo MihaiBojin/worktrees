@@ -1,8 +1,7 @@
-"""Start a branch off a head branch that was fetched a moment ago.
+"""Start a branch off the head branch.
 
-The base is <remote>/<head> as it stands after the fetch, not the local copy
-of it, so the branch is already on top of what the server has and nothing has
-to be rebased afterwards.
+The base is <remote>/<head> as the last `gw sync` or clone left it, not the
+local copy of it, so the branch starts on top of what the server had then.
 """
 
 from __future__ import annotations
@@ -53,11 +52,10 @@ class Refusal(Exception):
 
 def create(
     name: str,
-    fetch: bool,
     warn: object = None,
     repo: str | os.PathLike[str] | None = None,
 ) -> Started:
-    """Fetch, then branch `name` off the head branch and check it out."""
+    """Branch `name` off the head branch and check it out."""
     if not check_ref_format(name, repo=repo):
         raise Refusal(f"{render.branch(name)} is not a valid branch name")
     if R.ref_exists(f"refs/heads/{name}", repo=repo):
@@ -69,20 +67,7 @@ def create(
         )
 
     remote = R.remote(repo=repo)
-    online = fetch
-    if fetch and remote and not R.fetch(remote, repo=repo):
-        # An offline machine still gets a branch, off whatever it last saw,
-        # and the line at the end names the commit it got. It is also offline
-        # for the head-branch ladder, which would otherwise spend a second
-        # round trip proving the same thing.
-        online = False
-        if callable(warn):
-            warn(
-                f"{render.ref(remote)} could not be fetched; branching from what "
-                "is already here"
-            )
-
-    base, warning = R.head_ref(remote, online=online, repo=repo)
+    base, warning = R.head_ref(remote, repo=repo)
     if warning and callable(warn):
         warn(warning)
     if not base:

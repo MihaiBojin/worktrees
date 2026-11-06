@@ -110,7 +110,8 @@ Flags and commands.
 | `gwp` with nothing removable prints the verdict table | the reason each worktree stayed is the answer to the question, and naming another command puts it one round trip away | `cli.run_prune` |
 | One row per command carries its function, flags, description, aliases, and directory behaviour | help and dispatch read the same rows | `cli._COMMANDS`, `cli._BRANCH_COMMANDS`, and `cli.command_rows()` |
 | The head-branch ladder tries `refs/remotes/<remote>/<b>` before `refs/heads/<b>` and returns a full ref | returning a bare name is what lets a tag named `origin/main` answer for the head branch | `repo.full_ref`, `repo.head_ref` |
-| `gwa` and `gwbc` fetch the whole remote with `--prune` rather than the base branch alone | base-only fetching forks a second divergent branch where the remote already had one, and the network cost is the round trip rather than the ref count | `repo.fetch` |
+| Only `gw sync` runs `git fetch` or `git remote set-head`; every other command reads `<remote>/<head>` as the last sync or clone left it | a command that reaches the network on its way to something else pays the round trip on every run, and its answer depends on whether the remote could be reached | `cli.run_sync`, `repo.fetch` |
+| `gw sync` fetches the whole remote with `--prune` rather than the head branch alone | base-only fetching forks a second divergent branch where the remote already had one, and the network cost is the round trip rather than the ref count | `repo.fetch` |
 | Branches this tool starts do not track the head branch | a branch off `refs/remotes/<remote>/main` that tracked it would take it as its upstream, and `git push` would target the head branch | `--no-track` on `worktree_add` and `switch_create` |
 
 Output and machine surface.
@@ -163,7 +164,7 @@ nobody re-derives the first.
 | "`gwl --list` is 58 ms against `origin gwl`'s 1.94 s" | not like-for-like then, and not a live comparison now. §7 has today's figures |
 | "The bats suite is the specification for the port" | there is no port and no bats suite. `tests/` is the specification, and it was written against this code |
 | `origin worktree path <branch>` | not built. `gw --list` and `gw --json` answer it |
-| `origin prune` is read-only until `--yes` | `gwp` runs `git worktree prune` and `git fetch --prune` before it assesses. Both mutate. `--yes` gates the checkout and the branch delete, and nothing else |
+| `origin prune` is read-only until `--yes` | `gwp` runs `git worktree prune` before it assesses, and that mutates. `--yes` gates the checkout and the branch delete, and nothing else |
 | "Every mutation stays serial" as a property of the program | true within one process and asserted nowhere across two. Nothing takes a cross-process lock |
 
 ## 4. What must not break
@@ -248,7 +249,7 @@ unmerged work" passes while it holds.
 | B3 | plus a branch named `origin/main` | held: `refs/remotes/origin/main` wins the ladder | none |
 | B4 | `git config git-worktree-plugin.headBranch origin/main` | gone. There is no such key | |
 | B5 | `headBranch` naming a ref that does not exist | gone with B4 | |
-| B6 | `origin/HEAD` unset, no remote-tracking refs, remote unreachable | held since #46: the fetch and the `set-head` behind it answer 128 rather than raising, and the command says so and judges from the refs already here | `test_a_failed_fetch_still_answers_status` |
+| B6 | `origin/HEAD` unset, no remote-tracking refs, remote unreachable | held: only `gw sync` reaches the remote, and it stops with git's reason; every other command judges from the refs already here | `test_an_unreachable_remote_still_answers_status` |
 | B7 | detached-HEAD worktree | held: named, and judged on whether a ref reaches its commit | `test_a_detached_worktree_is_named_not_mistaken` |
 
 B2 and B3 are why the head-branch ladder returns a full ref.
@@ -370,7 +371,7 @@ more than 3.13 and nothing is wrong.
 ### How many git calls, which is a count rather than a clock
 
 Counts travel between repositories where milliseconds do not. Over nine
-linked worktrees, `gws --no-fetch` issues 28:
+linked worktrees, `gws` issues 28:
 
 | | count |
 | --- | --- |

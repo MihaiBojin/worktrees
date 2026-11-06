@@ -83,11 +83,6 @@ def ref_exists(ref: str) -> None:
     """Does this exact ref exist?"""
 
 
-@git("for-each-ref --count=1 --format=%(refname) $prefix")
-def first_ref_under(prefix: str) -> None:
-    """One ref under a prefix, or nothing."""
-
-
 @git("for-each-ref --count=1 --contains $sha")
 def refs_containing(sha: str) -> None:
     """One ref reaching this commit, or nothing."""
@@ -113,17 +108,6 @@ def common_dir() -> None:
     """The repository directory every worktree of it shares."""
 
 
-def fetched_at(repo: str | os.PathLike[str] | None = None) -> float | None:
-    """When any worktree of this repository last fetched, or None.
-
-    FETCH_HEAD is written per worktree, so a fetch from a neighbour counts
-    only when every worktree's copy is read.
-    """
-    common = Path(common_dir(repo=repo).out.strip())
-    heads = [common / "FETCH_HEAD", *common.glob("worktrees/*/FETCH_HEAD")]
-    return max((p.stat().st_mtime for p in heads if p.exists()), default=None)
-
-
 # --no-optional-locks is a git global, so it goes before the subcommand, which
 # a spec shows and a tuple hides. Without it a listing writes another
 # worktree's index and contends with a `git add` there.
@@ -137,18 +121,18 @@ def status_lines() -> None:
     """Every change in a worktree, the gitignored paths included."""
 
 
-# 128 is what git exits when it cannot reach the remote, and that is an
-# answer rather than a failure: the caller carries on with the refs already
-# here and says so. Asserted on what comes back, not on the code, because an
-# ok= this wide would otherwise swallow a typo in one of the flags.
+# 128 is what git exits when it cannot reach the remote. gw sync, the only
+# caller, reads the result and stops with git's reason; asserted on what
+# comes back, not on the code, because an ok= this wide would otherwise
+# swallow a typo in one of the flags.
 @git("fetch --prune $remote", ok=(0, 128), mutates=True)
 def fetch(remote: str) -> None:
     """Refresh every remote-tracking ref, dropping the ones that are gone."""
 
 
-# The other call that reaches the network. 128 is how it says it could not
-# reach the server, and 1 is a server with no branch to name. head_ref and
-# gw sync read the result rather than assuming it worked.
+# The other call that reaches the network, also gw sync's alone. 128 is how
+# it says it could not reach the server, and 1 is a server with no branch to
+# name.
 @git("remote set-head $remote --auto", ok=(0, 1, 128), mutates=True)
 def set_head_auto(remote: str) -> None:
     """Ask the server which branch it serves by default."""
@@ -319,7 +303,6 @@ def remote(repo: str | os.PathLike[str] | None = None) -> str:
 
 def head_ref(
     remote_name: str,
-    online: bool,
     repo: str | os.PathLike[str] | None = None,
 ) -> tuple[str, str]:
     """The full ref this repository branches from, and a warning or ''.
@@ -335,16 +318,6 @@ def head_ref(
         symref = symbolic_ref(f"refs/remotes/{remote_name}/HEAD", repo=repo).out.strip()
         if symref and ref_exists(symref, repo=repo):
             return symref, ""
-
-        # set-head can only point at a remote-tracking ref, so don't spend a
-        # round trip when the repository has none.
-        tracking = first_ref_under(f"refs/remotes/{remote_name}", repo=repo).out.strip()
-        if online and tracking and set_head_auto(remote_name, repo=repo):
-            symref = symbolic_ref(
-                f"refs/remotes/{remote_name}/HEAD", repo=repo
-            ).out.strip()
-            if symref and ref_exists(symref, repo=repo):
-                return symref, ""
 
     # 2. Conventional names, decisive only when exactly one exists.
     #    Remote-tracking first: a repository can have a remote and no

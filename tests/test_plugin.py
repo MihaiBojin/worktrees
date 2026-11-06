@@ -77,7 +77,6 @@ def _json(world, entry: str) -> str:
             sys.executable,
             "-c",
             f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
-            "--no-fetch",
             "--json",
         ],
         cwd=world.repo,

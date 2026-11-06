@@ -90,8 +90,7 @@ failed.
 
 One other kind of function exists: a shortcut, a banged name that calls a
 command with its flags fixed and does nothing else. `gwr!` is `gwr
---delete-ignored`, and `gwp!` is `gwp --force-refresh --delete-ignored
---yes`. A shortcut calls its command by its plain name, so `gwr!` reaches the
+--delete-ignored`, and `gwp!` is `gwp --delete-ignored --yes`. A shortcut calls its command by its plain name, so `gwr!` reaches the
 `gwr` function rather than `command gwr` and the caller still lands where the
 binary says. No binary carries a banged name, so a shortcut shadows nothing,
 and none has a console script of its own.
@@ -297,7 +296,7 @@ on a terminal: both are what a script reads. The colour is applied at the
 call site that formats a table, and neither path passes a code to one.
 
 `progress.py` draws a spinner on stderr and one line saying what is being
-checked, while `gws`, `gwp`, `gwr`, `gwbs` and `gwbd` fetch and judge. It runs only when
+checked, while `gws`, `gwp`, `gwr`, `gwbs` and `gwbd` judge. It runs only when
 stderr is a terminal that can clear a line, and never under `-q` or `-v`,
 since the verbose log writes to the line it redraws. Anything else printed on
 stderr while it spins goes through `progress.line`, which clears the spinner
@@ -324,17 +323,17 @@ indented, its exit code when that is not 0 or is the only answer, then a
 blank line. Printing after the run keeps a command and its answer together
 when eight threads are asking at once.
 
-## A recent fetch is reused, and the forge is asked only by gw sync
+## Only gw sync reaches the network
 
-The README's "What is reused, and for how long" table lists every case and
-its lifetime. It is the one copy: the constant is `cli._FRESH`, and a change
-to it changes that table in the same commit.
+`gw sync` runs `git fetch`, `git remote set-head`, `gh` and `glab`, and
+writes `git-worktrees-sync.json`. No other command runs any of the four.
+`tests/test_sync.py` puts a logging `git` on PATH and fails when any other
+command fetches or sets the remote HEAD; `tests/test_forge.py` does the same
+for `gh` and `glab`.
 
-The fetch is most of what an assessment costs: about 1.1 s of a 1.9 s `gws`
-here, 750 ms of it the SSH handshake. `_should_fetch` decides for the eight
-commands that fetch on the way to something else; `gw sync` fetches every
-time it runs, and is the only command that writes `git-worktrees-sync.json`. FETCH_HEAD is written per worktree, so
-`repo.fetched_at` reads every copy.
+A fetch would be most of what an assessment costs: about 1.1 s of a 1.9 s
+`gws` here, 750 ms of it the SSH handshake. `gwa`, `gwbc` and `gwrot` branch from
+`<remote>/<head>` as the last sync or clone left it.
 
 `gw sync` records the forge's answer for every branch tip in that file,
 keyed by branch and the SHA it asked about. Assessment reads it once per run
@@ -398,11 +397,9 @@ tree", and turns every squash merge into "not merged" with nothing failing.
 
 The two calls that reach the network, `fetch` and `remote set-head --auto`,
 take `ok=(0, 128)` for the same reason in reverse: a remote that cannot be
-reached is an answer rather than a failure. The caller reads the result, says
-so on stderr, and carries on with the refs already here, which is where
-`--no-fetch` sends it on request. It also stops asking: a failed fetch means
-the head-branch ladder is told it is offline, rather than spending a second
-round trip proving it.
+reached is an answer rather than a failure. `gw sync`, their one caller,
+reads the result and stops at exit 1 with git's reason, leaving the sync
+record as it was.
 
 One `git status --porcelain --ignored=traditional` answers both questions a
 worktree is asked. It is a strict superset of plain `--porcelain`, so `dirty`

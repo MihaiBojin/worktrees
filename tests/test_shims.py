@@ -28,7 +28,7 @@ ADAPTERS = tuple(name for name in CD_COMMANDS if name != "gw")
 # A shortcut calls a command with its flags fixed, and nothing else.
 SHORTCUTS = {
     "gwr!": "gwr --delete-ignored",
-    "gwp!": "gwp --force-refresh --delete-ignored --yes",
+    "gwp!": "gwp --delete-ignored --yes",
 }
 
 
@@ -275,7 +275,6 @@ def test_gwp_bang_runs_gwp_with_its_flags_and_its_exit_code(tmp_path, shell) -> 
         _, out = _run_zsh(bin_dir, "gwp! --branch x; echo code=$?")
     assert "code=4" in out, out
     assert seen.read_text().split() == [
-        "--force-refresh",
         "--delete-ignored",
         "--yes",
         "--branch",

@@ -64,7 +64,7 @@ def test_a_branch_with_slashes_becomes_directories(world) -> None:
 
 
 def test_add_prints_only_the_destination(world) -> None:
-    p = run(world, "gwa", "fix-parser", "--no-fetch")
+    p = run(world, "gwa", "fix-parser")
     assert p.returncode == 0, p.stderr
     dest = world.parent / ".worktrees" / "fix-parser" / "repo"
     assert p.stdout.strip() == str(dest)
@@ -75,7 +75,7 @@ def test_add_prints_only_the_destination(world) -> None:
 def test_add_uses_a_branch_that_already_exists(world) -> None:
     """-b would refuse it, so the checkout is made without one."""
     world.git("branch", "already", "main")
-    landed = W.add("already", fetch=False)
+    landed = W.add("already")
     assert landed.created is False
     assert Path(landed.path).is_dir()
 
@@ -83,7 +83,7 @@ def test_add_uses_a_branch_that_already_exists(world) -> None:
 def test_add_refuses_a_branch_already_checked_out(world) -> None:
     world.worktree("taken")
     with pytest.raises(Refusal, match="already checked out"):
-        W.add("taken", fetch=False)
+        W.add("taken")
 
 
 def test_add_refuses_a_directory_another_repository_owns(world) -> None:
@@ -100,13 +100,13 @@ def test_add_refuses_a_directory_another_repository_owns(world) -> None:
         capture_output=True,
     )
     with pytest.raises(Refusal, match="belongs to"):
-        W.add("borrowed", fetch=False)
+        W.add("borrowed")
 
 
 @pytest.mark.parametrize("name", ["has space", "-leading", "a..b"])
 def test_add_refuses_a_name_git_rejects(world, name: str) -> None:
     with pytest.raises(Refusal, match="not a valid branch name"):
-        W.add(name, fetch=False)
+        W.add(name)
 
 
 def test_add_with_no_name_names_what_was_typed(world) -> None:
@@ -303,7 +303,7 @@ def test_move_leaves_no_empty_directory_behind(world) -> None:
 def test_remove_prints_nothing_when_you_were_not_standing_in_it(world) -> None:
     """Empty stdout means stay put."""
     wt = world.worktree("done")
-    p = run(world, "gwr", "done", "--no-fetch", "--yes")
+    p = run(world, "gwr", "done", "--yes")
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip() == ""
     assert not wt.exists()
@@ -312,7 +312,7 @@ def test_remove_prints_nothing_when_you_were_not_standing_in_it(world) -> None:
 
 def test_remove_prints_the_main_checkout_when_you_were(world) -> None:
     wt = world.worktree("done")
-    p = run(world, "gwr", "--no-fetch", "--yes", at=wt)
+    p = run(world, "gwr", "--yes", at=wt)
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip() == str(world.repo)
     assert not wt.exists()
@@ -321,7 +321,7 @@ def test_remove_prints_the_main_checkout_when_you_were(world) -> None:
 def test_remove_refuses_an_unfinished_branch(world) -> None:
     wt = world.worktree("busy")
     world.commit("b.txt", "b\n", at=wt)
-    p = run(world, "gwr", "busy", "--no-fetch", "--yes")
+    p = run(world, "gwr", "busy", "--yes")
     assert p.returncode == 1
     assert "is not finished" in p.stderr
     assert "--force" in p.stderr
@@ -338,7 +338,7 @@ def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     wt = world.worktree("holds")
     (wt / ".env").write_text("SECRET=1\n")
 
-    p = run(world, "gwr", "holds", "--no-fetch", "--yes")
+    p = run(world, "gwr", "holds", "--yes")
     assert p.returncode == 1
     assert "is finished" in p.stderr
     assert "is not finished" not in p.stderr
@@ -346,7 +346,7 @@ def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     assert "--force" not in p.stderr
     assert wt.exists()
 
-    p = run(world, "gwr", "holds", "--no-fetch", "--yes", "--delete-ignored")
+    p = run(world, "gwr", "holds", "--yes", "--delete-ignored")
     assert p.returncode == 0, p.stderr
     assert "deleting ignored, unrecoverable: .env" in p.stderr
     assert not wt.exists()
@@ -361,7 +361,7 @@ def test_force_names_the_ignored_files_it_is_about_to_delete(world) -> None:
     (wt / ".env").write_text("SECRET=1\n")
     world.commit("b.txt", "b\n", at=wt)
 
-    p = run(world, "gwr", "busy", "--no-fetch", "--yes", "--force")
+    p = run(world, "gwr", "busy", "--yes", "--force")
     assert p.returncode == 0, p.stderr
     assert "deleting ignored, unrecoverable: .env" in p.stderr
     assert not wt.exists()
@@ -371,7 +371,7 @@ def test_force_removes_the_checkout_and_keeps_the_branch(world) -> None:
     """The worktree was in the way. The work was not."""
     wt = world.worktree("busy")
     world.commit("b.txt", "b\n", at=wt)
-    p = run(world, "gwr", "busy", "--no-fetch", "--yes", "--force")
+    p = run(world, "gwr", "busy", "--yes", "--force")
     assert p.returncode == 0, p.stderr
     assert not wt.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/busy")
@@ -379,7 +379,7 @@ def test_force_removes_the_checkout_and_keeps_the_branch(world) -> None:
 
 def test_remove_prints_the_restore_line_once(world) -> None:
     world.worktree("done")
-    p = run(world, "gwr", "done", "--no-fetch", "--yes")
+    p = run(world, "gwr", "done", "--yes")
     assert p.stderr.count("restore with: git branch done ") == 1
 
 
@@ -425,7 +425,7 @@ def test_add_names_the_directory_a_refusal_left_behind(world) -> None:
     world.worktree("feat")
     said: list[str] = []
     with pytest.raises(GitError):
-        W.add("feat/oauth", fetch=False, warn=said.append)
+        W.add("feat/oauth", warn=said.append)
 
     left = layout.worktrees_root(str(world.repo)) / "feat" / "oauth"
     assert left.is_dir()
@@ -437,7 +437,7 @@ def test_add_names_the_root_when_it_made_the_whole_tree(world) -> None:
     world.git("branch", "feat", "main")
     said: list[str] = []
     with pytest.raises(GitError):
-        W.add("feat/oauth", fetch=False, warn=said.append)
+        W.add("feat/oauth", warn=said.append)
 
     root = layout.worktrees_root(str(world.repo))
     assert any(str(root) in line and "empty" in line for line in said), said
@@ -449,7 +449,7 @@ def test_add_says_nothing_when_the_parents_were_already_there(world) -> None:
     (layout.worktrees_root(str(world.repo)) / "feat" / "oauth").mkdir(parents=True)
     said: list[str] = []
     with pytest.raises(GitError):
-        W.add("feat/oauth", fetch=False, warn=said.append)
+        W.add("feat/oauth", warn=said.append)
     assert not [line for line in said if "empty" in line], said
 
 

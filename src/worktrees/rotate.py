@@ -117,7 +117,6 @@ def next_name(
 
 
 def rotate(
-    fetch: bool,
     warn: object = None,
     repo: str | os.PathLike[str] | None = None,
 ) -> Rotated | CaughtUp:
@@ -130,16 +129,7 @@ def rotate(
         )
 
     remote = R.remote(repo=repo)
-    online = fetch
-    if fetch and remote and not R.fetch(remote, repo=repo):
-        online = False
-        if callable(warn):
-            warn(
-                f"{render.ref(remote)} could not be fetched; working from what is "
-                "already here"
-            )
-
-    base, warning = R.head_ref(remote, online=online, repo=repo)
+    base, warning = R.head_ref(remote, repo=repo)
     if warning and callable(warn):
         warn(warning)
     if not base:

@@ -23,7 +23,7 @@ found, say so and stop.
 ## 1. Assess
 
 Run these two from inside the repository, in this order, each exactly as
-written. Add `--no-fetch` to `gwbs` and `gws` only when the user asked for it.
+written.
 
 Branches first:
 
@@ -105,7 +105,7 @@ plain text and wait for the reply.
 ## 4. Remove
 
 Only through the CLI, and only what the user chose. Quote each name for the
-shell. Add `--no-fetch` when the user asked for it in step 1.
+shell.
 
 - Each chosen worktree: `gwp --branch 'NAME' --yes 2>&1`. One call per
   worktree. It removes the worktree and its branch.

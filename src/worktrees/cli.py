@@ -6,7 +6,6 @@ import argparse
 import contextlib
 import os
 import sys
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -73,11 +72,8 @@ def _counted(rows: list[verdicts.Verdict]) -> str:
     )
 
 
-def add_status_flags(p: argparse.ArgumentParser, refresh: str) -> None:
-    """What `gws` and `gwbs` take beyond what `gwp` and `gwbd` share: a
-    short -f, and a filter. Not on the two that remove, where -f would read
-    as force."""
-    p.add_argument("-f", dest="force_refresh", action="store_true", help=refresh)
+def add_status_flags(p: argparse.ArgumentParser) -> None:
+    """What `gws` and `gwbs` take beyond what `gwp` and `gwbd` share."""
     p.add_argument(
         "--only",
         action="append",
@@ -151,12 +147,6 @@ def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--branch", default="", metavar="NAME", help="consider only that branch"
     )
-    p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
-    p.add_argument(
-        "--force-refresh",
-        action="store_true",
-        help="fetch even when the last fetch is under 10 minutes old",
-    )
     p.add_argument(
         "--delete-ignored",
         action="store_true",
@@ -181,31 +171,6 @@ class _Stop(Exception):
         self.code = code
 
 
-# A fetch younger than this is used as it stands; --force-refresh fetches.
-_FRESH = 10 * 60
-
-
-def _should_fetch(args: argparse.Namespace) -> bool:
-    """Not under --no-fetch, and not when any worktree fetched under 30
-    minutes ago, unless --force-refresh. A fetch is most of what a run costs,
-    and refs a few minutes old answer the same questions."""
-    from . import repo as R
-
-    if args.no_fetch:
-        return False
-    fetched = None if args.force_refresh else R.fetched_at()
-    if fetched is None or time.time() - fetched >= _FRESH:
-        return True
-    if not args.quiet:
-        _err(
-            render.note(
-                f"fetched {int((time.time() - fetched) // 60)} min ago; using "
-                "those refs (--force-refresh fetches now)"
-            )
-        )
-    return False
-
-
 def _assess(
     args: argparse.Namespace,
     judge: Callable[..., list[verdicts.Verdict]] | None = None,
@@ -219,7 +184,7 @@ def _judge_all(
     args: argparse.Namespace,
     judge: Callable[..., list[verdicts.Verdict]] | None,
 ) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
-    """Fetch, resolve the head branch, and judge every worktree.
+    """Resolve the head branch and judge every worktree.
 
     The one path every command takes, so `prune` can only ever act on what
     `status` printed. `judge` is how `remove` asks for the one you stand in
@@ -255,25 +220,8 @@ def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
     from . import repo as R
 
     remote = R.remote()
-    online = _should_fetch(args) if remote else not args.no_fetch
-    if online:
-        # An unreachable remote is not a reason to refuse to answer. It lands
-        # where --no-fetch already goes, and says so, and the head-branch
-        # ladder is told not to spend a second round trip on the same remote.
-        progress.say(f"fetching {remote}")
-        if remote and not R.fetch(remote):
-            online = False
-            if not args.quiet:
-                _warn(
-                    f"{render.ref(remote)} could not be fetched; judging from the refs "
-                    "already here"
-                )
-    elif args.no_fetch and not args.quiet:
-        # A fetch reused because it is recent has already said so.
-        _warn("using the refs already here; they may be stale (--no-fetch)")
-
     progress.say("finding the head branch")
-    head, warning = R.head_ref(remote, online=online)
+    head, warning = R.head_ref(remote)
     if warning and not args.quiet:
         _warn(warning)
     if not head:
@@ -460,14 +408,6 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "name", nargs="?", default="", metavar="NAME", help="the branch to start"
     )
-    p.add_argument(
-        "--no-fetch", action="store_true", help="branch off what is already here"
-    )
-    p.add_argument(
-        "--force-refresh",
-        action="store_true",
-        help="fetch even when the last fetch is under 10 minutes old",
-    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
     p.add_argument(
@@ -494,11 +434,8 @@ def run_new_branch(args: argparse.Namespace) -> int:
         return _needs(args, "NAME")
 
     warn = None if args.quiet else _warn
-    if args.no_fetch and not args.quiet:
-        _warn("branching from what is already here; refs may be stale (--no-fetch)")
-
     try:
-        started = new_branch.create(args.name, fetch=_should_fetch(args), warn=warn)
+        started = new_branch.create(args.name, warn=warn)
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -525,15 +462,6 @@ def run_new_branch(args: argparse.Namespace) -> int:
 
 
 def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "--no-fetch", action="store_true", help="work from what is already here"
-    )
-    p.add_argument(
-        "-f",
-        "--force-refresh",
-        action="store_true",
-        help="fetch even when the last fetch is under 10 minutes old",
-    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
     p.add_argument(
@@ -557,11 +485,8 @@ def run_rotate(args: argparse.Namespace) -> int:
         return _explain()
 
     warn = None if args.quiet else _warn
-    if args.no_fetch and not args.quiet:
-        _warn("working from what is already here; refs may be stale (--no-fetch)")
-
     try:
-        result = rotate_mod.rotate(fetch=_should_fetch(args), warn=warn)
+        result = rotate_mod.rotate(warn=warn)
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -724,14 +649,6 @@ def _add_add_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "base", nargs="?", default="", metavar="BASE", help="what to branch from"
     )
-    p.add_argument(
-        "--no-fetch", action="store_true", help="branch from what is already here"
-    )
-    p.add_argument(
-        "--force-refresh",
-        action="store_true",
-        help="fetch even when the last fetch is under 10 minutes old",
-    )
     _add_cd_flags(p)
 
 
@@ -767,12 +684,6 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
         "--delete-ignored",
         action="store_true",
         help="also delete its gitignored files; nothing restores them",
-    )
-    p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
-    p.add_argument(
-        "--force-refresh",
-        action="store_true",
-        help="fetch even when the last fetch is under 10 minutes old",
     )
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
     # Its own, not gw list's: assess skips the main checkout, so gwr can never act
@@ -814,7 +725,7 @@ def run_add(args: argparse.Namespace) -> int:
 
     warn = None if args.quiet else _warn
     try:
-        landed = wt_mod.add(args.name, args.base, fetch=_should_fetch(args), warn=warn)
+        landed = wt_mod.add(args.name, args.base, warn=warn)
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -966,7 +877,7 @@ def run_remove(args: argparse.Namespace) -> int:
     if args.complete:
         # Every worktree this can reach, and no verdict: whether a branch is
         # finished is what gwr works out after you pick one, not what decides
-        # whether its name can be typed. No fetch either, so TAB stays fast.
+        # whether its name can be typed, so TAB stays fast.
         for w in R.worktrees():
             if "bare" not in w.flags and not w.main and _offerable(w.path):
                 print(f"{w.label}\t{w.path}")
@@ -1243,7 +1154,7 @@ def _complete_commands() -> int:
 
 def _add_status_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
-    add_status_flags(p, "the same as --force-refresh")
+    add_status_flags(p)
 
 
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
@@ -1472,7 +1383,7 @@ _CANONICAL = _canonical()
 
 _STATUS_HELP = "Say which of this repository's worktrees are finished, and why."
 _PRUNE_HELP = "Remove the worktrees gws marks removable, and their branches."
-_NEW_BRANCH_HELP = "Fetch, then branch NAME off the head branch and check it out."
+_NEW_BRANCH_HELP = "Branch NAME off the head branch and check it out."
 _ROTATE_HELP = (
     "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
     "head branch there is no chain to continue, so it catches that up to the "

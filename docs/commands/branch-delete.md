@@ -9,7 +9,7 @@ command before asking for confirmation.
 gwbd old-fix finished-feature
 gwbd
 gwbd --all --dry-run
-gwbd old-fix --no-fetch --yes --json
+gwbd old-fix --yes --json
 ```
 
 | Selection | Behaviour |
@@ -38,8 +38,8 @@ branch prevents deletion. The final operation is
 full SHA and deletes the named ref without following a symbolic ref.
 
 Deletion affects local branch refs. It does not delete remote branches,
-worktrees, working files, or stashes. Fetching can refresh or prune
-remote-tracking refs; pass `--no-fetch` to use the existing refs.
+worktrees, working files, or stashes. It runs no fetch; it judges from the
+remote-tracking refs the last `gw sync` left.
 
 ## Undo
 
