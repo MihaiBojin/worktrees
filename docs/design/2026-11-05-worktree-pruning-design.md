@@ -260,13 +260,14 @@ Every `--json` result is an object carrying:
 ```json
 {
   "lastSync": {"refs": "2026-11-05T10:00:00Z", "forge": null},
-  "head": {"ref": "refs/remotes/origin/HEAD", "source": "remote"}
+  "head": {"ref": "refs/remotes/origin/main", "source": "remote"}
 }
 ```
 
 - `lastSync` values are UTC RFC 3339 times of the last successful sync of each component, or `null`
   when none succeeded or the component does not apply. A time does not mean every branch has evidence.
-- `head.source` is `remote`, `clone` or `inferred`. `head.ref` is `null` when unresolved.
+- `head.ref` is the full ref the head resolves to, such as `refs/remotes/origin/main`, or `null` when
+  unresolved. `head.source` is `remote`, `clone` or `inferred`.
 - Assessment rows carry `verdict`, `eligible` and `stashes` (the matching stash SHAs). `--only empty`
   filters by verdict.
 - `gw list --json` is `{"lastSync": ..., "head": ..., "worktrees": [...]}`.
