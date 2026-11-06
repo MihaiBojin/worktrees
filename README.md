@@ -198,6 +198,7 @@ separate.
 
 ```console
 $ gws
+Head: origin/main (remote)
 BRANCH         PATH                                         VERDICT  WHY
 main           /home/you/git/repo                           keep     it is the main checkout, and never removable
 dirty-work     /home/you/git/.worktrees/dirty-work/repo     keep     it has uncommitted changes
@@ -215,7 +216,8 @@ so the table shows what `git worktree list` shows; nothing proposes it, and
 `git worktree remove` answers `fatal: '<path>' is a main working tree`
 whatever flag it is given. Paths are absolute wherever this
 prints one, so a row can be pasted into the next command. The table and the
-count are on stdout; everything after them is on stderr.
+count are on stdout; the `Head:` line and everything after the count are on
+stderr.
 
 Every repository in the same parent directory keeps its worktrees under that
 one `.worktrees` root, so some of the directories in there are a sibling's.
@@ -266,6 +268,7 @@ which mutates, so `gwp` is what runs it.
 
 ```console
 $ gwp
+Head: origin/main (remote)
 squash-merged  /home/you/git/.worktrees/squash-merged/repo
   restore with: git branch squash-merged a2b41ad1fb271bd7d84256f0d35ee5d58c29dd08
 remove 1 worktree(s)? [y/N] y
@@ -296,6 +299,7 @@ holding the repository's worktrees:
 
 ```console
 $ gwp < /dev/null
+Head: origin/main (remote)
 squash-merged  /home/you/git/.worktrees/squash-merged/repo
   restore with: git branch squash-merged a2b41ad1fb271bd7d84256f0d35ee5d58c29dd08
 not a terminal, so nothing can answer for the 1 above; pass --yes to remove them
@@ -311,6 +315,7 @@ away:
 
 ```console
 $ gwp
+Head: origin/main (remote)
 BRANCH         PATH                                         VERDICT  WHY
 dirty-work     /home/you/git/.worktrees/dirty-work/repo     keep     it has uncommitted changes
 holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     its tip is an ancestor of the head branch, but holds 2 ignored path(s); pass --delete-ignored
@@ -443,6 +448,7 @@ as finished, because it is:
 
 ```console
 $ gwr holds-secrets
+Head: origin/main (remote)
 holds-secrets is finished: its tip is an ancestor of the head branch, but holds 2 ignored path(s); pass --delete-ignored
 ```
 
@@ -496,6 +502,7 @@ It prints the branch it left and the one it made, each with its commit:
 
 ```console
 $ gwrot
+Head: origin/main (remote)
 was  fix-parser                 6d45e4f  kept, 1 commit not on origin/main
 now  fix-parser-2026-09-11_001  910074d  new, from origin/main
 ```
@@ -511,6 +518,7 @@ instead:
 
 ```console
 $ gwrot
+Head: origin/main (remote)
 was  main  6d45e4f
 now  main  910074d  fast-forwarded by 3 commits to origin/main
 ```

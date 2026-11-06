@@ -86,6 +86,15 @@ def test_of_main_and_master_the_newer_tip_is_the_head(world, newer, older) -> No
     assert head_line(p) == f"Head: {newer} (inferred; {older} also exists)"
 
 
+def test_a_branch_under_main_is_not_main(world) -> None:
+    world.git("branch", "--move", "main", "master")
+    world.git("branch", "main/x", "master")
+    world.git("branch", "main/y", "master")
+    p = run(world, "gwbc", "spike")
+    assert p.returncode == 0, p.stderr
+    assert head_line(p) == "Head: master (inferred)"
+
+
 def test_a_committer_date_tie_goes_to_main(world) -> None:
     tip_at(world, "master", 1700000100)
     tip_at(world, "main", 1700000100)
@@ -225,11 +234,21 @@ def test_quiet_drops_a_head_that_was_not_inferred(world, argv) -> None:
 
 @pytest.mark.parametrize(
     "argv",
-    [("gws",), ("gwbs",), ("gwp", "--yes"), ("gwa", "spike"), ("gwbc", "spike")],
+    [
+        ("gws",),
+        ("gwp", "--yes"),
+        ("gwr", "feature", "--yes"),
+        ("gwbs",),
+        ("gwbd", "--all", "--yes"),
+        ("gwa", "spike"),
+        ("gwbc", "spike"),
+        ("gwrot",),
+    ],
     ids=lambda a: a[0],
 )
 def test_json_has_no_head_line(world, argv) -> None:
+    """gwrot on a main with nothing to catch up exits 1, and says so without
+    the line."""
+    world.worktree("feature")
     p = run(world, *argv, "--json")
-    assert p.returncode == 0, p.stderr
     assert "Head:" not in p.stderr
-    json.loads(p.stdout)

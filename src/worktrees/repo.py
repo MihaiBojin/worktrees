@@ -307,9 +307,12 @@ class Head(NamedTuple):
         return f"{self.name} does not resolve; gw sync updates it"
 
 
+# A pattern to for-each-ref, so `refs/heads/main` also matches
+# `refs/heads/main/x`. Asked only of a ref show-ref has found exactly, which
+# git then guarantees has nothing beneath it.
 @git("for-each-ref --format=%(committerdate:unix) $ref")
 def committed_at(ref: str) -> None:
-    """When the commit a full ref names was committed, or nothing."""
+    """When the commit an existing full ref names was committed."""
 
 
 def head_ref(
@@ -333,18 +336,21 @@ def head_ref(
         if symref.out.strip():
             return Head(target, "clone", bool(ref_exists(target, repo=repo)))
 
-    dates = {
-        name: committed_at(f"refs/heads/{name}", repo=repo).out.strip()
+    found = [
+        name
         for name in ("main", "master")
-    }
-    found = [name for name, date in dates.items() if date]
+        if ref_exists(f"refs/heads/{name}", repo=repo)
+    ]
     if not found:
         return Head("refs/heads/main", "inferred", False)
     if len(found) == 1:
         return Head(f"refs/heads/{found[0]}", "inferred", True)
-    newer = "master" if int(dates["master"]) > int(dates["main"]) else "main"
-    other = "main" if newer == "master" else "master"
-    return Head(f"refs/heads/{newer}", "inferred", True, also=other)
+    main, master = (
+        int(committed_at(f"refs/heads/{name}", repo=repo).out) for name in found
+    )
+    if master > main:
+        return Head("refs/heads/master", "inferred", True, also="main")
+    return Head("refs/heads/main", "inferred", True, also="master")
 
 
 # --------------------------------------------------------------------------
