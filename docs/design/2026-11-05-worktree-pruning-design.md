@@ -99,8 +99,10 @@ None of these is ever eligible:
 3. The current worktree, for `gwp`. `gwr` handles it in section 9.
 4. A locked worktree.
 5. A worktree with uncommitted changes to tracked files, or with untracked files.
-6. A worktree with an initialized submodule. The refusal says to run `git submodule deinit --all` in it
-   and retry.
+6. A worktree with an initialized submodule, or with the submodule store git keeps for it
+   (`git rev-parse --git-path modules`). `git worktree remove` refuses while either exists. The
+   refusal names both steps: `git submodule deinit --all` in the worktree, then deleting that
+   directory once nothing in it is needed, since it holds the submodules' own commits.
 7. A worktree with ignored files, unless `ignored-files` is permitted.
 8. A branch with stashes, or a worktree whose branch has them, unless `stashes` is permitted or
    `gwr --keep-branch` preserves the branch and its stashes.
