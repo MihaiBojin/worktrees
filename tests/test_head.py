@@ -37,7 +37,7 @@ def head_line(p: subprocess.CompletedProcess[str]) -> str:
     return lines[0]
 
 
-def gws_rows(p: subprocess.CompletedProcess[str]) -> list[dict]:
+def verdict_rows(p: subprocess.CompletedProcess[str]) -> list[dict]:
     return json.loads(p.stdout)["verdicts"]
 
 
@@ -163,10 +163,10 @@ def test_every_row_a_head_would_judge_is_unknown(world, setup, message) -> None:
     feature = world.worktree("feature")
     world.git("branch", "loose", "main")
     setup(world)
-    p = run(world, "gws", "--json")
+    p = run(world, "gwp", "--json")
     assert p.returncode == 1, p.stderr
-    assert p.stderr == f"{message}\n"
-    worktrees = {v["path"]: (v["verdict"], v["why"]) for v in gws_rows(p)}
+    assert p.stderr == f"{message}\nnothing to remove\n"
+    worktrees = {v["path"]: (v["verdict"], v["why"]) for v in verdict_rows(p)}
     assert worktrees == {
         str(world.repo): ("keep", "it is the main checkout, and never removable"),
         str(feature): ("unknown", message),
@@ -186,7 +186,7 @@ def test_every_row_a_head_would_judge_is_unknown(world, setup, message) -> None:
 
 def test_an_unresolved_head_fails_with_only_the_main_checkout(world) -> None:
     no_main_or_master(world)
-    p = run(world, "gws")
+    p = run(world, "gwp")
     assert p.returncode == 1
     assert p.stderr.startswith(f"{INFERRED}\n")
     assert "Head:" not in p.stderr
@@ -251,7 +251,6 @@ def test_a_command_that_starts_a_branch_fails(world, setup, message, argv) -> No
 @pytest.mark.parametrize(
     "argv",
     [
-        ("gws",),
         ("gwp", "--yes"),
         ("gwr", "feature", "--yes"),
         ("gwbs",),
@@ -270,7 +269,7 @@ def test_every_command_reading_the_head_prints_it(world, argv, quiet) -> None:
 
 
 @pytest.mark.parametrize(
-    "argv", [("gws",), ("gwbs",), ("gwbc", "spike")], ids=lambda a: a[0]
+    "argv", [("gwp",), ("gwbs",), ("gwbc", "spike")], ids=lambda a: a[0]
 )
 def test_quiet_drops_a_head_that_was_not_inferred(world, argv) -> None:
     world.git("remote", "add", "origin", str(world.root / "nowhere.git"))
@@ -283,7 +282,6 @@ def test_quiet_drops_a_head_that_was_not_inferred(world, argv) -> None:
 @pytest.mark.parametrize(
     "argv",
     [
-        ("gws",),
         ("gwp", "--yes"),
         ("gwr", "feature", "--yes"),
         ("gwbs",),

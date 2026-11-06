@@ -22,7 +22,6 @@ def every_json_command(world) -> list[tuple[tuple[str, ...], Path]]:
     world.commit("r.txt", at=rotating)
     # In this order: the last three remove or delete what they find finished.
     return [
-        (("gws",), world.repo),
         (("gwbs",), world.repo),
         (("gw", "list"), world.repo),
         (("gwa", "spike"), world.repo),
@@ -115,7 +114,7 @@ def test_a_forge_that_answered_gives_the_forge_time(world) -> None:
     assert synced(world, fake(world, "github", {})).returncode == 0
     file = record(world)
     assert re.fullmatch(TIME, file["forge"])
-    out = envelope(world, ("gws",))
+    out = envelope(world, ("gwp",))
     assert out["lastSync"] == {"refs": file["refs"], "forge": file["forge"]}
 
 
@@ -136,7 +135,7 @@ def test_a_clone_head_says_clone(world) -> None:
     ],
     ids=["inferred", "synced", "cloned"],
 )
-@pytest.mark.parametrize("argv", [("gws",), ("gwbs",), ("gw", "list")])
+@pytest.mark.parametrize("argv", [("gwp",), ("gwbs",), ("gw", "list")])
 def test_an_unresolved_head_has_a_null_ref(world, setup, source, argv) -> None:
     setup(world)
     assert envelope(world, argv)["head"] == {"ref": None, "source": source}
@@ -144,7 +143,6 @@ def test_an_unresolved_head_has_a_null_ref(world, setup, source, argv) -> None:
 
 def test_each_command_keeps_its_own_fields(world) -> None:
     keys = {
-        "gws": {"stale", "neighbours", "verdicts"},
         "gwp": {"stale", "neighbours", "verdicts", "removed", "failed"},
         "gwr": {"removed", "path"},
         "gwbs": {"head_sha", "verdicts"},

@@ -6,18 +6,19 @@ description: >
   user asks to clean up, tidy or prune finished, merged or squash-merged
   branches or worktrees, or asks which of them are done. Triggers on: clean up
   branches, prune worktrees, delete merged branches, squash-merged branches
-  left behind, which branches are finished, gws, gwp, gwbs, gwbd.
+  left behind, which branches are finished, gwp, gwr, gwbs, gwbd.
 ---
 
 # worktrees: remove what is proved finished
 
-The `worktrees` CLI decides. `gws` and `gwbs` say which worktrees and branches
-are finished, with the proof; `gwp` and `gwbd` remove them, assessing each
-again first and refusing anything that is no longer proved. This skill runs
-those four, shows the answer compactly and asks before removing anything. It
-makes no judgement of its own about whether a branch is merged.
+The `worktrees` CLI decides. `gwp --json` and `gwbs --json` say which
+worktrees and branches are finished, with the proof; `gwr` and `gwbd` remove
+them, assessing each again first and refusing anything that is no longer
+proved. This skill runs those four, shows the answer compactly and asks
+before removing anything. It makes no judgement of its own about whether a
+branch is merged.
 
-The commands come from `uv tool install git-worktrees`. If `gws` is not
+The commands come from `uv tool install git-worktrees`. If `gwp` is not
 found, say so and stop.
 
 ## 1. Assess
@@ -40,7 +41,7 @@ Then worktrees, with the `head_sha` that printed written in place of
 `HEAD_SHA`:
 
 ```sh
-gws --json | jq -c '{
+gwp --json | jq -c '{
   worktrees: [.verdicts[] | select(.verdict == "remove")
     | {branch, path, why, at_head: (.sha == "HEAD_SHA")}],
   kept: [.verdicts[] | select(.verdict == "keep")] | length,
@@ -53,7 +54,7 @@ gws --json | jq -c '{
   `proof` is `forge`, `ancestry`, `squash` or `content`; `forge` means a
   merged request the last `gw sync` recorded for this tip. `undo` recreates
   the branch.
-- `worktrees` are linked worktrees `gwp` would remove, together with their
+- `worktrees` are linked worktrees `gwr` would remove, together with their
   branches. `why` names the proof, such as `its tree or combined patch is
   already in the head branch`.
 - `at_head` is true when the worktree's branch sits exactly on the head
@@ -104,25 +105,28 @@ plain text and wait for the reply.
 
 ## 4. Remove
 
-Only through the CLI, and only what the user chose. Quote each name for the
-shell.
+Only through the CLI, and only what the user chose. Quote each argument for
+the shell.
 
-- Each chosen worktree: `gwp --branch 'NAME' --yes 2>&1`. One call per
-  worktree. It removes the worktree and its branch.
+- Each chosen worktree: `command gwr 'PATH' --yes 2>&1`, with `PATH` the
+  row's `path` exactly as the JSON gave it. One call per worktree. It
+  removes the worktree and its branch. `command` runs the binary, not the
+  shell function that would change directory.
 - The chosen branches, in one call: `gwbd 'NAME' 'NAME' ... --yes 2>&1`.
 
 Never `git branch -D`, `git worktree remove`, `git update-ref -d` or `rm`.
-Never pass `--delete-ignored` unless the user asked for it by name: it deletes
-the gitignored files in the worktree, and nothing restores them. When they do
-ask for a worktree in `ignored`, it is `gwp --branch 'NAME' --delete-ignored
---yes 2>&1`.
+Never pass `--force`, whatever a refusal suggests: it removes a worktree that
+is not proved finished. Never pass `--delete-ignored` unless the user asked
+for it by name: it deletes the gitignored files in the worktree, and nothing
+restores them. When they do ask for a worktree in `ignored`, it is
+`command gwr 'PATH' --delete-ignored --yes 2>&1`.
 
 What the output means:
 
-- `gwp` prints `restore with: git branch NAME SHA` before removing, then
-  `removed 1 worktree(s): NAME`. `NAME kept: REASON` is a refusal. When the
-  worktree is no longer proved finished it removes nothing and prints
-  `nothing to remove`.
+- `gwr` prints the branch and its path, then `restore with: git branch NAME
+  SHA`, before removing, and `removed NAME` after. When the worktree is no
+  longer proved finished it removes nothing, prints `NAME is not finished:
+  REASON` or `NAME is finished: REASON` and exits 1.
 - `gwbd` prints `each comes back with:` and one `git branch NAME SHA` per
   branch, then `deleted N branch: ...`. A branch it refuses prints
   `NAME kept: REASON` and the command exits 3; the others are still deleted.

@@ -11,8 +11,8 @@ a shell function of the same name.
 
 | | |
 | --- | --- |
-| `gws` | say which worktrees are finished, and why. Removes nothing, and has no flag that could |
-| `gwp` | print the `gws` table, then remove the ones it marks removable, having asked at a terminal |
+| `gwp` | say which worktrees are finished, and why, then remove those, having asked at a terminal |
+| `gws` | fetch the default remote and ask the forge; the only command that reaches the network |
 | `gwbs [NAME ...]` | assess local branches, including those without worktrees |
 | `gwbd [NAME ...]` | delete branches proved finished, with confirmation and undo commands |
 | `gwa NAME [BASE]` | create a worktree for `NAME` and land you in it |
@@ -24,13 +24,13 @@ a shell function of the same name.
 | `gwbc NAME` | branch `NAME` off the head branch and check it out |
 | `gwrot` | start the next branch after this one, or catch the head branch up |
 
-`gw` takes the same commands as subcommands, each with shorthands, so `gws`,
-`gw status`, `gw st` and `gw s` are one command:
+`gw` takes the same commands as subcommands, each with shorthands, so `gwp`,
+`gw prune` and `gw p` are one command:
 
 | | |
 | --- | --- |
-| `gws` | `gw status`, `st`, `s` |
 | `gwp` | `gw prune`, `p` |
+| `gws` | `gw sync` |
 | `gwbs` | `gw branch status` |
 | `gwbd` | `gw branch delete` |
 | `gwa` | `gw add`, `a` |
@@ -55,7 +55,7 @@ Ctrl-C interrupts a running command with exit code 130 and no traceback.
 At a selection or removal prompt, it cancels without choosing or removing
 a worktree.
 
-`gws` and `gwp` are what this tool is for and their behaviour is settled.
+`gwp` is what this tool is for and its behaviour is settled.
 
 `gwbc` and `gwrot` start branches rather than worktrees: `gwbc` one you
 name, `gwrot` the next in a series.
@@ -82,7 +82,7 @@ branch back is printed before anything runs.
 
 With `.env` and `node_modules/` present, `git status --porcelain` prints
 nothing, `git worktree remove` exits 0 with no `--force`, and both are gone.
-Nothing in git brings them back: no ref ever pointed at them. `gws` reads
+Nothing in git brings them back: no ref ever pointed at them. `gwp` reads
 `--ignored=traditional`, counts what would go, and marks the worktree `keep`
 until you pass `--delete-ignored`.
 
@@ -194,10 +194,10 @@ worktree is still reachable by name or path.
 Neither manager puts a binary on `$PATH`, which is why the two installs stay
 separate.
 
-## gws
+## gwp
 
 ```console
-$ gws
+$ gwp < /dev/null
 Head: origin/main (remote)
 BRANCH         PATH                                         VERDICT  WHY
 main           /home/you/git/repo                           keep     it is the main checkout, and never removable
@@ -208,7 +208,7 @@ squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   its tree or
 
 1 removable, 4 kept, 0 unclear
 2 worktree(s) under /home/you/git/.worktrees belong to another repository
-gwp removes the 1 marked removable
+1 would be removed; gwp --yes removes them
 ```
 
 Rows come in `git worktree list` order, the main checkout first. It is there
@@ -221,7 +221,7 @@ stderr.
 
 Every repository in the same parent directory keeps its worktrees under that
 one `.worktrees` root, so some of the directories in there are a sibling's.
-`gws` counts those and says so, because nothing else does, and `--json`
+`gwp` counts those and says so, because nothing else does, and `--json`
 carries the same count as `neighbours`. No command here reads or removes
 them, and the count comes from walking the root rather than from asking git.
 
@@ -261,10 +261,10 @@ that moved since the sync, and a sync file that is missing, malformed or
 written for another remote URL, carry no evidence, and git alone decides.
 
 A record left behind by a directory somebody deleted by hand is nobody's
-verdict. `gws` names how many there are. `git worktree prune` clears them, and
+verdict. `gwp` names how many there are. `git worktree prune` clears them, and
 `gwp` runs it after a removal and at no other time.
 
-## gwp
+### Removing
 
 ```console
 $ gwp
@@ -280,9 +280,9 @@ remove 1 worktree(s)? [y/N] y
 removed 1 worktree(s): squash-merged
 ```
 
-It prints what `gws` prints first, the table, the counts and the notes, then
-removes exactly the rows marked `remove`, under the same flags. One function
-returns that set for both. What goes and what puts it back is printed before
+At a terminal it prints the assessment first, the table, the counts and the
+notes, then removes exactly the rows marked `remove`. One function returns
+that set for both the counts and the removal. What goes and what puts it back is printed before
 anything does, and neither `--quiet` nor `--yes` silences it. The sha in the
 restore line is full length, because that line is meant to be pasted.
 
@@ -300,24 +300,13 @@ history and so refuses the squash merge the probe just proved, nor `branch -D`,
 which reads nothing and is refused by the guard.
 
 It asks only at a terminal, and only without `--json` or `--list`. Anywhere
-else it prints the assessment, removes nothing and exits 0, because an agent
-or a pipe reaching a prompt would hang forever holding the repository's
-worktrees:
-
-```console
-$ gwp < /dev/null
-Head: origin/main (remote)
-BRANCH         PATH                                         VERDICT  WHY
-main           /home/you/git/repo                           keep     it is the main checkout, and never removable
-squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   its tree or combined patch is already in the head branch
-
-1 removable, 1 kept, 0 unclear
-1 would be removed; gwp --yes removes them
-```
+else it prints the assessment, as above, removes nothing and exits 0,
+because an agent or a pipe reaching a prompt would hang forever holding the
+repository's worktrees.
 
 A run that removes nothing writes nothing: no ref, no directory, and no
 `git worktree prune`. `-y` removes without asking, in every mode, and still
-prints the disclosure first. `--json` prints the object `gws --json` prints,
+prints the disclosure first. `--json` prints the assessment as an object,
 with `removed` and `failed` added under `--yes`; `gwp --yes --json` is what an
 agent runs. `--list` prints the table uncoloured and nothing else on stdout.
 `--only VERDICT` narrows the table and the JSON rows, and never the set
@@ -454,7 +443,7 @@ remove it, and starts the highlight on the worktree you are standing in. A
 name or path that is exactly one worktree's, as `gw --list` and `gw` print
 them, takes that one without asking which.
 
-`gwr` says why a branch is not finished, the same verdict `gws` prints. At a
+`gwr` says why a branch is not finished, the same verdict `gwp` prints. At a
 terminal it then asks whether to remove the checkout anyway, and keeps the
 branch: the worktree was in the way, the work was not. `--force` is the same
 answer without the question, and `--yes` on its own refuses.
@@ -632,8 +621,8 @@ Any other host, an ssh alias among them, records no evidence.
 are dropped before `gh` or `glab` runs; everything else in the environment,
 the token included, is passed through.
 
-It takes `-q`, `-v` and `--explain`, and no `--json`. It has no console
-script of its own.
+`gws` is the same command. It takes `-q`, `-v` and `--explain`, and no
+`--json`.
 
 ## gw -h
 
@@ -641,19 +630,18 @@ script of its own.
 $ gw -h
 worktrees 0.7.0: git worktree commands that refuse to lose work
 
-COMMAND          GW                 DOES
-gws              gw status (s, st)  which worktrees are finished, and why
-gwp              gw prune (p)       remove the ones status marks removable
-gwa NAME [BASE]  gw add (a)         create a worktree and land you in it
-gw [QUERY]       gw list            pick a worktree and land you in it
-gwm NEW          gw move (m, mv)    rename this branch and move it
-gwr [QUERY]      gw remove (rm)     remove one whose branch is finished
-gwrot            gw rotate (rot)    the next branch in a series
-—                gw sync            fetch the default remote and ask the forge
-—                gw version (v)     the version this package installs
-gwbc NAME        gw branch create   branch off the head branch
-gwbs [NAME ...]  gw branch status   which branches are finished, and why
-gwbd [NAME ...]  gw branch delete   delete local branches proved finished
+COMMAND          GW                DOES
+gwp              gw prune (p)      remove the worktrees proved finished
+gwa NAME [BASE]  gw add (a)        create a worktree and land you in it
+gw [QUERY]       gw list           pick a worktree and land you in it
+gwm NEW          gw move (m, mv)   rename this branch and move it
+gwr [QUERY]      gw remove (rm)    remove one whose branch is finished
+gwrot            gw rotate (rot)   the next branch in a series
+gws              gw sync           fetch the default remote and ask the forge
+—                gw version (v)    the version this package installs
+gwbc NAME        gw branch create  branch off the head branch
+gwbs [NAME ...]  gw branch status  which branches are finished, and why
+gwbd [NAME ...]  gw branch delete  delete local branches proved finished
 
 gw with no subcommand runs gw list.
 
@@ -672,18 +660,17 @@ import if two commands ever claim one name.
 
 `gw version`, or `gw v`, prints the version. No command takes a `--version`
 flag. Every command but that one, which prints one thing and has nothing to
-be quiet about, takes `--json`, `-q`, `-v` and `--explain`, and `gw sync`
+be quiet about, takes `--json`, `-q`, `-v` and `--explain`, and `gws`
 takes all of them but `--json`. Beyond those:
 
 | | |
 | --- | --- |
-| `gws` | `--branch NAME`, `--delete-ignored`, `--only VERDICT` |
-| `gwp` | `--branch NAME`, `--delete-ignored`, `--only VERDICT`, `-l` and `-y` |
+| `gwp` | `--delete-ignored`, `--only VERDICT`, `-l` and `-y` |
 | `gwr` | `-f`, `--delete-ignored`, `-y` |
 | `gwbs` | `--only VERDICT` |
 | `gwbd` | `--all`, `--dry-run` and `-y` |
 | `gw`, `gw list` | `-l` |
-| `gwa`, `gwbc`, `gwrot`, `gwm` | none |
+| `gwa`, `gwbc`, `gwrot`, `gwm`, `gws` | none |
 
 `--only` takes `remove`, `keep` or `unknown` and can be given more than
 once. It narrows the table and `--json`; the counts under the table still
@@ -691,7 +678,7 @@ cover every row.
 
 `gw <command> --help` prints one command's own list.
 
-While `gws`, `gwp`, `gwr`, `gwbs` and `gwbd` judge, a spinner on
+While `gwp`, `gwr`, `gwbs` and `gwbd` judge, a spinner on
 stderr names the branch and the check in progress. `gwbs` and `gwbd` judge one
 branch at a time, so their line also counts how far through the list they are:
 `fix-parser: was it squash-merged into main? (4 of 18)`.
@@ -724,7 +711,7 @@ of these that applies:
 A `<remote>/HEAD` naming a branch that is gone is still the answer, and it
 does not resolve. Nothing falls through from it to a local branch.
 
-`gws`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwbc` and `gwrot` print the
+`gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwbc` and `gwrot` print the
 head branch and its source on stderr when it resolves:
 
 ```console
@@ -737,8 +724,8 @@ too, unless the head branch was inferred.
 
 When the head branch does not resolve, the command prints why instead of the
 `Head:` line: `No main or master branch.` when the head branch was inferred,
-and otherwise the ref and `gw sync`, which sets it again. `gws` and `gwbs`
-still print every row and exit 1. A row that needs no head keeps its `keep`:
+and otherwise the ref and `gw sync`, which sets it again. `gwp` without a
+terminal and `gwbs` still print every row and exit 1. A row that needs no head keeps its `keep`:
 the main checkout, the head branch, `main`, `master`, and in `gwbs` a branch
 checked out in a worktree. Every other row is `unknown`. `gwp`, `gwr` and
 `gwbd` refuse at exit 1 and change nothing. `gwbc` and `gwrot` fail at exit 1,
@@ -778,13 +765,13 @@ Every command is a console script, so a script reaches it with no shell loaded
 at all:
 
 ```console
-$ gws --json | jq -r '.verdicts[] | select(.ignored > 0) | .branch'
+$ gwp --json | jq -r '.verdicts[] | select(.ignored > 0) | .branch'
 holds-secrets
 
-$ gws --json | jq -r '.verdicts[] | select(.verdict=="remove") | .branch'
+$ gwp --json | jq -r '.verdicts[] | select(.verdict=="remove") | .branch'
 squash-merged
 
-$ fish -c 'gws --json' | jq '.verdicts | length'
+$ fish -c 'gwp --json' | jq '.verdicts | length'
 4
 
 $ bash -c 'gwbc spike --json' | jq -r .base
@@ -803,7 +790,7 @@ an update-ref delete that names no full sha
 ```
 
 The check runs on the argument list as it is about to be handed to git, so no
-code path can assemble its way past one. `gws --explain` prints every git
+code path can assemble its way past one. `gwp --explain` prints every git
 command the program can issue, marking the ones that take the repository's
 shared refs and therefore run serially, and ends with that list of seven,
 generated from the rules rather than written out beside them.
@@ -818,9 +805,9 @@ is refused with them: it deletes refs without `-d` appearing at all.
 
 ## Agent plugin
 
-`plugin/` is a plugin for Claude Code and Codex. `/worktrees:prune` runs `gws`
+`plugin/` is a plugin for Claude Code and Codex. `/worktrees:prune` runs `gwp`
 and `gwbs`, shows the worktrees and branches they proved finished, asks which
-to remove, and removes those with `gwp` and `gwbd`. It is listed in the
+to remove, and removes those with `gwr` and `gwbd`. It is listed in the
 `release-tools` marketplace:
 
 ```console

@@ -1,5 +1,6 @@
 """The agent plugin in `plugin/`: its manifests agree, and the jq filters its
-skill runs read the JSON `gws` and `gwbs` print today."""
+skill runs read the JSON `gwp` and `gwbs` print today, and the removal it
+names removes."""
 
 from __future__ import annotations
 
@@ -71,19 +72,25 @@ def _jq(program: str, piped: str, head: str = "") -> dict:
     return json.loads(proc.stdout)
 
 
-def _json(world, entry: str) -> str:
-    proc = subprocess.run(
+def _run(world, entry: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """The binary as an agent runs it: no terminal on any stream."""
+    return subprocess.run(
         [
             sys.executable,
             "-c",
             f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
-            "--json",
+            *args,
         ],
         cwd=world.repo,
         env=env_for(world),
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
     )
+
+
+def _json(world, entry: str) -> str:
+    proc = _run(world, entry, "--json")
     assert proc.returncode == 0, proc.stderr
     return proc.stdout
 
@@ -100,7 +107,7 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
     world.worktree("started")
 
     branches = _jq(_filter("gwbs"), _json(world, "gwbs"))
-    out = _jq(_filter("gws"), _json(world, "gws"), branches["head_sha"])
+    out = _jq(_filter("gwp"), _json(world, "gwp"), branches["head_sha"])
 
     worktrees = {row["branch"]: row for row in out["worktrees"]}
     assert set(worktrees) == {"squashed", "started"}
@@ -114,3 +121,23 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
     assert branches["branches"][0]["proof"] == "squash"
     assert branches["branches"][0]["undo"].startswith("git branch loose ")
     assert (branches["kept"], branches["unknown"]) == (3, 0)
+
+
+def test_the_skill_removes_a_chosen_worktree_by_its_path(world) -> None:
+    """`command gwr 'PATH' --yes`, with the path the filter printed, removes
+    the worktree and its branch without a terminal to ask at."""
+    assert "`command gwr 'PATH' --yes 2>&1`" in SKILL.read_text()
+    done = world.worktree("done")
+    world.commit("done-file", at=done)
+    world.git("merge", "--quiet", "--squash", "done")
+    world.git("commit", "--quiet", "-m", "done (#1)")
+    head = world.git("rev-parse", "HEAD")
+
+    out = _jq(_filter("gwp"), _json(world, "gwp"), head)
+    [row] = out["worktrees"]
+    proc = _run(world, "gwr", row["path"], "--yes")
+    assert proc.returncode == 0, proc.stderr
+    assert "restore with: git branch done " in proc.stderr
+    assert "removed done" in proc.stderr
+    assert not done.exists()
+    assert world.git("branch", "--list", "done") == ""

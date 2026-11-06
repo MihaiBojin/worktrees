@@ -153,8 +153,8 @@ going quiet in a completion nobody is watching.
 ## The agent plugin reads `--json`
 
 `plugin/` is an agent plugin, installed from a release tag through the
-`release-tools` marketplace. Its skill pipes `gwbs --json` and `gws --json`
-each through a jq filter and removes only with `gwp` and `gwbd`, so the JSON
+`release-tools` marketplace. Its skill pipes `gwbs --json` and `gwp --json`
+each through a jq filter and removes only with `gwr` and `gwbd`, so the JSON
 fields those filters name are an interface. `tests/test_plugin.py` runs both
 filters, read out of `SKILL.md`, against the commands' output: a renamed or
 dropped field fails there. They are two plain pipelines, and the head sha is
@@ -242,8 +242,8 @@ Two more about what is in the list at all:
   the way back to the top.
 - In `gwr`, the main checkout is shown dimmed and unnumbered, because `git
   worktree remove` refuses it whatever flag it is given, and the highlight
-  starts on the worktree you are standing in. `gws` and `gwp` keep the main
-  checkout in their lists for the same reason, and never propose it.
+  starts on the worktree you are standing in. `gwp` keeps the main
+  checkout in its list for the same reason, and never proposes it.
 
 `--json` and `--list` answer the same question without any of this, and an
 agent uses those.
@@ -254,8 +254,8 @@ agent uses those.
 holds `branch status` and `branch delete`. `command_rows()` lists the
 executable commands for help and completion checks. A row carries the function, the flags,
 the one-line description, the console script, the argument shape, the
-shorthands and whether the command changes the caller's directory. `gws`,
-`gw status`, `gw st` and `gw s` reach the same function because that row says
+shorthands and whether the command changes the caller's directory. `gwp`,
+`gw prune` and `gw p` reach the same function because that row says
 so, and `gw -h` prints the table rather than a second list that can disagree
 with it.
 
@@ -297,7 +297,7 @@ on a terminal: both are what a script reads. The colour is applied at the
 call site that formats a table, and neither path passes a code to one.
 
 `progress.py` draws a spinner on stderr and one line saying what is being
-checked, while `gws`, `gwp`, `gwr`, `gwbs` and `gwbd` judge. It runs only when
+checked, while `gwp`, `gwr`, `gwbs` and `gwbd` judge. It runs only when
 stderr is a terminal that can clear a line, and never under `-q` or `-v`,
 since the verbose log writes to the line it redraws. Anything else printed on
 stderr while it spins goes through `progress.line`, which clears the spinner
@@ -333,7 +333,7 @@ command fetches or sets the remote HEAD; `tests/test_forge.py` does the same
 for `gh` and `glab`.
 
 A fetch would be most of what an assessment costs: about 1.1 s of a 1.9 s
-`gws` here, 750 ms of it the SSH handshake. `gwa`, `gwbc` and `gwrot` branch from
+assessment here, 750 ms of it the SSH handshake. `gwa`, `gwbc` and `gwrot` branch from
 the head ref, which reads what the last sync or clone left.
 
 `gw sync` records the forge's answer for every branch tip in that file,
@@ -455,7 +455,7 @@ and contained in the head branch. A closed unmerged request is never proof,
 and neither is a missing, malformed or mismatched sync entry.
 
 `verdicts.prove` is that chain, and it judges a worktree's branch too:
-`gws` runs its worktree checks first and calls it for the rest. Ancestry,
+`gwp` runs its worktree checks first and calls it for the rest. Ancestry,
 squash and content answer by what is in the head branch. That works for a
 branch squashed whole into one commit and fails for one merged as part of a
 stack, where the changes arrive across several squashes and the branch

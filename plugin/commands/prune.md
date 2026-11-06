@@ -3,9 +3,10 @@ name: prune
 description: Remove the worktrees and branches the worktrees CLI proves finished, after asking
 argument-hint: "[NAME ...]"
 allowed-tools:
-  - Bash(gws:*)
   - Bash(gwbs:*)
   - Bash(gwp:*)
+  - Bash(command gwr:*)
+  - Bash(gwr:*)
   - Bash(gwbd:*)
   - Bash(jq:*)
   - Bash(git status:*)

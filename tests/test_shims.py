@@ -269,16 +269,16 @@ def test_gwp_bang_runs_gwp_with_its_flags_and_its_exit_code(tmp_path, shell) -> 
         _, out = _run_fish(
             bin_dir,
             f"source '{ROOT / 'functions' / 'gwp!.fish'}'; "
-            "gwp! --branch x; echo code=$status",
+            "gwp! --only remove; echo code=$status",
         )
     else:
-        _, out = _run_zsh(bin_dir, "gwp! --branch x; echo code=$?")
+        _, out = _run_zsh(bin_dir, "gwp! --only remove; echo code=$?")
     assert "code=4" in out, out
     assert seen.read_text().split() == [
         "--delete-ignored",
         "--yes",
-        "--branch",
-        "x",
+        "--only",
+        "remove",
     ]
 
 

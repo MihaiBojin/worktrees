@@ -232,7 +232,7 @@ def test_sync_takes_no_json_and_the_help_says_so(world) -> None:
         text=True,
         env=env_for(world),
     )
-    assert "gw sync takes no --json" in listed.stderr
+    assert "gws takes no --json" in listed.stderr
 
 
 # --------------------------------------------------------------------------
@@ -491,7 +491,6 @@ def _network_calls(log: Path) -> list[str]:
 @pytest.mark.parametrize(
     ("entry", "args"),
     [
-        ("gws", ()),
         ("gwp", ("--yes",)),
         ("gwr", ("feature", "--yes")),
         ("gwbs", ()),
@@ -518,11 +517,12 @@ def test_only_sync_fetches_or_sets_head(world, entry, args) -> None:
     assert _network_calls(log) == []
 
 
-def test_sync_fetches_and_sets_head(world) -> None:
+@pytest.mark.parametrize(("entry", "args"), [("main", ("sync",)), ("gws", ())])
+def test_sync_fetches_and_sets_head(world, entry, args) -> None:
     """The control for the test above: the same remote, the same git."""
     bare(world)
     env, log = _logging_git(world)
-    p = cli(world, "sync", env=env)
+    p = cli(world, *args, entry=entry, env=env)
     assert p.returncode == 0, p.stderr
     assert _network_calls(log) == [
         "fetch --prune origin",

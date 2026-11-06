@@ -40,18 +40,18 @@ def forge_worktree(world) -> Path:
     return wt
 
 
-def gws(world, *args: str) -> dict:
-    p = cli(world, "status", "--json", *args)
+def gwp(world, *args: str) -> dict:
+    p = cli(world, "prune", "--json", *args)
     assert p.returncode == 0, p.stderr
     return {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
 
 
 def test_a_synced_merged_request_finishes_a_worktree_git_cannot_see(world) -> None:
     forge_worktree(world)
-    assert gws(world)["feature"]["verdict"] == "keep"
+    assert gwp(world)["feature"]["verdict"] == "keep"
 
     synced(world, merged(world))
-    row = gws(world)["feature"]
+    row = gwp(world)["feature"]
     assert row["verdict"] == "remove", row
     assert row["why"] == "pull request #17 merged this tip into the head branch"
 
@@ -61,13 +61,13 @@ def test_a_merged_request_cannot_speak_for_a_later_commit(world) -> None:
     wt = forge_worktree(world)
     synced(world, merged(world))
     world.commit("after", "a\n", at=wt)
-    assert gws(world)["feature"]["verdict"] == "keep"
+    assert gwp(world)["feature"]["verdict"] == "keep"
 
 
 def test_an_open_request_decides_nothing(world) -> None:
     forge_worktree(world)
     synced(world, merged(world, state="OPEN"))
-    row = gws(world)["feature"]
+    row = gwp(world)["feature"]
     assert row["verdict"] == "keep"
     assert row["why"] == "pull request #17 is open, not merged"
 
@@ -84,7 +84,7 @@ def test_a_merged_request_keeps_worktree_protections(world, protection) -> None:
         (wt / "cache").write_text("keep\n")
     else:
         world.git("worktree", "lock", str(wt))
-    assert gws(world)["feature"]["verdict"] == "keep"
+    assert gwp(world)["feature"]["verdict"] == "keep"
 
 
 def test_prune_removes_a_worktree_the_sync_proved(world) -> None:
@@ -148,7 +148,6 @@ def _unsettled(world, provider: str) -> Path:
 @pytest.mark.parametrize(
     ("entry", "args"),
     [
-        ("gws", ()),
         ("gwp", ("--yes",)),
         ("gwr", ("feature", "--yes")),
         ("gwbs", ()),

@@ -49,8 +49,8 @@ def test_reimported_content_is_removable_without_a_worktree_or_upstream(world):
     world.git("add", "feature")
     world.git("commit", "--amend", "--no-edit", "--quiet")
     assert world.git("cherry", "main", "feature").startswith("+")
-    old = cli(world, "status", "--branch", "feature", "--json")
-    assert json.loads(old.stdout)["verdicts"] == []
+    old = cli(world, "prune", "--json")
+    assert "feature" not in {v["branch"] for v in json.loads(old.stdout)["verdicts"]}
     rows = status(world, "feature")["verdicts"]
     assert len(rows) == 1
     assert rows[0]["sha"] == sha
@@ -67,7 +67,7 @@ def reimport(world) -> None:
 
 
 def worktree_status(world) -> dict:
-    p = cli(world, "status", "--json")
+    p = cli(world, "prune", "--json")
     assert p.returncode == 0, p.stderr
     return {r["branch"]: r for r in json.loads(p.stdout)["verdicts"]}
 
@@ -142,7 +142,7 @@ def unmerged_worktree(world) -> Path:
 def test_a_git_failure_in_a_worktree_is_an_error(world, subcommand):
     unmerged_worktree(world)
     env = failing_git(world, subcommand)
-    p = cli(world, "status", "--json", env=env)
+    p = cli(world, "prune", "--json", env=env)
     assert p.returncode == 1, p.stderr
     row = {r["branch"]: r for r in json.loads(p.stdout)["verdicts"]}["feature"]
     assert row["verdict"] == "unknown"

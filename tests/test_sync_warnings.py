@@ -68,7 +68,6 @@ def test_a_time_that_does_not_parse_says_nothing() -> None:
 # --------------------------------------------------------------------------
 
 HEADED = [
-    ("gws",),
     ("gwp", "--yes"),
     ("gwr", "nothing-here"),
     ("gwbs",),
@@ -121,7 +120,7 @@ def test_a_record_with_no_refs_time_is_never_synced(world) -> None:
 
 
 @pytest.mark.parametrize(
-    "argv", [("gws", "--json"), ("gwbs", "--json"), ("gw", "list")]
+    "argv", [("gwp", "--json"), ("gwbs", "--json"), ("gw", "list")]
 )
 def test_json_and_gw_list_print_no_sync_line(world, argv) -> None:
     bare(world)

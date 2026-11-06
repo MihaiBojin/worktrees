@@ -20,7 +20,7 @@ not resolve, the command names why on stderr instead and exits 1. The head
 branch, `main`, `master` and checked-out branches stay `keep`; every other
 branch is `unknown`.
 
-`gws` judges the branch of each worktree with these same checks, after its
+`gwp` judges the branch of each worktree with these same checks, after its
 own worktree protections, so a worktree and a loose branch at the same
 commit read the same verdict and the same `why`.
 

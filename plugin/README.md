@@ -33,12 +33,12 @@ The commands, from the same release:
 uv tool install git-worktrees
 ```
 
-The plugin runs `gws`, `gwbs`, `gwp`, `gwbd` and `jq`. It installs none of
+The plugin runs `gwp`, `gwbs`, `gwr`, `gwbd` and `jq`. It installs none of
 them.
 
 ## What it does
 
-1. Runs `gws --json` and `gwbs --json` against the refs already here, and
+1. Runs `gwp --json` and `gwbs --json` against the refs already here, and
    keeps only the rows marked `remove`, with their proof, plus counts of the
    rest.
 2. Shows them in one table. A worktree whose branch sits on the head branch's
@@ -46,7 +46,7 @@ them.
    somebody has just started looks like.
 3. Asks what to remove. Claude Code offers the choices as a question; Codex
    asks in plain text.
-4. Removes each chosen worktree with `gwp --branch NAME --yes` and the chosen
+4. Removes each chosen worktree with `command gwr PATH --yes` and the chosen
    branches with `gwbd NAME... --yes`. Both assess again before removing.
 5. Reports what was removed, what the CLI refused and why, and the
    `git branch NAME SHA` line that restores each branch.

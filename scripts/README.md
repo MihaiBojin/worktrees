@@ -17,7 +17,7 @@ Starting is the only thing worth timing. Everything else this program does is
 a `git` subprocess or a forge round trip, and both are facts about a
 repository and a network: a monorepo and a five-file repository do not agree,
 and neither do two runs on the same laptop. Where a count says something a
-clock cannot, `gws --explain` lists the git commands and `-v` prints the ones
+clock cannot, `gwp --explain` lists the git commands and `-v` prints the ones
 a run issued.
 
 ### Every interpreter comes from uv

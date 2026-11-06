@@ -298,7 +298,7 @@ def test_a_path_holding_a_tab_is_still_offered(world) -> None:
         ("gw list --li", b"pick none", None),
         ("gw fix-p", b"fix-parser", None),
         ("gw list fix-p", b"fix-parser", None),
-        ("gw status --", b"--json", None),
+        ("gw prune --", b"--json", None),
         # The last candidate in the list, so the whole list has arrived.
         ("gw sync --", b"--verbose", b"--json"),
     ],
@@ -379,7 +379,7 @@ def test_fish_offers_no_json_after_gw_sync() -> None:
 
     assert "--json" not in offered("gw sync --")
     assert "--explain" in offered("gw sync --")
-    assert "--json" in offered("gw status --")
+    assert "--json" in offered("gw prune --")
 
 
 @pytest.mark.skipif(not shutil.which("fish"), reason="fish is not installed")

@@ -207,20 +207,18 @@ def remove(
 
 
 def removable(
-    only: str,
     head: str,
     head_branch: str,
     delete_ignored: bool,
 ) -> list[Verdict]:
     """Every worktree, judging the one you stand in like any other.
 
-    `gws` keeps it, because a listing cannot step out of a directory on your
+    `gwp` keeps it, because a listing cannot step out of a directory on your
     behalf. `gwr` is asked for one by name and does step out, so the rule
     that protects a listing would only hide the answer here.
     """
     return assess(
         R.worktrees(),
-        only,
         head,
         head_branch,
         delete_ignored,

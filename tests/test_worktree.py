@@ -479,7 +479,7 @@ def test_a_neighbour_is_found_under_a_branch_name_with_slashes(world) -> None:
 
 
 def test_counting_the_neighbours_asks_git_nothing(world) -> None:
-    """`gws` counts them on every run, so it walks rather than spawning."""
+    """`gwp` counts them on every run, so it walks rather than spawning."""
     from worktrees.git import options
 
     ours = world.worktree("mine")

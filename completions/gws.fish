@@ -2,12 +2,7 @@
 
 complete -c gws -f
 
-complete -c gws -l branch -d 'consider only that branch'
-complete -c gws -l only -x -a 'remove keep unknown' -d 'show only rows with this verdict'
-complete -c gws -l delete-ignored -d 'count gitignored files as removable'
-
-complete -c gws -l json -d 'verdicts as data'
-complete -c gws -s q -l quiet -d 'verdicts only'
+complete -c gws -s q -l quiet -d 'say nothing on success'
 complete -c gws -s v -l verbose -d 'print every git command'
 complete -c gws -l explain -d 'print every git command and exit'
 

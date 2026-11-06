@@ -69,12 +69,12 @@ Four rules the CLI does not break:
   configured, so two independently-invoked tools cannot disagree about a
   location neither can be told. A branch name with slashes nests, and the
   repository name goes last, so `auth/oauth` cannot collide with `auth` and
-  repositories side by side share one root. `gws` counts what in that root is
+  repositories side by side share one root. `gwp` counts what in that root is
   a sibling's, since the layout alone gives a reader no way to tell.
 - Every git command the program can run is one decorated spec, written the way
   you would type it, and all 35 of them register in one list. A guard reads the
   resolved argv inside the wrapper, so no call site can assemble its way past a
-  refusal. `gws --explain` prints the list, marking the 11 that mutate.
+  refusal. `gwp --explain` prints the list, marking the 11 that mutate.
 - There is no configuration. No file, no environment variable beyond
   `NO_COLOR` and `TERM`, and no `git config` key of this program's own. The
   two git keys it reads are git's: `checkout.defaultRemote` says which remote
@@ -108,8 +108,8 @@ Flags and commands.
 
 | what | why | where |
 | --- | --- | --- |
-| `gws` reports and `gwp` acts, under one function that returns the set | what one prints and the other removes cannot drift | `prune.removable` |
-| `gwbd --dry-run` assesses branches without deleting them; worktree commands use `gws` for assessment | the branch selector and batch deletion share one preview | `branch_cli.delete`, `cli._dispatch` |
+| `gwp` counts and removes through one function that returns the set | what it prints and what it removes cannot drift | `prune.removable` |
+| `gwbd --dry-run` assesses branches without deleting them; `gwp` without a terminal assesses worktrees | the branch selector and batch deletion share one preview | `branch_cli.delete`, `cli._dispatch` |
 | `gwp` prints the verdict table before it asks, and with nothing removable | the reason each worktree stayed is the answer to the question, and naming another command puts it one round trip away | `cli.run_prune` |
 | One row per command carries its function, flags, description, aliases, and directory behaviour | help and dispatch read the same rows | `cli._COMMANDS`, `cli._BRANCH_COMMANDS`, and `cli.command_rows()` |
 | The head ref is the last sync's `<remote>/HEAD`, a clone's, or the local `main` or `master`, and is always a full ref | a bare name is what lets a tag named `origin/main` answer for the head branch, and a `<remote>/main` nothing named the head is a guess about the server | `repo.head_ref` |
@@ -206,7 +206,7 @@ Beyond the gates:
   `test_no_unexpected_git_command_ran` reads the call log and asserts every
   subcommand issued is one the registry declares, and
   `test_status_names_a_stale_record_rather_than_clearing_it` asserts the
-  observable half, that `gws` leaves a stale record where it found it. The
+  observable half, that `gwp` leaves a stale record where it found it. The
   stronger property is not asserted anywhere: that a read-only path issues no
   command the registry marks `mutates=True`. The registry knows, so it is one
   assertion.
@@ -375,7 +375,7 @@ more than 3.13 and nothing is wrong.
 ### How many git calls, which is a count rather than a clock
 
 Counts travel between repositories where milliseconds do not. Over nine
-linked worktrees, `gws` issues 28:
+linked worktrees, `gwp` without a terminal issues 28:
 
 | | count |
 | --- | --- |
@@ -402,7 +402,7 @@ write the index, and every linked worktree has its own at
 | the same with `--no-optional-locks`, which is what this runs | none; the index mtime does not move | and cannot contend with a `git add` in that worktree |
 | `fetch`, `worktree add \| remove \| move`, `update-ref`, `branch --move`, `switch` | shared refs, `$GIT_DIR/index`, `worktrees/` | no |
 
-`gws --explain` marks the last row's commands with `!`, and there are 11 of
+`gwp --explain` marks the last row's commands with `!`, and there are 11 of
 them. Nothing overlaps today; the table says what could.
 
 ## 8. What is left

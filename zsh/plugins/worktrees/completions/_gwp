@@ -3,7 +3,6 @@
 # Flags as `gwp --help` lists them.
 
 _arguments -s \
-    '--branch[consider only that branch]:branch:' \
     '--delete-ignored[count gitignored files as removable]' \
     '*--only[show only rows with this verdict]:verdict:(remove keep unknown)' \
     '(-l --list)'{-l,--list}'[print the table uncoloured and ask nothing]' \

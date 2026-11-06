@@ -170,9 +170,7 @@ def prove(
     return found
 
 
-def unresolved(
-    records: list[R.Worktree], only: str, head_branch: str, why: str
-) -> list[Verdict]:
+def unresolved(records: list[R.Worktree], head_branch: str, why: str) -> list[Verdict]:
     """With no head ref, the main checkout and a worktree on the head branch,
     `main` or `master` are kept, since neither answer measures anything, and
     every other worktree is `unknown`."""
@@ -180,8 +178,6 @@ def unresolved(
     rows = []
     for wt in records:
         if "bare" in wt.flags or "prunable" in wt.flags:
-            continue
-        if only and wt.branch != only:
             continue
         if wt.path == main:
             rows.append(Verdict(KEEP, wt.branch, wt.path, MAIN_CHECKOUT, sha=wt.sha))
@@ -198,7 +194,6 @@ def unresolved(
 
 def assess(
     records: list[R.Worktree],
-    only: str,
     head: str,
     head_branch: str,
     delete_ignored: bool,
@@ -230,8 +225,6 @@ def assess(
             return Verdict(verdict, wt.branch, wt.path, why, ignored, wt.sha)
 
         if "bare" in wt.flags or "prunable" in wt.flags:
-            return None
-        if only and wt.branch != only:
             return None
         if wt.path == main:
             # Said before the standing-in rule below, because which one is

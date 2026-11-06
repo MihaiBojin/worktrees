@@ -2,7 +2,6 @@
 
 complete -c gwp -f
 
-complete -c gwp -l branch -d 'consider only that branch'
 complete -c gwp -l delete-ignored -d 'count gitignored files as removable'
 complete -c gwp -l only -x -a 'remove keep unknown' -d 'show only rows with this verdict'
 complete -c gwp -s l -l list -d 'print the table uncoloured and ask nothing'

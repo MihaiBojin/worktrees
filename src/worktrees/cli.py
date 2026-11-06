@@ -34,7 +34,7 @@ def _same(a: str, b: str) -> bool:
 
 
 def _verdict_table(rows: list[verdicts.Verdict], plain: bool = False) -> str:
-    """The table `gws` and `gwp` print. `plain` is `gwp --list`'s, never
+    """The table `gwp` prints. `plain` is `gwp --list`'s, never
     coloured, since like --json it is what a script reads."""
     if plain:
         return table(
@@ -80,7 +80,7 @@ def _counted(rows: list[verdicts.Verdict]) -> str:
 
 
 def add_status_flags(p: argparse.ArgumentParser) -> None:
-    """What `gws` and `gwbs` take beyond what `gwp` and `gwbd` share."""
+    """The `--only` filter `gwp` and `gwbs` take."""
     p.add_argument(
         "--only",
         action="append",
@@ -152,9 +152,6 @@ def _explain() -> int:
 
 def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
-        "--branch", default="", metavar="NAME", help="consider only that branch"
-    )
-    p.add_argument(
         "--delete-ignored",
         action="store_true",
         help="count a worktree holding gitignored files as removable; nothing "
@@ -196,9 +193,9 @@ def _judge_all(
     """Judge every worktree against `_assessment_head`'s answer, or with
     `verdicts.unresolved` when that does not resolve.
 
-    The one path every command takes, so `prune` can only ever act on what
-    `status` printed. `judge` is how `remove` asks for the one you stand in
-    to be judged like any other, having stepped out of it first.
+    The one path every command takes, so `prune` acts only on what it
+    printed. `judge` is how `remove` asks for the one you stand in to be
+    judged like any other, having stepped out of it first.
     """
     from . import repo as R
     from . import verdicts
@@ -206,21 +203,19 @@ def _judge_all(
     found, head_branch = head
     ref = found.ref
 
-    only = getattr(args, "branch", "")
     ignored = getattr(args, "delete_ignored", False)
     records = R.worktrees()
     rows = (
-        verdicts.unresolved(records, only, head_branch, found.problem())
+        verdicts.unresolved(records, head_branch, found.problem())
         if not found.resolves
-        else judge(only, ref, head_branch, ignored)
+        else judge(ref, head_branch, ignored)
         if judge
         else verdicts.assess(
             records,
-            only,
             ref,
             head_branch,
             ignored,
-            # `gws` and `gwp` report; `gwr` acts, and takes this list as its
+            # `gwp` reports; `gwr` acts, and takes this list as its
             # candidates, so it asks through `judge` and gets it without.
             include_main=True,
         )
@@ -292,39 +287,6 @@ def _require(head: R.Head) -> None:
         raise _Stop(head.problem(), 1)
 
 
-# --------------------------------------------------------------------------
-# status
-# --------------------------------------------------------------------------
-
-
-def run_status(args: argparse.Namespace) -> int:
-    """Say what is here. Nothing in this path removes anything."""
-    import json
-
-    from . import prune
-    from .git import options
-
-    options.verbose = args.verbose
-    if args.explain:
-        return _explain()
-
-    target = _assessment_head(args)
-    if not target[0].resolves:
-        _err(render.fail(target[0].problem()))
-    rows, stale, _, _, records = _assess(args, target)
-    failed = int(not target[0].resolves or any(v.error for v in rows))
-
-    if args.json:
-        print(json.dumps(_assessment(args, rows, stale, records), indent=2))
-        return failed
-
-    _report(args, rows, stale, records)
-    go = prune.removable(rows)
-    if go and not args.quiet:
-        _err(render.note(f"gwp removes the {len(go)} marked removable"))
-    return failed
-
-
 def _neighbours(records: list[R.Worktree]) -> int:
     """How many worktrees under the shared root are a sibling repository's.
 
@@ -344,7 +306,7 @@ def _assessment(
     stale: list[R.Worktree],
     records: list[R.Worktree],
 ) -> dict[str, object]:
-    """The object `gws --json` and `gwp --json` print."""
+    """The object `gwp --json` prints."""
     return {
         **_envelope(args),
         "stale": [w.path for w in stale],
@@ -375,7 +337,7 @@ def _report(
     stale: list[R.Worktree],
     records: list[R.Worktree],
 ) -> None:
-    """The table, the counts and the notes `gws` and `gwp` print. Under
+    """The table, the counts and the notes `gwp` prints. Under
     `--list` the table alone, uncoloured, and the notes on stderr."""
     from . import layout, verdicts
 
@@ -1251,11 +1213,6 @@ def _complete_commands() -> int:
 # --------------------------------------------------------------------------
 
 
-def _add_status_flags(p: argparse.ArgumentParser) -> None:
-    _add_assess_flags(p)
-    add_status_flags(p)
-
-
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
     add_status_flags(p)
@@ -1319,8 +1276,8 @@ def run_branch(args: argparse.Namespace) -> int:
 class _Command:
     """One command under both its names, and every shorthand for it.
 
-    The one place they are written down. `gw status`, `gw st`, `gw s` and
-    `gws` reach the same function because this row says so, and `gw -h`
+    The one place they are written down. `gw prune`, `gw p` and `gwp`
+    reach the same function because this row says so, and `gw -h`
     prints the row rather than a second list that can disagree with it.
     """
 
@@ -1382,17 +1339,10 @@ _COMMANDS: dict[str, _Command] = {
     "branch": _Command(
         run_branch, _add_branch_flags, "create, assess and delete local branches"
     ),
-    "status": _Command(
-        run_status,
-        _add_status_flags,
-        "which worktrees are finished, and why",
-        "gws",
-        aliases=("s", "st"),
-    ),
     "prune": _Command(
         run_prune,
         _add_prune_flags,
-        "remove the ones status marks removable",
+        "remove the worktrees proved finished",
         "gwp",
         aliases=("p",),
     ),
@@ -1438,11 +1388,11 @@ _COMMANDS: dict[str, _Command] = {
         "gwrot",
         aliases=("rot",),
     ),
-    # No console script: gws is the status command's.
     "sync": _Command(
         run_sync,
         _add_sync_flags,
         "fetch the default remote and ask the forge",
+        "gws",
     ),
     # The one row with no console script. Asking a tool its version is done
     # through the tool's name, and a binary for it would be a name nobody
@@ -1487,9 +1437,9 @@ _CANONICAL = _canonical()
 # --------------------------------------------------------------------------
 
 
-_STATUS_HELP = "Say which of this repository's worktrees are finished, and why."
 _PRUNE_HELP = (
-    "Print the assessment gws prints. At a terminal, ask before removing the "
+    "Say which of this repository's worktrees are finished, and why. At a "
+    "terminal, ask before removing the "
     "worktrees it marks removable, and their branches; elsewhere only report, "
     "unless --yes."
 )
@@ -1506,7 +1456,7 @@ class _Parser(argparse.ArgumentParser):
 
     A command that changes directory prints its destination on stdout, and
     its shell function captures that stream, so its help goes to stderr. The
-    rest keep argparse's stdout, where `gws -h | less` reads it.
+    rest keep argparse's stdout, where `gwp -h | less` reads it.
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -1549,10 +1499,10 @@ def _needs(args: argparse.Namespace, what: str) -> int:
 
 
 def gws(argv: list[str] | None = None) -> int:
-    """Read-only. There is no flag here that removes anything."""
-    p = _parser("gws", _STATUS_HELP)
-    _add_status_flags(p)
-    return _dispatch(p, argv, run_status)
+    command = _COMMANDS["sync"]
+    p = _parser(command.binary, command.about)
+    _add_sync_flags(p)
+    return _dispatch(p, argv, command.run)
 
 
 def gwp(argv: list[str] | None = None) -> int:
@@ -1686,7 +1636,7 @@ def _dispatch(
 ) -> int:
     render.setup()
     raw = sys.argv[1:] if argv is None else argv
-    # Worktree previews use status; branch deletion also has --dry-run.
+    # gwp previews worktrees; branch deletion has a --dry-run of its own.
     branch_delete = run is run_branch_delete or raw[:2] == ["branch", "delete"]
     if "--dry-run" in raw and not branch_delete:
         _err(
