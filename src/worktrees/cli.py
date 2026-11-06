@@ -1305,9 +1305,7 @@ _COMMANDS: dict[str, _Command] = {
         "gwh",
         aliases=("h",),
     ),
-    # The one row with no console script. Asking a tool its version is done
-    # through the tool's name, and a tenth binary for it would be a name
-    # nobody types.
+    # Version is available through the tool's name without a separate binary.
     "version": _Command(
         run_version,
         None,

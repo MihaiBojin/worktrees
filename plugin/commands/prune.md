@@ -1,26 +1,24 @@
 ---
 name: prune
-description: Remove the worktrees and branches the worktrees CLI proves finished, after asking
-argument-hint: "[--no-fetch]"
+description: Assess worktrees and loose branches, then remove the targets and categories the user approves
+argument-hint: "[NAMES]"
 allowed-tools:
-  - Bash(gws:*)
-  - Bash(gwbs:*)
+  - Bash(gw:*)
   - Bash(gwp:*)
-  - Bash(gwbd:*)
+  - Bash(gwbs:*)
+  - Bash(gwl:*)
+  - Bash(command gwr:*)
+  - Bash(command gwbd:*)
   - Bash(jq:*)
-  - Bash(git status:*)
-  - Bash(git worktree list:*)
+  - Bash(git remote:*)
   - Bash(git rev-parse:*)
-  - Bash(git log:*)
   - Read
   - AskUserQuestion
 ---
 
-Prune this repository with the worktrees skill. It carries the commands, the
-jq filters, the question to ask and how to report. Nothing below repeats it.
+Prune this repository with the worktrees skill. It defines the assessment
+pipelines, sync question, target/category approval and outcome reporting.
 
-`$ARGUMENTS` may say `--no-fetch`; pass it to every CLI command when it does.
-Anything else in it names worktrees or branches the user wants considered:
-offer only those.
-
-Remove nothing until the user has answered.
+`$ARGUMENTS` names worktrees or branches to consider. Keep that scope and any
+existing choices about sync, targets or deletion categories. Remove only
+what the user approves, using the command binaries specified in the skill.

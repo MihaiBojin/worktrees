@@ -88,7 +88,7 @@ def stderr_colour():
 
 
 def test_a_message_is_its_own_words_when_stderr_is_not_a_terminal() -> None:
-    text = "x is at origin/main (1e177cf)\nnothing to do (--no-fetch)"
+    text = "x is at origin/main (1e177cf)\nnothing to do (--dry-run)"
     assert render.fail(text) == text
     assert render.warn(text) == text
     assert render.note(text) == text
@@ -112,8 +112,8 @@ def test_a_warning_dims_its_detail(stderr_colour) -> None:
 @pytest.mark.parametrize(
     ("text", "painted"),
     [
-        ("pass --force-refresh", "--force-refresh"),
-        ("pass -f", "-f"),
+        ("pass --keep-branch", "--keep-branch"),
+        ("pass -q", "-q"),
         ("'gwbc --x' names one", "'gwbc --x'"),
     ],
 )
