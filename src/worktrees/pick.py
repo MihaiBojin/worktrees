@@ -97,15 +97,14 @@ def choose(
     because there happened to be one other worktree is not that.
 
     `shown` are drawn dimmed above the numbered ones, each after its mark,
-    and the highlight never lands on them: the worktree `gwl` stands in, the
+    and the highlight never lands on them: the worktree `gw list` stands in, the
     main checkout `gwr` cannot remove. A list that leaves them out shows
     fewer rows than `git worktree list`, which reads as though something went
     missing. `at` is the candidate highlighted first, and `here` is one that
     can be picked and is also where you stand, marked `*` after its name.
 
     A run whose stdin is not a terminal is refused rather than left to block:
-    an agent or a pipe reaching a prompt would hang, and --json answers the
-    same question without one.
+    an agent or a pipe reaching a prompt would hang.
     """
     if not candidates:
         return None
@@ -116,11 +115,9 @@ def choose(
         return _select(candidates, keys, shown, first, here)
 
     if not sys.stdin.isatty():
-        count = len(candidates)
-        noun = "worktree" if count == 1 else "worktrees"
         raise Refused(
-            f"{count} {noun} to choose from and this is not a terminal; "
-            "narrow the query, or use --list or --json"
+            f"{len(candidates)} worktrees to choose from and this is not a "
+            "terminal; narrow the query to one"
         )
     fd = sys.stdin.fileno()
     saved = termios.tcgetattr(fd)

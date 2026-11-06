@@ -174,11 +174,12 @@ def test_sync_takes_no_json_and_the_help_says_so(world) -> None:
         [
             sys.executable,
             "-c",
-            "from worktrees.cli import gwh; raise SystemExit(gwh())",
+            "from worktrees.cli import gw; raise SystemExit(gw())",
+            "-h",
         ],
         cwd=str(world.repo),
         capture_output=True,
         text=True,
         env=env_for(world),
     )
-    assert "gw sync takes no --json" in listed.stdout
+    assert "gw sync takes no --json" in listed.stderr
