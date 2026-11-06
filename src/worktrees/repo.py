@@ -300,28 +300,20 @@ def ref_name(ref: str) -> str:
 
 
 def remote(repo: str | os.PathLike[str] | None = None) -> str:
-    """The remote this repository belongs to, or empty when it has none.
+    """The default remote: `checkout.defaultRemote` when it names a remote,
+    otherwise the only remote, otherwise empty.
 
-    `origin` is a convention, not a fact. remote.pushDefault is deliberately
-    not a rung: it names where commits go, not where they come from, and the
-    two differ in exactly the case that makes the question worth asking, a
-    fork you push to and an upstream you branch from.
+    Empty covers a repository with no remote and one with several and no
+    setting, and every caller treats both alike: nothing is fetched, the
+    forge is not asked, and the head branch comes from local branch names.
     """
     names = remotes(repo=repo).lines
     if not names:
         return ""
     if len(names) == 1:
         return names[0]
-
-    stated = [config_get("checkout.defaultRemote", repo=repo).out.strip()]
-    branch = current_branch(repo=repo).out.strip()
-    if branch:
-        stated.append(config_get(f"branch.{branch}.remote", repo=repo).out.strip())
-
-    for candidate in stated:
-        if candidate and candidate != "." and candidate in names:
-            return candidate
-    return "origin" if "origin" in names else names[0]
+    stated = config_get("checkout.defaultRemote", repo=repo).out.strip()
+    return stated if stated in names else ""
 
 
 def head_ref(

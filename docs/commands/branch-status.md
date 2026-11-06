@@ -54,7 +54,7 @@ ancestry or squash evidence can still prove that the work was merged.
 
 The forge is queried only when git has not proved the branch finished.
 `gh pr list` or `glab mr list` requests the newest request for that source
-branch, explicitly in the selected remote repository. `GH_REPO` and
+branch, explicitly in the default remote's repository. `GH_REPO` and
 `GITLAB_REPO` cannot redirect the query.
 
 A forge proof requires all of these facts:
@@ -98,8 +98,8 @@ malformed responses cannot authorize deletion.
 | `-v`, `--verbose` | Print executed commands on stderr. |
 | `--explain` | Print the declared git commands and safety rules, then exit. |
 
-Fetches refresh the selected remote's refs by default. A failed fetch reports
-the failure and disables forge queries for that invocation.
+A run fetches the default remote's refs unless `--no-fetch` is given. A failed
+fetch reports the failure and disables forge queries for that invocation.
 
 JSON contains `head`, `head_sha`, and `verdicts`. Each verdict has `branch`,
 `sha`, `verdict`, `why`, `proof`, `paths`, `request`, `error`, and `undo`.

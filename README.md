@@ -578,6 +578,13 @@ A fetch is most of what a run costs, so a recent one is reused.
 | a fetch, by `gws`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwbc`, `gwrot` | from any worktree of the repository | 10 minutes; the command says how old it is |
 | a request on the forge | any state, or no request at all | never; it is asked on every run |
 
+Every command works against one remote, the default remote:
+`checkout.defaultRemote` when it names a remote, otherwise the only remote. A
+repository with several remotes and no `checkout.defaultRemote` has none, and
+is treated like a repository with no remote at all: nothing is fetched, the
+forge is not asked, and the head branch comes from the local `main`,
+`master` or `trunk`. `git config checkout.defaultRemote origin` picks one.
+
 A remote that cannot be reached is not fatal anywhere. The fetch fails, the
 command says so on stderr, and it answers from the refs already here, which is
 where `--no-fetch` sends it on request. The forge is not asked either: it is

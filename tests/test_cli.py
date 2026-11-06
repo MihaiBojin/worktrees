@@ -662,6 +662,66 @@ def test_a_failed_fetch_still_answers_status(world) -> None:
     assert "done" in p.stdout
 
 
+# --------------------------------------------------------------------------
+# the default remote
+# --------------------------------------------------------------------------
+
+
+def _remotes(world, *names: str) -> None:
+    """Remotes that cannot be reached, each with a main of its own.
+
+    Unreachable, so a fetch leaves the planted refs alone and its failure
+    names the remote it tried.
+    """
+    for name in names:
+        world.git("remote", "add", name, str(world.root / f"{name}.git"))
+        world.git("update-ref", f"refs/remotes/{name}/main", "main")
+
+
+_FETCH = re.compile(r"^\+ git .*\bfetch\b", re.MULTILINE)
+
+
+def test_checkout_default_remote_picks_among_several(world) -> None:
+    _remotes(world, "origin", "a", "b")
+    world.git("config", "checkout.defaultRemote", "b")
+    p = run(world, "gwbc", "-v", "spike")
+    assert p.returncode == 0, p.stderr
+    assert re.search(r"^\+ git .*fetch --prune b$", p.stderr, re.MULTILINE)
+    assert len(_FETCH.findall(p.stderr)) == 1, p.stderr
+    assert "spike from b/main at" in p.stdout
+
+
+def test_the_only_remote_is_the_default(world) -> None:
+    _remotes(world, "upstream")
+    p = run(world, "gwbc", "spike")
+    assert p.returncode == 0, p.stderr
+    assert "upstream could not be fetched" in p.stderr
+    assert "spike from upstream/main at" in p.stdout
+
+
+def test_several_remotes_without_the_setting_are_no_remote(world) -> None:
+    """Not origin, and not the branch's own remote: nothing says which."""
+    _remotes(world, "origin", "upstream")
+    world.git("config", "branch.main.remote", "origin")
+    p = run(world, "gwbc", "-v", "spike")
+    assert p.returncode == 0, p.stderr
+    assert not _FETCH.search(p.stderr), p.stderr
+    assert "spike from main at" in p.stdout
+
+
+@pytest.mark.parametrize(
+    ("names", "base"),
+    [(("origin", "upstream"), "main"), (("upstream",), "upstream/main")],
+)
+def test_a_default_remote_that_does_not_exist_is_ignored(world, names, base) -> None:
+    _remotes(world, *names)
+    world.git("config", "checkout.defaultRemote", "gone")
+    p = run(world, "gwbc", "-v", "spike")
+    assert p.returncode == 0, p.stderr
+    assert "fetch --prune gone" not in p.stderr
+    assert f"spike from {base} at" in p.stdout
+
+
 def test_explain_names_every_refusal_the_guard_holds(world) -> None:
     """The footer is generated from the rules, so the seventh is in it."""
     p = run(world, "gws", "--explain")

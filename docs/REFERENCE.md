@@ -75,8 +75,8 @@ Four rules the CLI does not break:
   refusal. `gws --explain` prints the list, marking the 11 that mutate.
 - There is no configuration. No file, no environment variable beyond
   `NO_COLOR` and `TERM`, and no `git config` key of this program's own. The
-  two git keys it reads, `checkout.defaultRemote` and `branch.<name>.remote`,
-  are git's and answer a question git already asks.
+  one git key it reads, `checkout.defaultRemote`, is git's and answers a
+  question git already asks: which remote this repository works against.
 
 ## 3. Decisions
 
