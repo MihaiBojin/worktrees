@@ -216,8 +216,8 @@ Two more about what is in the list at all:
   the way back to the top.
 - In `gwr`, the main checkout is shown dimmed and unnumbered, because `git
   worktree remove` refuses it whatever flag it is given, and the highlight
-  starts on the worktree you are standing in. `gw` and `gwp` keep the main
-  checkout in their lists for the same reason, and never propose it.
+  starts on the worktree you are standing in. `gwp` keeps the main
+  checkout in its list for the same reason, and never proposes it.
 
 `--json` and `--list` answer the same question without any of this, and an
 agent uses those.
