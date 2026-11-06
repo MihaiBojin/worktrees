@@ -74,6 +74,26 @@ def test_an_open_request_decides_nothing(world) -> None:
     assert row["why"] == "pull request #17 is open, not merged"
 
 
+@pytest.mark.parametrize(("answer", "code"), [("[]", 0), ("", 1), ("[]", 1)])
+def test_a_silent_forge_leaves_the_answer_to_git(world, answer, code) -> None:
+    """No request, not signed in, failing: none of them is a `no`."""
+    forge_worktree(world)
+    marker = world.root / "asked"
+    bin_dir = world.root / "silent-bin"
+    bin_dir.mkdir()
+    exe = bin_dir / "gh"
+    exe.write_text(f"#!/bin/sh\n: > {marker}\nprintf '%s' '{answer}'\nexit {code}\n")
+    exe.chmod(0o755)
+    env = env_for(world)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    row = gws(world, env)["feature"]
+    assert marker.exists(), "the forge was not asked"
+    assert (row["verdict"], row["why"]) == (
+        "keep",
+        "no proof that its change is in the head branch",
+    )
+
+
 @pytest.mark.parametrize("protection", ["dirty", "ignored", "locked"])
 def test_a_merged_request_keeps_worktree_protections(world, protection) -> None:
     wt = forge_worktree(world)
@@ -233,7 +253,7 @@ def test_a_reachable_remote_leaves_the_forge_asked(world, tmp_path) -> None:
 
 
 # --------------------------------------------------------------------------
-# the question goes to the repository the command is standing in
+# the question goes to the repository the remote names
 # --------------------------------------------------------------------------
 
 

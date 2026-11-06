@@ -11,6 +11,10 @@ from __future__ import annotations
 class GitError(RuntimeError):
     """git exited with a code the caller did not declare acceptable."""
 
+    def line(self) -> str:
+        """The message on one line, for a table cell."""
+        return " ".join(str(self).splitlines())
+
 
 class Refused(Exception):
     """The guard will not issue this command. No flag reaches past it."""

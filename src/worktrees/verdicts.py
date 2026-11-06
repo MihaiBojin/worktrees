@@ -21,7 +21,7 @@ UNKNOWN = "unknown"
 
 
 class Verdict:
-    __slots__ = ("branch", "ignored", "path", "sha", "verdict", "why")
+    __slots__ = ("branch", "error", "ignored", "path", "sha", "verdict", "why")
 
     verdict: str
     branch: str  # empty when detached
@@ -36,6 +36,9 @@ class Verdict:
     # as the value the ref must still hold, so a commit made between the
     # judgement and the removal fails the delete rather than going with it.
     sha: str
+    # git failed while judging it. The verdict is `unknown`, and the command
+    # exits 1 the way `gwbs` does, so a script can tell this from unclear.
+    error: bool
 
     def __init__(
         self,
@@ -45,6 +48,7 @@ class Verdict:
         why: str,
         ignored: int = 0,
         sha: str = "",
+        error: bool = False,
     ) -> None:
         self.verdict = verdict
         self.branch = branch
@@ -52,6 +56,7 @@ class Verdict:
         self.why = why
         self.ignored = ignored
         self.sha = sha
+        self.error = error
 
     @property
     def label(self) -> str:
@@ -212,18 +217,15 @@ def assess(
                 return say(REMOVE, "its commit is reached by a ref")
             return say(UNKNOWN, f"no ref reaches {wt.sha}")
 
-        try:
-            found = prove(
-                wt.sha,
-                wt.branch,
-                head,
-                head_branch,
-                remote,
-                ask_forge,
-                lambda question: progress.say(f"{wt.label}: {question}"),
-            )
-        except GitError as exc:
-            return say(UNKNOWN, str(exc))
+        found = prove(
+            wt.sha,
+            wt.branch,
+            head,
+            head_branch,
+            remote,
+            ask_forge,
+            lambda question: progress.say(f"{wt.label}: {question}"),
+        )
         ignored = status.ignored
         if found.verdict == REMOVE and ignored and not delete_ignored:
             return say(
@@ -234,8 +236,16 @@ def assess(
             )
         return say(found.verdict, found.why)
 
+    def judged(wt: R.Worktree) -> Verdict | None:
+        try:
+            return judge(wt)
+        except GitError as exc:
+            return Verdict(
+                UNKNOWN, wt.branch, wt.path, exc.line(), sha=wt.sha, error=True
+            )
+
     # Each worktree is judged on its own, and most of the time goes waiting
     # on git and on the forge, one round trip per branch git cannot settle.
     # Threads overlap the waits; map keeps git's order.
     with ThreadPoolExecutor(max_workers=8) as pool:
-        return [v for v in pool.map(judge, records) if v is not None]
+        return [v for v in pool.map(judged, records) if v is not None]
