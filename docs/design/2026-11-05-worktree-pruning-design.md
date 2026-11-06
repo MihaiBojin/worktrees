@@ -61,9 +61,10 @@ The head ref is the first of these that applies:
    2. Both exist: the one whose tip has the newer committer date; `main` on a tie.
    3. Neither exists: `main`, which does not resolve.
 
-When the head ref does not resolve, every row is `unknown`, mutating commands refuse, and `gwa`, `gwbc`
-and `gwrot` fail. The message suggests `gw sync`, or says `No main or master branch.` when inference
-was used.
+When the head ref does not resolve, every judged row is `unknown` (section 5 says which rows are not
+judged), mutating commands refuse, and `gwbc`, `gwrot` and a `gwa` that would branch from the head
+fail. The message suggests `gw sync`, or says `No main or master branch.` when inference was used.
+No head line is printed then.
 
 The commands that read the head ref are `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwbc` and `gwrot`.
 Without `--json`, they print the head and its source to stderr, for example
