@@ -186,8 +186,8 @@ def _judge_all(
     head: tuple[R.Head, str],
     judge: Callable[..., list[verdicts.Verdict]] | None,
 ) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
-    """Judge every worktree against `_assessment_head`'s answer, and every
-    one `unknown` when that does not resolve.
+    """Judge every worktree against `_assessment_head`'s answer, or with
+    `verdicts.unresolved` when that does not resolve.
 
     The one path every command takes, so `prune` can only ever act on what
     `status` printed. `judge` is how `remove` asks for the one you stand in
@@ -203,7 +203,7 @@ def _judge_all(
     ignored = getattr(args, "delete_ignored", False)
     records = R.worktrees()
     rows = (
-        verdicts.unresolved(records, only, found.problem())
+        verdicts.unresolved(records, only, head_branch, found.problem())
         if not found.resolves
         else judge(only, ref, head_branch, ignored)
         if judge
@@ -237,9 +237,11 @@ def _assessment_head(args: argparse.Namespace) -> tuple[R.Head, str]:
 
 def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
     """What prints the sync warning and the head line: on stderr, never
-    beside --json. Under -q the never-synced line stays, the stale one goes,
-    and the head line stays only when the head was inferred, since that one
-    is a guess. The head is kept on `args` for `_envelope`."""
+    beside --json. Under -q the never-synced line stays and the stale one
+    goes. The head line is never printed for a head that does not resolve,
+    which the failure names instead, and under -q only when the head was
+    inferred, since that one is a guess. The head is kept on `args` for
+    `_envelope`."""
     from datetime import UTC, datetime
 
     from . import sync
@@ -255,7 +257,7 @@ def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
             stale = sync.stale(record, datetime.now(UTC))
             if stale:
                 _warn(stale)
-        if args.quiet and head.source != "inferred":
+        if not head.resolves or (args.quiet and head.source != "inferred"):
             return
         detail = f"; {head.also} also exists" if head.also else ""
         _err(render.note(f"Head: {render.ref(head.name)} ({head.source}{detail})"))
@@ -299,10 +301,14 @@ def run_status(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    rows, stale, _, _, records = _assess(args, _assessment_head(args))
+    target = _assessment_head(args)
+    resolves = target[0].resolves
+    if not resolves:
+        _err(render.fail(target[0].problem()))
+    rows, stale, _, _, records = _assess(args, target)
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
-    failed = int(any(v.error for v in rows))
+    failed = int(not resolves or any(v.error for v in rows))
 
     # Every repository beside this one shares the same `.worktrees` root, and
     # nothing else says which of the directories there are somebody else's.

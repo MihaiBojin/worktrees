@@ -92,6 +92,18 @@ def test_every_head_reading_command_says_it_was_never_synced(world, argv) -> Non
     ), p.stderr
 
 
+@pytest.mark.parametrize("argv", [("gwbs",), ("gwbc", "spike")], ids=lambda a: a[0])
+def test_the_never_synced_line_comes_before_an_unresolved_head(world, argv) -> None:
+    bare(world)
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone")
+    p = run(world, *argv)
+    assert p.returncode == 1, p.stderr
+    lines = p.stderr.splitlines()
+    assert lines[0] == NEVER, p.stderr
+    assert "origin/gone does not resolve" in p.stderr
+    assert not any(line.startswith("Head: ") for line in lines), p.stderr
+
+
 def test_quiet_keeps_the_never_synced_line(world) -> None:
     bare(world)
     p = run(world, "gwbs", "-q")

@@ -336,7 +336,7 @@ def head_ref(
         symref = symbolic_ref(f"refs/remotes/{remote_name}/HEAD", repo=repo)
         target = symref.out.strip() or f"refs/remotes/{remote_name}/HEAD"
         resolves = bool(ref_exists(target, repo=repo))
-        record = sync.read()
+        record = sync.read(repo)
         if record:
             return Head(target, "remote", resolves, "", remote_name, record)
         if symref.out.strip():
