@@ -64,10 +64,10 @@ gwp --json | jq -c '{
   gitignored files.
 - `kept` and `unknown` count the rest. `kept` includes finished rows that a
   protection holds back, such as uncommitted changes or a lock. The main
-  checkout and the head branch are always among the kept.
+  checkout is always among the kept worktrees.
 
-A branch checked out in a worktree is never eligible in `branches` and
-appears in `worktrees` instead, so nothing is listed twice.
+`gwbs` leaves out every branch checked out in a worktree. Those appear only
+in `worktrees`, so nothing is listed twice.
 
 ## 2. Show
 

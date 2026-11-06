@@ -123,7 +123,7 @@ Output and machine surface.
 | what | why | where |
 | --- | --- | --- |
 | Three verdicts, and `unknown` is not `keep` with a softer word | "no common history with the head branch" is a different fact from "holds work the head branch lacks", and printing them alike invites somebody to act on the wrong one | `verdicts.py` |
-| A protection clears `eligible` and leaves the verdict alone | whether the work landed and whether this run may delete it are two questions, and a finished worktree with uncommitted changes is still finished | `verdicts.assess`, `branches.assess`, `prune.removable` |
+| A protection clears `eligible` and leaves the verdict alone | whether the work landed and whether this run may delete it are two questions, and a finished worktree with uncommitted changes is still finished | `verdicts.assess`, `prune.removable` |
 | Colour is decided per stream, once, and only for a terminal | stdout carries the path `cd $(gwa x)` reads and the JSON `jq` parses | `render.setup`. `NO_COLOR` is tested for a non-empty value, which is the no-color.org rule |
 | Padding runs on the text and painting after it | the other order counts an escape sequence as width, and every column under a coloured cell sits crooked by the length of the code | `render.table` |
 | Help asked for goes to stdout at exit 0; a usage printed because the invocation was wrong goes to stderr at exit 2 | `--help \| less` on an empty screen is the failure this avoids | argparse, plus the hand-written `usage:` lines |

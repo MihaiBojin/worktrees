@@ -37,7 +37,7 @@ class Verdict:
         return {**asdict(self), "undo": self.undo}
 
 
-CHECKED_OUT = "it is checked out in a worktree"
+CHECKED_OUT = "checked out in a worktree; see gwp"
 
 
 def local_refs() -> dict[str, tuple[str, str]]:
@@ -54,8 +54,9 @@ def assess(
     `no_head` says why, and every branch a head would have to prove is
     `unknown`, `main` and `master` apart.
 
-    The head branch and a symbolic ref are not judged. A branch checked out
-    in a worktree is judged and never eligible."""
+    With no names, a branch checked out in a worktree is left out: it
+    appears only as its worktree, in gwp. Named, it is a `keep` row. The
+    head branch and a symbolic ref are not judged either."""
     refs = local_refs()
     evidence = (sync.read() or {}).get("evidence", {})
     repository = branch_forge.repository_for(R.remote())
@@ -67,7 +68,7 @@ def assess(
         if wt.branch:
             checked.setdefault(wt.branch, []).append(wt.path)
     rows = []
-    wanted = list(dict.fromkeys(names or refs))
+    wanted = list(dict.fromkeys(names or (r for r in refs if r not in checked)))
     for i, name in enumerate(wanted, 1):
         sha, symbolic = refs[name]
         row = Verdict(
@@ -77,7 +78,7 @@ def assess(
         rows.append(row)
         if name == head_branch:
             row.verdict, row.why = "keep", "it is the head branch"
-        elif not head_sha and row.paths:
+        elif row.paths:
             row.verdict, row.why = "keep", CHECKED_OUT
         elif symbolic:
             row.verdict, row.why = "keep", "it is a symbolic branch ref"
@@ -99,9 +100,7 @@ def assess(
                 )
                 row.verdict, row.why = found.verdict, found.why
                 row.proof, row.request = found.proof, found.request
-                row.eligible = found.verdict == verdicts.REMOVE and not row.paths
-                if found.verdict == verdicts.REMOVE and row.paths:
-                    row.why = f"{found.why}; {CHECKED_OUT}"
+                row.eligible = found.verdict == verdicts.REMOVE
             except GitError as exc:
                 row.error, row.why = True, exc.line()
     return rows

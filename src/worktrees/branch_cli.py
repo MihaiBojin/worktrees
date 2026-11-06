@@ -97,19 +97,15 @@ def _table(rows: list[branches.Verdict]) -> str:
                 Cell("WHY", BOLD),
                 Cell("WORKTREE", BOLD),
             ),
-            # A `remove` row held back keeps its verdict's colour and dims
-            # the rest, the way gwp's table does.
             *[
                 (
                     _verdict(v),
-                    Cell(v.branch, DIM if held else render.BRANCH),
-                    Cell(v.sha[:12], DIM if held else YELLOW),
-                    Cell(v.why, DIM if held else ""),
+                    Cell(v.branch, render.BRANCH),
+                    Cell(v.sha[:12], YELLOW),
+                    Cell(v.why),
                     Cell(", ".join(v.paths), DIM),
                 )
-                for v, held in (
-                    (v, v.verdict == "remove" and not v.eligible) for v in rows
-                )
+                for v in rows
             ],
         ]
     )

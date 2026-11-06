@@ -177,11 +177,9 @@ def test_every_row_a_head_would_judge_is_unknown(world, setup, message) -> None:
     assert p.stderr == f"{message}\n"
     rows = {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
     assert (rows["loose"]["verdict"], rows["loose"]["why"]) == ("unknown", message)
-    assert rows["feature"]["verdict"] == "keep"
-    assert rows["feature"]["paths"] == [str(feature)]
-    here = world.git("branch", "--show-current")
-    assert rows[here]["verdict"] == "keep"
-    assert rows[here]["paths"] == [str(world.repo)]
+    # Checked out, so each appears only as its worktree.
+    assert "feature" not in rows
+    assert world.git("branch", "--show-current") not in rows
 
 
 def test_an_unresolved_head_fails_with_only_the_main_checkout(world) -> None:

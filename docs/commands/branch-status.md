@@ -11,22 +11,21 @@ gwbs feature old-fix
 worktrees branch status --json
 ```
 
-The head branch is `keep` and not judged. A branch checked out in a worktree
-is judged like any other and is never eligible, since it goes with its
-worktree; a `remove` row says so after the proof, as in `its tip is an
-ancestor of the head branch; it is checked out in a worktree`. The report
-includes the worktree paths. Branches are assessed against a pinned commit on the repository's
+Without names, branches checked out in a worktree are left out: each appears
+only as its worktree, in `gwp`. Naming one prints a `keep` row, `checked out
+in a worktree; see gwp`, with the worktree paths. The head branch is `keep`
+and not judged. Branches are assessed against a pinned commit on the repository's
 [head branch](../../README.md#the-head-branch), which the command names on
 stderr first, as in `Head: origin/main (remote)`. When the head branch does
 not resolve, the command names why on stderr instead and exits 1. The head
-branch, `main`, `master` and checked-out branches stay `keep`; every other
-branch is `unknown`.
+branch, `main`, `master` and named checked-out branches stay `keep`; every
+other branch is `unknown`.
 
 `gwp` judges the branch of each worktree with these same checks, so a
 worktree and a loose branch at the same commit read the same verdict.
 
-A row is eligible when its verdict is `remove` and it is not checked out.
-`gwbd` deletes only eligible rows, and the summary counts them:
+A row is eligible when its verdict is `remove`. `gwbd` deletes only eligible
+rows, and the summary counts them:
 `1 eligible, 2 kept, 0 unclear`.
 
 ## Verdicts and evidence
