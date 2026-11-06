@@ -310,7 +310,6 @@ def test_no_terminal_is_one_exit_code(world) -> None:
     world.worktree("b")
     for entry, args in (
         ("gwp", ("--no-fetch",)),
-        ("gwl", ()),
         ("gwr", ("--no-fetch",)),
     ):
         p = run(world, entry, *args)
@@ -790,6 +789,41 @@ def test_list_with_no_query_takes_esc_as_cancelled(world) -> None:
     code, out = run_on_a_terminal(world, "gwl", answer="\x1b")
     assert code == 0, out
     assert "nothing picked" in out
+
+
+def test_list_takes_one_match_outright_on_a_terminal(world) -> None:
+    world.worktree("one")
+    two = world.worktree("two")
+    code, out = run_on_a_terminal(world, "gwl", "two", answer="")
+    assert code == 0, out
+    assert "which?" not in out
+    assert out.strip() == str(two), out
+
+
+def test_list_says_so_rather_than_landing_you_where_you_are(world) -> None:
+    """One candidate, standing in it: a note, and no path to cd into."""
+    wt = world.worktree("one")
+    code, out = run_on_a_terminal_at(world, wt, "gwl", "one", answer="")
+    assert code == 0, out
+    assert "already in one" in out
+    assert str(wt) not in out
+
+
+def test_list_offers_main_to_somebody_standing_in_it(world) -> None:
+    """From a subdirectory of the main checkout, `gwl main` is the way back."""
+    world.worktree("one")
+    (world.repo / "sub").mkdir()
+    code, out = run_on_a_terminal_at(
+        world, world.repo / "sub", "gwl", "main", answer=""
+    )
+    assert code == 0, out
+    assert out.strip() == str(world.repo), out
+
+
+def test_list_on_a_terminal_in_a_repository_with_no_worktrees_says_so(world) -> None:
+    code, out = run_on_a_terminal(world, "gwl", answer="")
+    assert code == 1, out
+    assert "this is the only worktree" in out
 
 
 def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:

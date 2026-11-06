@@ -104,8 +104,7 @@ def choose(
     can be picked and is also where you stand, marked `*` after its name.
 
     A run whose stdin is not a terminal is refused rather than left to block:
-    an agent or a pipe reaching a prompt would hang, and --json answers the
-    same question without one.
+    an agent or a pipe reaching a prompt would hang.
     """
     if not candidates:
         return None
@@ -120,7 +119,7 @@ def choose(
         noun = "worktree" if count == 1 else "worktrees"
         raise Refused(
             f"{count} {noun} to choose from and this is not a terminal; "
-            "narrow the query, or use --list or --json"
+            "narrow the query to one"
         )
     fd = sys.stdin.fileno()
     saved = termios.tcgetattr(fd)

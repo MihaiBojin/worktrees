@@ -844,7 +844,9 @@ def run_list(args: argparse.Namespace) -> int:
         )
         return 0
 
-    if args.list:
+    # Nothing can answer a picker without a terminal, so a script gets every
+    # match, a single one included, and nothing is selected.
+    if args.list or not sys.stdin.isatty():
         if not found:
             _err(render.fail("no worktree matches"))
             return 1

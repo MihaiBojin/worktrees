@@ -334,9 +334,10 @@ $ gwr                     # asks which, starting on the one you are in
 ```
 
 Each prints one destination on stdout, which is what the shell function
-reads, and prints data there instead under `--json` and `--list`. `gwr` prints
-a path **only** when you were standing in what it removed; empty output, and
-output that is not a directory, both mean stay put.
+reads, and prints data there instead under `--json` and `--list`, as `gwl`
+does without a terminal. `gwr` prints a path **only** when you were standing
+in what it removed; empty output, and output that is not a directory, both
+mean stay put.
 
 `gwm` is the one that is not a convenience. Renaming the directory you are
 standing in leaves the shell with a stale `$PWD` and every later command
@@ -407,7 +408,9 @@ then: from a subdirectory, picking it takes you back to the top.
 
 Matching is substring first and then subsequence, so `tst` finds `add-tests`,
 and a substring hit always outranks a loose one. Without a terminal `gwl`
-refuses at exit 3 and names `--list` and `--json`.
+selects nothing: it prints the `--list` table of every match and exits 0,
+even when one worktree matches or the only match is where you stand. A query
+that matches nothing fails at exit 1.
 
 `gwr` lists the main checkout dimmed and unnumbered, since git will not
 remove it, and starts the highlight on the worktree you are standing in. A

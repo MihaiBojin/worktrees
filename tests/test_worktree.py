@@ -136,13 +136,6 @@ def test_a_command_that_stays_prints_its_help_on_stdout(world) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_list_prints_the_selection_alone(world) -> None:
-    world.worktree("fix-parser")
-    p = run(world, "gwl", "parse")
-    assert p.returncode == 0, p.stderr
-    assert p.stdout.strip() == str(world.parent / ".worktrees" / "fix-parser" / "repo")
-
-
 def test_list_offers_the_main_checkout(world) -> None:
     """It is where a finished branch leaves you, so it is a destination."""
     world.worktree("one")
@@ -150,46 +143,6 @@ def test_list_offers_the_main_checkout(world) -> None:
     payload = json.loads(p.stdout)
     assert [w["branch"] for w in payload] == ["main", "one"]
     assert [w["main"] for w in payload] == [True, False]
-
-
-def test_list_says_so_rather_than_landing_you_where_you_are(world) -> None:
-    """The bug this replaced: one candidate, standing in it, no output at all."""
-    wt = world.worktree("one")
-    p = run(world, "gwl", "one", at=wt)
-    assert p.returncode == 0, p.stderr
-    assert p.stdout == ""
-    assert "already in one" in p.stderr
-
-
-def test_list_with_no_query_asks_even_for_one_other_worktree(world) -> None:
-    """No query is a request to be shown the options.
-
-    Being moved without being asked, because the repository happened to hold
-    one other worktree, is not that. A query that narrows to one has already
-    said which, and still takes it outright.
-    """
-    world.worktree("one")
-    p = run(world, "gwl")
-    assert p.returncode == 3, p.stdout
-    assert "2 worktrees to choose from and this is not a terminal" in p.stderr
-    assert "--list or --json" in p.stderr
-    assert p.stdout == ""
-
-
-def test_list_offers_main_to_somebody_standing_in_it(world) -> None:
-    """From a subdirectory of the main checkout, `gwl main` is the way back."""
-    world.worktree("one")
-    (world.repo / "sub").mkdir()
-    p = run(world, "gwl", "main", at=world.repo / "sub")
-    assert p.returncode == 0, p.stderr
-    assert p.stdout.strip() == str(world.repo)
-
-
-def test_list_with_a_query_still_takes_the_one_match_outright(world) -> None:
-    world.worktree("one")
-    p = run(world, "gwl", "one")
-    assert p.returncode == 0, p.stderr
-    assert p.stdout.strip().endswith("/one/repo")
 
 
 def test_list_marks_the_one_you_stand_in(world) -> None:
@@ -209,28 +162,36 @@ def test_the_main_checkout_says_so_without_saying_it_twice(world) -> None:
     assert "trunk (main)" in p.stdout
 
 
-def test_list_in_a_repository_with_no_worktrees_says_so(world) -> None:
-    p = run(world, "gwl")
+@pytest.mark.parametrize(
+    "made,at,query",
+    [
+        (("one", "two"), None, "two"),
+        (("one",), None, ""),
+        (("one",), "one", "one"),
+        ((), None, ""),
+    ],
+    ids=["one-match", "no-query", "only-here", "single-worktree"],
+)
+def test_list_without_a_terminal_prints_every_match(world, made, at, query) -> None:
+    """Nothing can answer a picker, so nothing is selected, one match included."""
+    made = {name: world.worktree(name) for name in made}
+    where = made[at] if at else None
+    args = (query,) if query else ()
+    listed = run(world, "gwl", "--list", *args, at=where)
+    for entry, prefix in (("gwl", ()), ("gw", ("list",))):
+        p = run(world, entry, *prefix, *args, at=where)
+        assert p.returncode == 0, p.stderr
+        assert p.stderr == ""
+        assert p.stdout == listed.stdout
+    assert listed.stdout.splitlines()[0].split() == ["WORKTREE", "BRANCH", "PATH"]
+
+
+def test_list_without_a_terminal_fails_on_no_match(world) -> None:
+    world.worktree("one")
+    p = run(world, "gwl", "zzz")
     assert p.returncode == 1
-    assert "this is the only worktree" in p.stderr
-
-
-def test_list_refuses_to_prompt_without_a_terminal(world) -> None:
-    """An agent or a pipe reaching a prompt would hang."""
-    world.worktree("one")
-    world.worktree("two")
-    p = run(world, "gwl")
-    assert p.returncode == 3
-    assert "not a terminal" in p.stderr
-    assert "--list" in p.stderr
-
-
-def test_one_match_takes_it_with_no_prompt(world) -> None:
-    world.worktree("one")
-    world.worktree("two")
-    p = run(world, "gwl", "two")
-    assert p.returncode == 0, p.stderr
-    assert p.stdout.strip().endswith("/two/repo")
+    assert "no worktree matches" in p.stderr
+    assert p.stdout == ""
 
 
 def test_the_picker_prefers_a_substring_to_a_subsequence() -> None:
