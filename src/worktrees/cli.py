@@ -1641,16 +1641,19 @@ def _no_match(prog: str, query: str) -> int:
     """No worktree answers to the query, and the command it is closest to.
 
     `gw ARGS` runs `gw list ARGS` whenever ARGS does not start with a
-    command, so a mistyped command arrives here as a query.
+    command, so a mistyped command arrives here as a query. The pool is the
+    full names `gw -h` prints, plus `--help`, which people type as a command.
+    Shorthands stay out: `ls` is nearer `s` than `list` by difflib's count.
     """
     # difflib costs 0.8 ms to import and only a query that matched nothing
     # needs it, so no other run pays for it.
     import difflib
 
     lines = ["no worktree matches"]
-    near = difflib.get_close_matches(query, list(_CANONICAL), n=1)
+    near = difflib.get_close_matches(query, [*_COMMANDS, "--help"], n=1)
     if near:
         lines.append(f"the closest command is: {prog} {near[0]}")
+        lines.append(f"{prog} -h lists every command")
     _err(render.fail("\n".join(lines)))
     return 1
 
