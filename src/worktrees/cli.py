@@ -65,15 +65,18 @@ def _verdict_table(rows: list[verdicts.Verdict], plain: bool = False) -> str:
     return table([head, *body])
 
 
-def add_status_flags(p: argparse.ArgumentParser) -> None:
-    """The `--only` filter `gwp` and `gwbs` take."""
+def add_status_flags(
+    p: argparse.ArgumentParser,
+    text: str = "show only rows with this verdict (remove, keep or unknown); "
+    "repeat for more",
+) -> None:
+    """The `--only` that `gwp` and `gwbs` take."""
     p.add_argument(
         "--only",
         action="append",
         choices=render.VERDICTS,
         metavar="VERDICT",
-        help="show only rows with this verdict (remove, keep or unknown); "
-        "repeat for more",
+        help=text,
     )
 
 
@@ -324,8 +327,9 @@ def _report(
     stale: list[R.Worktree],
     records: list[R.Worktree],
 ) -> None:
-    """The table, the counts and the notes `gwp` prints. Under
-    `--list` the table alone, uncoloured, and the notes on stderr."""
+    """The table, the counts and the notes `gwp` prints. Under `--list`
+    the table alone is on stdout, uncoloured, and the counts join the notes
+    on stderr."""
     from . import layout, verdicts
 
     plain = getattr(args, "list", False)
@@ -335,9 +339,11 @@ def _report(
 
     # Every row counted, --only or not, so a filtered table still says what
     # it is not showing.
-    if not plain:
+    if plain:
+        _err(render.note(render.counted(render.err, rows)))
+    else:
         print()
-        print(render.counted(rows))
+        print(render.counted(render.out, rows))
     if len(rows) < 2:
         _err(render.note("no worktrees besides the main checkout; gwa NAME makes one"))
     if stale:
@@ -401,7 +407,7 @@ def run_prune(args: argparse.Namespace) -> int:
             print(json.dumps(result, indent=2))
         if not go:
             _err(render.note("nothing to remove"))
-        else:
+        elif not args.json:
             _err(render.note(f"{len(go)} would be removed; gwp --yes removes them"))
         return errors
 
@@ -424,7 +430,8 @@ def run_prune(args: argparse.Namespace) -> int:
             )
         )
     elif args.list:
-        print(f"removed {len(go)} worktree(s): {', '.join(v.label for v in go)}")
+        names = ", ".join(render.branch(v.label) for v in go)
+        _err(render.note(f"removed {len(go)} worktree(s): {names}"))
     else:
         names = ", ".join(render.out(v.label, render.BRANCH) for v in go)
         print(f"removed {len(go)} worktree(s): {names}")
@@ -906,7 +913,7 @@ def run_move(args: argparse.Namespace) -> int:
 def run_remove(args: argparse.Namespace) -> int:
     import json
 
-    from . import pick, prune
+    from . import layout, pick, prune
     from . import repo as R
     from . import worktree as wt_mod
     from .git import options
@@ -927,11 +934,15 @@ def run_remove(args: argparse.Namespace) -> int:
     head = _assessment_head(args)
     _require(head[0])
     rows, _, _, _, records = _assess(args, head, judge=wt_mod.removable)
-    found = pick.matches(
-        args.query, [R.Worktree(v.path, "", v.branch, frozenset()) for v in rows]
-    )
-    by_path = {v.path: v for v in rows}
-    candidates = [by_path[w.path] for w in found if w.path in by_path]
+    # Exact and nothing looser: the closest match to a worktree already
+    # removed is somebody else's.
+    q = args.query
+    candidates = [
+        v
+        for v in rows
+        if not q or q in (layout.name_of(v.path), v.label, v.path) or _same(q, v.path)
+    ]
+    by_path = {v.path: v for v in candidates}
 
     if not candidates:
         _err(
@@ -946,6 +957,12 @@ def run_remove(args: argparse.Namespace) -> int:
     # The main checkout is listed and never offered: `git worktree remove`
     # refuses it whatever flag it is given. The worktree you stand in is
     # highlighted first, since it is the one you most likely came to remove.
+    if q and len(candidates) > 1 and not sys.stdin.isatty():
+        paths = "\n".join(v.path for v in candidates)
+        raise Refused(
+            f"{len(candidates)} worktrees answer to {q} and this is not a "
+            f"terminal; name one by its path:\n{paths}"
+        )
     here = R.toplevel().out.strip()
     offered = [R.Worktree(v.path, "", v.branch, frozenset()) for v in candidates]
     picked = pick.choose(
@@ -957,6 +974,12 @@ def run_remove(args: argparse.Namespace) -> int:
         _err(render.note("nothing picked"))
         return 0
     chosen = by_path[picked.path]
+    standing_in = _same(chosen.path, here)
+    if standing_in and not sys.stdin.isatty():
+        raise Refused(
+            f"{chosen.path} is the worktree you are in, and only a terminal "
+            "can confirm removing it"
+        )
 
     if chosen.error:
         _err(
@@ -1013,6 +1036,13 @@ def run_remove(args: argparse.Namespace) -> int:
 
     never = prune.plan([chosen], _err)
     if not args.yes and not prune.confirm(1, never=never):
+        _err(render.note("nothing removed"))
+        return 0
+    # The second question, which --yes does not answer: the caller's shell
+    # is in this directory.
+    if standing_in and prune._prompt(
+        render.ask(f"you are in {chosen.path}; remove it?", "[y/N]")
+    ).strip().lower() not in ("y", "yes"):
         _err(render.note("nothing removed"))
         return 0
 
@@ -1208,7 +1238,11 @@ def _complete_commands() -> int:
 
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
-    add_status_flags(p)
+    add_status_flags(
+        p,
+        text="narrow the table to rows with this verdict (remove, keep or "
+        "unknown), repeatable; what is removed stays the same",
+    )
     p.add_argument(
         "-l",
         "--list",
@@ -1629,9 +1663,10 @@ def _dispatch(
 ) -> int:
     render.setup()
     raw = sys.argv[1:] if argv is None else argv
-    # gwp previews worktrees; branch deletion has a --dry-run of its own.
-    branch_delete = run is run_branch_delete or raw[:2] == ["branch", "delete"]
-    if "--dry-run" in raw and not branch_delete:
+    # gwp previews without a terminal, so a --dry-run there is answered by
+    # name. Anywhere else argparse refuses it like any unknown flag.
+    asks_prune = run is run_prune or (run is None and raw[:1] in (["prune"], ["p"]))
+    if "--dry-run" in raw and asks_prune:
         _err(
             render.fail(
                 "there is no --dry-run: gwp reports without a terminal and asks at one"

@@ -408,12 +408,20 @@ def test_version_is_a_command_and_not_a_flag(world) -> None:
         assert "unrecognized arguments: --version" in p.stderr
 
 
-def test_dry_run_is_refused_by_name(world) -> None:
-    for entry in ("gws", "gwp"):
-        p = run(world, entry, "--dry-run")
+def test_prune_refuses_dry_run_by_name(world) -> None:
+    for argv in (("gwp",), ("gw", "prune"), ("gw", "p")):
+        p = run(world, *argv, "--dry-run")
         assert p.returncode == 2
         assert "there is no --dry-run" in p.stderr
         assert "gwp reports without a terminal and asks at one" in p.stderr
+
+
+@pytest.mark.parametrize("argv", [("gws",), ("gw", "sync"), ("gwr", "x")])
+def test_other_commands_refuse_dry_run_as_an_unknown_flag(world, argv) -> None:
+    p = run(world, *argv, "--dry-run")
+    assert p.returncode == 2
+    assert "unrecognized arguments: --dry-run" in p.stderr
+    assert "gwp" not in p.stderr
 
 
 # --------------------------------------------------------------------------
@@ -497,7 +505,7 @@ def test_gwp_at_a_terminal_with_a_script_flag_does_not_ask(world, flag) -> None:
     code, out = run_on_a_terminal(world, "gwp", flag, answer="y\n")
     assert code == 0, out
     assert "[y/N]" not in out
-    assert "1 would be removed; gwp --yes removes them" in out
+    assert ("1 would be removed; gwp --yes removes them" in out) == (flag == "--list")
     assert wt.exists()
 
 
@@ -532,6 +540,23 @@ def test_gwp_list_is_never_coloured(world) -> None:
     assert "\x1b" in out, "the control: the same stdout is painted without --list"
 
 
+def test_gwp_list_puts_the_table_alone_on_stdout(world) -> None:
+    world.worktree("done")
+    listed = run(world, "gwp", "--list")
+    assert len(listed.stdout.splitlines()) == 3, listed.stdout
+    assert "1 eligible, 1 kept, 0 unclear" in listed.stderr
+    p = run(world, "gwp", "--list", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert p.stdout == listed.stdout
+    assert "1 eligible, 1 kept, 0 unclear" in p.stderr
+    assert "removed 1 worktree(s): done" in p.stderr
+
+
+def test_gwp_only_help_says_the_targets_stay(world) -> None:
+    p = run(world, "gwp", "--help")
+    assert "what is removed stays the same" in " ".join(p.stdout.split())
+
+
 def test_gwp_only_narrows_the_table_and_not_the_targets(world) -> None:
     wt = world.worktree("done")
     world.commit("wip", at=world.worktree("busy"))
@@ -554,7 +579,8 @@ def test_gwp_only_narrows_the_json_rows(world) -> None:
     assert p.returncode == 0, p.stderr
     rows = [(v["branch"], v["eligible"]) for v in json.loads(p.stdout)["verdicts"]]
     assert rows == [("done", True), ("busy", False)]
-    assert "1 would be removed" in p.stderr
+    # The data is the answer; a hint naming `gwp --yes` is not for a script.
+    assert "would be removed" not in p.stderr
 
 
 def test_gwp_with_nothing_eligible_says_so(world) -> None:
@@ -1224,6 +1250,29 @@ def test_remove_starts_on_the_worktree_you_stand_in_and_lists_main_unnumbered(
     assert "nothing picked" in out
 
 
+def test_remove_asks_again_before_removing_the_worktree_you_are_in(world) -> None:
+    """--yes answers the first question and not the second, which names the
+    path; on a yes the process leaves first and prints the main checkout."""
+    wt = world.worktree("done")
+    code, out = run_on_a_terminal_at(world, wt, "gwr", "done", "--yes", answer="y\n")
+    assert code == 0, out
+    assert f"you are in {wt}; remove it? [y/N]" in out
+    assert "remove 1 worktree(s)?" not in out
+    assert out.rstrip().endswith(str(world.repo)), out
+    assert not wt.exists()
+
+
+def test_remove_asks_both_questions_without_yes(world) -> None:
+    wt = world.worktree("done")
+    code, out = run_on_a_terminal_at(world, wt, "gwr", "done", answer="y\nn\n")
+    assert code == 0, out
+    assert "remove 1 worktree(s)? [y/N]" in out
+    assert f"you are in {wt}; remove it? [y/N]" in out
+    assert "nothing removed" in out
+    assert wt.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/done")
+
+
 def test_remove_asks_before_deleting_ignored_files_on_a_terminal(world) -> None:
     """The refusal becomes a question, and every ignored path is named first."""
     (world.repo / ".gitignore").write_text(".env\n")
@@ -1269,12 +1318,21 @@ def test_list_marks_main_when_you_stand_in_it(world) -> None:
     assert re.search(r"^  2\s+one\s+one\s", out, re.M), out
 
 
-def test_remove_lists_main_unnumbered_under_a_query_too(world) -> None:
-    world.worktree("one")
-    world.worktree("two")
-    code, out = run_on_a_terminal(world, "gwr", "o", answer="\x1b")
+def _two_answering_to_x(world) -> None:
+    """One worktree named x on branch a, one named b on branch x."""
+    for name, branch in (("x", "a"), ("b", "x")):
+        path = world.parent / ".worktrees" / name / world.repo.name
+        world.git("worktree", "add", "--quiet", "-b", branch, str(path))
+
+
+def test_remove_offers_only_the_exact_matches_on_a_terminal(world) -> None:
+    _two_answering_to_x(world)
+    world.worktree("x-more")
+    code, out = run_on_a_terminal(world, "gwr", "x", answer="\x1b")
     assert code == 0, out
     assert re.search(r"^  \*\s+repo\s+main\s", out, re.M), out
+    assert "1-2, or esc" in out
+    assert "x-more" not in out
     assert "nothing picked" in out
 
 

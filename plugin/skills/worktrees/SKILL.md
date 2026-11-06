@@ -64,11 +64,11 @@ gwp --json | jq -c '{
   gitignored files.
 - `kept` and `unknown` count the rest. `kept` includes finished rows that a
   protection holds back, such as uncommitted changes or a lock. The main
-  checkout and the head branch are always among the kept, and `main` and
-  `master` are never eligible.
+  checkout is always among the kept worktrees, and `main` and `master` are
+  never eligible.
 
-A branch checked out in a worktree is never eligible in `branches` and
-appears in `worktrees` instead, so nothing is listed twice.
+`gwbs` leaves out every branch checked out in a worktree. Those appear only
+in `worktrees`, so nothing is listed twice.
 
 ## 2. Show
 
@@ -117,12 +117,16 @@ the shell.
   shell function that would change directory.
 - The chosen branches, in one call: `gwbd 'NAME' 'NAME' ... --yes 2>&1`.
 
+The skill cannot remove the worktree it runs in. `gwp` never proposes it,
+and `gwr` refuses it at exit 3 without a terminal: say so, and that the user
+can remove it with `gwr` from their own shell.
+
 Never `git branch -D`, `git worktree remove`, `git update-ref -d` or `rm`.
 Never pass `--force`, whatever a refusal suggests: it removes a worktree that
-is not proved finished. Never run `gwp --yes`, whatever `gwp` prints: it
-removes every eligible worktree, not the ones the user chose. Never pass `--delete-ignored` unless the user asked
-for it by name: it deletes the gitignored files in the worktree, and nothing
-restores them. When they do ask for a worktree in `ignored`, it is
+is not proved finished. Never run `gwp --yes`: it removes every eligible
+worktree, not the ones the user chose. Never pass `--delete-ignored` unless
+the user asked for it by name: it deletes the gitignored files in the
+worktree, and nothing restores them. When they do ask for a worktree in `ignored`, it is
 `command gwr 'PATH' --delete-ignored --yes 2>&1`.
 
 What the output means:
@@ -130,7 +134,9 @@ What the output means:
 - `gwr` prints the branch and its path, then `restore with: git branch NAME
   SHA`, before removing, and `removed NAME` after. When the worktree is no
   longer proved finished it removes nothing, prints `NAME is not finished:
-  REASON` or `NAME is finished: REASON` and exits 1.
+  REASON` or `NAME is finished: REASON` and exits 1. A path that matches no
+  worktree, such as one already removed, prints `no worktree matches` and
+  exits 1 with nothing removed.
 - `gwbd` prints `each comes back with:` and one `git branch NAME SHA` per
   branch, then `deleted N branch: ...`. A branch it refuses prints
   `NAME kept: REASON` and the command exits 3; the others are still deleted.

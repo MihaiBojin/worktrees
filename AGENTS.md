@@ -199,8 +199,15 @@ once and each move prints the row it lands on, so nothing writes a cursor
 code where it would show up as text.
 
 A query that is exactly one worktree's branch or path is that worktree
-alone. `gwr one` beside `one-more` is not a question, and neither is
-`gwr "$(gw two)"`.
+alone. `gw one` beside `one-more` is not a question, and neither is
+`gw "$(gw two)"`.
+
+`gwr` matches exactly and nothing looser: a query is a worktree's name
+under `.worktrees`, its branch or its path. Several exact matches get the
+picker over those alone at a terminal, and a refusal at exit 3 listing
+their paths without one. No match fails at exit 1. A removal that fell back
+to the closest match would, asked twice for `fix`, remove `fix-more` the
+second time.
 
 Dropping `fzf` is less code, not more. It removes the spawn and the fallback
 branch a machine without `fzf` would otherwise need.
@@ -483,11 +490,12 @@ somebody to act on the wrong one.
 Eligible is a second answer, not a fourth verdict. A row is eligible when its
 verdict is `remove` and no protection applies: a branch named `main` or
 `master`, whatever the head branch is, the worktree you stand in, a
-lock, uncommitted or untracked files, ignored files without
-`--delete-ignored`, and for `gwbs` a branch checked out in a worktree. A
-protection clears `eligible` and leaves the verdict and its proof alone, and
+lock, uncommitted or untracked files, and ignored files without
+`--delete-ignored`. A protection clears `eligible` and leaves the verdict and its proof alone, and
 `why` names the first one after the proof. The main checkout and the head
-branch are not judged and read `keep`. `prune.removable()` returns the
+branch are not judged and read `keep`. `gwbs` leaves out a branch checked
+out in a worktree unless it is named, and then reads `keep`, since it
+appears only as its worktree. `prune.removable()` returns the
 eligible rows; the counts line and the removal both use it, so what one
 prints and the other removes cannot drift.
 

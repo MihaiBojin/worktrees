@@ -13,7 +13,7 @@ a shell function of the same name.
 | --- | --- |
 | `gwp` | say which worktrees are finished, and why, then remove those, having asked at a terminal |
 | `gws` | fetch the default remote and ask the forge; the only command that reaches the network |
-| `gwbs [NAME ...]` | assess local branches, including those without worktrees |
+| `gwbs [NAME ...]` | assess local branches that have no worktree |
 | `gwbd [NAME ...]` | delete branches proved finished, with confirmation and undo commands |
 | `gwa NAME [BASE]` | create a worktree for `NAME` and land you in it |
 | `gw [QUERY]` | pick one of this repository's worktrees and land you in it |
@@ -284,8 +284,9 @@ For a worktree the others are the one you are standing in, a lock,
 uncommitted changes or untracked files, and ignored files without
 `--delete-ignored`. A `remove` row held back by one names the first that
 applies after the proof, as in `its tip is an ancestor of the head branch; it
-has uncommitted changes`. In `gwbs` the other protection is being checked out
-in a worktree, since that branch goes with its worktree.
+has uncommitted changes`. `gwbs` leaves out a branch checked out in
+a worktree, which appears only as its worktree here. Named, it reads `keep`,
+`checked out in a worktree; see gwp`.
 
 ### Removing
 
@@ -331,7 +332,8 @@ A run that removes nothing writes nothing: no ref, no directory, and no
 `git worktree prune`. `-y` removes without asking, in every mode, and still
 prints the disclosure first. `--json` prints the assessment as an object,
 with `removed` and `failed` added under `--yes`; `gwp --yes --json` is what an
-agent runs. `--list` prints the table uncoloured and nothing else on stdout.
+agent runs. `--list` prints the table uncoloured and nothing else on stdout;
+the counts and the result line go to stderr.
 `--only VERDICT` narrows the table and the JSON rows by verdict, so
 `--only remove` shows protected rows too, and never narrows the set removed:
 the disclosure names every target.
@@ -463,9 +465,18 @@ gw -h lists every command
 ```
 
 `gwr` lists the main checkout dimmed and unnumbered, since git will not
-remove it, and starts the highlight on the worktree you are standing in. A
-name or path that is exactly one worktree's, as `gw --list` and `gw` print
-them, takes that one without asking which.
+remove it, and starts the highlight on the worktree you are standing in.
+A query to `gwr` matches exactly: the WORKTREE name, the branch or the path,
+as `gw --list` prints them, and no substring. One match takes that one
+without asking. Several are offered in the picker at a terminal and
+refused at exit 3 without one, with each path named, so a script can pass
+the one it meant. No match fails at exit 1 and removes nothing.
+
+Removing the worktree you are standing in takes a second question, which
+names its path, and `--yes` answers only the first. On a yes, `gwr` moves
+into the main checkout before removing, prints that path, and the shell
+function takes you there. Without a terminal it refuses at exit 3,
+whatever the flags, since nothing can answer the second question.
 
 `gwr` says why a worktree is not eligible, with the same verdict and reason
 `gwp` prints: `is not finished` for a branch with work left, and `is
@@ -752,7 +763,7 @@ When the head branch does not resolve, the command prints why instead of the
 `Head:` line: `No main or master branch.` when the head branch was inferred,
 and otherwise the ref and `gw sync`, which sets it again. `gwp` without a
 terminal and `gwbs` still print every row and exit 1. A row that needs no head keeps its `keep`:
-the main checkout, the head branch, `main`, `master`, and in `gwbs` a branch
+the main checkout, the head branch, `main`, `master`, and in `gwbs` a named branch
 checked out in a worktree. Every other row is `unknown`. `gwp`, `gwr` and
 `gwbd` refuse at exit 1 and change nothing. `gwbc` and `gwrot` fail at exit 1,
 and so does `gwa` when it would branch from the head; `gwa` with a `BASE`, or

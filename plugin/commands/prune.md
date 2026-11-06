@@ -4,8 +4,7 @@ description: Remove the worktrees and branches the worktrees CLI proves finished
 argument-hint: "[NAME ...]"
 allowed-tools:
   - Bash(gwbs:*)
-  - Bash(gwp:*)
-  - Bash(command gwr:*)
+  - Bash(gwp --json:*)
   - Bash(gwr:*)
   - Bash(gwbd:*)
   - Bash(jq:*)
