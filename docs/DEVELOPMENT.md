@@ -34,8 +34,8 @@ what to run.
 | --- | --- |
 | `src/worktrees/git.py` | the decorator, the guard, the registry |
 | `src/worktrees/repo.py` | what the repository is: worktrees, remote, head branch |
-| `src/worktrees/merged.py` | whether a branch's change is already upstream |
-| `src/worktrees/verdicts.py` | one verdict per worktree, and nothing that mutates |
+| `src/worktrees/merged.py` | the git checks for whether a branch's change is in the head branch |
+| `src/worktrees/verdicts.py` | the proof worktrees and branches share, one verdict per worktree, and nothing that mutates |
 | `src/worktrees/prune.py` | the six commands that mutate, and the sweep |
 | `src/worktrees/new_branch.py` | starting a branch off the head branch |
 | `src/worktrees/rotate.py` | the next branch in a series |

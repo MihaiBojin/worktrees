@@ -99,6 +99,16 @@ def test_prune_removes_a_worktree_the_forge_proved(world) -> None:
     assert world.repo.exists()
 
 
+def test_gwr_asks_the_forge_about_the_one_it_was_given(world) -> None:
+    """`gwr` scans without the forge, then asks about the worktree picked."""
+    wt = forge_worktree(world)
+    env = stub(world, "github", [evidence(world, "github")])
+    p = cli(world, "feature", "--no-fetch", "--yes", entry="gwr", env=env)
+    assert p.returncode == 0, p.stderr
+    assert not wt.exists()
+    assert not R.ref_exists("refs/heads/feature")
+
+
 def _marker(world, marker: Path) -> dict[str, str]:
     """An env whose `gh` records having been asked and answers nothing."""
     bin_dir = world.root / "marker-bin"

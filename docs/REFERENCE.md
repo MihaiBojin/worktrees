@@ -211,7 +211,8 @@ Four behaviours the field survey found nowhere else, of which three are here:
 ## 5. Failure classes that stay tested
 
 Every row below was run. `held` means the behaviour was reproduced against
-this CLI on 2026-09-11 and it did the right thing; the last column says
+this CLI on 2026-09-11, and A1 and A4 to A7 again on 2026-11-06, and it did
+the right thing; the last column says
 whether a test in `tests/` would catch a regression.
 
 `gitrevisions(7)` resolves a short name as `refs/<name>` before
@@ -220,13 +221,13 @@ involved.
 
 | | state in the repository | today | test |
 | --- | --- | --- | --- |
-| A1 | tag `feature`, unmerged branch `feature` | held, `unknown` | `test_a_tag_cannot_answer_for_a_branch` |
+| A1 | tag `feature`, unmerged branch `feature` | held, `keep` | `test_a_tag_cannot_answer_for_a_branch` |
 | A2 | the same, annotated | held: the restore line carries the branch's commit, not the tag object | `test_every_printed_sha_is_a_commit` |
 | A3 | tag `main`, no remote, head ref is the bare name | held: `full_ref("main")` is `refs/heads/main` | `test_the_head_ref_is_never_a_bare_name` |
-| A4 | branch `x` and branch `heads/x` | held, both `unknown` | none |
-| A5 | tag `foo` and branch `tags/foo` | held, `unknown` | none |
-| A6 | branch named a full 40-hex sha | held: judged `squash-merged`, and the restore line carries the branch's own sha | none |
-| A7 | tag `feature` outside the head branch, branch `feature` merged | held: reaped, reason `merged` | none. `test_a_tag_cannot_answer_for_a_branch` runs A1's direction only |
+| A4 | branch `x` and branch `heads/x` | held, both `keep` | none |
+| A5 | tag `foo` and branch `tags/foo` | held, `keep` | none |
+| A6 | branch named a full 40-hex sha | held: judged `remove` by squash, and the restore line carries the branch's own sha | none |
+| A7 | tag `feature` outside the head branch, branch `feature` merged | held: reaped by ancestry | none. `test_a_tag_cannot_answer_for_a_branch` runs A1's direction only |
 | A8 | branch `weird>pwned`, a name a shell redirects on | held: the restore line and the `gwbc` hint quote the name, and bash, zsh and fish read the quotes alike | `test_the_restore_line_is_safe_to_paste`, `test_a_restore_line_means_the_same_in_every_shell` |
 | A9 | worktree at a path holding a newline | held: left out of `--complete`, because one row a line cannot carry it. A tab is carried, since both shells split a row at the first one | `test_a_path_holding_a_newline_is_not_offered`, `test_a_path_holding_a_tab_is_still_offered` |
 
