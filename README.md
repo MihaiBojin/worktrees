@@ -591,6 +591,23 @@ Every branch the forge did not answer for is named on stderr with the
 reason, such as the first line `gh` printed. A signed-out `gh` fails every
 question, so it keeps the last sync's evidence the way a missing one does.
 
+Every command that reads the head branch says on stderr when this record is
+missing or old, before its `Head:` line:
+
+```console
+Never synced: verdicts use refs from the clone or last fetch and no forge evidence. Run: gw sync
+Last synced 3 hours ago. Run: gw sync
+```
+
+The first appears when the default remote has no sync record with a `refs`
+time, and `-q` keeps it. A remote with no branches can never record one, so
+it always shows this line. The second appears when the older of `refs` and
+`forge` is more than ten minutes old; a null `forge` leaves `refs` to decide.
+`-q` drops it. Neither appears under `--json`, for `gw sync` or `gw list`,
+or without a default remote. The plan `gwp`, `gwr` and `gwbd` print before
+deleting repeats the never-synced line, and their question becomes
+`Never synced. Delete anyway? [y/N]`. `--yes` still skips the question.
+
 The remote's URL picks the forge and the repository. A host of
 `github.com` or `github.*` is asked through `gh`, and `gitlab.com` or
 `gitlab.*` through `glab`, each passed that host and path and nothing else.

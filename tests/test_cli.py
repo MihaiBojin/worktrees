@@ -18,6 +18,7 @@ import pytest
 from conftest import env_for
 
 from worktrees import cli, prune
+from worktrees.sync import NEVER
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 
@@ -711,13 +712,13 @@ def _unreachable(world) -> None:
 
 
 def test_an_unreachable_remote_still_makes_the_branch(world) -> None:
-    """Off the refs already here, and without a word about the remote."""
+    """Off the refs already here, saying only that nothing has synced."""
     _unreachable(world)
     world.git("update-ref", "refs/remotes/origin/main", "main")
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     p = run(world, "gwbc", "spike")
     assert p.returncode == 0, p.stderr
-    assert p.stderr == "Head: origin/main (clone)\n"
+    assert p.stderr == f"{NEVER}\nHead: origin/main (clone)\n"
     assert "spike from origin/main" in p.stdout
     assert world.git("rev-parse", "--verify", "refs/heads/spike")
 
@@ -728,7 +729,7 @@ def test_an_unreachable_remote_still_makes_the_worktree(world) -> None:
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     p = run(world, "gwa", "fix-parser")
     assert p.returncode == 0, p.stderr
-    assert "fetch" not in p.stderr
+    assert "fetch" not in p.stderr.replace(NEVER, "")
     assert (world.parent / ".worktrees" / "fix-parser" / "repo").is_dir()
 
 
@@ -737,7 +738,7 @@ def test_an_unreachable_remote_still_answers_status(world) -> None:
     world.worktree("done")
     p = run(world, "gws")
     assert p.returncode == 0, p.stderr
-    assert "fetch" not in p.stderr
+    assert "fetch" not in p.stderr.replace(NEVER, "")
     assert "done" in p.stdout
 
 

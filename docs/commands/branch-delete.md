@@ -31,6 +31,10 @@ prompt deletes nothing.
 a verdict. Without a terminal, supply names or `--all`, and `--yes` to delete.
 `--dry-run` needs neither a terminal nor confirmation.
 
+In a repository whose default remote has no [`gw sync`](../../README.md#gw-sync)
+record, the plan ends with the never-synced line and the question is
+`Never synced. Delete anyway? [y/N]`.
+
 When the head branch does not resolve, the command refuses at exit 1 and
 deletes nothing. Otherwise it checks the head SHA and assesses the selected branch again after
 confirmation. A changed branch tip, changed head ref, or newly checked-out

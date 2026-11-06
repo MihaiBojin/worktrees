@@ -8,7 +8,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from . import render
+from . import render, sync
 from . import repo as R
 from .git import GitError, Refused, git
 from .verdicts import REMOVE, Verdict
@@ -106,8 +106,10 @@ def plan(
     go: list[Verdict],
     say: Callable[[str], None],
     repo: str | os.PathLike[str] | None = None,
-) -> None:
+) -> bool:
     """Print what would go, and what puts it back, before anything does.
+    Returns whether the repository was never synced, which the plan says
+    last and the question asks about.
 
     --quiet and --yes do not silence this.
 
@@ -135,6 +137,10 @@ def plan(
             )
         for path in R.ignored_paths(v.path):
             say(render.err(f"  deleting ignored, unrecoverable: {path}", render.YELLOW))
+    never = sync.never()
+    if never:
+        say(render.warn(sync.NEVER))
+    return never
 
 
 def _prompt(text: str) -> str:
@@ -148,7 +154,9 @@ def _prompt(text: str) -> str:
     return sys.stdin.readline()
 
 
-def confirm(count: int, ask: Callable[[str], str] | None = None) -> bool:
+def confirm(
+    count: int, ask: Callable[[str], str] | None = None, never: bool = False
+) -> bool:
     """Ask before removing. Anything but yes is no.
 
     A run whose stdin is not a terminal cannot answer, so it is refused
@@ -162,7 +170,10 @@ def confirm(count: int, ask: Callable[[str], str] | None = None) -> bool:
                 "pass --yes to remove them"
             )
         ask = _prompt
-    question = render.ask(f"remove {count} worktree(s)?", "[y/N]")
+    question = render.ask(
+        "Never synced. Delete anyway?" if never else f"remove {count} worktree(s)?",
+        "[y/N]",
+    )
     return ask(question).strip().lower() in ("y", "yes")
 
 

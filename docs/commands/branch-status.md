@@ -102,7 +102,7 @@ deletion.
 | Flag | Behaviour |
 | --- | --- |
 | `--json` | Print structured evidence on stdout. Diagnostics use stderr. |
-| `-q`, `--quiet` | Omit the summary, and the `Head:` line unless the head branch was inferred. |
+| `-q`, `--quiet` | Omit the summary, the stale-sync line, and the `Head:` line unless the head branch was inferred. The never-synced line stays. |
 | `-v`, `--verbose` | Print executed commands on stderr. |
 | `--explain` | Print the declared git commands and safety rules, then exit. |
 

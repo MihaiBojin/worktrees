@@ -7,7 +7,7 @@ import json
 import sys
 from typing import TYPE_CHECKING
 
-from . import branches, progress, prune, render
+from . import branches, progress, prune, render, sync
 from .cli import (
     _assessment_head,
     _err,
@@ -269,14 +269,22 @@ def delete(args: argparse.Namespace) -> int:
                 )
             )
         return int(any(v.error for v in rows))
+    never = sync.never()
     if go and not args.json:
         _err(render.note(f"deleting {_branches(len(go))}:"))
         _err(_plan(go))
+        if never:
+            _err(render.warn(sync.NEVER))
     if go and not args.yes:
         if not sys.stdin.isatty():
             raise Refused("not a terminal; pass --yes to confirm deletion")
         if prune._prompt(
-            render.ask(f"delete {_branches(len(go))}?", "[y/N]")
+            render.ask(
+                "Never synced. Delete anyway?"
+                if never
+                else f"delete {_branches(len(go))}?",
+                "[y/N]",
+            )
         ).strip().lower() not in ("y", "yes"):
             _report(args, head, head_sha, rows, removed=removed, failed=failures)
             return 0

@@ -83,7 +83,10 @@ Four rules the CLI does not break:
   the git common directory: `gw sync` replaces it whole after a fetch, and it
   holds state, not settings: when the default remote was fetched, when the
   forge last answered, and what it said about each local branch tip, keyed
-  by branch and the SHA asked about.
+  by branch and the SHA asked about. Every command that reads the head ref
+  warns on stderr when that record is missing, or when its older time is
+  more than ten minutes old, and a never-synced deletion asks
+  `Never synced. Delete anyway?`.
 
 ## 3. Decisions
 

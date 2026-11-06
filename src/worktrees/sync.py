@@ -32,6 +32,12 @@ from . import repo as R
 
 NAME = "git-worktrees-sync.json"
 
+NEVER = (
+    "Never synced: verdicts use refs from the clone or last fetch "
+    "and no forge evidence. Run: gw sync"
+)
+_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
 
 def _path() -> Path | None:
     common = R.common_dir().out.strip()
@@ -44,7 +50,7 @@ def _url(remote: str) -> str:
 
 def now() -> str:
     """This moment in UTC, as RFC 3339 with a Z."""
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime(_FORMAT)
 
 
 def write(remote: str, refs: str, asked: str | None, evidence: dict) -> None:
@@ -95,6 +101,38 @@ def read() -> dict | None:
     if record.get("remote") != {"name": remote, "url": _url(remote)}:
         return None
     return record
+
+
+def never() -> bool:
+    """A default remote, and no sync of it to trust."""
+    return bool(R.remote()) and read() is None
+
+
+def stale(record: dict, at: datetime) -> str:
+    """The warning for a sync older than ten minutes at `at`, or "".
+
+    The older of `refs` and `forge` decides; a null `forge` is a host with
+    no forge to ask, so `refs` decides alone. A time that does not parse
+    says nothing about age.
+    """
+    times = [record["refs"], *([record["forge"]] if record.get("forge") else [])]
+    try:
+        oldest = min(datetime.strptime(t, _FORMAT).replace(tzinfo=UTC) for t in times)
+    except ValueError:
+        return ""
+    seconds = (at - oldest).total_seconds()
+    if seconds <= 600:
+        return ""
+    minutes = int(seconds // 60)
+    count, unit = (
+        (minutes, "minute")
+        if minutes < 60
+        else (minutes // 60, "hour")
+        if minutes < 24 * 60
+        else (minutes // (24 * 60), "day")
+    )
+    plural = "" if count == 1 else "s"
+    return f"Last synced {count} {unit}{plural} ago. Run: gw sync"
 
 
 def ask(remote: str, previous: dict | None) -> tuple[str | None, dict, list[str]]:

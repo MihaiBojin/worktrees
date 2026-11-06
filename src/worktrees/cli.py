@@ -236,12 +236,25 @@ def _assessment_head(args: argparse.Namespace) -> tuple[R.Head, str]:
 
 
 def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
-    """What prints the head line: on stderr, never beside --json, and under
-    -q only when the head was inferred, since that one is a guess."""
+    """What prints the sync warning and the head line: on stderr, never
+    beside --json. Under -q the never-synced line stays, the stale one goes,
+    and the head line stays only when the head was inferred, since that one
+    is a guess."""
+    from datetime import UTC, datetime
+
+    from . import repo as R
+    from . import sync
 
     def show(head: R.Head) -> None:
         if getattr(args, "json", False):
             return
+        record = sync.read()
+        if record is None and R.remote():
+            _warn(sync.NEVER)
+        elif record and not args.quiet:
+            stale = sync.stale(record, datetime.now(UTC))
+            if stale:
+                _warn(stale)
         if args.quiet and head.source != "inferred":
             return
         detail = f"; {head.also} also exists" if head.also else ""
@@ -401,11 +414,11 @@ def run_prune(args: argparse.Namespace) -> int:
     # What goes, and what puts it back, before anything does. On stderr with
     # the rest of the diagnostics, so stdout carries the result alone;
     # --quiet and --yes do not silence it.
-    prune.plan(go, _err)
+    never = prune.plan(go, _err)
 
     # A Refused from here goes to _dispatch, which exits 3 for every refusal.
     # No terminal is one condition, so it is one code wherever it is met.
-    if not args.yes and not prune.confirm(len(go)):
+    if not args.yes and not prune.confirm(len(go), never=never):
         _err(render.note("nothing removed"))
         return 0
 
@@ -989,8 +1002,8 @@ def run_remove(args: argparse.Namespace) -> int:
         # answered: the checkout goes and the branch stays.
         _warn(f"{why}\nremoving the worktree keeps the branch")
 
-    prune.plan([chosen], _err)
-    if not args.yes and not prune.confirm(1):
+    never = prune.plan([chosen], _err)
+    if not args.yes and not prune.confirm(1, never=never):
         _err(render.note("nothing removed"))
         return 0
 

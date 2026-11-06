@@ -432,7 +432,9 @@ guess about the server.
 
 A `<remote>/HEAD` that dangles is the answer and does not resolve, rather
 than a reason to try the next rung. `cli._shower` prints the `Head:` line for
-every command that reads it, and `cli._require` is where a mutating command
+every command that reads it, after `sync.NEVER` when there is a default
+remote and no sync record, or the age `sync.stale` words when the record is
+more than ten minutes old, and `cli._require` is where a mutating command
 refuses; `new_branch.head` does both jobs for the three commands that start a
 branch. `tests/test_head.py` holds each rung and each refusal.
 
