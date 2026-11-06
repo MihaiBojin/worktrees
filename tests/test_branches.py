@@ -140,7 +140,11 @@ def unmerged_worktree(world) -> Path:
 
 @pytest.mark.parametrize("subcommand", ["cherry", "status"])
 def test_a_git_failure_in_a_worktree_is_an_error(world, subcommand):
-    unmerged_worktree(world)
+    # Status is read only for a finished worktree, to look for a protection.
+    if subcommand == "status":
+        world.worktree("feature")
+    else:
+        unmerged_worktree(world)
     env = failing_git(world, subcommand)
     p = cli(world, "prune", "--json", env=env)
     assert p.returncode == 1, p.stderr

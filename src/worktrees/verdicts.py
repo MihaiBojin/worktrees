@@ -247,10 +247,6 @@ def assess(
         if wt.branch and wt.branch == head_branch:
             return say(KEEP, HEAD_BRANCH)
 
-        # One read, both answers. Asking again further down was half of
-        # every assessment's git calls.
-        progress.say(f"{wt.label}: reading its status")
-        status = R.status_of(wt.path)
         if not wt.branch:
             # Detached: finished when some ref already reaches the commit,
             # which is the question `git worktree remove` asks of one.
@@ -272,21 +268,28 @@ def assess(
         if found.verdict != REMOVE:
             return row
 
-        # The first protection that applies, in the order `git worktree
-        # remove` would refuse them.
-        ignored = 0 if delete_ignored else len(status.ignored)
+        # The first protection that applies. The status is read last: a
+        # locked worktree may be on a drive that is not mounted.
         if here and Path(wt.path).resolve() == Path(here).resolve():
             block = "you are standing in it"
         elif "locked" in wt.flags:
             block = "it is locked"
-        elif status.dirty:
-            block = "it has uncommitted changes"
-        elif ignored:
-            block = f"it holds {ignored} ignored path(s), and needs --delete-ignored"
-            row.ignored = ignored
         else:
-            row.eligible = True
-            return row
+            # One read, both answers. Asking twice was half of every
+            # assessment's git calls.
+            progress.say(f"{wt.label}: reading its status")
+            status = R.status_of(wt.path)
+            ignored = 0 if delete_ignored else len(status.ignored)
+            if status.dirty:
+                block = "it has uncommitted changes"
+            elif ignored:
+                block = (
+                    f"it holds {ignored} ignored path(s), and needs --delete-ignored"
+                )
+                row.ignored = ignored
+            else:
+                row.eligible = True
+                return row
         row.why = f"{found.why}; {block}"
         return row
 

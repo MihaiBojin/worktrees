@@ -1624,3 +1624,14 @@ def test_a_protected_remove_row_is_dimmed_on_a_terminal(world) -> None:
     line = next(ln for ln in out.splitlines() if "dirty" in ln)
     assert "\x1b[32mremove" in line, "the verdict keeps its colour"
     assert "\x1b[2m" + f"{PROOF}; it has uncommitted changes" in line
+
+
+def test_a_locked_worktree_whose_directory_is_away_is_judged(world) -> None:
+    """A lock is how git keeps a worktree on a drive that is not mounted, so
+    its directory being gone is no error."""
+    locked = world.worktree("portable")
+    world.git("worktree", "lock", str(locked))
+    locked.rename(locked.with_name("unmounted"))
+    row = _rows(world)["portable"]
+    assert (row["verdict"], row["eligible"]) == ("remove", False), row
+    assert row["why"] == f"{PROOF}; it is locked"

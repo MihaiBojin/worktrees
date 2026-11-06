@@ -247,20 +247,6 @@ A worktree's branch is judged by the proof `gwbs` uses for a loose branch,
 and a worktree and a branch at the same commit read the same verdict and the
 same reason.
 
-### Eligible
-
-A verdict says whether the work landed. Eligible says whether this run may
-delete it: the verdict is `remove` and no protection applies. `gwp` removes
-the eligible rows, the counts line counts them, and `--json` carries
-`eligible` on every row.
-
-A protection never changes the verdict. For a worktree they are the one you
-are standing in, a lock, uncommitted changes or untracked files, and ignored
-files without `--delete-ignored`. A `remove` row held back by one names the
-first that applies after the proof, as in `its tip is an ancestor of the head
-branch; it has uncommitted changes`. In `gwbs` the protection is being checked
-out in a worktree, since that branch goes with its worktree.
-
 The forge's evidence comes first, and it comes from the last
 [`gw sync`](#gw-sync). No other command runs `gh` or `glab`. A branch
 merged as part of a stack needs it: its changes reach the head branch
@@ -277,6 +263,20 @@ written for another remote URL, carry no evidence, and git alone decides.
 A record left behind by a directory somebody deleted by hand is nobody's
 verdict. `gwp` names how many there are. `git worktree prune` clears them, and
 `gwp` runs it after a removal and at no other time.
+
+### Eligible
+
+A verdict says whether the work landed. Eligible says whether this run may
+delete it: the verdict is `remove` and no protection applies. `gwp` removes
+the eligible rows, the counts line counts them, and `--json` carries
+`eligible` on every row.
+
+A protection never changes the verdict. For a worktree they are the one you
+are standing in, a lock, uncommitted changes or untracked files, and ignored
+files without `--delete-ignored`. A `remove` row held back by one names the
+first that applies after the proof, as in `its tip is an ancestor of the head
+branch; it has uncommitted changes`. In `gwbs` the protection is being checked
+out in a worktree, since that branch goes with its worktree.
 
 ### Removing
 
