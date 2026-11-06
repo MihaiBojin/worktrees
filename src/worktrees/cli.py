@@ -511,8 +511,7 @@ def run_new_branch(args: argparse.Namespace) -> int:
     if not args.name:
         # The program the caller typed, so `worktrees branch create` does not
         # answer with the name of its own alias.
-        _err(render.fail(f"usage: {args.prog} NAME"))
-        return 2
+        return _needs(args, "NAME")
 
     warn = None if args.quiet else _warn
     if args.no_fetch and not args.quiet:
@@ -780,8 +779,7 @@ def run_add(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
     if not args.name:
-        _err(render.fail(f"usage: {args.prog} NAME [BASE]"))
-        return 2
+        return _needs(args, "NAME")
 
     warn = None if args.quiet else _warn
     try:
@@ -911,8 +909,7 @@ def run_move(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
     if not args.name:
-        _err(render.fail(f"usage: {args.prog} NEW"))
-        return 2
+        return _needs(args, "NEW")
 
     try:
         landed = wt_mod.move(args.name)
@@ -1443,8 +1440,48 @@ _ROTATE_HELP = (
 )
 
 
+class _Parser(argparse.ArgumentParser):
+    """argparse, with its help on a stream the caller can see.
+
+    A command that changes directory prints its destination on stdout, and
+    its shell function captures that stream, so its help goes to stderr. The
+    rest keep argparse's stdout, where `gws -h | less` reads it.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Subparsers are built from this class too and their defaults win, so
+        # every command finds the parser that names it, for `_needs`.
+        self.set_defaults(parser=self)
+
+    def print_help(self, file=None) -> None:
+        if file is None:
+            lands = {c.binary for c in _COMMANDS.values() if c.lands}
+            file = sys.stderr if self.prog in lands else sys.stdout
+        # argparse decides colour by asking whether sys.stdout is a terminal,
+        # whatever stream the help goes to, so it is asked about this one.
+        saved, sys.stdout = sys.stdout, file
+        try:
+            text = self.format_help()
+        finally:
+            sys.stdout = saved
+        file.write(text)
+
+
 def _parser(prog: str, description: str) -> argparse.ArgumentParser:
-    return argparse.ArgumentParser(prog=prog, description=description)
+    return _Parser(prog=prog, description=description)
+
+
+def _needs(args: argparse.Namespace, what: str) -> int:
+    """A missing argument: say which, then the help that explains it.
+
+    Both on stderr, since a shell function prints nothing it captured from a
+    command that failed.
+    """
+    _err(render.fail(f"{args.prog} needs {what}"))
+    _err("")
+    args.parser.print_help(sys.stderr)
+    return 2
 
 
 def gws(argv: list[str] | None = None) -> int:

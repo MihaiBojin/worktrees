@@ -682,7 +682,7 @@ def test_explain_names_every_refusal_the_guard_holds(world) -> None:
 
 def test_remove_takes_no_forge_like_status_and_prune(world) -> None:
     world.worktree("done")
-    assert "--no-forge" in run(world, "gwr", "--help").stdout
+    assert "--no-forge" in run(world, "gwr", "--help").stderr
     p = run(world, "gwr", "--no-fetch", "--no-forge", "done", "-y")
     assert p.returncode == 0, p.stderr
 
@@ -1132,3 +1132,39 @@ def test_status_and_remove_list_in_the_same_order_as_list(world, entry) -> None:
         "two",
         "one",
     ]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 14), reason="argparse colours from 3.14")
+@pytest.mark.parametrize("args", [("--help",), ()])
+def test_help_is_coloured_on_a_terminal_when_stdout_is_captured(world, args) -> None:
+    """What a shell function sees: stdout captured, stderr on the terminal."""
+    parent, child = pty.openpty()
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gwa; raise SystemExit(gwa())",
+            *args,
+        ],
+        cwd=str(world.repo),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=child,
+        env={**env_for(world), "TERM": "xterm-256color"},
+    )
+    os.close(child)
+    chunks: list[bytes] = []
+    while True:
+        try:
+            data = os.read(parent, 65536)
+        except OSError:  # the child closed its end
+            break
+        if not data:
+            break
+        chunks.append(data)
+    stdout = proc.stdout.read() if proc.stdout else b""
+    proc.wait()
+    os.close(parent)
+    assert stdout == b""
+    # argparse paints its heading, which only reaches a stream it sees as a tty.
+    assert "\x1b[1;34musage: " in b"".join(chunks).decode()

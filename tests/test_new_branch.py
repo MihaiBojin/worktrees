@@ -100,7 +100,9 @@ def test_a_tag_cannot_be_the_base(world) -> None:
 def test_a_name_is_required(world) -> None:
     p = gwbc(world)
     assert p.returncode == 2
-    assert "usage: gwbc NAME" in p.stderr
+    assert p.stderr.startswith("gwbc needs NAME\n\nusage: gwbc ")
+    assert "the branch to start" in p.stderr
+    assert p.stdout == ""
 
 
 def test_the_binary_reports_what_it_made(world) -> None:
@@ -142,7 +144,7 @@ def test_the_usage_line_names_what_was_typed(world) -> None:
     """The alias and the subcommand are two programs, not one."""
     p = gwbc(world)
     assert p.returncode == 2
-    assert p.stderr.strip() == "usage: gwbc NAME"
+    assert p.stderr.startswith("gwbc needs NAME\n")
 
     p = subprocess.run(
         [
@@ -158,4 +160,5 @@ def test_the_usage_line_names_what_was_typed(world) -> None:
         env=env_for(world),
     )
     assert p.returncode == 2
-    assert p.stderr.strip() == "usage: worktrees branch create NAME"
+    assert p.stderr.startswith("worktrees branch create needs NAME\n")
+    assert "usage: worktrees branch create " in p.stderr

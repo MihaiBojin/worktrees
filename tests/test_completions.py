@@ -43,7 +43,8 @@ def _help(entry: str) -> str:
         text=True,
         env={"PATH": PATH, "PYTHONPATH": SRC, "COLUMNS": "200"},
     )
-    return p.stdout
+    # A command that changes directory prints its help on stderr.
+    return p.stdout + p.stderr
 
 
 def _parsed_flags(entry: str) -> set[str]:
