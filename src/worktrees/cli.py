@@ -913,7 +913,7 @@ def run_move(args: argparse.Namespace) -> int:
 def run_remove(args: argparse.Namespace) -> int:
     import json
 
-    from . import layout, pick, prune
+    from . import layout, pick, prune, verdicts
     from . import repo as R
     from . import worktree as wt_mod
     from .git import options
@@ -979,6 +979,18 @@ def run_remove(args: argparse.Namespace) -> int:
         _err(
             render.fail(
                 f"{render.branch(chosen.label)} could not be judged: {chosen.why}"
+            )
+        )
+        return 1
+
+    if Path(chosen.path).is_dir() and R.has_submodule(chosen.path):
+        # git refuses this whatever it is given, finished or not, so nothing
+        # here asks and --force does not try.
+        _err(
+            render.fail(
+                f"{render.branch(chosen.label)} cannot be removed: "
+                f"{verdicts.SUBMODULE}\n"
+                f"run git submodule deinit --all in {chosen.path} and retry"
             )
         )
         return 1

@@ -63,7 +63,7 @@ gwp --json | jq -c '{
 - `ignored` names finished worktrees held back only because they hold
   gitignored files.
 - `kept` and `unknown` count the rest. `kept` includes finished rows that a
-  protection holds back, such as uncommitted changes or a lock. The main
+  protection holds back, such as uncommitted changes, a lock or an initialized submodule. The main
   checkout and the head branch are always among the kept.
 
 A branch checked out in a worktree is never eligible in `branches` and

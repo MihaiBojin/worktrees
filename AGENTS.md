@@ -489,8 +489,9 @@ somebody to act on the wrong one.
 
 Eligible is a second answer, not a fourth verdict. A row is eligible when its
 verdict is `remove` and no protection applies: the worktree you stand in, a
-lock, uncommitted or untracked files, ignored files without
-`--delete-ignored`, and for `gwbs` a branch checked out in a worktree. A
+lock, uncommitted or untracked files, an initialized submodule, ignored
+files without `--delete-ignored`, and for `gwbs` a branch checked out in a
+worktree. A
 protection clears `eligible` and leaves the verdict and its proof alone, and
 `why` names the first one after the proof. The main checkout and the head
 branch are not judged and read `keep`. `prune.removable()` returns the

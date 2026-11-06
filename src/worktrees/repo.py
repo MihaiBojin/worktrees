@@ -395,3 +395,31 @@ def status_of(path: str) -> Status:
 def ignored_paths(path: str) -> list[str]:
     """The gitignored paths alone, for a caller that has no verdict in hand."""
     return status_of(path).ignored
+
+
+@git("rev-parse --git-path modules")
+def modules_dir() -> None:
+    """Where this worktree keeps the git directories of its submodules."""
+
+
+@git("ls-files --stage -z")
+def index_entries() -> None:
+    """Every index entry as mode, sha, stage and path, NUL-delimited."""
+
+
+def has_submodule(path: str) -> bool:
+    """Whether `git worktree remove` would refuse this worktree for a
+    submodule, asked the way git asks it and without the network.
+
+    git refuses while the worktree's own modules directory exists, which
+    `git submodule deinit` leaves behind, or while a submodule's path holds
+    a checkout.
+    """
+    modules = Path(path, modules_dir(repo=path).out.strip())
+    if modules.is_dir():
+        return True
+    for entry in index_entries(repo=path).out.split("\0"):
+        meta, _, name = entry.partition("\t")
+        if meta.startswith("160000 ") and Path(path, name, ".git").exists():
+            return True
+    return False

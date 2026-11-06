@@ -22,6 +22,7 @@ UNKNOWN = "unknown"
 MAIN_CHECKOUT = "it is the main checkout, and never removable"
 HEAD_BRANCH = "it is the head branch"
 MAIN_OR_MASTER = "it is main or master"
+SUBMODULE = "it has an initialized submodule"
 
 
 class Verdict:
@@ -282,6 +283,8 @@ def assess(
             ignored = 0 if delete_ignored else len(status.ignored)
             if status.dirty:
                 block = "it has uncommitted changes"
+            elif R.has_submodule(wt.path):
+                block = SUBMODULE
             elif ignored:
                 block = (
                     f"it holds {ignored} ignored path(s), and needs --delete-ignored"

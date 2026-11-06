@@ -1670,3 +1670,103 @@ def test_a_locked_worktree_whose_directory_is_away_is_judged(world) -> None:
     row = _rows(world)["portable"]
     assert (row["verdict"], row["eligible"]) == ("remove", False), row
     assert row["why"] == f"{PROOF}; it is locked"
+
+
+SUBMODULE = "it has an initialized submodule"
+
+
+def _with_submodule(world) -> None:
+    """main records a submodule from a local repository beside it."""
+    lib = world.root / "lib"
+    world.git("init", "--quiet", "-b", "main", str(lib))
+    world.commit("lib.txt", at=lib)
+    world.git(
+        "-c", "protocol.file.allow=always", "submodule", "add", "--quiet", str(lib)
+    )
+    world.git("commit", "--quiet", "-m", "lib")
+
+
+def _init_submodule(world, wt: Path) -> None:
+    world.git(
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "update",
+        "--init",
+        "--quiet",
+        at=wt,
+    )
+
+
+def test_git_refuses_a_worktree_with_an_initialized_submodule(world) -> None:
+    """The premise: deinit clears the checkout and git still refuses."""
+    _with_submodule(world)
+    wt = world.worktree("lib-work")
+    _init_submodule(world, wt)
+    world.git("submodule", "deinit", "--quiet", "--all", at=wt)
+    proc = subprocess.run(
+        ["git", "-C", str(world.repo), "worktree", "remove", str(wt)],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0
+    assert "containing submodules cannot be moved or removed" in proc.stderr
+
+
+def test_an_initialized_submodule_clears_eligible(world) -> None:
+    _with_submodule(world)
+    attached = world.worktree("lib-work")
+    _init_submodule(world, attached)
+    loose = world.parent / ".worktrees" / "loose" / world.repo.name
+    world.git("worktree", "add", "--quiet", "--detach", str(loose), "main")
+    _init_submodule(world, loose)
+    world.worktree("untouched")
+    # Judged without the network: the submodule's origin is gone.
+    for path in sorted((world.root / "lib").rglob("*"), reverse=True):
+        path.rmdir() if path.is_dir() else path.unlink()
+
+    rows = _rows(world)
+    assert (rows["lib-work"]["verdict"], rows["lib-work"]["eligible"]) == (
+        "remove",
+        False,
+    )
+    assert rows["lib-work"]["why"] == f"{PROOF}; {SUBMODULE}"
+    assert rows["(detached)"]["why"] == f"its commit is reached by a ref; {SUBMODULE}"
+    assert not rows["(detached)"]["eligible"]
+    # A submodule recorded but never initialized is no obstacle to git.
+    assert rows["untouched"]["eligible"], rows["untouched"]
+
+
+def test_a_deinitialized_submodule_still_clears_eligible(world) -> None:
+    _with_submodule(world)
+    wt = world.worktree("lib-work")
+    _init_submodule(world, wt)
+    world.git("submodule", "deinit", "--quiet", "--all", at=wt)
+    row = _rows(world)["lib-work"]
+    assert (row["eligible"], row["why"]) == (False, f"{PROOF}; {SUBMODULE}")
+
+
+@pytest.mark.parametrize("flags", [(), ("--force",), ("--force", "--yes")])
+def test_remove_refuses_a_worktree_with_an_initialized_submodule(world, flags) -> None:
+    _with_submodule(world)
+    wt = world.worktree("lib-work")
+    _init_submodule(world, wt)
+    p = run(world, "gwr", "lib-work", *flags)
+    assert p.returncode == 1, p.stderr
+    assert f"lib-work cannot be removed: {SUBMODULE}" in p.stderr
+    assert f"run git submodule deinit --all in {wt} and retry" in p.stderr
+    assert wt.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/lib-work")
+
+
+def test_remove_refuses_an_unfinished_worktree_with_a_submodule_on_a_terminal(
+    world,
+) -> None:
+    _with_submodule(world)
+    wt = world.worktree("lib-work")
+    world.commit("work", at=wt)
+    _init_submodule(world, wt)
+    code, out = run_on_a_terminal(world, "gwr", "lib-work", answer="y\n")
+    assert code == 1, out
+    assert "git submodule deinit --all" in out
+    assert wt.exists()

@@ -272,8 +272,8 @@ the eligible rows, the counts line counts them, and `--json` carries
 `eligible` on every row.
 
 A protection never changes the verdict. For a worktree they are the one you
-are standing in, a lock, uncommitted changes or untracked files, and ignored
-files without `--delete-ignored`. A `remove` row held back by one names the
+are standing in, a lock, uncommitted changes or untracked files, an
+initialized submodule, and ignored files without `--delete-ignored`. A `remove` row held back by one names the
 first that applies after the proof, as in `its tip is an ancestor of the head
 branch; it has uncommitted changes`. In `gwbs` the protection is being checked
 out in a worktree, since that branch goes with its worktree.
@@ -482,7 +482,11 @@ At a terminal, and without `--yes`, `gwr` asks instead: it names every
 ignored path and removes the worktree on a `y`. `--yes` never answers that
 question, so a script still needs `--delete-ignored`.
 
-`--force` is not the answer to that one. It deletes those files just the same,
+A worktree with an initialized submodule is refused whatever flag is given,
+because `git worktree remove` refuses it too. The refusal says to run `git
+submodule deinit --all` in it and retry.
+
+`--force` is not the answer to the ignored files. It deletes those files just the same,
 since `git worktree remove` takes the whole directory, and it keeps a branch
 whose work already landed. Every ignored path is named before anything is
 deleted, under `--delete-ignored` and under `--force` alike.
