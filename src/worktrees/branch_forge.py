@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from dataclasses import asdict, dataclass
@@ -23,7 +24,10 @@ class Request:
     target_branch: str
     merge_sha: str
     merged_at: str
-    same_repository: bool
+    source_repository: str
+    source_verified: bool
+    verified_source_repository: str
+    verified_target_repository: str
 
     def data(self) -> dict:
         return asdict(self)
@@ -31,8 +35,8 @@ class Request:
     def unverified_reason(self, branch: str, sha: str, head_branch: str) -> str:
         if self.source_branch != branch or self.source_sha != sha:
             return "the request does not identify this branch tip"
-        if not self.same_repository:
-            return "the request's source repository does not match this remote"
+        if not self.source_verified or not self.source_repository:
+            return "the request's source repository is unverified"
         if self.target_branch != head_branch:
             return "the request targeted a different branch"
         if not self.merged_at or not re.fullmatch(
@@ -59,19 +63,93 @@ def _text(row: dict, key: str) -> str:
     return value if isinstance(value, str) else ""
 
 
-def request_for(branch: str, remote: str) -> Request | None:
-    host, path = _repository(R.config_get(f"remote.{remote}.url").out.strip())
+def provider(
+    remote: str, repo: str | os.PathLike[str] | None = None
+) -> tuple[str, str] | None:
+    host, path = _repository(
+        R.config_get(f"remote.{remote}.url", repo=repo).out.strip()
+    )
     if not host or not path or "/" not in path:
         return None
     if host == "github.com" or host.startswith("github."):
-        tool = "gh"
-    elif host == "gitlab.com" or host.startswith("gitlab."):
-        tool = "glab"
-    else:
+        return "gh", f"{host}/{path}"
+    if host == "gitlab.com" or host.startswith("gitlab."):
+        return "glab", f"{host}/{path}"
+    return None
+
+
+def available(tool: str) -> bool:
+    return bool(shutil.which(tool))
+
+
+def request_for(
+    branch: str, remote: str, sha: str = "", repo: str | os.PathLike[str] | None = None
+) -> Request | None:
+    """Read source-tip evidence from the shared sync cache, without a query."""
+    from . import sync
+
+    if not sha:
+        sha = R.local_sha(f"refs/heads/{branch}", repo=repo).out.strip()
+    entry = sync.read(repo)["branches"].get(branch)
+    if not isinstance(entry, dict) or entry.get("sha") != sha:
         return None
-    if not shutil.which(tool):
+    data = entry.get("request")
+    if not isinstance(data, dict):
         return None
-    repository = f"{host}/{path}"
+    try:
+        request = Request(**data)
+    except TypeError:
+        return None
+    if (
+        type(request.number) is not int
+        or request.number <= 0
+        or type(request.source_verified) is not bool
+        or any(
+            not isinstance(getattr(request, key), str)
+            for key in (
+                "state",
+                "noun",
+                "url",
+                "repository",
+                "source_branch",
+                "source_sha",
+                "target_branch",
+                "merge_sha",
+                "merged_at",
+                "source_repository",
+                "verified_source_repository",
+                "verified_target_repository",
+            )
+        )
+    ):
+        return None
+    selected = provider(remote, repo)
+    if selected is None or request.repository.lower() != selected[1].lower():
+        return None
+    source_host, _, source_path = request.source_repository.partition("/")
+    target_host = selected[1].split("/", 1)[0]
+    if (
+        request.source_repository.lower() != request.verified_source_repository.lower()
+        or request.repository.lower() != request.verified_target_repository.lower()
+        or source_host.lower() != target_host.lower()
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+", source_path)
+        or any(part in (".", "..") for part in source_path.split("/"))
+    ):
+        return None
+    if request.source_branch != branch or request.source_sha != sha:
+        return None
+    return request
+
+
+def fetch_request(
+    branch: str, remote: str, repo: str | os.PathLike[str] | None = None
+) -> tuple[bool, Request | None]:
+    """Query one branch during sync and verify its repository identities."""
+    selected = provider(remote, repo)
+    if selected is None:
+        return False, None
+    tool, repository = selected
+    host, path = repository.split("/", 1)
     if tool == "gh":
         argv = [
             tool,
@@ -108,13 +186,15 @@ def request_for(branch: str, remote: str) -> Request | None:
             "--output",
             "json",
         ]
-    rows = forge.query(argv)
+    rows = forge.query(argv, repo)
+    if rows is None:
+        return False, None
     if not rows:
-        return None
+        return True, None
     row = rows[0]
     number = row.get("number" if tool == "gh" else "iid")
     if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
-        return None
+        return False, None
     state = _text(row, "state").upper()
     if state == "OPENED":
         state = "OPEN"
@@ -122,35 +202,111 @@ def request_for(branch: str, remote: str) -> Request | None:
         source = row.get("headRepository") or {}
         commit = row.get("mergeCommit") or {}
         if not isinstance(source, dict) or not isinstance(commit, dict):
-            return None
-        return Request(
+            return False, None
+        source_path = _text(source, "nameWithOwner")
+        same = (
+            row.get("isCrossRepository") is False
+            and source_path.lower() == path.lower()
+        )
+        verified = same
+        verified_source = repository if same else ""
+        if (
+            not same
+            and row.get("isCrossRepository") is True
+            and re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", source_path)
+        ):
+            detail = forge.document(
+                ["gh", "api", f"repos/{source_path}", "--hostname", host], repo
+            )
+            if detail is None:
+                return False, None
+            if detail:
+                actual_host, actual_path = _repository(_text(detail, "html_url"))
+                verified = (
+                    actual_host == host
+                    and actual_path.lower() == source_path.lower()
+                    and _text(detail, "full_name").lower() == source_path.lower()
+                )
+                verified_source = f"{actual_host}/{actual_path}" if verified else ""
+        target_host, target_path = _repository(_text(row, "url").split("/pull/", 1)[0])
+        target_repository = f"{target_host}/{target_path}"
+        return True, Request(
             number,
             state,
             "pull request",
             _text(row, "url"),
-            repository,
+            target_repository,
             _text(row, "headRefName"),
             _text(row, "headRefOid"),
             _text(row, "baseRefName"),
             _text(commit, "oid"),
             _text(row, "mergedAt"),
-            row.get("isCrossRepository") is False
-            and _text(source, "nameWithOwner").lower() == path.lower(),
+            f"{host}/{source_path}" if source_path else "",
+            verified,
+            verified_source,
+            repository,
         )
     source_id, target_id = row.get("source_project_id"), row.get("target_project_id")
-    return Request(
+    valid_ids = (
+        type(source_id) is int
+        and type(target_id) is int
+        and source_id > 0
+        and target_id > 0
+    )
+    source_repository = ""
+    verified_source = ""
+    verified_target = ""
+    verified = False
+    if valid_ids:
+        target = forge.document(
+            ["glab", "api", f"projects/{target_id}", "--hostname", host], repo
+        )
+        source = (
+            target
+            if source_id == target_id
+            else forge.document(
+                ["glab", "api", f"projects/{source_id}", "--hostname", host], repo
+            )
+        )
+        if source is None or target is None:
+            return False, None
+        if (
+            source
+            and target
+            and type(source.get("id")) is int
+            and source.get("id") == source_id
+            and type(target.get("id")) is int
+            and target.get("id") == target_id
+        ):
+            source_host, source_path = _repository(_text(source, "web_url"))
+            target_host, target_path = _repository(_text(target, "web_url"))
+            source_repository = f"{source_host}/{source_path}"
+            verified = (
+                source_host == host
+                and source_path == _text(source, "path_with_namespace")
+                and bool(re.fullmatch(r"[A-Za-z0-9_./-]+", source_path))
+                and target_path == _text(target, "path_with_namespace")
+                and f"{target_host}/{target_path}".lower() == repository.lower()
+            )
+            if verified:
+                verified_source = source_repository
+                verified_target = repository
+    target_host, target_path = _repository(
+        _text(row, "web_url").split("/-/merge_requests/", 1)[0]
+    )
+    return True, Request(
         number,
         state,
         "merge request",
         _text(row, "web_url"),
-        repository,
+        f"{target_host}/{target_path}",
         _text(row, "source_branch"),
         _text(row, "sha"),
         _text(row, "target_branch"),
         _text(row, "merge_commit_sha") or _text(row, "squash_commit_sha"),
         _text(row, "merged_at"),
-        type(source_id) is int
-        and type(target_id) is int
-        and source_id > 0
-        and source_id == target_id,
+        source_repository,
+        verified,
+        verified_source,
+        verified_target,
     )

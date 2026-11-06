@@ -58,7 +58,6 @@ class Landed:
 def add(
     name: str,
     base: str = "",
-    fetch: bool = True,
     warn: object = None,
     repo: str | os.PathLike[str] | None = None,
 ) -> Landed:
@@ -81,16 +80,9 @@ def add(
             raise Refusal(f"{dest} belongs to {owner}, not to this repository")
         raise Refusal(f"{dest} already exists and this repository does not own it")
 
-    remote = R.remote(repo=repo)
-    online = fetch
-    if fetch and remote and not R.fetch(remote, repo=repo):
-        online = False
-        if callable(warn):
-            warn(
-                f"{render.ref(remote)} could not be fetched; branching from what "
-                "is already here"
-            )
-
+    resolved = R.head(repo)
+    if not resolved.ref:
+        raise Refusal(resolved.unresolved)
     existing = bool(R.ref_exists(f"refs/heads/{name}", repo=repo))
     made = _first_absent(dest.parent, main)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -100,7 +92,7 @@ def add(
             worktree_add_existing(str(dest), name, repo=repo)
             return Landed(str(dest), name, created=False)
 
-        start = base or _head(remote, online, warn, repo=repo)
+        start = base or resolved.ref
         worktree_add(name, str(dest), start, repo=repo)
     except (GitError, Refusal, Refused):
         # The directories went in before git was asked, so a refusal leaves
@@ -132,24 +124,6 @@ def _first_absent(dest_parent: Path, main: str) -> Path | None:
     return made
 
 
-def _head(
-    remote: str,
-    online: bool,
-    warn: object,
-    repo: str | os.PathLike[str] | None = None,
-) -> str:
-    ref, warning = R.head_ref(remote, online=online, repo=repo)
-    if warning and callable(warn):
-        warn(warning)
-    if not ref:
-        hint = remote or "origin"
-        raise Refusal(
-            "cannot tell which branch this repository branches from; record it "
-            f"with: git remote set-head {hint} --auto"
-        )
-    return ref
-
-
 def move(
     new: str,
     repo: str | os.PathLike[str] | None = None,
@@ -172,6 +146,10 @@ def move(
             "this is the main checkout, not a worktree; "
             "git branch --move renames its branch"
         )
+
+    resolved = R.head(repo)
+    if not resolved.ref:
+        raise Refusal(resolved.unresolved)
 
     old = R.current_branch(repo=here).out.strip()
     if not old:

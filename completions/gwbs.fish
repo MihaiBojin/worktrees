@@ -1,11 +1,7 @@
 complete -c gwbs -f
 complete -c gwbs -a '(command gwbs --complete)'
 
-complete -c gwbs -l no-fetch -d 'use the refs already here'
-complete -c gwbs -l force-refresh -d 'fetch even when the last fetch is under 10 minutes old'
-complete -c gwbs -s f -d 'the same as --force-refresh'
 complete -c gwbs -l only -x -a 'remove keep unknown' -d 'show only rows with this verdict'
-complete -c gwbs -l no-forge -d 'never ask GitHub or GitLab'
 complete -c gwbs -l json -d 'verdicts and evidence as data'
 complete -c gwbs -s q -l quiet -d 'omit the summary'
 complete -c gwbs -s v -l verbose -d 'print every command'

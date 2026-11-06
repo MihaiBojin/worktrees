@@ -148,3 +148,96 @@ def fresh_log() -> None:
 
     options.log.clear()
     options.verbose = bool(os.environ.get("WT_VERBOSE"))
+
+
+class Network:
+    """Process wrappers that record calls and answer only network operations."""
+
+    def __init__(self, world: World) -> None:
+        self.world = world
+        self.bin = world.root / "network-bin"
+        self.bin.mkdir()
+        self.log = world.root / "network-calls.jsonl"
+        self.responses = world.root / "network-responses.json"
+        self.responses.write_text("{}")
+        real_git = shutil.which("git")
+        script = (
+            f"#!{sys.executable}\n"
+            "import json, os, pathlib, subprocess, sys\n"
+            f"real_git = {real_git!r}\n"
+            f"log = pathlib.Path({str(self.log)!r})\n"
+            f"responses = pathlib.Path({str(self.responses)!r})\n"
+            "tool = pathlib.Path(sys.argv[0]).name\n"
+            "args = sys.argv[1:]\n"
+            "with log.open('a') as stream:\n"
+            "    stream.write(json.dumps([tool, *args]) + '\\n')\n"
+            "if tool == 'git':\n"
+            "    prefix = args[:2] if args[:1] == ['-C'] else []\n"
+            "    command = args[len(prefix):]\n"
+            "    if command[:1] == ['fetch']:\n"
+            "        sys.exit(int(os.environ.get('WT_FETCH_CODE', '0')))\n"
+            "    if command[:2] == ['remote', 'set-head']:\n"
+            "        if os.environ.get('WT_HEAD_CODE'):\n"
+            "            sys.exit(int(os.environ['WT_HEAD_CODE']))\n"
+            "        remote = command[2]\n"
+            "        sys.exit(subprocess.call([real_git, *prefix, 'symbolic-ref', "
+            "f'refs/remotes/{remote}/HEAD', f'refs/remotes/{remote}/main']))\n"
+            "    os.execv(real_git, [real_git, *args])\n"
+            "if os.environ.get('WT_FORGE_CODE'):\n"
+            "    sys.exit(int(os.environ['WT_FORGE_CODE']))\n"
+            "if args[:2] == ['auth', 'status']:\n"
+            "    sys.exit(int(os.environ.get('WT_AUTH_CODE', '0')))\n"
+            "if args[:1] == ['api']:\n"
+            "    records = json.loads(responses.read_text()).get('$api', {})\n"
+            "    answer = records.get(args[1])\n"
+            "    if answer is None: sys.exit(1)\n"
+            "    print(json.dumps(answer))\n"
+            "    sys.exit(0)\n"
+            "flag = '--head' if tool == 'gh' else '--source-branch'\n"
+            "branch = args[args.index(flag) + 1]\n"
+            "answer = json.loads(responses.read_text()).get(branch, [])\n"
+            "if isinstance(answer, int):\n"
+            "    sys.exit(answer)\n"
+            "print(json.dumps(answer))\n"
+        )
+        for name in ("git", "gh", "glab"):
+            path = self.bin / name
+            path.write_text(script)
+            path.chmod(0o755)
+
+    def env(self, **extra: str) -> dict[str, str]:
+        env = env_for(self.world)
+        return {**env, "PATH": f"{self.bin}{os.pathsep}{env['PATH']}", **extra}
+
+    def answer(self, responses: dict) -> None:
+        import json
+
+        self.responses.write_text(json.dumps(responses))
+
+    def calls(self) -> list[list[str]]:
+        import json
+
+        return (
+            [json.loads(line) for line in self.log.read_text().splitlines()]
+            if self.log.exists()
+            else []
+        )
+
+    def network_calls(self) -> list[list[str]]:
+        found = []
+        for call in self.calls():
+            tool, *args = call
+            if tool == "git" and args[:1] == ["-C"]:
+                args = args[2:]
+            if (
+                tool in ("gh", "glab")
+                or args[:1] == ["fetch"]
+                or args[:2] == ["remote", "set-head"]
+            ):
+                found.append(call)
+        return found
+
+
+@pytest.fixture
+def network(world):
+    return Network(world)

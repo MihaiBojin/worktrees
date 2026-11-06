@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from .git import git
@@ -15,6 +16,11 @@ from .git import git
 @git("worktree list --porcelain -z")
 def worktree_list() -> None:
     """Every worktree, NUL-delimited."""
+
+
+@git("for-each-ref --format='%(refname:strip=2)%00%(objectname)' refs/heads/")
+def local_tips() -> None:
+    """Every local branch and its tip, including checked-out branches."""
 
 
 @git("remote")
@@ -83,11 +89,6 @@ def ref_exists(ref: str) -> None:
     """Does this exact ref exist?"""
 
 
-@git("for-each-ref --count=1 --format=%(refname) $prefix")
-def first_ref_under(prefix: str) -> None:
-    """One ref under a prefix, or nothing."""
-
-
 @git("for-each-ref --count=1 --contains $sha")
 def refs_containing(sha: str) -> None:
     """One ref reaching this commit, or nothing."""
@@ -120,17 +121,6 @@ def common_dir() -> None:
     """The repository directory every worktree of it shares."""
 
 
-def fetched_at(repo: str | os.PathLike[str] | None = None) -> float | None:
-    """When any worktree of this repository last fetched, or None.
-
-    FETCH_HEAD is written per worktree, so a fetch from a neighbour counts
-    only when every worktree's copy is read.
-    """
-    common = Path(common_dir(repo=repo).out.strip())
-    heads = [common / "FETCH_HEAD", *common.glob("worktrees/*/FETCH_HEAD")]
-    return max((p.stat().st_mtime for p in heads if p.exists()), default=None)
-
-
 # --no-optional-locks is a git global, so it goes before the subcommand, which
 # a spec shows and a tuple hides. Without it a listing writes another
 # worktree's index and contends with a `git add` there.
@@ -153,8 +143,7 @@ def fetch(remote: str) -> None:
     """Refresh every remote-tracking ref, dropping the ones that are gone."""
 
 
-# The other call that reaches the network, and 128 is how it says it could
-# not. head_ref already reads the result rather than assuming it worked.
+# Sync reads both network calls' results before it records a successful time.
 @git("remote set-head $remote --auto", ok=(0, 128), mutates=True)
 def set_head_auto(remote: str) -> None:
     """Ask the server which branch it serves by default."""
@@ -307,87 +296,72 @@ def ref_name(ref: str) -> str:
 
 
 def remote(repo: str | os.PathLike[str] | None = None) -> str:
-    """The remote this repository belongs to, or empty when it has none.
-
-    `origin` is a convention, not a fact. remote.pushDefault is deliberately
-    not a rung: it names where commits go, not where they come from, and the
-    two differ in exactly the case that makes the question worth asking, a
-    fork you push to and an upstream you branch from.
-    """
+    """The configured default remote, or the sole remote when unset."""
     names = remotes(repo=repo).lines
-    if not names:
-        return ""
-    if len(names) == 1:
-        return names[0]
-
-    stated = [config_get("checkout.defaultRemote", repo=repo).out.strip()]
-    branch = current_branch(repo=repo).out.strip()
-    if branch:
-        stated.append(config_get(f"branch.{branch}.remote", repo=repo).out.strip())
-
-    for candidate in stated:
-        if candidate and candidate != "." and candidate in names:
-            return candidate
-    return "origin" if "origin" in names else names[0]
+    stated = config_get("checkout.defaultRemote", repo=repo).out.strip()
+    if stated:
+        return stated if stated in names else ""
+    return names[0] if len(names) == 1 else ""
 
 
-def head_ref(
-    remote_name: str,
-    online: bool,
-    repo: str | os.PathLike[str] | None = None,
-) -> tuple[str, str]:
-    """The full ref this repository branches from, and a warning or ''.
+@git("rev-parse --verify $ref^{commit}", ok=(0, 128))
+def local_sha(ref: str) -> None:
+    """The commit a local ref identifies, or no answer."""
 
-    Returns a full ref, never `origin/main`: every merge question below uses
-    it as a revision, and a bare name resolves to a tag first.
-    """
-    if remote_name:
-        # 1. The repository's own answer, recorded at clone time from what the
-        #    server advertises, so it tells master from main without guessing.
-        #    Ignored when it dangles, which is what a server-side rename
-        #    leaves behind.
-        symref = symbolic_ref(f"refs/remotes/{remote_name}/HEAD", repo=repo).out.strip()
-        if symref and ref_exists(symref, repo=repo):
-            return symref, ""
 
-        # set-head can only point at a remote-tracking ref, so don't spend a
-        # round trip when the repository has none.
-        tracking = first_ref_under(f"refs/remotes/{remote_name}", repo=repo).out.strip()
-        if online and tracking and set_head_auto(remote_name, repo=repo):
-            symref = symbolic_ref(
-                f"refs/remotes/{remote_name}/HEAD", repo=repo
-            ).out.strip()
-            if symref and ref_exists(symref, repo=repo):
-                return symref, ""
+@git("log -1 --format=%ct $ref", ok=(0, 128))
+def commit_date(ref: str) -> None:
+    """The tip's committer date, in seconds since the epoch."""
 
-    # 2. Conventional names, decisive only when exactly one exists.
-    #    Remote-tracking first: a repository can have a remote and no
-    #    refs/remotes at all, because a remote added by hand was never fetched.
-    found: list[str] = []
-    if remote_name:
-        found = [
-            f"{remote_name}/{c}"
-            for c in ("main", "master", "trunk")
-            if ref_exists(f"refs/remotes/{remote_name}/{c}", repo=repo)
-        ]
+
+@dataclass
+class Head:
+    ref: str | None
+    source: str
+    branch: str
+    other: bool = False
+
+    def data(self) -> dict:
+        return {"ref": self.ref, "source": self.source}
+
+    @property
+    def unresolved(self) -> str:
+        return (
+            "No main or master branch."
+            if self.source == "inferred"
+            else "The head ref does not resolve. Run: gw sync"
+        )
+
+
+def head(repo: str | os.PathLike[str] | None = None) -> Head:
+    """Resolve the remote HEAD locally, or infer main/master by committer date."""
+    from . import sync
+
+    remote_name = remote(repo)
+    cache = sync.read(repo)
+    remote_head = f"refs/remotes/{remote_name}/HEAD"
+    target = symbolic_ref(remote_head, repo=repo).out.strip() if remote_name else ""
+    if target or (remote_name and cache["lastSync"]["refs"]):
+        source = "remote" if cache["lastSync"]["refs"] else "clone"
+        valid = target.startswith(f"refs/remotes/{remote_name}/") and bool(
+            ref_exists(target, repo=repo)
+        )
+        branch = target.removeprefix(f"refs/remotes/{remote_name}/")
+        return Head(remote_head if valid else None, source, branch)
+    found = [
+        name
+        for name in ("main", "master")
+        if ref_exists(f"refs/heads/{name}", repo=repo)
+    ]
     if not found:
-        found = [
-            c
-            for c in ("main", "master", "trunk")
-            if ref_exists(f"refs/heads/{c}", repo=repo)
-        ]
-    if not found:
-        return "", ""
-
-    # 3. Guess, and be honest that it is one.
-    warning = ""
-    if len(found) > 1:
-        warning = (
-            f"{remote_name}/HEAD is unset and " if remote_name else ""
-        ) + f"{', '.join(found)} all exist, guessing {found[0]}"
-        if remote_name:
-            warning += f"; settle it with: git remote set-head {remote_name} --auto"
-    return full_ref(found[0], repo=repo), warning
+        return Head(None, "inferred", "main")
+    chosen = max(
+        found,
+        key=lambda name: int(
+            commit_date(f"refs/heads/{name}", repo=repo).out.strip() or 0
+        ),
+    )
+    return Head(f"refs/heads/{chosen}", "inferred", chosen, len(found) == 2)
 
 
 # --------------------------------------------------------------------------

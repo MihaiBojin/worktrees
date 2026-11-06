@@ -1,2 +1,2 @@
-# gwp! [--branch NAME]: gwp after a fresh fetch, deleting ignored files, without asking.
-gwp --force-refresh --delete-ignored --yes "$@"
+# gwp! confirms removal of eligible worktrees.
+gwp --yes "$@"

@@ -237,7 +237,7 @@ def test_the_switch_hint_is_safe_to_paste(world) -> None:
 
     world.git("branch", HOSTILE, "main")
     with pytest.raises(new_branch.Refusal) as caught:
-        new_branch.create(HOSTILE, fetch=False)
+        new_branch.create(HOSTILE)
     hint = str(caught.value).split("; ", 1)[1]
     assert hint == f"git switch '{HOSTILE}' checks it out"
 

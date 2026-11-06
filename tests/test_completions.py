@@ -171,7 +171,6 @@ def test_gwr_offers_nothing_it_then_refuses_to_match(world) -> None:
                 sys.executable,
                 "-c",
                 "from worktrees.cli import gwr; raise SystemExit(gwr())",
-                "--no-fetch",
                 name,
             ],
             cwd=str(world.repo),

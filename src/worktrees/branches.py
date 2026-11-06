@@ -62,15 +62,16 @@ def assess(
         )
         row.paths = checked.get(name, [])
         rows.append(row)
-        if name == head_branch:
+        if not head_sha:
+            row.why = "the head ref does not resolve"
+        elif name == head_branch:
             row.verdict, row.why = "keep", "it is the head branch"
         elif row.paths:
             row.verdict, row.why = "keep", "checked out in a worktree"
         elif symbolic:
             row.verdict, row.why = "keep", "it is a symbolic branch ref"
         else:
-            # One at a time, and each can cost a round trip to the forge, so
-            # the count says how far through a long list this is.
+            # Report progress across the local branch checks.
             of = f" ({i} of {len(wanted)})" if len(wanted) > 1 else ""
 
             def say(question: str, name: str = name, of: str = of) -> None:
@@ -116,8 +117,8 @@ def _judge(
             row.verdict, row.why, row.proof = "remove", why, proof
             return
     if ask_forge and remote:
-        say("asking the forge for its pull request")
-        request = branch_forge.request_for(row.branch, remote)
+        say("reading cached forge evidence")
+        request = branch_forge.request_for(row.branch, remote, row.sha)
         if request is not None:
             row.request = request.data()
             if request.state == "MERGED":

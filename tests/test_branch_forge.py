@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 import pytest
-from conftest import env_for
 from test_branches import cli, local_branch
 
 
@@ -42,49 +41,44 @@ def evidence(world, provider, **changes) -> dict:
     return {**row, **changes}
 
 
-def stub(world, provider, payload) -> dict[str, str]:
-    bin_dir = world.root / "forge-bin"
-    bin_dir.mkdir(exist_ok=True)
-    tool = "gh" if provider == "github" else "glab"
-    target = f"{provider}.com/owner/repo"
-    if provider == "gitlab":
-        target = "https://" + target
-    exe = bin_dir / tool
-    # A wrong repository selection or an inherited redirect must not produce
-    # the response that could authorize a deletion.
-    exe.write_text(
-        "#!/bin/sh\n"
-        'test -z "${GH_REPO-}${GITLAB_REPO-}" || exit 8\n'
-        f'case " $* " in *" --repo {target} "*) ;; *) exit 9;; esac\n'
-        f"cat <<'JSON'\n{json.dumps(payload)}\nJSON\n"
+def stub(world, provider, payload, network) -> dict[str, str]:
+    network.answer(
+        {
+            "feature": payload,
+            "$api": {
+                "projects/7": {
+                    "id": 7,
+                    "path_with_namespace": "owner/repo",
+                    "web_url": "https://gitlab.com/owner/repo",
+                }
+            },
+        }
     )
-    exe.chmod(0o755)
-    env = env_for(world)
-    env["PATH"] = f"{bin_dir}:{env['PATH']}"
-    env["GH_REPO"] = env["GITLAB_REPO"] = "wrong/repo"
+    env = network.env(GH_REPO="wrong/repo", GITLAB_REPO="wrong/repo")
+    cli(world, "sync", env=env)
     return env
 
 
 @pytest.fixture(params=["github", "gitlab"])
-def forge_world(world, request):
+def forge_world(world, network, request):
     provider = request.param
     local_branch(world)
     world.commit("feature", "later edits\n")
     world.git("remote", "add", "origin", f"git@{provider}.com:owner/repo.git")
     world.git("update-ref", "refs/remotes/origin/main", "main")
-    return world, provider
+    return world, provider, network
 
 
-def assess(world, provider, row) -> dict:
-    env = stub(world, provider, [row])
-    p = cli(world, "branch", "status", "feature", "--no-fetch", "--json", env=env)
+def assess(world, provider, row, network) -> dict:
+    env = stub(world, provider, [row], network)
+    p = cli(world, "branch", "status", "feature", "--json", env=env)
     assert p.returncode == 0, p.stderr
     return json.loads(p.stdout)["verdicts"][0]
 
 
 def test_merged_request_matches_source_tip_and_reachable_merge(forge_world):
-    world, provider = forge_world
-    row = assess(world, provider, evidence(world, provider))
+    world, provider, network = forge_world
+    row = assess(world, provider, evidence(world, provider), network)
     assert row["verdict"] == "remove", row
     assert row["proof"] == "forge"
     assert row["request"]["number"] == 17
@@ -95,7 +89,7 @@ def test_merged_request_matches_source_tip_and_reachable_merge(forge_world):
     "mismatch", ["tip", "target", "source", "fork", "merge", "missing"]
 )
 def test_unverified_merge_cannot_authorize_deletion(forge_world, mismatch):
-    world, provider = forge_world
+    world, provider, network = forge_world
     row = evidence(world, provider)
     fields = {
         "github": {
@@ -123,37 +117,35 @@ def test_unverified_merge_cannot_authorize_deletion(forge_world, mismatch):
     if mismatch == "missing":
         value = None
     row[fields[provider][mismatch]] = value
-    result = assess(world, provider, row)
+    result = assess(world, provider, row, network)
     assert result["verdict"] != "remove", result
 
 
 @pytest.mark.parametrize("state", ["closed", "open"])
 def test_closed_or_open_requests_do_not_authorize_deletion(forge_world, state):
-    world, provider = forge_world
+    world, provider, network = forge_world
     row = evidence(
         world, provider, state=state.upper() if provider == "github" else state
     )
-    result = assess(world, provider, row)
+    result = assess(world, provider, row, network)
     assert result["verdict"] == "keep", result
     assert result["request"]["state"] == state.upper()
 
 
 def test_closed_request_does_not_block_independent_content_proof(forge_world):
-    world, provider = forge_world
+    world, provider, network = forge_world
     world.commit("feature", "branch\n")
     world.git("update-ref", "refs/remotes/origin/main", "main")
-    result = assess(world, provider, evidence(world, provider, state="CLOSED"))
+    result = assess(world, provider, evidence(world, provider, state="CLOSED"), network)
     assert result["verdict"] == "remove", result
     assert result["proof"] in ("squash", "content")
 
 
 @pytest.mark.parametrize("payload", [None, {}, [None], [{"number": "invalid"}]])
 def test_malformed_forge_data_keeps_the_branch(forge_world, payload):
-    world, provider = forge_world
-    env = stub(world, provider, payload)
-    p = cli(
-        world, "branch", "delete", "feature", "--yes", "--no-fetch", "--json", env=env
-    )
+    world, provider, network = forge_world
+    env = stub(world, provider, payload, network)
+    p = cli(world, "branch", "delete", "feature", "--yes", "--json", env=env)
     assert p.returncode == 3, p.stderr
     assert json.loads(p.stdout)["removed"] == []
     assert world.git("rev-parse", "feature")
@@ -162,10 +154,10 @@ def test_malformed_forge_data_keeps_the_branch(forge_world, payload):
 @pytest.mark.parametrize(
     ("source", "target"), [(True, True), (1, True), (7, 7.0), (None, None)]
 )
-def test_gitlab_requires_integer_project_ids(world, source, target):
+def test_gitlab_requires_integer_project_ids(world, network, source, target):
     local_branch(world)
     world.commit("feature", "later edits\n")
     world.git("remote", "add", "origin", "git@gitlab.com:owner/repo.git")
     world.git("update-ref", "refs/remotes/origin/main", "main")
     row = evidence(world, "gitlab", source_project_id=source, target_project_id=target)
-    assert assess(world, "gitlab", row)["verdict"] != "remove"
+    assert assess(world, "gitlab", row, network)["verdict"] != "remove"

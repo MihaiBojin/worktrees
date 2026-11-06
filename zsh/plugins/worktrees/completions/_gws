@@ -4,12 +4,8 @@
 
 _arguments -s \
     '--branch[consider only that branch]:branch:' \
-    '--no-fetch[use the refs already here]' \
-    '--force-refresh[fetch and ask the forge again, whatever is kept]' \
-    '-f[the same as --force-refresh]' \
     '*--only[show only rows with this verdict]:verdict:(remove keep unknown)' \
     '--delete-ignored[count gitignored files as removable]' \
-    '--no-forge[decide from git alone; never ask the forge]' \
     '--json[verdicts as data]' \
     '(-q --quiet)'{-q,--quiet}'[verdicts only]' \
     '(-v --verbose)'{-v,--verbose}'[print every git command]' \

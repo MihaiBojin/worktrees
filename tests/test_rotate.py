@@ -72,7 +72,7 @@ def test_four_rotations_in_a_day_number_upwards(world) -> None:
     seen = []
     for n in range(4):
         world.commit(f"w{n}.txt")
-        result = R_.rotate(fetch=False)
+        result = R_.rotate()
         assert isinstance(result, R_.Rotated)
         seen.append(result.branch)
         assert result.stem == "fix-parser"
@@ -88,7 +88,7 @@ def test_a_number_used_only_on_the_remote_is_skipped(world) -> None:
     with_work(world)
     world.git("update-ref", f"refs/remotes/origin/fix-parser-{TODAY}_001", "main")
 
-    result = R_.rotate(fetch=False)
+    result = R_.rotate()
     assert isinstance(result, R_.Rotated)
     assert result.branch == f"fix-parser-{TODAY}_002"
 
@@ -101,13 +101,13 @@ def test_a_number_used_only_on_the_remote_is_skipped(world) -> None:
 def test_a_detached_head_is_refused(world) -> None:
     world.git("checkout", "--quiet", "--detach", "HEAD")
     with pytest.raises(Refusal, match="HEAD is detached"):
-        R_.rotate(fetch=False)
+        R_.rotate()
     assert "gwbc" in _refusal(world)
 
 
 def _refusal(world) -> str:
     try:
-        R_.rotate(fetch=False)
+        R_.rotate()
     except Refusal as exc:
         return str(exc)
     return ""
@@ -120,7 +120,7 @@ def test_a_head_branch_ahead_of_the_remote_is_refused(world) -> None:
     before = world.git("rev-parse", "HEAD")
 
     with pytest.raises(Refusal) as exc:
-        R_.rotate(fetch=False)
+        R_.rotate()
     assert "1 commit(s) ahead of origin/main" in str(exc.value)
     assert "gwbc" in str(exc.value)
     assert world.git("rev-parse", "HEAD") == before
@@ -132,7 +132,7 @@ def test_a_tag_cannot_become_the_base(world) -> None:
     world.commit("f.txt", "f\n")
     world.git("tag", "origin/main", "refs/heads/fix-parser")
 
-    result = R_.rotate(fetch=False)
+    result = R_.rotate()
     assert isinstance(result, R_.Rotated)
     assert result.base == "refs/remotes/origin/main"
 
@@ -151,7 +151,7 @@ def test_the_head_branch_is_fast_forwarded(world) -> None:
     world.git("switch", "--quiet", "main")
 
     before = world.git("rev-parse", "--short", "refs/heads/main")
-    result = R_.rotate(fetch=False)
+    result = R_.rotate()
     assert isinstance(result, R_.CaughtUp)
     assert result.branch == "main"
     assert result.at == "origin/main"
@@ -164,9 +164,9 @@ def test_a_head_branch_already_level_is_refused(world) -> None:
     """A catch-up that moves nothing says so and exits 1."""
     with_remote(world)
     with pytest.raises(Refusal, match="main is already at origin/main"):
-        R_.rotate(fetch=False)
+        R_.rotate()
 
-    p = gwrot(world, "--no-fetch")
+    p = gwrot(world)
     assert p.returncode == 1
     assert p.stdout == ""
     assert "nothing to catch up" in p.stderr
@@ -181,17 +181,17 @@ def test_a_branch_at_its_base_with_nothing_of_its_own_is_refused(world) -> None:
     """The next branch would be the same commit under another name."""
     world.git("switch", "--quiet", "--create", "fix-parser")
     with pytest.raises(Refusal, match="fix-parser is already at main"):
-        R_.rotate(fetch=False)
+        R_.rotate()
     assert not world.git("branch", "--list", f"fix-parser-{TODAY}_*")
     assert world.git("symbolic-ref", "--short", "HEAD") == "fix-parser"
 
 
 def test_rotating_again_without_committing_exits_1(world) -> None:
     with_work(world)
-    first = gwrot(world, "--no-fetch")
+    first = gwrot(world)
     assert first.returncode == 0, first.stderr
 
-    again = gwrot(world, "--no-fetch")
+    again = gwrot(world)
     assert again.returncode == 1
     assert again.stdout == ""
     assert f"fix-parser-{TODAY}_001 is already at main" in again.stderr
@@ -206,7 +206,7 @@ def test_a_branch_left_behind_by_its_base_still_rotates(world) -> None:
     moved = world.commit("main.txt")
     world.git("switch", "--quiet", "fix-parser")
 
-    result = R_.rotate(fetch=False)
+    result = R_.rotate()
     assert isinstance(result, R_.Rotated)
     assert result.ahead == 0
     assert world.git("rev-parse", "HEAD") == moved
@@ -232,7 +232,7 @@ def test_the_binary_reports_where_it_was_and_where_it_is(world) -> None:
     was = world.git("rev-parse", "--short", "refs/heads/fix-parser")
     now = world.git("rev-parse", "--short", "refs/heads/main")
 
-    p = gwrot(world, "--no-fetch")
+    p = gwrot(world)
     assert p.returncode == 0, p.stderr
     first, second = p.stdout.splitlines()
     assert first.split()[:3] == ["was", "fix-parser", was]
@@ -249,7 +249,7 @@ def test_a_caught_up_head_branch_reports_both_commits(world) -> None:
     world.git("switch", "--quiet", "main")
     after = world.git("rev-parse", "--short", "refs/remotes/origin/main")
 
-    p = gwrot(world, "--no-fetch")
+    p = gwrot(world)
     assert p.returncode == 0, p.stderr
     first, second = p.stdout.splitlines()
     assert first.split() == ["was", "main", before]
@@ -260,7 +260,7 @@ def test_a_caught_up_head_branch_reports_both_commits(world) -> None:
 def test_json_is_data_on_stdout(world) -> None:
     with_work(world)
     was = world.git("rev-parse", "--short", "refs/heads/fix-parser")
-    p = gwrot(world, "--no-fetch", "--json")
+    p = gwrot(world, "--json")
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
     assert payload["stem"] == "fix-parser"
@@ -272,20 +272,13 @@ def test_json_is_data_on_stdout(world) -> None:
 
 def test_it_takes_no_argument(world) -> None:
     world.git("switch", "--quiet", "--create", "fix-parser")
-    p = gwrot(world, "some-name", "--no-fetch")
+    p = gwrot(world, "some-name")
     assert p.returncode == 2
     assert "unrecognized arguments" in p.stderr
 
 
-def test_f_fetches_however_recent_the_last_fetch(world) -> None:
-    bare = world.root / "origin.git"
-    subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
-    world.git("remote", "add", "origin", str(bare))
-    world.git("push", "--quiet", "origin", "main")
-    world.git("fetch", "--quiet", "origin")
-    with_work(world)
-
+def test_rotate_rejects_retired_refresh_alias(world) -> None:
+    before = world.git("rev-parse", "HEAD")
     p = gwrot(world, "-f", "-v")
-    assert p.returncode == 0, p.stderr
-    assert "fetched 0 min ago" not in p.stderr
-    assert "+ git fetch" in p.stderr
+    assert p.returncode == 2
+    assert world.git("rev-parse", "HEAD") == before

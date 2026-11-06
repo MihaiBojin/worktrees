@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,6 +25,45 @@ def _err(text: str) -> None:
 
 def _warn(text: str) -> None:
     _err(render.warn(text))
+
+
+def _require_head() -> None:
+    from . import repo as R
+
+    resolved = R.head()
+    if not resolved.ref:
+        raise Refused(resolved.unresolved)
+
+
+def _json(value: dict | list, *, indent: int = 2) -> str:
+    import json
+
+    from . import sync
+
+    result = {"worktrees": value} if isinstance(value, list) else value
+    return json.dumps({**result, **sync.envelope()}, indent=indent)
+
+
+def _add_sync_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--json", action="store_true", help="sync state as data")
+    p.add_argument("-q", "--quiet", action="store_true", help="omit the summary")
+    p.add_argument("-v", "--verbose", action="store_true", help="print every command")
+
+
+def run_sync(args: argparse.Namespace) -> int:
+    from . import sync
+    from .git import options
+
+    options.verbose = args.verbose
+    with progress.running(not args.quiet and not args.verbose):
+        code, messages = sync.run()
+    for message in messages:
+        _err(render.fail(message))
+    if args.json:
+        print(_json({}))
+    elif not code and not args.quiet:
+        print("Sync complete.")
+    return code
 
 
 def _same(a: str, b: str) -> bool:
@@ -72,11 +110,8 @@ def _counted(rows: list[verdicts.Verdict]) -> str:
     )
 
 
-def add_status_flags(p: argparse.ArgumentParser, refresh: str) -> None:
-    """What `gws` and `gwbs` take beyond what `gwp` and `gwbd` share: a
-    short -f, and a filter. Not on the two that remove, where -f would read
-    as force."""
-    p.add_argument("-f", dest="force_refresh", action="store_true", help=refresh)
+def add_status_flags(p: argparse.ArgumentParser) -> None:
+    """Filter assessment rows by verdict."""
     p.add_argument(
         "--only",
         action="append",
@@ -150,12 +185,6 @@ def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--branch", default="", metavar="NAME", help="consider only that branch"
     )
-    p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
-    p.add_argument(
-        "--force-refresh",
-        action="store_true",
-        help="fetch and ask the forge again, whatever is kept",
-    )
     p.add_argument(
         "--delete-ignored",
         action="store_true",
@@ -168,11 +197,6 @@ def _add_assess_flags(p: argparse.ArgumentParser) -> None:
         "-v", "--verbose", action="store_true", help="print every git command"
     )
     p.add_argument(
-        "--no-forge",
-        action="store_true",
-        help="decide from git alone; never ask the forge",
-    )
-    p.add_argument(
         "--explain", action="store_true", help="print every git command and exit"
     )
 
@@ -183,31 +207,6 @@ class _Stop(Exception):
     def __init__(self, message: str, code: int) -> None:
         super().__init__(message)
         self.code = code
-
-
-# A fetch younger than this is used as it stands; --force-refresh fetches.
-_FRESH = 10 * 60
-
-
-def _should_fetch(args: argparse.Namespace) -> bool:
-    """Not under --no-fetch, and not when any worktree fetched under 30
-    minutes ago, unless --force-refresh. A fetch is most of what a run costs,
-    and refs a few minutes old answer the same questions."""
-    from . import repo as R
-
-    if args.no_fetch:
-        return False
-    fetched = None if args.force_refresh else R.fetched_at()
-    if fetched is None or time.time() - fetched >= _FRESH:
-        return True
-    if not args.quiet:
-        _err(
-            render.note(
-                f"fetched {int((time.time() - fetched) // 60)} min ago; using "
-                "those refs (--force-refresh fetches now)"
-            )
-        )
-    return False
 
 
 def _assess(
@@ -225,7 +224,7 @@ def _judge_all(
     judge: Callable[..., list[verdicts.Verdict]] | None,
     ask_forge: bool | None,
 ) -> tuple[list[verdicts.Verdict], list[R.Worktree], str, str, list[R.Worktree]]:
-    """Fetch, resolve the head branch, and judge every worktree.
+    """Resolve the local head ref and judge every worktree.
 
     The one path every command takes, so `prune` can only ever act on what
     `status` printed. `judge` is how `remove` asks for the one you stand in
@@ -233,20 +232,16 @@ def _judge_all(
     """
     from . import repo as R
     from . import verdicts
-    from .git import options
 
-    options.refresh = args.force_refresh
     head, head_branch, _ = _assessment_head(args)
 
     only = getattr(args, "branch", "")
     ignored = getattr(args, "delete_ignored", False)
     records = R.worktrees()
-    # The forge is asked last and only where git could not tell. It costs a
-    # round trip, and a branch merged as part of a stack is the one case
-    # content cannot answer: its changes reach the head branch across several
-    # squashes, so a stale intermediate and real work look alike to a diff.
+    # Cached forge evidence can settle a branch whose stacked changes differ
+    # from the head branch's final content.
     if ask_forge is None:
-        ask_forge = not getattr(args, "no_forge", False)
+        ask_forge = True
     rows = (
         judge(only, head, head_branch, ignored, ask_forge=ask_forge)
         if judge
@@ -266,45 +261,12 @@ def _judge_all(
 
 
 def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
-    """Resolve the shared assessment target and report offline operation."""
+    """Resolve the shared assessment target without fetching."""
     from . import repo as R
 
     remote = R.remote()
-    # A skipped fetch still leaves the forge asked: it is what settles a
-    # stacked branch, and it is not what the fetch refreshed.
-    online = _should_fetch(args) if remote else not args.no_fetch
-    if online:
-        # An unreachable remote is not a reason to refuse to answer. It lands
-        # where --no-fetch already goes, and says so, and the head-branch
-        # ladder is told not to spend a second round trip on the same remote.
-        progress.say(f"fetching {remote}")
-        if remote and not R.fetch(remote):
-            online = False
-            # The forge is reached over the network the fetch just failed on,
-            # and `gh` waits 30 seconds before saying so, once for every
-            # branch git could not call merged. It is asked for an answer git
-            # cannot give, not for one it is about to fail to give too.
-            args.no_forge = True
-            if not args.quiet:
-                _warn(
-                    f"{render.ref(remote)} could not be fetched; judging from the refs "
-                    "already here, and not asking the forge"
-                )
-    elif args.no_fetch and not args.quiet:
-        # A fetch reused because it is recent has already said so.
-        _warn("using the refs already here; they may be stale (--no-fetch)")
-
-    progress.say("finding the head branch")
-    head, warning = R.head_ref(remote, online=online)
-    if warning and not args.quiet:
-        _warn(warning)
-    if not head:
-        raise _Stop("cannot tell which branch this repository branches from", 2)
-    head_branch = R.ref_name(head)
-    if remote:
-        head_branch = head_branch.removeprefix(remote + "/")
-
-    return head, head_branch, remote
+    resolved = R.head()
+    return resolved.ref or "", resolved.branch, remote
 
 
 # --------------------------------------------------------------------------
@@ -314,7 +276,6 @@ def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
 
 def run_status(args: argparse.Namespace) -> int:
     """Say what is here. Nothing in this path removes anything."""
-    import json
 
     from . import layout, prune, verdicts
     from .git import options
@@ -335,7 +296,7 @@ def run_status(args: argparse.Namespace) -> int:
 
     if args.json:
         print(
-            json.dumps(
+            _json(
                 {
                     "head": head,
                     "stale": [w.path for w in stale],
@@ -404,7 +365,6 @@ def run_status(args: argparse.Namespace) -> int:
 
 def run_prune(args: argparse.Namespace) -> int:
     """Remove exactly what status marks removable, having asked first."""
-    import json
 
     from . import prune, verdicts
     from .git import options
@@ -416,6 +376,7 @@ def run_prune(args: argparse.Namespace) -> int:
     # git's own bookkeeping for worktrees whose directories somebody removed
     # by hand. A stale record answers for a directory that is not there, and
     # neither command may propose removing one.
+    _require_head()
     prune.worktree_prune()
 
     rows, _, _, _, _ = _assess(args)
@@ -426,7 +387,7 @@ def run_prune(args: argparse.Namespace) -> int:
         # The reason each one stayed, here, rather than the name of the
         # command that would have printed it.
         if args.json:
-            print(json.dumps({"removed": [], "failed": 0}, indent=2))
+            print(_json({"removed": [], "failed": 0}, indent=2))
         else:
             print(_verdict_table(rows))
             if not args.quiet:
@@ -458,7 +419,7 @@ def run_prune(args: argparse.Namespace) -> int:
     failed = prune.sweep(go, _err)
     removed = [v.label for v in go]
     if args.json:
-        print(json.dumps({"removed": removed, "failed": failed}, indent=2))
+        print(_json({"removed": removed, "failed": failed}, indent=2))
     elif failed:
         _err(
             render.fail(
@@ -480,14 +441,6 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "name", nargs="?", default="", metavar="NAME", help="the branch to start"
     )
-    p.add_argument(
-        "--no-fetch", action="store_true", help="branch off what is already here"
-    )
-    p.add_argument(
-        "--force-refresh",
-        action="store_true",
-        help="fetch even when the last fetch is under 10 minutes old",
-    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
     p.add_argument(
@@ -499,7 +452,6 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
 
 
 def run_new_branch(args: argparse.Namespace) -> int:
-    import json
 
     from . import new_branch
     from . import repo as R
@@ -513,19 +465,15 @@ def run_new_branch(args: argparse.Namespace) -> int:
         # answer with the name of its own alias.
         return _needs(args, "NAME")
 
-    warn = None if args.quiet else _warn
-    if args.no_fetch and not args.quiet:
-        _warn("branching from what is already here; refs may be stale (--no-fetch)")
-
     try:
-        started = new_branch.create(args.name, fetch=_should_fetch(args), warn=warn)
+        started = new_branch.create(args.name)
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
 
     if args.json:
         print(
-            json.dumps(
+            _json(
                 {"branch": started.branch, "base": started.base, "sha": started.sha},
                 indent=2,
             )
@@ -545,15 +493,6 @@ def run_new_branch(args: argparse.Namespace) -> int:
 
 
 def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "--no-fetch", action="store_true", help="work from what is already here"
-    )
-    p.add_argument(
-        "-f",
-        "--force-refresh",
-        action="store_true",
-        help="fetch even when the last fetch is under 10 minutes old",
-    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
     p.add_argument(
@@ -565,7 +504,6 @@ def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
 
 
 def run_rotate(args: argparse.Namespace) -> int:
-    import json
 
     from . import new_branch
     from . import repo as R
@@ -576,12 +514,8 @@ def run_rotate(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    warn = None if args.quiet else _warn
-    if args.no_fetch and not args.quiet:
-        _warn("working from what is already here; refs may be stale (--no-fetch)")
-
     try:
-        result = rotate_mod.rotate(fetch=_should_fetch(args), warn=warn)
+        result = rotate_mod.rotate()
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -589,7 +523,7 @@ def run_rotate(args: argparse.Namespace) -> int:
     if isinstance(result, rotate_mod.CaughtUp):
         if args.json:
             print(
-                json.dumps(
+                _json(
                     {
                         "branch": result.branch,
                         "at": result.at,
@@ -614,7 +548,7 @@ def run_rotate(args: argparse.Namespace) -> int:
 
     if args.json:
         print(
-            json.dumps(
+            _json(
                 {
                     "branch": result.branch,
                     "stem": result.stem,
@@ -688,14 +622,6 @@ def _add_add_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "base", nargs="?", default="", metavar="BASE", help="what to branch from"
     )
-    p.add_argument(
-        "--no-fetch", action="store_true", help="branch from what is already here"
-    )
-    p.add_argument(
-        "--force-refresh",
-        action="store_true",
-        help="fetch even when the last fetch is under 10 minutes old",
-    )
     _add_cd_flags(p)
 
 
@@ -732,17 +658,6 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="also delete its gitignored files; nothing restores them",
     )
-    p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
-    p.add_argument(
-        "--force-refresh",
-        action="store_true",
-        help="fetch and ask the forge again, whatever is kept",
-    )
-    p.add_argument(
-        "--no-forge",
-        action="store_true",
-        help="decide from git alone; never ask the forge",
-    )
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
     # Its own, not gwl's: assess skips the main checkout, so gwr can never act
     # on it and offering it would complete to "no worktree matches".
@@ -752,11 +667,10 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
 
 def _landed(args: argparse.Namespace, landed: wt_mod.Landed) -> int:
     """One destination on stdout, so `cd $(gwa x)` works."""
-    import json
 
     if args.json:
         print(
-            json.dumps(
+            _json(
                 {
                     "path": landed.path,
                     "branch": landed.branch,
@@ -783,7 +697,7 @@ def run_add(args: argparse.Namespace) -> int:
 
     warn = None if args.quiet else _warn
     try:
-        landed = wt_mod.add(args.name, args.base, fetch=_should_fetch(args), warn=warn)
+        landed = wt_mod.add(args.name, args.base, warn=warn)
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -802,7 +716,6 @@ def run_list(args: argparse.Namespace) -> int:
     is listed and never offered: picking it is the one answer that cannot take
     you anywhere.
     """
-    import json
 
     from . import layout, pick
     from . import repo as R
@@ -828,7 +741,7 @@ def run_list(args: argparse.Namespace) -> int:
 
     if args.json:
         print(
-            json.dumps(
+            _json(
                 [
                     {
                         "branch": w.branch,
@@ -922,7 +835,6 @@ def run_move(args: argparse.Namespace) -> int:
 
 
 def run_remove(args: argparse.Namespace) -> int:
-    import json
 
     from . import pick, prune
     from . import repo as R
@@ -942,9 +854,8 @@ def run_remove(args: argparse.Namespace) -> int:
                 print(f"{w.label}\t{w.path}")
         return 0
 
-    # The picker shows a path and a branch and no verdict, so nothing before
-    # the answer needs the forge. Scanning without it turns one round trip per
-    # worktree into at most one for the whole command.
+    # Read cached request evidence after the picker chooses a branch.
+    _require_head()
     rows, _, head, head_branch, records = _assess(
         args, judge=wt_mod.removable, ask_forge=False
     )
@@ -981,7 +892,7 @@ def run_remove(args: argparse.Namespace) -> int:
 
     # Now that there is one branch, the forge is worth a question: it is the
     # only thing that settles a branch merged as part of a stack.
-    if chosen.verdict != prune.REMOVE and not args.no_forge:
+    if chosen.verdict != prune.REMOVE:
         with progress.running(not args.quiet and not args.verbose):
             judged = wt_mod.removable(
                 chosen.branch, head, head_branch, args.delete_ignored, ask_forge=True
@@ -1045,7 +956,7 @@ def run_remove(args: argparse.Namespace) -> int:
     if not args.quiet and not args.json:
         _err(render.note(f"removed {render.branch(chosen.label)}"))
     if args.json:
-        print(json.dumps({"removed": chosen.label, "path": destination}, indent=2))
+        print(_json({"removed": chosen.label, "path": destination}, indent=2))
         return 0
     if destination:
         print(destination)
@@ -1201,7 +1112,7 @@ def _complete_commands() -> int:
 
 def _add_status_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
-    add_status_flags(p, "the same as --force-refresh")
+    add_status_flags(p)
 
 
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
@@ -1320,6 +1231,9 @@ _BRANCH_COMMANDS: dict[str, _Command] = {
 
 
 _COMMANDS: dict[str, _Command] = {
+    "sync": _Command(
+        run_sync, _add_sync_flags, "refresh remote refs and forge evidence"
+    ),
     "branch": _Command(
         run_branch, _add_branch_flags, "create, assess and delete local branches"
     ),
@@ -1663,6 +1577,19 @@ def _dispatch(
             return run_help(args)
         run = _COMMANDS[_CANONICAL[command]].run
     try:
+        if (
+            run not in (run_help, run_version, run_sync)
+            and not getattr(args, "json", False)
+            and not getattr(args, "explain", False)
+            and not getattr(args, "complete", False)
+            and not (hasattr(args, "name") and not args.name)
+        ):
+            from . import repo as R
+            from . import sync
+
+            if R.toplevel().out.strip():
+                for notice in sync.notices(getattr(args, "quiet", False)):
+                    _err(render.note(notice))
         return run(args)
     except KeyboardInterrupt:
         _err("")

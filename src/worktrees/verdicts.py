@@ -6,7 +6,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import forge, progress
+from . import branch_forge, merged, progress, prune
 from . import repo as R
 from .merged import merged_reason
 
@@ -104,6 +104,8 @@ def assess(
             return None
         if only and wt.branch != only:
             return None
+        if not head:
+            return say(UNKNOWN, "the head ref does not resolve")
         if wt.path == main:
             # Said before the standing-in rule below, because which one is
             # the main checkout is the more useful of the two facts and the
@@ -135,8 +137,10 @@ def assess(
         progress.say(f"{wt.label}: is it merged into {head_name}?")
         reason = merged_reason(wt.branch, head, repo=repo)
         if not reason and ask_forge:
-            progress.say(f"{wt.label}: asking the forge for its pull request")
-            reason, verdict = _forge_reason(wt.branch, wt.sha, repo=repo)
+            progress.say(f"{wt.label}: reading cached forge evidence")
+            reason, verdict = _forge_reason(
+                wt.branch, wt.sha, head, head_branch, repo=repo
+            )
             if verdict:
                 return say(verdict, reason)
         if not reason:
@@ -160,53 +164,27 @@ def assess(
 
         return say(REMOVE, reason)
 
-    # Each worktree is judged on its own, and most of the time goes waiting
-    # on git and on the forge, one round trip per branch git cannot settle.
-    # Threads overlap the waits; map keeps git's order.
+    # Each worktree is independent. Threads overlap Git subprocess waits;
+    # map keeps the worktree order.
     with ThreadPoolExecutor(max_workers=8) as pool:
         return [v for v in pool.map(judge, records) if v is not None]
 
 
 def _forge_reason(
-    branch: str, sha: str = "", repo: str | os.PathLike[str] | None = None
+    branch: str,
+    sha: str = "",
+    head: str = "",
+    head_branch: str = "",
+    repo: str | os.PathLike[str] | None = None,
 ) -> tuple[str, str]:
-    """What the forge says, cross-checked against what it cannot see.
-
-    Returns (reason, verdict), or ("", "") when the forge said nothing and
-    the content probes keep the answer.
-
-    A merged request with a missing configured upstream permits pruning.
-    An existing upstream is checked for unpushed commits. A branch with no
-    tracking configuration stays unknown.
-    """
-    request = forge.request_for(branch, repo=repo, sha=sha)
-    if request is None or request.state not in ("MERGED", "CLOSED"):
+    """Accept cached proof only for this source tip and a reachable merge."""
+    request = branch_forge.request_for(branch, R.remote(repo), sha, repo)
+    if request is None or request.state != "MERGED":
         return "", ""
-
-    lower = request.state.lower()
-    unpushed = R.unpushed_count(branch, repo=repo)
-    if unpushed is None:
-        if R.upstream_tracking(branch, repo=repo).out.strip() == "[gone]":
-            if request.state == "MERGED":
-                return (
-                    f"its {request.noun} #{request.number} is merged "
-                    "and its upstream is gone",
-                    "",
-                )
-            return (
-                f"its {request.noun} is {lower}, but its upstream is gone; "
-                "cannot check for unpushed commits",
-                UNKNOWN,
-            )
-        return (
-            f"its {request.noun} is {lower}, but the branch has no upstream "
-            "to have been pushed to",
-            UNKNOWN,
-        )
-    if unpushed:
-        return (
-            f"its {request.noun} is {lower}, but {unpushed} commit(s) here "
-            "are not in it",
-            KEEP,
-        )
-    return f"its {request.noun} #{request.number} is {lower}", ""
+    if request.unverified_reason(branch, sha, head_branch):
+        return "", ""
+    if not prune.object_type(request.merge_sha, repo=repo):
+        return "", ""
+    if not merged.is_ancestor(request.merge_sha, head, repo=repo):
+        return "", ""
+    return f"its {request.noun} #{request.number} is merged", ""
