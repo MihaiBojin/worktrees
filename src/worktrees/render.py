@@ -131,11 +131,12 @@ BRANCH = BOLD + MAGENTA
 VERDICTS = tuple(VERDICT)
 
 
-def counted(verdicts: list[str]) -> str:
-    """`2 removable, 1 kept, 0 unclear`, each number in its verdict's colour."""
+def counted(paint: Ink, verdicts: list[str]) -> str:
+    """`2 removable, 1 kept, 0 unclear`, each number in its verdict's colour,
+    painted by `out` or `err` for the stream it goes to."""
     words = {"remove": "removable", "keep": "kept", "unknown": "unclear"}
     return ", ".join(
-        f"{out(str(verdicts.count(v)), VERDICT[v])} {words[v]}" for v in VERDICTS
+        f"{paint(str(verdicts.count(v)), VERDICT[v])} {words[v]}" for v in VERDICTS
     )
 
 
