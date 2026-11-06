@@ -47,8 +47,8 @@ def test_reimported_content_is_removable_without_a_worktree_or_upstream(world):
     world.git("add", "feature")
     world.git("commit", "--amend", "--no-edit", "--quiet")
     assert world.git("cherry", "main", "feature").startswith("+")
-    old = cli(world, "status", "--branch", "feature", "--json")
-    assert json.loads(old.stdout)["verdicts"] == []
+    old = cli(world, "prune", "--dry-run", "--json")
+    assert "feature" not in {r["branch"] for r in json.loads(old.stdout)["verdicts"]}
     rows = status(world, "feature")["verdicts"]
     assert len(rows) == 1
     assert rows[0]["sha"] == sha
@@ -56,20 +56,18 @@ def test_reimported_content_is_removable_without_a_worktree_or_upstream(world):
     assert rows[0]["proof"] == "content"
 
 
-def test_branch_status_lists_checked_out_branches_as_kept(world):
+def test_branch_status_lists_only_loose_branches(world):
     world.worktree("occupied")
-    world.git("branch", "done")
+    world.merged_branch("done")
     rows = {r["branch"]: r for r in status(world)["verdicts"]}
-    assert set(rows) == {"main", "occupied", "done"}
-    assert rows["main"]["verdict"] == "keep"
-    assert rows["occupied"]["verdict"] == "keep"
-    assert rows["occupied"]["paths"]
+    assert set(rows) == {"done"}
     assert rows["done"]["verdict"] == "remove"
+    assert rows["done"]["eligible"]
 
 
 @pytest.mark.parametrize("entry", ["gwbs", "gwbd"])
 def test_console_aliases_work(world, entry):
-    world.git("branch", "done")
+    world.merged_branch("done")
     args = ["done", "--json"]
     if entry == "gwbd":
         args += ["--dry-run"]
@@ -80,7 +78,7 @@ def test_console_aliases_work(world, entry):
 
 def test_multiple_exact_names_do_not_select_a_prefix(world):
     for name in ("one", "two", "one-more"):
-        world.git("branch", name)
+        world.merged_branch(name)
     assert [r["branch"] for r in status(world, "one", "two")["verdicts"]] == [
         "one",
         "two",
@@ -88,7 +86,7 @@ def test_multiple_exact_names_do_not_select_a_prefix(world):
 
 
 def test_unknown_name_prevents_any_deletion(world):
-    world.git("branch", "done")
+    world.merged_branch("done")
     p = cli(
         world,
         "branch",
@@ -103,7 +101,7 @@ def test_unknown_name_prevents_any_deletion(world):
 
 @pytest.mark.parametrize("name", ["done", "a'b", "$(id)"])
 def test_delete_prints_an_executable_undo_command(world, name):
-    world.git("branch", name)
+    world.merged_branch(name)
     sha = world.git("rev-parse", f"refs/heads/{name}")
     p = cli(world, "branch", "delete", name, "--yes", "--json")
     assert p.returncode == 0, p.stderr
@@ -119,14 +117,14 @@ def test_delete_prints_an_executable_undo_command(world, name):
 
 @pytest.mark.parametrize("args", [("--dry-run",), ()])
 def test_a_pipe_cannot_delete_without_yes(world, args):
-    world.git("branch", "done")
+    world.merged_branch("done")
     p = cli(world, "branch", "delete", "done", *args)
     assert p.returncode == (0 if args else 3), p.stderr
     assert world.git("rev-parse", "refs/heads/done")
 
 
 def test_no_arguments_requires_a_selector_even_with_yes(world):
-    world.git("branch", "done")
+    world.merged_branch("done")
     p = cli(world, "branch", "delete", "--yes")
     assert p.returncode == 3
     assert "terminal" in p.stderr
@@ -190,8 +188,8 @@ def test_content_proof_accepts_matching_deletions_and_unusual_paths(world):
 def test_selector_requires_a_selection_then_confirmation(world, answer):
     from test_cli import run_on_a_terminal
 
-    world.git("branch", "one")
-    world.git("branch", "two")
+    world.merged_branch("one")
+    world.merged_branch("two")
     code, out = run_on_a_terminal(world, "gwbd", answer=answer)
     assert code == (3 if answer == "9\n" else 0), out
     names = world.git(
@@ -202,7 +200,7 @@ def test_selector_requires_a_selection_then_confirmation(world, answer):
 
 
 def test_all_deletes_only_proven_branches(world):
-    world.git("branch", "done")
+    world.merged_branch("done")
     local_branch(world)
     p = cli(
         world,
@@ -222,7 +220,7 @@ def test_deletion_rechecks_the_approved_state(world, changed):
     from worktrees import branches
     from worktrees.git import Refused
 
-    world.git("branch", "done")
+    world.merged_branch("done")
     head = world.git("rev-parse", "main")
     row = branches.assess(["done"], head, "main", "", False)[0]
     if changed == "checkout":
@@ -238,7 +236,7 @@ def test_deletion_rechecks_the_approved_state(world, changed):
 
 
 def test_completion_lists_names_without_querying_the_forge(world):
-    world.git("branch", "one")
+    world.merged_branch("one")
     for entry in ("gwbs", "gwbd"):
         p = cli(world, "--complete", entry=entry)
         assert p.returncode == 0, p.stderr
@@ -261,13 +259,13 @@ def test_long_name_and_branch_help(world):
         entry="main",
     )
     assert p.returncode == 0, p.stderr
-    assert json.loads(p.stdout)["verdicts"][0]["verdict"] == "keep"
+    assert json.loads(p.stdout)["verdicts"] == []
 
 
 def test_ref_deletion_never_follows_a_changed_symbolic_ref(world):
     from worktrees import prune
 
-    world.git("branch", "done")
+    world.merged_branch("done")
     sha = world.git("rev-parse", "main")
     world.git("symbolic-ref", "refs/heads/done", "refs/heads/main")
     prune.ref_delete("refs/heads/done", sha)
@@ -290,7 +288,7 @@ def test_json_reports_only_successful_deletions(world, monkeypatch, capsys):
     from worktrees.git import GitError
 
     for name in ("one", "two"):
-        world.git("branch", name)
+        world.merged_branch(name)
     original = prune.ref_delete
 
     def fail_one(ref, sha, **kwargs):
@@ -309,7 +307,7 @@ def test_json_reports_only_successful_deletions(world, monkeypatch, capsys):
 
 
 def test_successful_deletion_is_reported_to_a_person(world):
-    world.git("branch", "done")
+    world.merged_branch("done")
     p = cli(world, "branch", "delete", "done", "--yes")
     assert p.returncode == 0, p.stderr
     assert "deleted 1 branch: done" in p.stdout
@@ -319,7 +317,7 @@ def test_the_selector_and_the_plan_name_each_verdict(world):
     """keep and unknown are different reasons a row cannot be picked."""
     from test_cli import run_on_a_terminal
 
-    world.git("branch", "done")
+    world.merged_branch("done")
     code, out = run_on_a_terminal(world, "gwbd", answer="1\nn\n")
     assert code == 0, out
     rows = {
@@ -327,7 +325,7 @@ def test_the_selector_and_the_plan_name_each_verdict(world):
         for ln in out.splitlines()
         if ln[:3].strip() in ("-", "1")
     }
-    assert rows == {"main": "keep", "done": "remove"}
+    assert rows == {"done": "remove"}
     assert "VERDICT" in out.split("deleting 1 branch:")[1]
 
 
@@ -336,10 +334,10 @@ def test_the_spinner_line_names_each_branch_and_how_far_along(world, monkeypatch
     from worktrees import branches, progress
 
     for name in ("one", "two"):
-        world.git("branch", name)
+        world.merged_branch(name)
     said: list[str] = []
     monkeypatch.setattr(progress, "say", said.append)
     head = world.git("rev-parse", "HEAD")
     branches.assess([], head, "main", "", ask_forge=False)
-    assert "one: is it merged into main? (2 of 3)" in said
-    assert "two: is it merged into main? (3 of 3)" in said
+    assert "one: checking completion evidence (2 of 3)" in said
+    assert "two: checking completion evidence (3 of 3)" in said

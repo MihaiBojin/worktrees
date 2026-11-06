@@ -124,19 +124,16 @@ def table(rows: list[Row], ink: Ink | None = None) -> str:
 # --------------------------------------------------------------------------
 
 
-# What each verdict prints in, in `gws`, `gwp` and `gwbs` alike, and in the
+# What each verdict prints in, in `gw`, `gwp` and `gwbs` alike, and in the
 # counts under them. A branch is the same bold magenta it is on stderr.
-VERDICT = {"remove": GREEN, "keep": BLUE, "unknown": YELLOW}
+VERDICT = {"remove": GREEN, "empty": DIM, "keep": BLUE, "unknown": YELLOW}
 BRANCH = BOLD + MAGENTA
 VERDICTS = tuple(VERDICT)
 
 
 def counted(verdicts: list[str]) -> str:
-    """`2 removable, 1 kept, 0 unclear`, each number in its verdict's colour."""
-    words = {"remove": "removable", "keep": "kept", "unknown": "unclear"}
-    return ", ".join(
-        f"{out(str(verdicts.count(v)), VERDICT[v])} {words[v]}" for v in VERDICTS
-    )
+    """Count each verdict with its own name and colour."""
+    return ", ".join(f"{out(str(verdicts.count(v)), VERDICT[v])} {v}" for v in VERDICTS)
 
 
 def branch(name: str) -> str:

@@ -1,5 +1,5 @@
 """The agent plugin in `plugin/`: its manifests agree, and the jq filters its
-skill runs read the JSON `gws` and `gwbs` print today."""
+skill runs read the JSON `gw` and `gwbs` print today."""
 
 from __future__ import annotations
 
@@ -100,17 +100,18 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
     world.worktree("started")
 
     branches = _jq(_filter("gwbs"), _json(world, "gwbs"))
-    out = _jq(_filter("gws"), _json(world, "gws"), branches["head_sha"])
+    out = _jq(_filter("gw"), _json(world, "gw"), branches["head_sha"])
 
     worktrees = {row["branch"]: row for row in out["worktrees"]}
-    assert set(worktrees) == {"squashed", "started"}
+    assert set(worktrees) == {"squashed"}
     assert worktrees["squashed"]["at_head"] is False
-    assert worktrees["started"]["at_head"] is True
+    assert out["empty"] == 2
     assert worktrees["squashed"]["path"] == str(squashed)
-    assert (out["kept"], out["unknown"], out["ignored"]) == (1, 0, [])
+    assert (out["kept"], out["unknown"], out["ignored"]) == (0, 0, [])
 
     # Checked out in a worktree, so gwbs keeps it and only gwp may take it.
     assert [row["branch"] for row in branches["branches"]] == ["loose"]
     assert branches["branches"][0]["proof"] == "squash"
     assert branches["branches"][0]["undo"].startswith("git branch loose ")
-    assert (branches["kept"], branches["unknown"]) == (3, 0)
+    assert (branches["kept"], branches["unknown"]) == (0, 0)
+    assert branches["empty"] == 0

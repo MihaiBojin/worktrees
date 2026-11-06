@@ -2,8 +2,9 @@
 
 complete -c gwp -f
 
-complete -c gwp -l branch -d 'consider only that branch'
 complete -c gwp -l delete-ignored -d 'count gitignored files as removable'
+complete -c gwp -l dry-run -d 'report without deleting'
+complete -c gwp -l only -d 'filter by verdict'
 complete -c gwp -s y -l yes -d 'do not ask before removing'
 
 complete -c gwp -l json -d 'verdicts as data'

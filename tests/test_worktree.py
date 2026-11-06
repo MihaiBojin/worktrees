@@ -126,8 +126,8 @@ def test_a_command_that_lands_prints_its_help_on_stderr(world, binary: str) -> N
 
 
 def test_a_command_that_stays_prints_its_help_on_stdout(world) -> None:
-    p = run(world, "gws", "--help")
-    assert p.stdout.startswith("usage: gws ")
+    p = run(world, "gw", "--help")
+    assert p.stdout.startswith("usage: gw ")
     assert p.stderr == ""
 
 
@@ -339,7 +339,7 @@ def test_move_leaves_no_empty_directory_behind(world) -> None:
 
 def test_remove_prints_nothing_when_you_were_not_standing_in_it(world) -> None:
     """Empty stdout means stay put."""
-    wt = world.worktree("done")
+    wt = world.merged_worktree("done")
     p = run(world, "gwr", "done", "--yes")
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip() == ""
@@ -348,7 +348,7 @@ def test_remove_prints_nothing_when_you_were_not_standing_in_it(world) -> None:
 
 
 def test_remove_prints_the_main_checkout_when_you_were(world) -> None:
-    wt = world.worktree("done")
+    wt = world.merged_worktree("done")
     p = run(world, "gwr", "--yes", at=wt)
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip() == str(world.repo)
@@ -372,12 +372,12 @@ def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     (world.repo / ".gitignore").write_text(".env\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
-    wt = world.worktree("holds")
+    wt = world.merged_worktree("holds")
     (wt / ".env").write_text("SECRET=1\n")
 
     p = run(world, "gwr", "holds", "--yes")
     assert p.returncode == 1
-    assert "is finished" in p.stderr
+    assert "ignored path(s)" in p.stderr
     assert "is not finished" not in p.stderr
     assert "--delete-ignored" in p.stderr
     assert "--force" not in p.stderr
@@ -398,7 +398,7 @@ def test_force_names_the_ignored_files_it_is_about_to_delete(world) -> None:
     (wt / ".env").write_text("SECRET=1\n")
     world.commit("b.txt", "b\n", at=wt)
 
-    p = run(world, "gwr", "busy", "--yes", "--force")
+    p = run(world, "gwr", "busy", "--yes", "--force", "--delete-ignored")
     assert p.returncode == 0, p.stderr
     assert "deleting ignored, unrecoverable: .env" in p.stderr
     assert not wt.exists()
@@ -415,7 +415,7 @@ def test_force_removes_the_checkout_and_keeps_the_branch(world) -> None:
 
 
 def test_remove_prints_the_restore_line_once(world) -> None:
-    world.worktree("done")
+    world.merged_worktree("done")
     p = run(world, "gwr", "done", "--yes")
     assert p.stderr.count("restore with: git branch done ") == 1
 
@@ -516,7 +516,7 @@ def test_a_neighbour_is_found_under_a_branch_name_with_slashes(world) -> None:
 
 
 def test_counting_the_neighbours_asks_git_nothing(world) -> None:
-    """`gws` counts them on every run, so it walks rather than spawning."""
+    """`gw` counts them on every run, so it walks rather than spawning."""
     from worktrees.git import options
 
     ours = world.worktree("mine")

@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from . import branches, progress, prune, render
+from . import branches, merged, progress, prune, render
 from .cli import _assessment_head, _err, _explain, _json, _only, _Stop, add_status_flags
 from .git import GitError, Refused, options
 from .render import BOLD, DIM, YELLOW, Cell, table
@@ -51,7 +51,7 @@ def delete_flags(p: argparse.ArgumentParser) -> None:
 
 def _prepare(
     args: argparse.Namespace,
-) -> tuple[str, str, str, str, list[branches.Verdict]] | None:
+) -> tuple[str, str, str, str, list[branches.Verdict], set[str]] | None:
     options.verbose = args.verbose
     if args.complete:
         for name, (sha, _) in branches.local_refs().items():
@@ -64,12 +64,23 @@ def _prepare(
     with progress.running(not args.quiet and not args.verbose):
         head, head_branch, remote = _assessment_head(args)
         head_sha = prune.sha_of(head).out.strip() if head else ""
+        first_parents = (
+            set(merged.first_parent_history(head_sha).lines) if head_sha else set()
+        )
         progress.say("reading local branches")
         try:
-            rows = branches.assess(args.names, head_sha, head_branch, remote, True)
+            rows = branches.assess(
+                args.names,
+                head_sha,
+                head_branch,
+                remote,
+                True,
+                include_checked=bool(args.names) and hasattr(args, "all"),
+                first_parents=first_parents,
+            )
         except ValueError as exc:
             raise _Stop(str(exc), 2) from exc
-    return head, head_sha, head_branch, remote, rows
+    return head, head_sha, head_branch, remote, rows, first_parents
 
 
 def _table(rows: list[branches.Verdict]) -> str:
@@ -77,6 +88,7 @@ def _table(rows: list[branches.Verdict]) -> str:
         [
             (
                 Cell("VERDICT", BOLD),
+                Cell("ELIGIBLE", BOLD),
                 Cell("BRANCH", BOLD),
                 Cell("SHA", BOLD),
                 Cell("WHY", BOLD),
@@ -85,6 +97,7 @@ def _table(rows: list[branches.Verdict]) -> str:
             *[
                 (
                     _verdict(v),
+                    Cell("yes" if v.eligible else "no"),
                     Cell(v.branch, render.BRANCH),
                     Cell(v.sha[:12], YELLOW),
                     Cell(v.why),
@@ -120,7 +133,11 @@ def _report(
         if not args.quiet:
             # Every row counted, --only or not, so a filtered table still
             # says what it is not showing.
-            print("\n" + render.counted([v.verdict for v in rows]))
+            print(
+                "\n"
+                + render.counted([v.verdict for v in rows])
+                + f"; {sum(v.eligible for v in rows)} eligible"
+            )
 
 
 def _branches(n: int) -> str:
@@ -159,20 +176,20 @@ def status(args: argparse.Namespace) -> int:
     prepared = _prepare(args)
     if prepared is None:
         return 0
-    head, head_sha, _, _, rows = prepared
+    head, head_sha, _, _, rows, _ = prepared
     _report(args, head, head_sha, rows)
     return int(any(v.error for v in rows))
 
 
 def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:
-    candidates = [v for v in rows if v.verdict == "remove"]
+    candidates = [v for v in rows if v.eligible]
     if not candidates:
         return []
     if not sys.stdin.isatty():
         raise Refused("not a terminal; pass branch names or --all, or use gwbs --json")
     # The ones that cannot be picked first and grey, so the numbered rows
     # sit together above the prompt.
-    others = [v for v in rows if v.verdict != "remove"]
+    others = [v for v in rows if not v.eligible]
     _err(
         table(
             [
@@ -229,13 +246,13 @@ def delete(args: argparse.Namespace) -> int:
     prepared = _prepare(args)
     if prepared is None:
         return 0
-    head, head_sha, head_branch, remote, rows = prepared
+    head, head_sha, head_branch, remote, rows, first_parents = prepared
     if not head_sha:
         from . import repo as R
 
         raise Refused(R.head().unresolved)
     if args.names or args.all or args.dry_run:
-        go = [v for v in rows if v.verdict == "remove"]
+        go = [v for v in rows if v.eligible]
     else:
         go = _select(rows)
     removed: list[str] = []
@@ -272,7 +289,9 @@ def delete(args: argparse.Namespace) -> int:
                 f"{row.branch}: checking again, then deleting ({i} of {len(go)})"
             )
             try:
-                branches.delete(row, head, head_sha, head_branch, remote, True)
+                branches.delete(
+                    row, head, head_sha, head_branch, remote, True, first_parents
+                )
             except (GitError, Refused, ValueError) as exc:
                 failures.append({"branch": row.branch, "why": str(exc)})
                 _err(render.fail(f"{render.branch(row.branch)} kept: {exc}"))
@@ -292,7 +311,7 @@ def delete(args: argparse.Namespace) -> int:
                 _err(f"  {render.restore(row.branch, row.sha)}")
     # A named branch that was not proved finished says why, rather than
     # leaving exit 3 to speak for it.
-    held = [v for v in rows if args.names and v.verdict != "remove"]
+    held = [v for v in rows if args.names and not v.eligible]
     for v in held:
         _err(render.fail(f"{render.branch(v.branch)} kept: {v.why}"))
     if failures or any(v.error for v in rows):

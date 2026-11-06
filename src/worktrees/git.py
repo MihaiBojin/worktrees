@@ -267,7 +267,11 @@ class GitCall(Protocol):
     __name__: str
 
     def __call__(
-        self, *args: Any, repo: str | os.PathLike[str] | None = None, **kwargs: Any
+        self,
+        *args: Any,
+        repo: str | os.PathLike[str] | None = None,
+        input: str | None = None,
+        **kwargs: Any,
     ) -> Run: ...
 
 
@@ -363,7 +367,10 @@ def git(
 
         @functools.wraps(fn)
         def call(
-            *args: Any, repo: str | os.PathLike[str] | None = None, **kwargs: Any
+            *args: Any,
+            repo: str | os.PathLike[str] | None = None,
+            input: str | None = None,
+            **kwargs: Any,
         ) -> Run:
             bound = signature.bind(*args, **kwargs)
             bound.apply_defaults()
@@ -385,7 +392,12 @@ def git(
             if env is not None:
                 environ = {**os.environ, **env}
             proc = subprocess.run(
-                full, capture_output=True, text=True, env=environ, check=False
+                full,
+                capture_output=True,
+                text=True,
+                input=input,
+                env=environ,
+                check=False,
             )
             if options.verbose:
                 # After it ran, so the command and its answer print as one

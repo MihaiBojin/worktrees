@@ -250,7 +250,7 @@ def test_branch_creation_refuses_unresolved_inferred_head(world, network, entry,
 @pytest.mark.parametrize(
     "entry, args",
     [
-        ("gws", ["--json"]),
+        ("gw", ["--json"]),
         ("gwp", ["--yes", "--json"]),
         ("gwbs", ["--json"]),
         ("gwbc", ["new", "--json"]),
@@ -274,7 +274,7 @@ def test_ordinary_commands_never_use_network(world, network, entry, args):
 
 
 @pytest.mark.parametrize(
-    "entry", ["gws", "gwp", "gwbs", "gwbd", "gwa", "gwbc", "gwrot", "gwr"]
+    "entry", ["gw", "gwp", "gwbs", "gwbd", "gwa", "gwbc", "gwrot", "gwr"]
 )
 @pytest.mark.parametrize("flag", ["--no-fetch", "--no-forge", "--force-refresh"])
 def test_network_flags_are_usage_errors(world, network, entry, flag):
@@ -303,36 +303,36 @@ def test_stale_notice_boundary_and_units(
     cache_path(world).write_text(json.dumps(cached))
     stamp = datetime(2026, 1, 1, tzinfo=UTC).timestamp()
     monkeypatch.setattr(sync.time, "time", lambda: stamp + seconds)
-    assert C.gws([]) == 0
+    assert C.gw([]) == 0
     error = capsys.readouterr().err
     if text:
         assert text in error and "gw sync" in error
     else:
         assert "Last sync:" not in error
-    assert C.gws(["-q"]) == 0
+    assert C.gw(["-q"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
-    assert C.gws(["--json"]) == 0
+    assert C.gw(["--json"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("quiet", [False, True])
 def test_never_synced_and_inferred_notices_survive_quiet(world, network, quiet):
     origin(world)
-    proc = cli(world, *(["-q"] if quiet else []), entry="gws", env=network.env())
+    proc = cli(world, *(["-q"] if quiet else []), entry="gw", env=network.env())
     assert proc.returncode == 0, proc.stderr
     assert (
         "Never synced: verdicts use refs from the clone or last fetch "
         "and no forge evidence. Run: gw sync" in proc.stderr
     )
     assert "Head: main (inferred)" in proc.stderr
-    data = cli(world, "--json", entry="gws", env=network.env())
+    data = cli(world, "--json", entry="gw", env=network.env())
     assert "Never synced:" not in data.stderr and "Head:" not in data.stderr
     proc = cli(world, "sync", env=network.env())
     assert "Never synced:" not in proc.stderr and "Head:" not in proc.stderr
 
 
 def test_repository_without_remote_reports_only_inferred_head(world, network):
-    proc = cli(world, entry="gws", env=network.env())
+    proc = cli(world, entry="gw", env=network.env())
     assert "Head: main (inferred)" in proc.stderr
     assert "Never synced:" not in proc.stderr and "Last sync:" not in proc.stderr
 
@@ -563,7 +563,7 @@ def test_inferred_head_notice_paints_both_branch_names_on_stderr(world, network)
         [
             sys.executable,
             "-c",
-            "from worktrees.cli import gws; raise SystemExit(gws())",
+            "from worktrees.cli import gw; raise SystemExit(gw())",
             "-q",
         ],
         cwd=world.repo,
