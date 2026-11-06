@@ -800,9 +800,9 @@ def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
 
 
 @pytest.mark.parametrize(
-    "entry,args,prompt",
+    "entry,args,prompt,table",
     [
-        (entry, (*prefix, *flags), prompt)
+        (entry, (*prefix, *flags), prompt, command == "prune")
         for command, flags, prompt in (
             ("list", (), "which? [up/down and enter, 1-3, or esc to cancel] "),
             (
@@ -827,7 +827,7 @@ def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
         )
     ],
 )
-def test_ctrl_c_at_every_prompt(world, entry, args, prompt) -> None:
+def test_ctrl_c_at_every_prompt(world, entry, args, prompt, table) -> None:
     """SIGINT cancels selection and confirmation without changing any worktree."""
     paths = [world.merged_worktree(name) for name in ("one", "two")]
     before = world.git("worktree", "list", "--porcelain")
@@ -872,7 +872,12 @@ def test_ctrl_c_at_every_prompt(world, entry, args, prompt) -> None:
     assert "Traceback" not in stderr, stderr
     assert "KeyboardInterrupt" not in stderr, stderr
     assert proc.returncode == 130, stderr
-    assert out == b""
+    if table:
+        assert out.count(b"VERDICT") == 1
+        assert b"ELIGIBLE" in out
+        assert all(str(path).encode() in out for path in (world.repo, *paths))
+    else:
+        assert out == b""
     assert stderr.endswith(prompt + "\n"), stderr
     assert world.git("worktree", "list", "--porcelain") == before
     assert world.git("show-ref") == refs

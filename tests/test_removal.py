@@ -296,6 +296,11 @@ def test_stash_drop_repairs_a_real_concurrent_insertion(world, entry, suffix):
     assert "not dropped" in p.stderr
     subject = shlex.quote("On topic: target 'quoted'")
     assert f"git stash store -m {subject} {target}" in p.stderr
+    result = json.loads(p.stdout)
+    outcome = result["outcome"] if entry == "gwr" else result["outcomes"][0]
+    assert outcome["retained"] == [target]
+    assert outcome["skipped"] == []
+    assert f"stash {target}: retained" in p.stderr
 
 
 @pytest.mark.parametrize("entry", ["gwr", "gwbd"])
@@ -792,11 +797,13 @@ def test_retired_removal_flags_refuse_before_preflight(world, network, entry, fl
 
 
 @pytest.mark.parametrize("entry", ["gwr", "gwbd"])
-def test_stash_repair_uses_preceding_listed_subject(world, network, entry):
+@pytest.mark.parametrize("pending", [False, True])
+def test_stash_repair_uses_preceding_listed_subject(world, network, entry, pending):
     path = world.merged_worktree("topic")
     subject = "older 'quoted'; $(data)"
     older = stash(world, world.repo, subject)
     target = stash(world, path, "target")
+    pending_sha = stash(world, path, "pending") if pending else None
     if entry == "gwbd":
         world.git("worktree", "remove", str(path))
     marker = world.root / "stash-race.json"
@@ -810,9 +817,14 @@ def test_stash_repair_uses_preceding_listed_subject(world, network, entry):
         "        remaining = subprocess.check_output(listing, text=True)\n"
         "        actual = subprocess.run([real_git, *args], "
         "capture_output=True, text=True)\n"
+        "        pending_drop = ''\n"
+        f"        if {pending!r}:\n"
+        "            pending_drop = subprocess.check_output([real_git, *prefix, "
+        "'stash', 'drop', 'stash@{0}'], text=True)\n"
         f"        marker = pathlib.Path({str(marker)!r})\n"
         "        marker.write_text(json.dumps({'before': before, "
-        "'remaining': remaining, 'actual': actual.stdout}))\n"
+        "'remaining': remaining, 'actual': actual.stdout, "
+        "'pending_drop': pending_drop}))\n"
         "        sys.stdout.write(actual.stdout)\n"
         "        sys.stderr.write(actual.stderr)\n"
         "        sys.exit(actual.returncode)\n"
@@ -837,7 +849,11 @@ def test_stash_repair_uses_preceding_listed_subject(world, network, entry):
     assert marker.exists()
     race = json.loads(marker.read_text())
     assert target in race["before"] and older in race["before"]
-    assert race["remaining"] == f"{older} On main: {subject}\n"
+    expected_remaining = f"{older} On main: {subject}\n"
+    if pending_sha:
+        expected_remaining = f"{pending_sha} On topic: pending\n" + expected_remaining
+        assert f"({pending_sha})" in race["pending_drop"]
+    assert race["remaining"] == expected_remaining
     assert f"({older})" in race["actual"]
     assert (
         world.git("stash", "list", "--format=%H %gs") == f"{older} On main: {subject}"
@@ -854,7 +870,12 @@ def test_stash_repair_uses_preceding_listed_subject(world, network, entry):
     )
     assert outcome["branch_removed"]
     assert outcome["dropped"] == []
-    assert outcome["retained"] == [target]
+    assert outcome["retained"] == []
+    absent = sorted([target, *([pending_sha] if pending_sha else [])])
+    assert outcome["skipped"] == absent
+    for sha in absent:
+        assert f"stash {sha}: already absent" in proc.stderr
+        assert f"stash {sha}: retained" not in proc.stderr
     assert not any(
         call[-4:] == ["log", "-1", "--format=%s", older] for call in network.calls()
     )
