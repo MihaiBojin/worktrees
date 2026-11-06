@@ -8,10 +8,12 @@ diffed against `--help` in both directions.
 
 from __future__ import annotations
 
+import itertools
 import os
 import pty
 import re
 import select
+import shlex
 import shutil
 import subprocess
 import sys
@@ -103,6 +105,45 @@ def test_zsh_offers_exactly_the_flags_gw_parses() -> None:
     """`gw list`'s. Under `gw branch` zsh calls `_gwbs` and `_gwbd`, which
     are held to their own binaries' flags above."""
     assert _zsh_flags("gw") == _parsed_flags("main", "list")
+
+
+def _fish_conditions(flag: str) -> list[str]:
+    """The `-n` condition of every `complete -c gw` line offering `flag`."""
+    text = (FISH / "gw.fish").read_text().replace("\\\n", " ")
+    found = []
+    for line in text.splitlines():
+        words = shlex.split(line, comments=True)
+        if words[:3] == ["complete", "-c", "gw"] and f"--{flag}" in [
+            f"--{b}" for a, b in itertools.pairwise(words) if a == "-l"
+        ]:
+            found.append(words[words.index("-n") + 1] if "-n" in words else "")
+    return found
+
+
+def test_fish_offers_list_only_at_the_root_and_after_gw_list() -> None:
+    conditions = _fish_conditions("list")
+    assert conditions, "no --list"
+    for c in conditions:
+        assert "branch" not in c, c
+        assert "__fish_use_subcommand" in c or "from list" in c, c
+
+
+def test_fish_offers_only_after_gw_branch_status() -> None:
+    conditions = _fish_conditions("only")
+    assert conditions, "no --only"
+    for c in conditions:
+        assert "from branch" in c and "from status" in c and "delete" not in c, c
+
+
+def test_zsh_offers_list_only_at_the_root_and_after_gw_list() -> None:
+    """The root `_arguments` block, or a line guarded by `== list`."""
+    lines = (ZSH / "_gw").read_text().splitlines()
+    root = next(i for i, x in enumerate(lines) if "_arguments -C \\" in x)
+    end = next(i for i in range(root, len(lines)) if not lines[i].endswith("\\"))
+    at = [i for i, x in enumerate(lines) if "--list" in x]
+    assert at, "no --list"
+    for i in at:
+        assert root < i <= end or "== list ]]" in lines[i - 1], lines[i]
 
 
 def test_complete_lists_every_command_and_shorthand(world) -> None:
