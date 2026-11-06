@@ -202,6 +202,28 @@ def test_stash_ownership_requires_subject_and_first_parent(
         assert "stash" in row["why"]
 
 
+@pytest.mark.parametrize("message", [False, True])
+def test_prefix_sharing_branches_have_distinct_stashes(world, message):
+    paths = {name: world.worktree(name) for name in ("topic", "topic-more")}
+    shas = {}
+    for name, path in paths.items():
+        (path / "README").write_text(name)
+        world.git(
+            "stash",
+            "push",
+            *(["-m", "saved 'quoted'; $(data)"] if message else []),
+            at=path,
+        )
+        shas[name] = world.git("rev-parse", "refs/stash")
+    attached = {r["branch"]: r for r in rows(world)}
+    for name, path in paths.items():
+        assert attached[name]["stashes"] == [shas[name]]
+        world.git("worktree", "remove", str(path))
+    loose = {r["branch"]: r for r in rows(world, "gwbs")}
+    for name in paths:
+        assert loose[name]["stashes"] == [shas[name]]
+
+
 def snapshot(path: Path) -> dict[str, bytes]:
     return {
         str(p.relative_to(path)): p.read_bytes() for p in path.rglob("*") if p.is_file()

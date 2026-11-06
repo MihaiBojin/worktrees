@@ -152,7 +152,8 @@ def test_malformed_forge_data_keeps_the_branch(forge_world, payload):
 
 
 @pytest.mark.parametrize(
-    ("source", "target"), [(True, True), (1, True), (7, 7.0), (None, None)]
+    ("source", "target"),
+    [(True, True), (1, True), (7, 7.0), (None, None), (0, 7), (-1, 7), (7, 0), (7, -1)],
 )
 def test_gitlab_requires_integer_project_ids(world, network, source, target):
     local_branch(world)
@@ -161,3 +162,54 @@ def test_gitlab_requires_integer_project_ids(world, network, source, target):
     world.git("update-ref", "refs/remotes/origin/main", "main")
     row = evidence(world, "gitlab", source_project_id=source, target_project_id=target)
     assert assess(world, "gitlab", row, network)["verdict"] != "remove"
+
+
+@pytest.mark.parametrize("local_proof", [False, True])
+@pytest.mark.parametrize(
+    "provider,changes",
+    [
+        ("github", {"headRepository": None}),
+        ("github", {"headRepository": "owner/repo"}),
+        ("github", {"headRepository": ["owner/repo"]}),
+        ("github", {"headRepository": {"nameWithOwner": None}}),
+        ("github", {"headRepository": {"nameWithOwner": 17}}),
+        ("github", {"url": "https://github.com/other/repo/pull/17"}),
+        ("gitlab", {"source_project_id": None}),
+        ("gitlab", {"source_project_id": "7"}),
+        ("gitlab", {"source_project_id": True}),
+        ("gitlab", {"source_project_id": 7.0}),
+        ("gitlab", {"source_project_id": 0}),
+        ("gitlab", {"source_project_id": -1}),
+        ("gitlab", {"target_project_id": 0}),
+        ("gitlab", {"target_project_id": -1}),
+    ],
+)
+def test_invalid_provider_identity_cannot_supply_proof(
+    world, network, provider, changes, local_proof
+):
+    tip = local_branch(world)
+    if local_proof:
+        world.commit("unrelated", "independent mainline commit\n")
+    world.commit("feature", "branch\n" if local_proof else "later edits\n")
+    world.git("remote", "add", "origin", f"git@{provider}.com:owner/repo.git")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+    row = evidence(world, provider, **changes)
+    env = stub(world, provider, [row], network)
+    before = network.network_calls()
+    result = cli(world, "feature", "--json", entry="gwbs", env=env)
+    assert result.returncode == 0, result.stderr
+    assessed = json.loads(result.stdout)["verdicts"][0]
+    assert assessed["verdict"] == ("remove" if local_proof else "keep"), assessed
+    assert assessed["proof"] != "forge"
+    if local_proof:
+        assert world.git("rev-parse", "main") != tip
+        assert assessed["proof"] in ("squash", "content"), assessed
+    deleted = cli(world, "feature", "--yes", "--json", entry="gwbd", env=env)
+    if local_proof:
+        assert deleted.returncode == 0, deleted.stderr
+        assert json.loads(deleted.stdout)["removed"] == ["feature"]
+    else:
+        assert deleted.returncode == 3, deleted.stderr
+        assert json.loads(deleted.stdout)["removed"] == []
+        assert world.git("rev-parse", "feature") == tip
+    assert network.network_calls() == before

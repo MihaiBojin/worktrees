@@ -407,13 +407,15 @@ def run_prune(args: argparse.Namespace) -> int:
     go = prune.removable(rows)
     unknown = [v for v in rows if v.verdict == verdicts.UNKNOWN]
 
+    if not args.json:
+        print(_verdict_table(rows), flush=True)
+
     if not go:
         # The reason each one stayed, here, rather than the name of the
         # command that would have printed it.
         if args.json:
             print(_json({"removed": [], "failed": 0}, indent=2))
         else:
-            print(_verdict_table(rows))
             if not args.quiet:
                 print()
                 print(f"nothing to remove; {_counted(rows)}")
