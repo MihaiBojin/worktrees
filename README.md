@@ -603,9 +603,8 @@ The first appears when the default remote has no sync record with a `refs`
 time, and `-q` keeps it. A remote with no branches can never record one, so
 it always shows this line. The second appears when the older of `refs` and
 `forge` is more than ten minutes old; a null `forge` leaves `refs` to decide.
-`-q` drops it. Neither appears for `gw sync` or `gw list`, under `--json`,
-which carries `lastSync` instead,
-or without a default remote. The plan `gwp`, `gwr` and `gwbd` print before
+`-q` drops it. Neither appears for `gw sync`, for `gw list`, under `--json`
+(which carries `lastSync` instead), or without a default remote. The plan `gwp`, `gwr` and `gwbd` print before
 deleting repeats the never-synced line, and their question becomes
 `Never synced. Delete anyway? [y/N]`. `--yes` still skips the question.
 
@@ -754,6 +753,10 @@ mean every branch has evidence. `head.source` is `remote`, `clone` or
 `inferred`, as the `Head:` line says it, and `head.ref` is the full ref, or
 null when it does not resolve. `gw list --json` puts its rows under
 `worktrees`.
+
+A refusal is no result: it prints its reason on stderr, nothing on stdout, and
+exits non-zero. `gwp --yes --json | jq` exits 0 on that empty input unless the
+shell sets `pipefail`, so read the command's own exit code.
 
 Every command is a console script, so a script reaches it with no shell loaded
 at all:

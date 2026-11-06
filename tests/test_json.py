@@ -79,6 +79,37 @@ def test_a_sync_gives_the_refs_time_and_the_remote_head(world) -> None:
         }, argv
 
 
+def test_the_other_payloads_carry_both_fields(world) -> None:
+    """A caught-up head branch, a prune with nothing to remove and a dry run
+    each print their own payload."""
+    bare(world)
+    assert sync(world).returncode == 0
+    refs = record(world)["refs"]
+    world.git("switch", "--quiet", "--create", "ahead", "main")
+    world.git("update-ref", "refs/remotes/origin/main", world.commit("r.txt"))
+    world.git("switch", "--quiet", "main")
+    world.git("branch", "done")
+    expected = {
+        ("gwrot",): {"branch", "at", "previous_sha", "sha"},
+        ("gwp", "--yes"): {"removed", "failed"},
+        ("gwbd", "--all", "--dry-run"): {
+            "head_sha",
+            "verdicts",
+            "removed",
+            "failed",
+            "dry_run",
+        },
+    }
+    for argv, keys in expected.items():
+        out = envelope(world, argv)
+        assert set(out) == {"lastSync", "head", *keys}, argv
+        assert out["lastSync"] == {"refs": refs, "forge": None}, argv
+        assert out["head"] == {
+            "ref": "refs/remotes/origin/main",
+            "source": "remote",
+        }, argv
+
+
 def test_a_forge_that_answered_gives_the_forge_time(world) -> None:
     forge_remote(world)
     assert synced(world, fake(world, "github", {})).returncode == 0
