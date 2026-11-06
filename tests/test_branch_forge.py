@@ -138,6 +138,10 @@ def test_a_moved_tip_has_no_evidence(forge_world):
             "the request does not identify this branch tip",
         ),
         (
+            {"source_sha": "0" * 40},
+            "the request does not identify this branch tip",
+        ),
+        (
             {"same_repository": False},
             "the request's source repository does not match this remote",
         ),
@@ -150,7 +154,7 @@ def test_a_moved_tip_has_no_evidence(forge_world):
             "the request's merge commit is not available locally",
         ),
     ],
-    ids=["target", "source", "fork", "unmerged-at", "merge-missing"],
+    ids=["target", "source", "source-sha", "fork", "unmerged-at", "merge-missing"],
 )
 def test_a_mismatched_request_proves_nothing(forge_world, changes, why):
     world = forge_world
