@@ -317,6 +317,17 @@ def test_no_terminal_is_one_exit_code(world) -> None:
         assert "terminal" in p.stderr
 
 
+def test_remove_without_a_terminal_says_to_narrow_the_query(world) -> None:
+    """gwr has no --list, and --json still needs one worktree."""
+    world.worktree("a")
+    world.worktree("b")
+    p = run(world, "gwr", "--no-fetch")
+    assert p.returncode == 3, p.stderr
+    assert "2 worktrees to choose from and this is not a terminal" in p.stderr
+    assert "narrow the query to one" in p.stderr
+    assert "--list" not in p.stderr
+
+
 @pytest.mark.parametrize(
     ("answer", "expected"),
     [("y", True), ("Y", True), ("yes", True), ("n", False), ("", False), ("q", False)],

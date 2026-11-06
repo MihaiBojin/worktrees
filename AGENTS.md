@@ -220,10 +220,10 @@ Two rules, both the shape `gwp`'s prompt already has:
 - A query that narrows to one takes it outright, with no prompt at all. No
   query asks however many there are, because being moved without being asked
   is not what `gw` with no argument means.
-- No terminal, no prompt. `gwr` and `gwbd` refuse at exit 3 rather than
-  block on something nothing can drive. `gw list` prints the `--list` table of
-  every match instead and selects nothing, one match included, since a list
-  is an answer a script can read.
+- No terminal, no prompt. `gwp`, `gwr` and `gwbd` refuse at exit 3 rather
+  than block on something nothing can drive. `gw list` prints the `--list`
+  table of every match instead and selects nothing, one match included,
+  since a list is an answer a script can read.
 
 Two more about what is in the list at all:
 
