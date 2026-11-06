@@ -484,9 +484,9 @@ def test_never_synced_disclosure_and_confirmation_survive_output_flags(world, en
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     if entry == "gwbd":
         world.git("worktree", "remove", str(path))
-    args = [] if entry == "gwp" else ["topic"]
+    args = [] if entry == "gwp" else ["topic", "--json"]
     code, output = run_on_a_terminal_at(
-        world, world.repo, entry, *args, "--quiet", "--json", answer="n\n"
+        world, world.repo, entry, *args, "--quiet", answer="n\n"
     )
     assert code == 0, output
     assert "Never synced:" in output
@@ -968,7 +968,7 @@ def test_removed_ignored_entry_invalidates_approval(world, entry):
             *(["topic"] if entry == "gwr" else []),
             "--delete",
             "all",
-            "--json",
+            *(["--json"] if entry == "gwr" else []),
         ],
         cwd=world.repo,
         env=env_for(world),
@@ -1000,8 +1000,12 @@ def test_removed_ignored_entry_invalidates_approval(world, entry):
         os.close(parent)
     assert proc.returncode == 1, (disclosure + stderr).decode()
     assert "changed after assessment" in (disclosure + stderr).decode()
-    data = json.loads(stdout)
-    assert not data["removed"]
+    if entry == "gwr":
+        data = json.loads(stdout)
+        assert not data["removed"]
+    else:
+        assert b"VERDICT" in stdout and b"ELIGIBLE" in stdout
+        assert str(path).encode() in stdout
     assert path.exists()
     assert (path / "merged-topic").read_text() == "x"
     assert not (path / "old.secret").exists()
