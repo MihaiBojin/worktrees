@@ -8,6 +8,7 @@ import os
 import pty
 import re
 import select
+import shlex
 import signal
 import subprocess
 import sys
@@ -419,12 +420,44 @@ def test_status_never_issues_a_mutating_command(world) -> None:
     """A report issues only read-only Git commands."""
     world.worktree("done")
     p = run(world, "gws", "--verbose")
-    issued = [ln for ln in p.stderr.splitlines() if ln.startswith("+ git")]
+    _assert_read_only_trace(p.stderr)
+
+
+def _assert_read_only_trace(stderr: str) -> None:
+    issued = [line for line in stderr.splitlines() if line.startswith("+ git ")]
     assert issued
+    valued_options = ("-C", "-c", "--git-dir", "--work-tree", "--namespace")
     for line in issued:
-        forbidden = ("worktree prune", "worktree remove", "update-ref", "git checkout ")
-        for bad in forbidden:
-            assert bad not in line, line
+        argv = shlex.split(line.removeprefix("+ "))
+        start = 1
+        while start < len(argv) and argv[start].startswith("-"):
+            start += 2 if argv[start] in valued_options else 1
+        command = argv[start:]
+        assert command and command[0] not in ("checkout", "update-ref"), line
+        assert command[:2] not in (["worktree", "prune"], ["worktree", "remove"]), line
+
+
+@pytest.mark.parametrize(
+    ("trace", "mutating"),
+    [
+        ("+ git checkout main", True),
+        ("+ git -C '/path with spaces' checkout feature", True),
+        ("+ git -C /repo -c color.ui=false checkout feature", True),
+        ("+ git -C /repo worktree prune", True),
+        ("+ git -C /repo worktree remove /worktree", True),
+        ("+ git -C /repo update-ref refs/heads/feature HEAD", True),
+        ("+ git config --get checkout.defaultRemote", False),
+        ("+ git -C /repo config --get checkout.defaultRemote", False),
+        ("+ git --no-optional-locks status --porcelain", False),
+        ("+ git -C /repo show refs/heads/checkout", False),
+    ],
+)
+def test_read_only_trace_assertion_checks_git_subcommands(trace, mutating) -> None:
+    if mutating:
+        with pytest.raises(AssertionError):
+            _assert_read_only_trace(trace)
+    else:
+        _assert_read_only_trace(trace)
 
 
 def test_you_cannot_prune_the_worktree_you_stand_in(world) -> None:
@@ -951,6 +984,29 @@ def test_list_is_never_coloured_even_on_a_terminal(world) -> None:
     assert code == 0, out
     assert "WORKTREE" in out
     assert "\x1b[" not in out
+
+
+@pytest.mark.parametrize(
+    ("url", "short"),
+    [
+        ("git@github.com:org/repo.git", "github.com/org/repo"),
+        ("git@github.com:org/repo", "github.com/org/repo"),
+        ("ssh://git@github.com:22/org/repo.git", "github.com/org/repo"),
+        ("https://github.com/org/repo.git", "github.com/org/repo"),
+        ("https://user:secret@GitHub.com/org/repo/", "github.com/org/repo"),
+        (
+            "http://gitlab.example.com/group/sub/repo",
+            "gitlab.example.com/group/sub/repo",
+        ),
+        ("file:///srv/git/repo.git", "/srv/git/repo"),
+        ("/srv/git/repo.git", "/srv/git/repo"),
+        ("../upstream.git", "../upstream"),
+    ],
+)
+def test_a_remote_url_is_shown_as_host_and_path(url, short) -> None:
+    from worktrees import repo as R
+
+    assert R.short_url(url) == short
 
 
 def test_list_names_each_remote_above_the_picker(world) -> None:
