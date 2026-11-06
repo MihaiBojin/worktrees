@@ -15,6 +15,10 @@ The head branch and branches checked out in any worktree are `keep`. The
 report includes the worktree paths. Branches without worktrees are assessed
 against a pinned commit on the repository's head branch.
 
+`gws` judges the branch of each worktree with these same checks, after its
+own worktree protections, so a worktree and a loose branch at the same
+commit read the same verdict and the same `why`.
+
 ## Verdicts and evidence
 
 | Verdict | Meaning |

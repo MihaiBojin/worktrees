@@ -40,11 +40,6 @@ def sha_of(ref: str) -> None:
     """The sha a ref names, for the line that puts it back."""
 
 
-@git("cat-file -t $sha", ok=(0, 128))
-def object_type(sha: str) -> None:
-    """What kind of object a sha is. Every printed sha must be a commit."""
-
-
 # One call for the whole repository, because refs/stash is per-repository
 # rather than per-branch. The quotes survive shlex.split, so the format stays
 # one argv element.
@@ -85,7 +80,7 @@ def restore_sha(branch: str, repo: str | os.PathLike[str] | None = None) -> str:
     text = sha.out.strip() if sha else ""
     if not text:
         return ""
-    kind = object_type(text, repo=repo)
+    kind = R.object_type(text, repo=repo)
     if not kind or kind.out.strip() != "commit":
         return ""
     return text

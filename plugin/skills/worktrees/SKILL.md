@@ -53,7 +53,8 @@ gws --json | jq -c '{
   `proof` is `ancestry`, `squash`, `content` or `forge`; `undo` recreates the
   branch.
 - `worktrees` are linked worktrees `gwp` would remove, together with their
-  branches. `why` is the proof, such as `squash-merged`.
+  branches. `why` names the proof, such as `its tree or combined patch is
+  already in the head branch`.
 - `at_head` is true when the worktree's branch sits exactly on the head
   branch's tip. That is a worktree with no commits of its own, which is what
   one somebody has just started looks like.
@@ -69,8 +70,8 @@ A branch checked out in a worktree is `keep` in `branches` and appears in
 One table, worktrees first, then branches:
 
 ```
-KIND      NAME                PROOF          PATH
-worktree  fix-parser          squash-merged  ~/git/.worktrees/fix-parser/repo
+KIND      NAME                PROOF                                                     PATH
+worktree  fix-parser          its tree or combined patch is already in the head branch  ~/git/.worktrees/fix-parser/repo
 branch    chore/old-renovate  squash
 ```
 

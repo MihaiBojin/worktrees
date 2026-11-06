@@ -301,25 +301,19 @@ indented, its exit code when that is not 0 or is the only answer, then a
 blank line. Printing after the run keeps a command and its answer together
 when eight threads are asking at once.
 
-## A recent fetch, and a forge answer that cannot change, are reused
+## A recent fetch is reused, and the forge is asked every time
 
 The README's "What is reused, and for how long" table lists every case and
-its lifetime. It is the one copy: the constants are `cli._FRESH`,
-`forge._IDLE_FOR` and `forge._PUSHED_FOR`, and a change to one changes that
-table in the same commit.
+its lifetime. It is the one copy: the constant is `cli._FRESH`, and a change
+to it changes that table in the same commit.
 
 The fetch is most of what an assessment costs: about 1.1 s of a 1.9 s `gws`
 here, 750 ms of it the SSH handshake. `_should_fetch` decides for all eight
 commands that fetch. FETCH_HEAD is written per worktree, so
 `repo.fetched_at` reads every copy.
 
-An open request is reused only when it cannot merge until its author pushes;
-`forge._idle` holds that rule. Anything that could merge it on its own, or
-soon, means asking every time. No request on a pushed branch lasts a minute
-because a push is how a request gets opened, and from here it is usually
-the next step. A forge that fails to answer is never kept: `_ask` returns a
-`NONE` request for an empty answer and None for no answer, and only the
-first is cached.
+Nothing keeps a forge answer between runs, so a branch git cannot settle
+costs one round trip on every run that asks.
 
 The per-worktree checks run on eight threads. Each is independent, and the
 time goes waiting on git and on `gh`, one round trip per branch git cannot
@@ -373,9 +367,9 @@ the subcommands they are; `is_ancestor` beats `merge_base`, because
 the caller wants.
 
 A spec with `ok=` wide enough to swallow an error is a spec that has to be
-tested on what it returns rather than on its exit code. `upstream_of` takes
-`ok=(0, 1, 128)`, so a typo in one of its flags exits 128, reads as "no
-upstream", and turns every branch into `unknown` with nothing failing.
+tested on what it returns rather than on its exit code. `tree_of` takes
+`ok=(0, 128)`, so a typo in its revision syntax exits 128, reads as "no
+tree", and turns every squash merge into "not merged" with nothing failing.
 
 The two calls that reach the network, `fetch` and `remote set-head --auto`,
 take `ok=(0, 128)` for the same reason in reverse: a remote that cannot be
@@ -417,12 +411,14 @@ the tip with the current head tree, including modes and deletions. It can
 prove a re-imported change even when the head branch has unrelated edits.
 Forge evidence must match the source tip, source repository, and target
 branch, with a merge commit contained in the head branch. A closed unmerged
-request is never proof. These branch checks do not change worktree verdicts.
+request is never proof.
 
-`merged_reason` answers by content: an ancestor, or a patch already upstream.
-That works for a branch squashed whole into one commit and fails for one
-merged as part of a stack, where the changes arrive across several squashes
-and the branch keeps an intermediate state the head branch edited further.
+`verdicts.prove` is that chain, and it judges a worktree's branch too:
+`gws` runs its worktree checks first and calls it for the rest. Ancestry,
+squash and content answer by what is in the head branch. That works for a
+branch squashed whole into one commit and fails for one merged as part of a
+stack, where the changes arrive across several squashes and the branch
+keeps an intermediate state the head branch edited further.
 
 Measured on this repository's own stack: `rotate` changed `README.md` by
 +54/-5 from the merge base and the head branch by +96/-6 over the same
@@ -430,17 +426,17 @@ regions. `git merge-tree` reports a conflict, and a diff cannot tell that
 from real work left over. There is no content probe that answers this.
 
 So the forge answers it, asked last because it costs a round trip and only
-where git already failed. A merged request with a configured upstream that
-Git reports as `[gone]` permits pruning, subject to the worktree protections.
-When the upstream exists, `unpushed_count` checks for local commits it lacks.
-No upstream configured stays `unknown`. `--no-forge` keeps a run offline.
+where git already failed. A request that names another tip, as a branch
+with commits made after the merge does, reads `unknown`. Evidence for this
+tip proves it, subject to the worktree protections. `--no-forge` keeps a
+run offline.
 
 ## Three verdicts, and the third is not a softer second
 
 `remove` was proved finished, `keep` has a reason not to be, and `unknown` could
-not tell. "No upstream, so nothing says whether this was pushed" is a different
-fact from "not merged", and printing them the same way invites somebody to act
-on the wrong one. `prune.removable()` returns the `remove` set and both commands
+not tell. "No common history with the head branch" is a different fact from
+"holds work the head branch lacks", and printing them the same way invites
+somebody to act on the wrong one. `prune.removable()` returns the `remove` set and both commands
 call it, so what one prints and the other removes cannot drift.
 
 ## Reproduce a failure before asserting its fix

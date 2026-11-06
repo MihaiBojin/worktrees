@@ -67,12 +67,16 @@ def test_the_probe_separates_them(world) -> None:
 
     seen = {
         v.branch: v
-        for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+        for v in verdicts.assess(
+            R.worktrees(), "", "refs/heads/main", "main", False, ""
+        )
     }
     assert seen["squashed"].verdict == verdicts.REMOVE
-    assert seen["squashed"].why == "squash-merged"
-    assert seen["unmerged"].verdict == verdicts.UNKNOWN
-    assert "no upstream" in seen["unmerged"].why
+    assert seen["squashed"].why == (
+        "its tree or combined patch is already in the head branch"
+    )
+    assert seen["unmerged"].verdict == verdicts.KEEP
+    assert seen["unmerged"].why == "no proof that its change is in the head branch"
 
 
 def test_a_branch_that_changed_nothing_is_finished(world) -> None:
@@ -80,7 +84,9 @@ def test_a_branch_that_changed_nothing_is_finished(world) -> None:
     world.worktree("noop")
     seen = {
         v.branch: v
-        for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+        for v in verdicts.assess(
+            R.worktrees(), "", "refs/heads/main", "main", False, ""
+        )
     }
     assert seen["noop"].verdict == verdicts.REMOVE
 
@@ -121,7 +127,9 @@ def test_ignored_files_stop_the_verdict(world) -> None:
 
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+        for x in verdicts.assess(
+            R.worktrees(), "", "refs/heads/main", "main", False, ""
+        )
     }["holds"]
     assert v.verdict == verdicts.KEEP
     assert "2 ignored path(s)" in v.why
@@ -130,7 +138,7 @@ def test_ignored_files_stop_the_verdict(world) -> None:
     # --yes must not answer that question; only --delete-ignored does.
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", True)
+        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", True, "")
     }["holds"]
     assert v.verdict == verdicts.REMOVE
 
@@ -163,7 +171,9 @@ def test_a_branch_that_moved_since_the_verdict_is_not_deleted(world) -> None:
 
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+        for x in verdicts.assess(
+            R.worktrees(), "", "refs/heads/main", "main", False, ""
+        )
     }["squashed"]
     assert v.verdict == verdicts.REMOVE
 
@@ -188,7 +198,9 @@ def test_a_tag_cannot_answer_for_a_branch(world) -> None:
 
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+        for x in verdicts.assess(
+            R.worktrees(), "", "refs/heads/main", "main", False, ""
+        )
     }["feature"]
     assert v.verdict != verdicts.REMOVE, "the tag answered for the branch"
 
@@ -257,7 +269,7 @@ def test_the_head_branch_is_never_proposed(world) -> None:
     # A worktree on the head branch itself, made the way git allows.
     world.git("worktree", "add", "--quiet", "--detach", str(path.parent / "x"), "main")
 
-    rows = verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    rows = verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False, "")
     assert all(v.branch != "main" for v in rows)
 
 
@@ -272,7 +284,7 @@ def test_a_tag_shadowing_the_head_branch_does_not_shadow_it(world) -> None:
     v = {
         x.branch: x
         for x in verdicts.assess(
-            R.worktrees(), "", R.full_ref("origin/main"), "main", False
+            R.worktrees(), "", R.full_ref("origin/main"), "main", False, ""
         )
     }
     assert v["feature"].verdict != verdicts.REMOVE
@@ -283,7 +295,7 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
     path = world.parent / ".worktrees" / "detached" / "repo"
     path.parent.mkdir(parents=True)
     world.git("worktree", "add", "--quiet", "--detach", str(path), "main")
-    v = verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    v = verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False, "")
     assert len(v) == 1
     assert v[0].branch == ""
     assert v[0].label == "(detached)"
@@ -403,7 +415,7 @@ def test_no_unexpected_git_command_ran(world) -> None:
     from worktrees.git import commands, options
 
     world.worktree("done")
-    verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False, "")
 
     # The canary. An empty log is indistinguishable from a run that never
     # reached git, and would pass every assertion below. Named commands
@@ -425,48 +437,6 @@ def test_no_unexpected_git_command_ran(world) -> None:
 
 
 # --------------------------------------------------------------------------
-# a branch that is pushed is not `unknown`
-# --------------------------------------------------------------------------
-
-
-def test_a_tracked_branch_reports_a_count_not_none(world) -> None:
-    """`unpushed_count` returning None means "no upstream", and a broken
-    `upstream_of` returns None too. Every branch then reads as `unknown` and
-    nothing fails, because `ok=(0, 1, 128)` swallows the error.
-    """
-    upstream = world.root / "upstream.git"
-    world.git("init", "--bare", "--quiet", str(upstream), at=world.repo)
-    world.git("remote", "add", "origin", str(upstream))
-    world.git("push", "--quiet", "--set-upstream", "origin", "main")
-
-    world.git("switch", "--quiet", "--create", "pushed")
-    world.commit("p.txt", "p\n")
-    world.git("push", "--quiet", "--set-upstream", "origin", "pushed")
-
-    assert R.unpushed_count("pushed") == 0
-
-    world.commit("q.txt", "q\n")
-    assert R.unpushed_count("pushed") == 1
-
-    world.git("switch", "--quiet", "--create", "untracked", "main")
-    assert R.unpushed_count("untracked") is None
-
-
-def test_the_upstream_spec_is_a_flag_git_accepts(world) -> None:
-    """The spec reaches git verbatim, so a typo in a flag is a typo in the
-    command. This asserts on what came back rather than on the exit code.
-    """
-    upstream = world.root / "up2.git"
-    world.git("init", "--bare", "--quiet", str(upstream), at=world.repo)
-    world.git("remote", "add", "origin", str(upstream))
-    world.git("push", "--quiet", "--set-upstream", "origin", "main")
-
-    out = R.upstream_of("main")
-    assert out, "upstream_of failed; the spec is not a command git accepts"
-    assert out.out.strip() == "origin/main"
-
-
-# --------------------------------------------------------------------------
 # one git status per worktree, not two
 # --------------------------------------------------------------------------
 
@@ -479,7 +449,7 @@ def test_a_worktree_is_read_once(world) -> None:
 
     for name in ("a", "b", "c"):
         world.worktree(name)
-    verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False, "")
 
     status = [argv for argv in options.log if "status" in argv]
     assert len(status) == 3, status

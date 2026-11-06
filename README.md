@@ -199,13 +199,12 @@ $ gws
 BRANCH         PATH                                         VERDICT  WHY
 main           /home/you/git/repo                           keep     it is the main checkout, and never removable
 dirty-work     /home/you/git/.worktrees/dirty-work/repo     keep     it has uncommitted changes
-holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     merged, but holds 2 ignored path(s); pass --delete-ignored
-never-pushed   /home/you/git/.worktrees/never-pushed/repo   unknown  not merged into origin/main, and no upstream says whether its commits were pushed
-squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   squash-merged
+holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     its tip is an ancestor of the head branch, but holds 2 ignored path(s); pass --delete-ignored
+never-pushed   /home/you/git/.worktrees/never-pushed/repo   keep     no proof that its change is in the head branch
+squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   its tree or combined patch is already in the head branch
 
-1 removable, 3 kept, 1 unclear
+1 removable, 4 kept, 0 unclear
 2 worktree(s) under /home/you/git/.worktrees belong to another repository
-unclear, and gwp does not touch these: never-pushed
 gwp removes the 1 marked removable
 ```
 
@@ -234,20 +233,25 @@ word.
 
 | | means |
 | --- | --- |
-| `remove` | finished, and safe to remove. The reason says how it was proved: `merged`, `squash-merged`, a merged request on the forge, or a ref reaching a detached commit |
-| `keep` | something says no. Uncommitted work, the head branch, a lock, the worktree you are standing in, ignored files, or a branch simply not merged |
-| `unknown` | it could not tell. A branch with no upstream is the usual one: nothing says whether its commits were pushed anywhere |
+| `remove` | finished, and safe to remove. The reason says how it was proved: by ancestry, by squash, by content, by a merged request on the forge, or by a ref reaching a detached commit |
+| `keep` | something says no. Uncommitted work, the head branch, a lock, the worktree you are standing in, ignored files, or a branch sharing history with the head branch and holding work it lacks |
+| `unknown` | it could not tell. A branch with no common history with the head branch, or forge evidence that does not match this tip |
+
+A worktree's branch is judged by the proof `gwbs` uses for a loose branch,
+and a worktree and a branch at the same commit read the same verdict and the
+same reason. The worktree checks come first: the main checkout, the one you
+stand in, a lock, the head branch and uncommitted changes each keep it before
+the proof runs, and ignored files hold back a `remove` after it.
 
 Where git cannot tell, the forge is asked. A branch merged as part of a
 stack is that case: its changes reach the head branch across several
 squashes, so the intermediate state it holds differs from the final one in
 the same regions, and a diff cannot separate a stale branch from one with
-work left. A merged pull request with a configured upstream that is gone
-makes the branch eligible for pruning. When the upstream still exists,
-unpushed commits keep the branch. A branch with no upstream configured
-stays `unknown`. Worktree protections still apply, including the check for
-ignored files. `--no-forge` decides from git alone, and so does a run whose
-fetch just failed.
+work left. A merged request proves the branch only when it names this exact
+tip, came from this repository, targeted the head branch, and has a merge
+commit the head branch contains. Anything less reads `unknown`. The forge
+is asked on every run for each branch git cannot settle. `--no-forge`
+decides from git alone, and so does a run whose fetch just failed.
 
 The question goes to the repository the command is standing in and nowhere
 else. `GH_REPO` and `GITLAB_REPO` beat that directory, so both are dropped
@@ -309,10 +313,10 @@ away:
 $ gwp
 BRANCH         PATH                                         VERDICT  WHY
 dirty-work     /home/you/git/.worktrees/dirty-work/repo     keep     it has uncommitted changes
-holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     squash-merged, but holds 2 ignored path(s); pass --delete-ignored
-never-pushed   /home/you/git/.worktrees/never-pushed/repo   unknown  not merged into main, and no upstream says whether its commits were pushed
+holds-secrets  /home/you/git/.worktrees/holds-secrets/repo  keep     its tip is an ancestor of the head branch, but holds 2 ignored path(s); pass --delete-ignored
+never-pushed   /home/you/git/.worktrees/never-pushed/repo   keep     no proof that its change is in the head branch
 
-nothing to remove; 0 removable, 2 kept, 1 unclear
+nothing to remove; 0 removable, 3 kept, 0 unclear
 ```
 
 There is no `--dry-run`. `gws` reports and `gwp` asks, so a flag meaning "do
@@ -424,7 +428,7 @@ as finished, because it is:
 
 ```console
 $ gwr holds-secrets
-holds-secrets is finished: squash-merged, but holds 2 ignored path(s); pass --delete-ignored
+holds-secrets is finished: its tip is an ancestor of the head branch, but holds 2 ignored path(s); pass --delete-ignored
 ```
 
 At a terminal, and without `--yes`, `gwr` asks instead: it names every
@@ -566,25 +570,13 @@ branch at a time, so their line also counts how far through the list they are:
 
 ### What is reused, and for how long
 
-A fetch and a question to the forge are most of what a run costs, so an answer
-that is still true is reused. `--force-refresh` fetches and asks again whatever
-is kept, and `--no-fetch` never fetches.
+A fetch is most of what a run costs, so a recent one is reused.
+`--force-refresh` fetches whatever its age, and `--no-fetch` never fetches.
 
 | what | when | reused for |
 | --- | --- | --- |
 | a fetch, by `gws`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwa`, `gwbc`, `gwrot` | from any worktree of the repository | 10 minutes; the command says how old it is |
-| a request, merged or closed | on the commit it was asked about | until `--force-refresh` |
-| a request, open | a draft, a conflict, or on GitLab a needed rebase, with no auto-merge and no check running | 10 minutes |
-| a request, open | auto-merge or merge-when-pipeline-succeeds set | never |
-| a request, open | a check still running or pending | never |
-| a request, open | the forge calls it mergeable, or cannot say | never |
-| no request | the branch has no upstream | 10 minutes |
-| no request | the branch has an upstream | 1 minute |
-| no answer | `gh`/`glab` missing, not signed in, failing or timing out | never |
-
-Forge answers live in `git-worktrees-forge.json` in the repository's common git
-directory, filed under the branch and its commit. A new commit on the branch is
-a new question, so nothing kept outlives the commit it was given for.
+| a request on the forge | any state, or no request at all | never; it is asked on every run |
 
 A remote that cannot be reached is not fatal anywhere. The fetch fails, the
 command says so on stderr, and it answers from the refs already here, which is

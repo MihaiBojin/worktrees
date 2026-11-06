@@ -110,7 +110,7 @@ Output and machine surface.
 
 | what | why | where |
 | --- | --- | --- |
-| Three verdicts, and `unknown` is not `keep` with a softer word | "no upstream, so nothing says whether this was pushed" is a different fact from "not merged", and printing them alike invites somebody to act on the wrong one | `verdicts.py` |
+| Three verdicts, and `unknown` is not `keep` with a softer word | "no common history with the head branch" is a different fact from "holds work the head branch lacks", and printing them alike invites somebody to act on the wrong one | `verdicts.py` |
 | Colour is decided per stream, once, and only for a terminal | stdout carries the path `cd $(gwa x)` reads and the JSON `jq` parses | `render.setup`. `NO_COLOR` is tested for a non-empty value, which is the no-color.org rule |
 | Padding runs on the text and painting after it | the other order counts an escape sequence as width, and every column under a coloured cell sits crooked by the length of the code | `render.table` |
 | Help asked for goes to stdout at exit 0; a usage printed because the invocation was wrong goes to stderr at exit 2 | `--help \| less` on an empty screen is the failure this avoids | argparse, plus the hand-written `usage:` lines |
@@ -203,7 +203,7 @@ Four behaviours the field survey found nowhere else, of which three are here:
 
 | | state |
 | --- | --- |
-| a merged request as evidence, cross-checked against unpushed commits, with "no upstream" treated as unknown rather than zero, asked of the repository the command stands in and no other | `forge.py`, `forge.REDIRECTS` and `verdicts._forge_reason` |
+| a merged request as evidence only when it names this branch tip and a merge commit the head branch contains, asked of the repository the remote names and no other | `branch_forge.py`, `forge.REDIRECTS` and `verdicts.prove` |
 | a worktree belonging to another repository, which makes `git worktree list` return empty and so reads as "nothing is there" | `layout.owner_of`, reached from `gwa` |
 | the derived layout | `layout.destination` |
 | stash entries parked on a branch counting as work | **not needed.** The entry survives the removal and `git stash branch` recovers it, so there is nothing to keep. #39 names it instead |
@@ -394,7 +394,6 @@ Known and unfixed:
 
 | | |
 | --- | --- |
-| a merged request stops counting once the merge deletes the remote branch | `fetch --prune` drops the remote-tracking ref the merge removed, `unpushed_count` answers `None`, and a branch that is definitely merged reads `unknown` for good. #47 |
 | `status` cannot judge a branch with no worktree | #29 |
 
 Nine rows left this table in #46, merged 2026-09-11 as `daa8284`:

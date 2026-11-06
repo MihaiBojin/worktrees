@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import shlex
-from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 
-from . import branch_forge, merged, progress, prune
+from . import progress, prune, verdicts
 from . import repo as R
 from .git import GitError, Refused, git
 
@@ -77,74 +76,14 @@ def assess(
                 progress.say(f"{name}: {question}{of}")
 
             try:
-                _judge(row, head_sha, head_branch, remote, ask_forge, say)
+                found = verdicts.prove(
+                    sha, name, head_sha, head_branch, remote, ask_forge, say
+                )
+                row.verdict, row.why = found.verdict, found.why
+                row.proof, row.request = found.proof, found.request
             except GitError as exc:
                 row.error, row.why = True, str(exc)
     return rows
-
-
-def _judge(
-    row: Verdict,
-    head: str,
-    head_branch: str,
-    remote: str,
-    ask_forge: bool,
-    say: Callable[[str], None],
-) -> None:
-    for proof, why, question, check in (
-        (
-            "ancestry",
-            "its tip is an ancestor of the head branch",
-            f"is it merged into {head_branch}?",
-            merged.is_ancestor,
-        ),
-        (
-            "squash",
-            "its tree or combined patch is already in the head branch",
-            f"was it squash-merged into {head_branch}?",
-            merged.squash_matches,
-        ),
-        (
-            "content",
-            "every changed path matches the head branch",
-            f"does {head_branch} hold every path it changed?",
-            merged.content_matches,
-        ),
-    ):
-        say(question)
-        if check(row.sha, head):
-            row.verdict, row.why, row.proof = "remove", why, proof
-            return
-    if ask_forge and remote:
-        say("asking the forge for its pull request")
-        request = branch_forge.request_for(row.branch, remote)
-        if request is not None:
-            row.request = request.data()
-            if request.state == "MERGED":
-                why = request.unverified_reason(row.branch, row.sha, head_branch)
-                if why:
-                    row.why = why
-                    return
-                if not prune.object_type(request.merge_sha):
-                    row.why = "the request's merge commit is not available locally"
-                    return
-                if merged.is_ancestor(request.merge_sha, head):
-                    row.verdict, row.proof = "remove", "forge"
-                    row.why = (
-                        f"{request.noun} #{request.number} merged this tip "
-                        "into the head branch"
-                    )
-                    return
-                row.why = "the request's merge commit is not in the head branch"
-                return
-            row.why = (
-                f"{request.noun} #{request.number} is "
-                f"{request.state.lower()}, not merged"
-            )
-    if not merged.merge_bases(row.sha, head).lines:
-        row.why = "no common history with the head branch"
-        return
-    row.verdict = "keep"
 
 
 def delete(

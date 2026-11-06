@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-import os
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
-from . import forge, progress
+from . import branch_forge, merged, progress
 from . import repo as R
-from .merged import merged_reason
+from .git import GitError
 
 # The verdicts, each the instruction it gives. `unknown` is not `keep` with a
-# softer word: "no upstream, so nothing says whether this was pushed" is a
-# different fact from "this is not merged", and a sweep printing them the same
-# way invites somebody to act on the wrong one.
+# softer word: "no common history with the head branch" is a different fact
+# from "this has commits the head branch lacks", and a sweep printing them the
+# same way invites somebody to act on the wrong one.
 REMOVE = "remove"
 KEEP = "keep"
 UNKNOWN = "unknown"
@@ -66,13 +67,93 @@ def stale(records: list[R.Worktree]) -> list[R.Worktree]:
     return [w for w in records if "prunable" in w.flags]
 
 
+@dataclass
+class Proof:
+    verdict: str
+    why: str
+    proof: str = ""  # ancestry, squash, content or forge, on a remove
+    request: dict | None = None  # what the forge said, when it was asked
+
+
+def prove(
+    sha: str,
+    branch: str,
+    head: str,
+    head_branch: str,
+    remote: str,
+    ask_forge: bool,
+    say: Callable[[str], None],
+) -> Proof:
+    """Whether the change at `sha` is in the head branch.
+
+    The one proof a worktree and a loose branch are both judged by. The local
+    checks run first; the forge is asked only when they fail, and only its
+    evidence for exactly this tip, merged into the head branch, counts.
+    """
+    for proof, why, question, check in (
+        (
+            "ancestry",
+            "its tip is an ancestor of the head branch",
+            f"is it merged into {head_branch}?",
+            merged.is_ancestor,
+        ),
+        (
+            "squash",
+            "its tree or combined patch is already in the head branch",
+            f"was it squash-merged into {head_branch}?",
+            merged.squash_matches,
+        ),
+        (
+            "content",
+            "every changed path matches the head branch",
+            f"does {head_branch} hold every path it changed?",
+            merged.content_matches,
+        ),
+    ):
+        say(question)
+        if check(sha, head):
+            return Proof(REMOVE, why, proof)
+    found = Proof(UNKNOWN, "no proof that its change is in the head branch")
+    if ask_forge and remote:
+        say("asking the forge for its pull request")
+        request = branch_forge.request_for(branch, remote)
+        if request is not None:
+            found.request = request.data()
+            if request.state == "MERGED":
+                why = request.unverified_reason(branch, sha, head_branch)
+                if why:
+                    found.why = why
+                    return found
+                if not R.object_type(request.merge_sha):
+                    found.why = "the request's merge commit is not available locally"
+                    return found
+                if merged.is_ancestor(request.merge_sha, head):
+                    found.verdict, found.proof = REMOVE, "forge"
+                    found.why = (
+                        f"{request.noun} #{request.number} merged this tip "
+                        "into the head branch"
+                    )
+                    return found
+                found.why = "the request's merge commit is not in the head branch"
+                return found
+            found.why = (
+                f"{request.noun} #{request.number} is "
+                f"{request.state.lower()}, not merged"
+            )
+    if not merged.merge_bases(sha, head).lines:
+        found.why = "no common history with the head branch"
+        return found
+    found.verdict = KEEP
+    return found
+
+
 def assess(
     records: list[R.Worktree],
     only: str,
     head: str,
     head_branch: str,
     delete_ignored: bool,
-    repo: str | os.PathLike[str] | None = None,
+    remote: str,
     here: str | None = None,
     ask_forge: bool = False,
     include_main: bool = False,
@@ -91,10 +172,9 @@ def assess(
     list` shows two, and reads as though something went missing. `gwr` takes
     the list as its candidates, so it asks for the list without it.
     """
-    main = R.main_worktree(repo)
+    main = R.main_worktree()
     if here is None:
-        here = R.toplevel(repo=repo).out.strip()
-    head_name = R.ref_name(head)
+        here = R.toplevel().out.strip()
 
     def judge(wt: R.Worktree) -> Verdict | None:
         def say(verdict: str, why: str, ignored: int = 0) -> Verdict:
@@ -128,85 +208,34 @@ def assess(
         if not wt.branch:
             # Detached: finished when some ref already reaches the commit,
             # which is the question `git worktree remove` asks of one.
-            if R.refs_containing(wt.sha, repo=repo).out.strip():
+            if R.refs_containing(wt.sha).out.strip():
                 return say(REMOVE, "its commit is reached by a ref")
             return say(UNKNOWN, f"no ref reaches {wt.sha}")
 
-        progress.say(f"{wt.label}: is it merged into {head_name}?")
-        reason = merged_reason(wt.branch, head, repo=repo)
-        if not reason and ask_forge:
-            progress.say(f"{wt.label}: asking the forge for its pull request")
-            reason, verdict = _forge_reason(wt.branch, wt.sha, repo=repo)
-            if verdict:
-                return say(verdict, reason)
-        if not reason:
-            progress.say(f"{wt.label}: were its commits pushed?")
-            if R.unpushed_count(wt.branch, repo=repo) is None:
-                return say(
-                    UNKNOWN,
-                    f"not merged into {head_name}, and no upstream says whether "
-                    "its commits were pushed",
-                )
-            return say(KEEP, f"not merged into {head_name}")
-
+        try:
+            found = prove(
+                wt.sha,
+                wt.branch,
+                head,
+                head_branch,
+                remote,
+                ask_forge,
+                lambda question: progress.say(f"{wt.label}: {question}"),
+            )
+        except GitError as exc:
+            return say(UNKNOWN, str(exc))
         ignored = status.ignored
-        if ignored and not delete_ignored:
+        if found.verdict == REMOVE and ignored and not delete_ignored:
             return say(
                 KEEP,
-                f"{reason}, but holds {len(ignored)} ignored path(s); "
+                f"{found.why}, but holds {len(ignored)} ignored path(s); "
                 "pass --delete-ignored",
                 len(ignored),
             )
-
-        return say(REMOVE, reason)
+        return say(found.verdict, found.why)
 
     # Each worktree is judged on its own, and most of the time goes waiting
     # on git and on the forge, one round trip per branch git cannot settle.
     # Threads overlap the waits; map keeps git's order.
     with ThreadPoolExecutor(max_workers=8) as pool:
         return [v for v in pool.map(judge, records) if v is not None]
-
-
-def _forge_reason(
-    branch: str, sha: str = "", repo: str | os.PathLike[str] | None = None
-) -> tuple[str, str]:
-    """What the forge says, cross-checked against what it cannot see.
-
-    Returns (reason, verdict), or ("", "") when the forge said nothing and
-    the content probes keep the answer.
-
-    A merged request with a missing configured upstream permits pruning.
-    An existing upstream is checked for unpushed commits. A branch with no
-    tracking configuration stays unknown.
-    """
-    request = forge.request_for(branch, repo=repo, sha=sha)
-    if request is None or request.state not in ("MERGED", "CLOSED"):
-        return "", ""
-
-    lower = request.state.lower()
-    unpushed = R.unpushed_count(branch, repo=repo)
-    if unpushed is None:
-        if R.upstream_tracking(branch, repo=repo).out.strip() == "[gone]":
-            if request.state == "MERGED":
-                return (
-                    f"its {request.noun} #{request.number} is merged "
-                    "and its upstream is gone",
-                    "",
-                )
-            return (
-                f"its {request.noun} is {lower}, but its upstream is gone; "
-                "cannot check for unpushed commits",
-                UNKNOWN,
-            )
-        return (
-            f"its {request.noun} is {lower}, but the branch has no upstream "
-            "to have been pushed to",
-            UNKNOWN,
-        )
-    if unpushed:
-        return (
-            f"its {request.noun} is {lower}, but {unpushed} commit(s) here "
-            "are not in it",
-            KEEP,
-        )
-    return f"its {request.noun} #{request.number} is {lower}", ""

@@ -93,16 +93,9 @@ def refs_containing(sha: str) -> None:
     """One ref reaching this commit, or nothing."""
 
 
-# @{upstream} survives the spec: braces are git's revision syntax, not a
-# placeholder, which is why placeholders are spelled with $.
-@git("rev-parse --abbrev-ref --symbolic-full-name $branch@{upstream}", ok=(0, 1, 128))
-def upstream_of(branch: str) -> None:
-    """The upstream a branch tracks. Failure means unknown, not none."""
-
-
-@git("for-each-ref --format=%(upstream:track) refs/heads/$branch")
-def upstream_tracking(branch: str) -> None:
-    """Tracking status, including [gone] for a missing configured upstream."""
+@git("cat-file -t $sha", ok=(0, 128))
+def object_type(sha: str) -> None:
+    """What kind of object a sha is, or nothing when it is not here."""
 
 
 @git("rev-list --count $a..$b", ok=(0, 128))
@@ -426,21 +419,3 @@ def status_of(path: str) -> Status:
 def ignored_paths(path: str) -> list[str]:
     """The gitignored paths alone, for a caller that has no verdict in hand."""
     return status_of(path).ignored
-
-
-def unpushed_count(
-    branch: str, repo: str | os.PathLike[str] | None = None
-) -> int | None:
-    """Commits the upstream has not got, or None when there is no upstream.
-
-    None is not zero. Branches made here do not track, so "no upstream" is the
-    normal state, and reporting zero would quietly disarm the guard for
-    exactly those.
-    """
-    up = upstream_of(branch, repo=repo)
-    if not up or not up.out.strip():
-        return None
-    counted = count_between(up.out.strip(), f"refs/heads/{branch}", repo=repo)
-    if not counted:
-        return None
-    return int(counted.out.strip() or 0)

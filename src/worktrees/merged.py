@@ -55,17 +55,6 @@ def cherry(head: str, synth: str) -> None:
     """Compare by patch content, which is what a squash preserves."""
 
 
-def squash_merged(
-    branch: str, head: str, repo: str | os.PathLike[str] | None = None
-) -> bool:
-    """Is the change `branch` makes already in `head`?
-
-    Replay the branch's tree as a single commit on the merge base and let
-    `git cherry` say whether that patch is upstream. A leading '-' means it is.
-    """
-    return squash_matches(f"refs/heads/{branch}", head, repo=repo)
-
-
 def squash_matches(
     ref: str, head: str, repo: str | os.PathLike[str] | None = None
 ) -> bool:
@@ -114,18 +103,3 @@ def content_matches(
     touched = set(changed_paths(bases[0], tip, repo=repo).out.split("\0")) - {""}
     different = set(changed_paths(tip, head, repo=repo).out.split("\0")) - {""}
     return touched.isdisjoint(different)
-
-
-def merged_reason(
-    branch: str, head: str, repo: str | os.PathLike[str] | None = None
-) -> str:
-    """'merged', 'squash-merged', or '' when neither.
-
-    refs/heads/ explicitly: a branch name used as a revision resolves to a tag
-    first, so a tag and a branch sharing a name would answer about the tag.
-    """
-    if is_ancestor(f"refs/heads/{branch}", head, repo=repo):
-        return "merged"
-    if squash_merged(branch, head, repo=repo):
-        return "squash-merged"
-    return ""

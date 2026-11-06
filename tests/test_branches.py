@@ -58,6 +58,61 @@ def test_reimported_content_is_removable_without_a_worktree_or_upstream(world):
     assert rows[0]["proof"] == "content"
 
 
+def reimport(world) -> None:
+    """The branch's change lands on the head branch inside a larger commit."""
+    (world.repo / "feature").write_text("branch\n")
+    world.commit("unrelated", "other work\n")
+    world.git("add", "feature")
+    world.git("commit", "--amend", "--no-edit", "--quiet")
+
+
+def worktree_status(world) -> dict:
+    p = cli(world, "status", "--no-fetch", "--no-forge", "--json")
+    assert p.returncode == 0, p.stderr
+    return {r["branch"]: r for r in json.loads(p.stdout)["verdicts"]}
+
+
+def test_content_alone_settles_a_worktree(world):
+    wt = world.worktree("feature")
+    world.commit("feature", "branch\n", at=wt)
+    reimport(world)
+    # The squash probe compares one combined patch with each commit, and the
+    # head branch carries this change beside others: it says not merged.
+    assert world.git("cherry", "main", "feature").startswith("+")
+    row = worktree_status(world)["feature"]
+    assert row["verdict"] == "remove"
+    assert row["why"] == "every changed path matches the head branch"
+
+
+def test_a_never_pushed_unmerged_worktree_is_kept(world):
+    """It shares history with the head branch and has work the head lacks.
+    Whether it was ever pushed is not part of the proof."""
+    wt = world.worktree("feature")
+    world.commit("feature", "work\n", at=wt)
+    row = worktree_status(world)["feature"]
+    assert row["verdict"] == "keep"
+    assert row["why"] == "no proof that its change is in the head branch"
+
+
+@pytest.mark.parametrize("shape", ["ancestry", "squash", "content", "unmerged"])
+def test_a_worktree_and_a_loose_branch_share_one_proof(world, shape):
+    wt = world.worktree("feature")
+    if shape != "ancestry":
+        world.commit("feature", "branch\n", at=wt)
+    if shape == "squash":
+        (world.repo / "feature").write_text("branch\n")
+        world.git("add", "feature")
+        world.git("commit", "--quiet", "-m", "squash of feature")
+    elif shape == "content":
+        reimport(world)
+    world.git("branch", "loose", "feature")
+    worktree = worktree_status(world)["feature"]
+    branch = status(world, "loose")["verdicts"][0]
+    assert branch["proof"] == ("" if shape == "unmerged" else shape)
+    assert (worktree["verdict"], worktree["why"]) == (branch["verdict"], branch["why"])
+    assert worktree["sha"] == branch["sha"]
+
+
 def test_branch_status_lists_checked_out_branches_as_kept(world):
     world.worktree("occupied")
     world.git("branch", "done")

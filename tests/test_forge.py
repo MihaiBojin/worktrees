@@ -17,257 +17,118 @@ from pathlib import Path
 
 import pytest
 from conftest import env_for
+from test_branch_forge import evidence, stub
+from test_branches import cli
 
-from worktrees import forge, verdicts
+from worktrees import forge
 from worktrees import repo as R
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 
-def _push(world, branch: str, at: Path) -> None:
-    """Give the branch an upstream that has everything it has.
+def forge_worktree(world) -> Path:
+    """A worktree whose change content cannot settle.
 
-    Without one, `unpushed_count` answers None, which is unknown rather than
-    zero, and a merged request cannot speak for commits nobody has pushed.
+    The head branch edited the same path further, the shape a branch merged
+    as part of a stack leaves behind, so only the forge can say.
     """
-    bare = world.root / f"{branch}.git"
-    if not bare.exists():
-        subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
-        world.git("remote", "add", "origin", str(bare))
-    world.git("push", "--quiet", "--set-upstream", "origin", branch, at=at)
-
-
-def stub_gh(tmp_path: Path, rows: list[dict] | None, code: int = 0) -> Path:
-    """A `gh` on PATH that answers with `rows`, so no test needs a network."""
-    bin_dir = tmp_path / "forge-bin"
-    bin_dir.mkdir(exist_ok=True)
-    payload = json.dumps(rows if rows is not None else [])
-    exe = bin_dir / "gh"
-    exe.write_text(f"#!/bin/sh\ncat <<'JSON'\n{payload}\nJSON\nexit {code}\n")
-    exe.chmod(0o755)
-    # glab must not answer instead; `available` prefers gh but PATH decides.
-    return bin_dir
-
-
-@pytest.fixture
-def with_forge(tmp_path, monkeypatch):
-    def use(rows: list[dict] | None, code: int = 0):
-        bin_dir = stub_gh(tmp_path, rows, code)
-        monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
-        return bin_dir
-
-    return use
-
-
-# --------------------------------------------------------------------------
-# what the forge is asked, and what it answers
-# --------------------------------------------------------------------------
-
-
-def test_a_merged_request_finishes_a_branch_git_cannot_see(world, with_forge) -> None:
-    """The stacked case. Its content is upstream, its tree is not."""
-    with_forge([{"number": 12, "state": "MERGED"}])
-    wt = world.worktree("stacked")
-    world.commit("s.txt", "s\n", at=wt)
-    _push(world, "stacked", wt)
-
-    rows = verdicts.assess(
-        R.worktrees(), "", "refs/heads/main", "main", False, ask_forge=True
-    )
-    row = next(v for v in rows if v.branch == "stacked")
-    assert row.verdict == verdicts.REMOVE
-    assert row.why == "its pull request #12 is merged"
-
-
-def test_a_merged_request_cannot_speak_for_unpushed_commits(world, with_forge) -> None:
-    """It says what reached it, and nothing about what never did."""
-    with_forge([{"number": 12, "state": "MERGED"}])
-    wt = world.worktree("stacked")
-    world.commit("s.txt", "s\n", at=wt)
-    _push(world, "stacked", wt)
-    world.commit("after.txt", "a\n", at=wt)
-
-    rows = verdicts.assess(
-        R.worktrees(), "", "refs/heads/main", "main", False, ask_forge=True
-    )
-    row = next(v for v in rows if v.branch == "stacked")
-    assert row.verdict == verdicts.KEEP
-    assert "1 commit(s) here are not in it" in row.why
-
-
-@pytest.mark.parametrize("delete_ignored", [False, True])
-def test_a_merged_request_with_an_existing_upstream_checks_ignored_files(
-    world, with_forge, delete_ignored
-):
-    with_forge([{"number": 12, "state": "MERGED"}])
-    wt = world.worktree("stacked")
-    world.commit(".gitignore", "cache\n", at=wt)
-    _push(world, "stacked", wt)
-    (wt / "cache").write_text("keep\n")
-    rows = verdicts.assess(
-        R.worktrees(), "", "refs/heads/main", "main", delete_ignored, ask_forge=True
-    )
-    row = next(v for v in rows if v.branch == "stacked")
-    assert row.verdict == (verdicts.REMOVE if delete_ignored else verdicts.KEEP)
-
-
-def test_no_upstream_is_unknown_rather_than_zero(world, with_forge) -> None:
-    """Branches made here do not track, so this is the normal state for
-    exactly the ones a merged request would otherwise reap."""
-    with_forge([{"number": 12, "state": "MERGED"}])
-    wt = world.worktree("stacked")
-    world.commit("s.txt", "s\n", at=wt)
-
-    rows = verdicts.assess(
-        R.worktrees(), "", "refs/heads/main", "main", False, ask_forge=True
-    )
-    row = next(v for v in rows if v.branch == "stacked")
-    assert row.verdict == verdicts.UNKNOWN
-    assert "no upstream" in row.why
-
-
-@pytest.fixture
-def gone_upstream(world):
-    wt = world.worktree("stacked")
-    sha = world.commit("s.txt", "s\n", at=wt)
-    _push(world, "stacked", wt)
-    world.git(
-        "update-ref", "-d", "refs/heads/stacked", sha, at=world.root / "stacked.git"
-    )
-    world.git("fetch", "--prune", "origin")
-    assert world.git("config", "--get", "branch.stacked.merge") == "refs/heads/stacked"
-    assert not R.upstream_of("stacked")
-    assert R.unpushed_count("stacked") is None
+    wt = world.worktree("feature")
+    world.commit("feature", "branch\n", at=wt)
+    world.commit("feature", "later edits\n")
+    world.git("remote", "add", "origin", "git@github.com:owner/repo.git")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
     return wt
 
 
-@pytest.mark.parametrize("state", ["MERGED", "CLOSED", "OPEN", None])
-def test_a_gone_upstream_requires_a_merged_request(
-    world, with_forge, gone_upstream, state
-):
-    with_forge([{"number": 12, "state": state}] if state else [])
-    rows = verdicts.assess(
-        R.worktrees(), "", "refs/heads/main", "main", False, ask_forge=True
-    )
-    row = next(v for v in rows if v.branch == "stacked")
-    assert row.verdict == (verdicts.REMOVE if state == "MERGED" else verdicts.UNKNOWN)
-    if state == "MERGED":
-        assert row.why == "its pull request #12 is merged and its upstream is gone"
-    elif state == "CLOSED":
-        assert "upstream is gone" in row.why
+def gws(world, env, *args: str) -> dict:
+    p = cli(world, "status", "--no-fetch", "--json", *args, env=env)
+    assert p.returncode == 0, p.stderr
+    return {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
 
 
-@pytest.mark.parametrize("protection", ["dirty", "ignored", "locked", "current"])
-def test_a_merged_request_with_a_gone_upstream_keeps_worktree_protections(
-    world, with_forge, gone_upstream, protection
-):
-    with_forge([{"number": 12, "state": "MERGED"}])
+def test_a_merged_request_finishes_a_worktree_git_cannot_see(world) -> None:
+    forge_worktree(world)
+    assert gws(world, env_for(world), "--no-forge")["feature"]["verdict"] == "keep"
+
+    env = stub(world, "github", [evidence(world, "github")])
+    row = gws(world, env)["feature"]
+    assert row["verdict"] == "remove", row
+    assert row["why"] == "pull request #17 merged this tip into the head branch"
+
+
+def test_a_merged_request_cannot_speak_for_a_later_commit(world) -> None:
+    """It names the tip it merged, and nothing made after it."""
+    wt = forge_worktree(world)
+    row = evidence(world, "github")
+    world.commit("after", "a\n", at=wt)
+    row = gws(world, stub(world, "github", [row]))["feature"]
+    assert row["verdict"] == "unknown"
+    assert row["why"] == "the request does not identify this branch tip"
+
+
+def test_an_open_request_decides_nothing(world) -> None:
+    forge_worktree(world)
+    env = stub(world, "github", [evidence(world, "github", state="OPEN")])
+    row = gws(world, env)["feature"]
+    assert row["verdict"] == "keep"
+    assert row["why"] == "pull request #17 is open, not merged"
+
+
+@pytest.mark.parametrize("protection", ["dirty", "ignored", "locked"])
+def test_a_merged_request_keeps_worktree_protections(world, protection) -> None:
+    wt = forge_worktree(world)
+    env = stub(world, "github", [evidence(world, "github")])
     if protection == "dirty":
-        (gone_upstream / "s.txt").write_text("unfinished\n")
+        (wt / "feature").write_text("unfinished\n")
     elif protection == "ignored":
         world.git("config", "core.excludesFile", str(world.root / "ignore"))
         (world.root / "ignore").write_text("cache\n")
-        (gone_upstream / "cache").write_text("keep\n")
-    elif protection == "locked":
-        world.git("worktree", "lock", str(gone_upstream))
-    rows = verdicts.assess(
-        R.worktrees(),
-        "",
-        "refs/heads/main",
-        "main",
-        False,
-        here=str(gone_upstream) if protection == "current" else "",
-        ask_forge=True,
-    )
-    row = next(v for v in rows if v.branch == "stacked")
-    assert row.verdict == verdicts.KEEP
+        (wt / "cache").write_text("keep\n")
+    else:
+        world.git("worktree", "lock", str(wt))
+    assert gws(world, env)["feature"]["verdict"] == "keep"
 
 
-def test_prune_removes_a_merged_branch_with_a_gone_upstream(
-    world, with_forge, gone_upstream
-):
-    bin_dir = with_forge([{"number": 12, "state": "MERGED"}])
-    env = env_for(world)
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import gwp; raise SystemExit(gwp())",
-            "--no-fetch",
-            "--yes",
-        ],
-        cwd=str(world.repo),
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    assert proc.returncode == 0, proc.stderr
-    assert not gone_upstream.exists()
-    assert not R.ref_exists("refs/heads/stacked")
+def test_prune_removes_a_worktree_the_forge_proved(world) -> None:
+    wt = forge_worktree(world)
+    env = stub(world, "github", [evidence(world, "github")])
+    p = cli(world, "--no-fetch", "--yes", entry="gwp", env=env)
+    assert p.returncode == 0, p.stderr
+    assert not wt.exists()
+    assert not R.ref_exists("refs/heads/feature")
     assert world.repo.exists()
 
 
-def test_an_open_request_decides_nothing(world, with_forge) -> None:
-    with_forge([{"number": 12, "state": "OPEN"}])
-    wt = world.worktree("live")
-    world.commit("l.txt", "l\n", at=wt)
-
-    rows = verdicts.assess(
-        R.worktrees(), "", "refs/heads/main", "main", False, ask_forge=True
-    )
-    row = next(v for v in rows if v.branch == "live")
-    assert row.verdict == verdicts.UNKNOWN
-    assert "not merged into main" in row.why
-
-
-@pytest.mark.parametrize(("rows", "code"), [([], 0), (None, 1), ([], 1)])
-def test_silence_leaves_the_answer_to_git(world, with_forge, rows, code) -> None:
-    """No request, not authenticated, no remote: all the same, and none of
-    them is a `no`."""
-    with_forge(rows, code)
-    wt = world.worktree("quiet")
-    world.commit("q.txt", "q\n", at=wt)
-
-    out = verdicts.assess(
-        R.worktrees(), "", "refs/heads/main", "main", False, ask_forge=True
-    )
-    row = next(v for v in out if v.branch == "quiet")
-    assert row.verdict == verdicts.UNKNOWN
-    assert "no upstream" in row.why
+def _marker(world, marker: Path) -> dict[str, str]:
+    """An env whose `gh` records having been asked and answers nothing."""
+    bin_dir = world.root / "marker-bin"
+    bin_dir.mkdir(exist_ok=True)
+    exe = bin_dir / "gh"
+    exe.write_text(f"#!/bin/sh\n: > {marker}\nprintf '[]\\n'\n")
+    exe.chmod(0o755)
+    env = env_for(world)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    return env
 
 
-def test_the_forge_is_never_asked_about_a_branch_git_settled(world, with_forge) -> None:
+def test_the_forge_is_never_asked_about_a_branch_git_settled(world) -> None:
     """It costs a round trip, and merged is merged."""
-    bin_dir = with_forge([{"number": 99, "state": "MERGED"}])
-    marker = bin_dir / "asked"
-    (bin_dir / "gh").write_text(f"#!/bin/sh\ntouch {marker}\necho '[]'\n")
-    (bin_dir / "gh").chmod(0o755)
-
+    marker = world.root / "asked"
+    world.git("remote", "add", "origin", "git@github.com:owner/repo.git")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
     world.worktree("done")  # identical tree to main: settled without asking
-    verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False, ask_forge=True)
+    assert gws(world, _marker(world, marker))["done"]["verdict"] == "remove"
     assert not marker.exists()
 
 
-def test_no_forge_keeps_it_offline(world, with_forge) -> None:
-    bin_dir = with_forge([{"number": 12, "state": "MERGED"}])
-    marker = bin_dir / "asked"
-    (bin_dir / "gh").write_text(f"#!/bin/sh\ntouch {marker}\necho '[]'\n")
-    (bin_dir / "gh").chmod(0o755)
-
-    wt = world.worktree("stacked")
-    world.commit("s.txt", "s\n", at=wt)
-    verdicts.assess(
-        R.worktrees(), "", "refs/heads/main", "main", False, ask_forge=False
-    )
+def test_no_forge_keeps_it_offline(world) -> None:
+    marker = world.root / "asked"
+    forge_worktree(world)
+    env = _marker(world, marker)
+    gws(world, env, "--no-forge")
     assert not marker.exists()
-
-
-def test_request_for_reads_the_first_row(world, with_forge) -> None:
-    with_forge([{"number": 7, "state": "merged"}])
-    got = forge.request_for("anything")
-    assert got is not None
-    assert (got.number, got.state, got.noun) == (7, "MERGED", "pull request")
+    gws(world, env)
+    assert marker.exists(), "the control: without --no-forge it is asked"
 
 
 def test_the_cli_offers_no_forge(world) -> None:
@@ -319,11 +180,19 @@ def _gws(world, bin_dir: Path):
     )
 
 
+def _github_at(world, path: Path) -> None:
+    """A remote whose URL names GitHub, which is the only kind the forge is
+    asked about, and whose fetch goes to `path`."""
+    url = "git@github.com:owner/repo.git"
+    world.git("config", f"url.{path}.insteadOf", url)
+    world.git("remote", "add", "origin", url)
+
+
 def test_a_failed_fetch_stops_the_forge_being_asked(world, tmp_path) -> None:
     """`gh` waits 30 seconds for a network that just refused git."""
     marker = tmp_path / "asked"
     bin_dir = _marker_gh(tmp_path, marker)
-    world.git("remote", "add", "origin", str(world.root / "nowhere.git"))
+    _github_at(world, world.root / "nowhere.git")
     world.git("update-ref", "refs/remotes/origin/main", "main")
     wt = world.worktree("unmerged")
     world.commit("u.txt", "u\n", at=wt)
@@ -342,7 +211,7 @@ def test_a_reachable_remote_leaves_the_forge_asked(world, tmp_path) -> None:
     bin_dir = _marker_gh(tmp_path, marker)
     bare = world.root / "origin.git"
     subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
-    world.git("remote", "add", "origin", str(bare))
+    _github_at(world, bare)
     world.git("push", "--quiet", "origin", "main")
     wt = world.worktree("unmerged")
     world.commit("u.txt", "u\n", at=wt)
@@ -380,12 +249,12 @@ def test_a_stray_variable_cannot_redirect_the_question(
     request found in the wrong repository reads here as proof."""
     seen = tmp_path / "seen"
     bin_dir = _reports_env(tmp_path, tool, variable, seen)
-    # Only this directory, so `available` finds the tool under test and not
-    # the real one beside it.
+    # Only this directory, so the tool under test answers and not the real
+    # one beside it.
     monkeypatch.setenv("PATH", str(bin_dir))
     monkeypatch.setenv(variable, "someone/else")
 
-    assert forge.request_for("any-branch") is None
+    assert forge.query([tool, "pr", "list"]) == []
     assert seen.read_text() == "unset"
 
 
@@ -397,7 +266,7 @@ def test_the_rest_of_the_environment_reaches_the_forge(tmp_path, monkeypatch) ->
     monkeypatch.setenv("PATH", str(bin_dir))
     monkeypatch.setenv("GH_TOKEN", "kept")
 
-    assert forge.request_for("any-branch") is None
+    assert forge.query(["gh", "pr", "list"]) == []
     assert seen.read_text() == "kept"
 
 
@@ -488,156 +357,3 @@ def test_gwa_reuses_a_fetch_another_command_made(world) -> None:
     assert p.returncode == 0, p.stderr
     assert "fetched 0 min ago; using those refs" in p.stderr
     assert "+ git fetch" not in p.stderr
-
-
-# --------------------------------------------------------------------------
-# an answer that cannot change on its own is kept
-# --------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "row,idle",
-    [
-        ({"mergeable": "MERGEABLE", "statusCheckRollup": []}, False),
-        ({"mergeable": "UNKNOWN", "statusCheckRollup": []}, False),
-        ({"mergeable": "CONFLICTING", "statusCheckRollup": []}, True),
-        ({"mergeable": "MERGEABLE", "isDraft": True}, True),
-        (
-            {
-                "mergeable": "CONFLICTING",
-                "statusCheckRollup": [{"status": "IN_PROGRESS"}],
-            },
-            False,
-        ),
-        (
-            {"mergeable": "CONFLICTING", "statusCheckRollup": [{"state": "PENDING"}]},
-            False,
-        ),
-        ({"isDraft": True, "autoMergeRequest": {"mergeMethod": "SQUASH"}}, False),
-        ({"detailed_merge_status": "conflict"}, True),
-        ({"detailed_merge_status": "draft_status"}, True),
-        ({"detailed_merge_status": "need_rebase"}, True),
-        ({"detailed_merge_status": "mergeable"}, False),
-        ({"detailed_merge_status": "ci_still_running"}, False),
-        ({"detailed_merge_status": "checking"}, False),
-        (
-            {"detailed_merge_status": "conflict", "merge_when_pipeline_succeeds": True},
-            False,
-        ),
-    ],
-)
-def test_an_open_request_is_idle_only_when_it_cannot_merge_on_its_own(
-    row, idle
-) -> None:
-    assert forge._idle(row) is idle
-
-
-def _counting_gh(tmp_path: Path, rows: list[dict]) -> tuple[Path, Path]:
-    bin_dir = tmp_path / "counting-bin"
-    bin_dir.mkdir(exist_ok=True)
-    calls = tmp_path / "calls"
-    payload = json.dumps(rows).replace("'", "'\\''")
-    exe = bin_dir / "gh"
-    exe.write_text(f"#!/bin/sh\necho x >> {calls}\nprintf '%s\\n' '{payload}'\n")
-    exe.chmod(0o755)
-    return bin_dir, calls
-
-
-def _asked(calls: Path) -> int:
-    return len(calls.read_text().splitlines()) if calls.exists() else 0
-
-
-@pytest.mark.parametrize(
-    "row,kept",
-    [
-        ({"number": 3, "state": "MERGED"}, True),
-        ({"number": 3, "state": "CLOSED"}, True),
-        ({"number": 3, "state": "OPEN", "isDraft": True}, True),
-        ({"number": 3, "state": "OPEN", "mergeable": "MERGEABLE"}, False),
-    ],
-)
-def test_the_forge_is_asked_once_for_an_answer_that_cannot_change(
-    world, tmp_path, monkeypatch, row, kept
-) -> None:
-    bin_dir, calls = _counting_gh(tmp_path, [row])
-    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
-    for _ in range(2):
-        got = forge.request_for("b", sha="a" * 40)
-        assert got is not None
-        assert got.state == row["state"]
-    assert _asked(calls) == (1 if kept else 2)
-
-
-def test_force_refresh_asks_the_forge_again(world, tmp_path, monkeypatch) -> None:
-    bin_dir, calls = _counting_gh(tmp_path, [{"number": 3, "state": "MERGED"}])
-    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
-    forge.request_for("b", sha="a" * 40)
-    monkeypatch.setattr(forge.options, "refresh", True)
-    forge.request_for("b", sha="a" * 40)
-    assert _asked(calls) == 2
-
-
-def test_a_new_commit_asks_the_forge_again(world, tmp_path, monkeypatch) -> None:
-    bin_dir, calls = _counting_gh(tmp_path, [{"number": 3, "state": "CLOSED"}])
-    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
-    forge.request_for("b", sha="a" * 40)
-    forge.request_for("b", sha="b" * 40)
-    assert _asked(calls) == 2
-
-
-def test_an_idle_open_answer_lasts_10_minutes(world, tmp_path, monkeypatch) -> None:
-    row = {"number": 3, "state": "OPEN", "mergeable": "CONFLICTING"}
-    bin_dir, calls = _counting_gh(tmp_path, [row])
-    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
-    forge.request_for("b", sha="a" * 40)
-    later = time.time() + 11 * 60
-    monkeypatch.setattr(forge.time, "time", lambda: later)
-    forge.request_for("b", sha="a" * 40)
-    assert _asked(calls) == 2
-
-
-def test_no_request_on_a_local_branch_lasts_10_minutes(
-    world, tmp_path, monkeypatch
-) -> None:
-    bin_dir, calls = _counting_gh(tmp_path, [])
-    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
-    world.git("branch", "local-only", "main")
-    assert forge.request_for("local-only", sha="a" * 40) is None
-    now = time.time()
-    monkeypatch.setattr(forge.time, "time", lambda: now + 9 * 60)
-    assert forge.request_for("local-only", sha="a" * 40) is None
-    assert _asked(calls) == 1
-    monkeypatch.setattr(forge.time, "time", lambda: now + 11 * 60)
-    forge.request_for("local-only", sha="a" * 40)
-    assert _asked(calls) == 2
-
-
-def test_no_request_on_a_pushed_branch_lasts_a_minute(
-    world, tmp_path, monkeypatch
-) -> None:
-    """A push is how a request gets opened, so the answer goes stale fast."""
-    bin_dir, calls = _counting_gh(tmp_path, [])
-    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
-    world.git("branch", "pushed", "main")
-    world.git("branch", "--quiet", "--set-upstream-to=main", "pushed")
-    forge.request_for("pushed", sha="a" * 40)
-    now = time.time()
-    monkeypatch.setattr(forge.time, "time", lambda: now + 30)
-    forge.request_for("pushed", sha="a" * 40)
-    assert _asked(calls) == 1
-    monkeypatch.setattr(forge.time, "time", lambda: now + 61)
-    forge.request_for("pushed", sha="a" * 40)
-    assert _asked(calls) == 2
-
-
-def test_a_forge_that_fails_is_not_kept(world, tmp_path, monkeypatch) -> None:
-    """No answer is not the answer "no request"."""
-    bin_dir = tmp_path / "failing-bin"
-    bin_dir.mkdir()
-    calls = tmp_path / "calls"
-    (bin_dir / "gh").write_text(f"#!/bin/sh\necho x >> {calls}\nexit 1\n")
-    (bin_dir / "gh").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
-    forge.request_for("b", sha="a" * 40)
-    forge.request_for("b", sha="a" * 40)
-    assert _asked(calls) == 2

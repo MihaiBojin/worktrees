@@ -154,7 +154,7 @@ def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--force-refresh",
         action="store_true",
-        help="fetch and ask the forge again, whatever is kept",
+        help="fetch even when the last fetch is under 10 minutes old",
     )
     p.add_argument(
         "--delete-ignored",
@@ -233,10 +233,8 @@ def _judge_all(
     """
     from . import repo as R
     from . import verdicts
-    from .git import options
 
-    options.refresh = args.force_refresh
-    head, head_branch, _ = _assessment_head(args)
+    head, head_branch, remote = _assessment_head(args)
 
     only = getattr(args, "branch", "")
     ignored = getattr(args, "delete_ignored", False)
@@ -248,7 +246,7 @@ def _judge_all(
     if ask_forge is None:
         ask_forge = not getattr(args, "no_forge", False)
     rows = (
-        judge(only, head, head_branch, ignored, ask_forge=ask_forge)
+        judge(only, head, head_branch, ignored, remote, ask_forge=ask_forge)
         if judge
         else verdicts.assess(
             records,
@@ -256,6 +254,7 @@ def _judge_all(
             head,
             head_branch,
             ignored,
+            remote,
             ask_forge=ask_forge,
             # `gws` and `gwp` report; `gwr` acts, and takes this list as its
             # candidates, so it asks through `judge` and gets it without.
@@ -736,7 +735,7 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--force-refresh",
         action="store_true",
-        help="fetch and ask the forge again, whatever is kept",
+        help="fetch even when the last fetch is under 10 minutes old",
     )
     p.add_argument(
         "--no-forge",
@@ -984,7 +983,12 @@ def run_remove(args: argparse.Namespace) -> int:
     if chosen.verdict != prune.REMOVE and not args.no_forge:
         with progress.running(not args.quiet and not args.verbose):
             judged = wt_mod.removable(
-                chosen.branch, head, head_branch, args.delete_ignored, ask_forge=True
+                chosen.branch,
+                head,
+                head_branch,
+                args.delete_ignored,
+                R.remote(),
+                ask_forge=True,
             )
         if judged:
             chosen = judged[0]
