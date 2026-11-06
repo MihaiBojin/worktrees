@@ -92,12 +92,12 @@ def owner_of(candidate: str, repo: str | os.PathLike[str] | None = None) -> str:
     checkout.
     """
     theirs = R.common_dir(repo=candidate)
-    if not theirs or not theirs.out.strip():
+    if not theirs or not theirs.value:
         return ""
     ours = R.common_dir(repo=repo)
-    if not ours or not ours.out.strip():
+    if not ours or not ours.value:
         return ""
-    t = Path(theirs.out.strip()).resolve()
-    if t == Path(ours.out.strip()).resolve():
+    t = Path(theirs.value).resolve()
+    if t == Path(ours.value).resolve():
         return ""
     return str(t.parent)

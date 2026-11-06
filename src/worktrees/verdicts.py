@@ -88,7 +88,7 @@ def assess(
 
     main = R.main_worktree(repo)
     if here is None:
-        here = R.toplevel(repo=repo).out.strip()
+        here = R.toplevel(repo=repo).value
     state = state or prune.head_state(head, head_branch, repo)
     head_sha = state.sha
     first_parents = set(state.first_parents)

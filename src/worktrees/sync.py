@@ -26,7 +26,7 @@ def _empty() -> dict:
 
 
 def path(repo: str | os.PathLike[str] | None = None) -> Path | None:
-    common = R.common_dir(repo=repo).out.strip()
+    common = R.common_dir(repo=repo).value
     return Path(common) / _CACHE if common else None
 
 
@@ -54,7 +54,7 @@ def read(repo: str | os.PathLike[str] | None = None) -> dict:
         return _empty()
     identity = {
         "name": remote,
-        "url": R.config_get(f"remote.{remote}.url", repo=repo).out.strip(),
+        "url": R.config_get(f"remote.{remote}.url", repo=repo).value,
     }
     if not isinstance(cached, dict) or cached.get("remote") != identity:
         return _empty()
@@ -160,7 +160,7 @@ def run(repo: str | os.PathLike[str] | None = None) -> tuple[int, list[str]]:
     cached = {
         "remote": {
             "name": remote,
-            "url": R.config_get(f"remote.{remote}.url", repo=repo).out.strip(),
+            "url": R.config_get(f"remote.{remote}.url", repo=repo).value,
         },
         "lastSync": {**previous["lastSync"], "refs": now},
         "branches": {},

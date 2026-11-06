@@ -749,7 +749,7 @@ def run_list(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    here = R.toplevel().out.strip()
+    here = R.toplevel().value
     rows = [w for w in R.worktrees() if "bare" not in w.flags]
 
     if args.complete:
@@ -910,7 +910,7 @@ def run_remove(args: argparse.Namespace) -> int:
     # The main checkout is listed and never offered: `git worktree remove`
     # refuses it whatever flag it is given. The worktree you stand in is
     # highlighted first, since it is the one you most likely came to remove.
-    here = R.toplevel().out.strip()
+    here = R.toplevel().value
     offered = [R.Worktree(v.path, "", v.branch, frozenset()) for v in candidates]
     picked = pick.choose(
         offered,
@@ -1572,7 +1572,7 @@ def _dispatch(
 
             options.verbose = getattr(args, "verbose", False)
             R.require_offline_git()
-            if not getattr(args, "json", False) and R.toplevel().out.strip():
+            if not getattr(args, "json", False) and R.toplevel().value:
                 for notice in sync.notices(getattr(args, "quiet", False)):
                     _err(render.note(notice))
         return run(args)

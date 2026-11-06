@@ -66,9 +66,7 @@ def _text(row: dict, key: str) -> str:
 def provider(
     remote: str, repo: str | os.PathLike[str] | None = None
 ) -> tuple[str, str] | None:
-    host, path = _repository(
-        R.config_get(f"remote.{remote}.url", repo=repo).out.strip()
-    )
+    host, path = _repository(R.config_get(f"remote.{remote}.url", repo=repo).value)
     if not host or not path or "/" not in path:
         return None
     if host == "github.com" or host.startswith("github."):

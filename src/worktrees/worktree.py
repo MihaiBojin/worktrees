@@ -137,7 +137,7 @@ def move(
     if not check_ref_format(new, repo=repo):
         raise Refusal(f"{render.branch(new)} is not a valid branch name")
 
-    here = R.toplevel(repo=repo).out.strip()
+    here = R.toplevel(repo=repo).value
     if not here:
         raise Refusal("not inside a git repository")
     main = R.main_worktree(repo)
@@ -151,7 +151,7 @@ def move(
     if not resolved.ref:
         raise Refusal(resolved.unresolved)
 
-    old = R.current_branch(repo=here).out.strip()
+    old = R.current_branch(repo=here).value
     if not old:
         raise Refusal("HEAD is detached here, so there is no branch to rename")
     if old == new:
@@ -211,7 +211,7 @@ def remove(chosen: Verdict, say, repo=None) -> prune.Outcome:
         if fresh.snapshot != snapshot or not fresh.eligible:
             raise Refused(f"{chosen.path}: state changed after assessment; {fresh.why}")
         prune.check_head(snapshot.head, repo)
-        here = R.toplevel(repo=repo).out.strip()
+        here = R.toplevel(repo=repo).value
         standing_in = bool(here) and Path(here).resolve() == Path(chosen.path).resolve()
         if standing_in:
             os.chdir(main)

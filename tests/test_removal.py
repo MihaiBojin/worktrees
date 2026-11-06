@@ -242,7 +242,8 @@ def test_remaining_duplicate_checkout_blocks_ref_deletion(world):
 
 
 @pytest.mark.parametrize("entry", ["gwr", "gwbd"])
-def test_stash_drop_repairs_a_real_concurrent_insertion(world, entry):
+@pytest.mark.parametrize("suffix", ["", "\u2028"])
+def test_stash_drop_repairs_a_real_concurrent_insertion(world, entry, suffix):
     path = world.merged_worktree("topic")
     target = stash(world, path, "target 'quoted'")
     if entry == "gwbd":
@@ -250,6 +251,7 @@ def test_stash_drop_repairs_a_real_concurrent_insertion(world, entry):
     binary = world.root / "bin"
     binary.mkdir()
     real = shutil.which("git")
+    racing_subject = "racing subject" + suffix
     wrapper = binary / "git"
     wrapper.write_text(
         f"#!{sys.executable}\nimport os, subprocess, sys\n"
@@ -257,7 +259,7 @@ def test_stash_drop_repairs_a_real_concurrent_insertion(world, entry):
         "if 'stash' in a and 'drop' in a:\n"
         f"    open({str(world.repo / 'README')!r}, 'w').write('concurrent')\n"
         f"    subprocess.run([real, '-C', {str(world.repo)!r}, "
-        "'stash', 'push', '-qm', 'racing subject'], check=True)\n"
+        f"'stash', 'push', '-qm', {racing_subject!r}], check=True)\n"
         "os.execv(real, [real, *a])\n"
     )
     wrapper.chmod(0o755)
@@ -281,10 +283,10 @@ def test_stash_drop_repairs_a_real_concurrent_insertion(world, entry):
         text=True,
     )
     assert p.returncode != 0, p.stderr
-    entries = world.git("stash", "list", "--format=%H %gs").splitlines()
+    entries = world.git("stash", "list", "--format=%H %gs").split("\n")
     assert len(entries) == 2
     assert any(line.startswith(target) for line in entries)
-    assert any("On main: racing subject" in line for line in entries)
+    assert any(f"On main: {racing_subject}" in line for line in entries)
     assert "not dropped" in p.stderr
     subject = shlex.quote("On topic: target 'quoted'")
     assert f"git stash store -m {subject} {target}" in p.stderr

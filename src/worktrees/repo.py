@@ -297,7 +297,12 @@ def created_at(wt: Worktree) -> float:
     if wt.main:
         return 0.0
     try:
-        pointer = (Path(wt.path) / ".git").read_text().strip()
+        pointer = (
+            (Path(wt.path) / ".git")
+            .read_bytes()
+            .decode("utf-8", "surrogateescape")
+            .removesuffix("\n")
+        )
         admin = Path(pointer.removeprefix("gitdir: "))
         if not admin.is_absolute():
             admin = Path(wt.path) / admin
@@ -345,7 +350,7 @@ def ref_name(ref: str) -> str:
 def remote(repo: str | os.PathLike[str] | None = None) -> str:
     """The configured default remote, or the sole remote when unset."""
     names = remotes(repo=repo).lines
-    stated = config_get("checkout.defaultRemote", repo=repo).out.strip()
+    stated = config_get("checkout.defaultRemote", repo=repo).value
     if stated:
         return stated if stated in names else ""
     return names[0] if len(names) == 1 else ""
@@ -387,7 +392,7 @@ def head(repo: str | os.PathLike[str] | None = None) -> Head:
     remote_name = remote(repo)
     cache = sync.read(repo)
     remote_head = f"refs/remotes/{remote_name}/HEAD"
-    target = symbolic_ref(remote_head, repo=repo).out.strip() if remote_name else ""
+    target = symbolic_ref(remote_head, repo=repo).value if remote_name else ""
     if target or (remote_name and cache["lastSync"]["refs"]):
         source = "remote" if cache["lastSync"]["refs"] else "clone"
         valid = target.startswith(f"refs/remotes/{remote_name}/") and bool(
@@ -459,9 +464,9 @@ def unpushed_count(
     exactly those.
     """
     up = upstream_of(branch, repo=repo)
-    if not up or not up.out.strip():
+    if not up or not up.value:
         return None
-    counted = count_between(up.out.strip(), f"refs/heads/{branch}", repo=repo)
+    counted = count_between(up.value, f"refs/heads/{branch}", repo=repo)
     if not counted:
         return None
     return int(counted.out.strip() or 0)

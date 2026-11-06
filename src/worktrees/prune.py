@@ -86,7 +86,7 @@ def head_state(
         if first_parents is not None
         else (merged.first_parent_history(tip, repo=repo).lines if tip else [])
     )
-    target = R.symbolic_ref(ref, repo=repo).out.strip() if ref else ""
+    target = R.symbolic_ref(ref, repo=repo).value if ref else ""
     return HeadState(
         ref,
         target or ref,
@@ -100,7 +100,7 @@ def head_state(
 def check_head(state: HeadState, repo=None) -> None:
     current = R.head(repo)
     ref = current.ref or ""
-    target = R.symbolic_ref(ref, repo=repo).out.strip() if ref else ""
+    target = R.symbolic_ref(ref, repo=repo).value if ref else ""
     sha = sha_of(ref, repo=repo).out.strip() if ref else ""
     if (ref, target or ref, sha, current.branch) != (
         state.ref,
@@ -184,7 +184,7 @@ def drop_stashes(snapshot: Snapshot, outcome: Outcome, repo=None) -> None:
         if actual != sha:
             subject = next((item[2] for item in entries if item[1] == actual), None)
             if subject is None:
-                subject = stash_subject(actual, repo=repo).out.strip()
+                subject = stash_subject(actual, repo=repo).value
             stash_store(subject, actual, repo=repo)
             raise Refused(
                 f"stash {sha} not dropped: concurrent stash change; restored {actual}"
@@ -198,7 +198,7 @@ def delete_ref(snapshot: Snapshot, outcome: Outcome, repo=None) -> None:
         raise Refused(
             f"branch {snapshot.branch} kept: it is checked out in another worktree"
         )
-    if R.symbolic_ref(f"refs/heads/{snapshot.branch}", repo=repo).out.strip():
+    if R.symbolic_ref(f"refs/heads/{snapshot.branch}", repo=repo).value:
         raise Refused(f"branch {snapshot.branch} kept: it is a symbolic branch ref")
     ref_delete(f"refs/heads/{snapshot.branch}", snapshot.sha, repo=repo)
     outcome.branch_removed = True
