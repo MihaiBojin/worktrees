@@ -252,6 +252,30 @@ def test_a_reachable_remote_leaves_the_forge_asked(world, tmp_path) -> None:
     assert marker.exists()
 
 
+@pytest.mark.parametrize("default", ["", "origin"])
+def test_several_remotes_without_a_default_leave_the_forge_unasked(
+    world, tmp_path, default: str
+) -> None:
+    """A fork and its upstream, both on GitHub. Without
+    `checkout.defaultRemote` nothing says which repository to ask, so none
+    is; with it, the forge is asked."""
+    marker = tmp_path / "asked"
+    bin_dir = _marker_gh(tmp_path, marker)
+    bare = world.root / "origin.git"
+    subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
+    _github_at(world, bare)
+    world.git("remote", "add", "upstream", "git@github.com:upstream/repo.git")
+    world.git("push", "--quiet", "origin", "main")
+    if default:
+        world.git("config", "checkout.defaultRemote", default)
+    wt = world.worktree("unmerged")
+    world.commit("u.txt", "u\n", at=wt)
+
+    p = _gws(world, bin_dir)
+    assert p.returncode == 0, p.stderr
+    assert marker.exists() == bool(default)
+
+
 # --------------------------------------------------------------------------
 # the question goes to the repository the remote names
 # --------------------------------------------------------------------------

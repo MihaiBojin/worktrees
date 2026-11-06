@@ -75,8 +75,9 @@ Four rules the CLI does not break:
   refusal. `gws --explain` prints the list, marking the 11 that mutate.
 - There is no configuration. No file, no environment variable beyond
   `NO_COLOR` and `TERM`, and no `git config` key of this program's own. The
-  one git key it reads, `checkout.defaultRemote`, is git's and answers a
-  question git already asks: which remote this repository works against.
+  two git keys it reads are git's: `checkout.defaultRemote` says which remote
+  this repository works against, and `remote.<name>.url` says which forge
+  repository to ask.
 
 ## 3. Decisions
 
