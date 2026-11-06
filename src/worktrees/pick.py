@@ -115,11 +115,9 @@ def choose(
         return _select(candidates, keys, shown, first, here)
 
     if not sys.stdin.isatty():
-        count = len(candidates)
-        noun = "worktree" if count == 1 else "worktrees"
         raise Refused(
-            f"{count} {noun} to choose from and this is not a terminal; "
-            "narrow the query to one"
+            f"{len(candidates)} worktrees to choose from and this is not a "
+            "terminal; narrow the query to one"
         )
     fd = sys.stdin.fileno()
     saved = termios.tcgetattr(fd)
