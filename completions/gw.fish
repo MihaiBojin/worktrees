@@ -12,8 +12,6 @@ function __worktrees_complete_gw
             set target gwa
         case list
             set target __worktrees_list
-        case move m mv
-            set target gwm
         case remove rm
             set target gwr
         case rotate rot

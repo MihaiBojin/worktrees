@@ -715,14 +715,6 @@ def _add_list_flags(p: argparse.ArgumentParser) -> None:
     _add_cd_flags(p)
 
 
-def _add_move_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "name", nargs="?", default="", metavar="NEW", help="the new branch name"
-    )
-    _add_cd_flags(p)
-    _add_cd_output_flags(p)
-
-
 def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "query", nargs="?", default="", metavar="PATH|QUERY", help="which one"
@@ -886,27 +878,6 @@ def run_list(args: argparse.Namespace) -> int:
         return 0
     print(chosen.path)
     return 0
-
-
-def run_move(args: argparse.Namespace) -> int:
-    from . import new_branch
-    from . import worktree as wt_mod
-    from .git import options
-
-    options.verbose = args.verbose
-    if args.explain:
-        return _explain()
-    if not args.name:
-        return _needs(args, "NEW")
-
-    try:
-        landed = wt_mod.move(args.name)
-    except new_branch.Refusal as exc:
-        _err(render.fail(str(exc)))
-        return 1
-    if not args.quiet and not args.json:
-        _err(render.note(f"renamed to {render.branch(landed.branch)}"))
-    return _landed(args, landed)
 
 
 def run_remove(args: argparse.Namespace) -> int:
@@ -1312,15 +1283,6 @@ _COMMANDS: dict[str, _Command] = {
         usage="[QUERY]",
         lands=True,
     ),
-    "move": _Command(
-        run_move,
-        _add_move_flags,
-        "rename this branch and move it",
-        "gwm",
-        usage="NEW",
-        aliases=("m", "mv"),
-        lands=True,
-    ),
     "remove": _Command(
         run_remove,
         _add_remove_flags,
@@ -1475,13 +1437,6 @@ def gwa(argv: list[str] | None = None) -> int:
     return _dispatch(p, argv, run_add)
 
 
-def gwm(argv: list[str] | None = None) -> int:
-    """Renaming the directory you stand in is why this one is not optional."""
-    p = _parser("gwm", "Rename this worktree's branch to NEW and move it to match.")
-    _add_move_flags(p)
-    return _dispatch(p, argv, run_move)
-
-
 def gwr(argv: list[str] | None = None) -> int:
     """Prints a path only when the caller was standing in what went."""
     p = _parser("gwr", "Remove a worktree whose branch is finished, and the branch.")
@@ -1586,7 +1541,18 @@ def _dispatch(
             if not getattr(args, "json", False) and not quiet and R.toplevel().value:
                 for notice in sync.notices():
                     _err(render.note(notice))
-        return run(args)
+        code = run(args)
+        merged = sys.modules.get("worktrees.merged")
+        quiet = getattr(args, "quiet", False) or getattr(args, "json", False)
+        if merged is not None and merged.lacking.is_set() and not quiet:
+            _err(
+                render.warn(
+                    "some verdicts are unknown: "
+                    f"{merged.LACKING}, and only gw sync uses the network\n"
+                    "git backfill fetches them"
+                )
+            )
+        return code
     except KeyboardInterrupt:
         _err("")
         return 130

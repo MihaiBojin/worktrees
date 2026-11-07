@@ -325,8 +325,6 @@ COMMAND_COMPLETIONS = [
     ("gw list sync", "gw", ("list",)),
     ("gw remove", "gwr", ()),
     ("gw rm", "gwr", ()),
-    ("gw move", "gwm", ()),
-    ("gw mv", "gwm", ()),
     ("gw rotate", "gwrot", ()),
     ("gw rot", "gwrot", ()),
     ("gw branch create", "gwbc", ()),

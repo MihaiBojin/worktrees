@@ -27,7 +27,6 @@ other repositories under the same worktree root are outside their scope.
 | `gwbd [NAME ...]` | confirm and delete eligible loose branches |
 | `gwa NAME [BASE]` | create or enter a worktree |
 | `gw list [QUERY]` | explicit form of the default listing |
-| `gwm NEW` | rename this worktree's branch and move its checkout |
 | `gwbc NAME` | start a branch from the assessed head ref |
 | `gwrot` | start the next branch in a series, or fast-forward the head branch |
 | `gw --help` | show command names, aliases and shortcuts |
@@ -222,9 +221,12 @@ forge proof. Git cannot distinguish them. A verdict describes completion;
 
 The CLI never deletes `main`, `master` or the head branch. It never removes
 the main checkout, locked or dirty worktrees, worktrees with untracked files,
-or worktrees with initialized submodules. For a submodule refusal, run
-`git submodule deinit --all` inside the target and retry. `gwp` also protects
-the current worktree. Detached worktrees get the same checks.
+or worktrees with an initialized submodule or a submodule store. For a
+submodule refusal, run `git submodule deinit --all` inside the target, delete
+the store the refusal names once nothing in it is needed, and retry. A locked
+worktree whose directory is away keeps its record and stays until you unlock
+it, as `git worktree remove` requires. `gwp` also protects the current
+worktree. Detached worktrees get the same checks.
 
 ### Permissions
 
@@ -250,6 +252,8 @@ gwr old-checkout --keep-branch --delete ignored-files
 
 `--keep-branch` removes an otherwise unprotected checkout without completion
 proof and retains its branch and stashes, including a protected branch.
+A detached checkout has no branch to keep its commits, so it still needs
+proof.
 It grants no ignored-file permission. Only `--delete ignored-files` combines
 with it; `empty`, `stashes` and `all` are usage errors with `--keep-branch`.
 
@@ -341,7 +345,8 @@ maintenance release:
 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4 or 2.44.1 and later patches in those
 series. The CLI refuses lower reported versions even if a vendor backported
 the fix, because it cannot verify that patch. Ordinary full clones keep
-working on older Git versions.
+working on older Git versions. A proof that needs an object the clone lacks
+makes that branch `unknown`, with one warning that `git backfill` fetches it.
 
 ## Navigation and branches
 
@@ -361,8 +366,7 @@ subdirectory. A worktree is selected through `gw list NAME`, so a worktree
 named `sync` or `p` never collides with a command. The fish and zsh adapters preserve stdout and status for metadata and
 change directory for terminal selections.
 
-`gwa NAME [BASE]` creates or enters a worktree. `gwm NEW` renames its branch
-and moves its checkout. `gwbc NAME` creates a branch from the assessed head
+`gwa NAME [BASE]` creates or enters a worktree. `gwbc NAME` creates a branch from the assessed head
 ref without setting that head as upstream. `gwrot` creates the next
 `NAME-YYYY-MM-DD_NNN` sibling from the head, stripping a previous rotation
 suffix. Names must be absent from local and cached remote refs. On the head

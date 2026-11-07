@@ -26,7 +26,7 @@ def _empty() -> dict:
 
 
 def path(repo: str | os.PathLike[str] | None = None) -> Path | None:
-    common = R.common_dir(repo=repo).value
+    common = R.shared_dir(repo)
     return Path(common) / _CACHE if common else None
 
 

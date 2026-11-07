@@ -117,7 +117,7 @@ def test_add_with_no_name_names_what_was_typed(world) -> None:
     assert p.stdout == ""
 
 
-@pytest.mark.parametrize("binary", ["gwa", "gwm", "gwr"])
+@pytest.mark.parametrize("binary", ["gwa", "gwr"])
 def test_a_command_that_lands_prints_its_help_on_stderr(world, binary: str) -> None:
     """Its shell function captures stdout to find where to go."""
     p = run(world, binary, "--help")
@@ -290,44 +290,6 @@ def test_the_pick_redraws_in_place_only_where_the_cursor_moves(
     assert pick.choose(rows, keys=iter([pick.DOWN, pick.PICK])) == rows[1]
     assert ("\033[2A" in err.getvalue()) is redraws
     assert ("\033[" in err.getvalue()) is redraws
-
-
-# --------------------------------------------------------------------------
-# gwm
-# --------------------------------------------------------------------------
-
-
-def test_move_renames_the_branch_and_the_directory(world) -> None:
-    wt = world.worktree("fix-parser")
-    p = run(world, "gwm", "parser-v2", at=wt)
-    assert p.returncode == 0, p.stderr
-    dest = world.parent / ".worktrees" / "parser-v2" / "repo"
-    assert p.stdout.strip() == str(dest)
-    assert dest.is_dir()
-    assert not wt.exists()
-    assert world.git("rev-parse", "--verify", "refs/heads/parser-v2")
-
-
-def test_move_refuses_from_the_main_checkout(world) -> None:
-    p = run(world, "gwm", "other")
-    assert p.returncode == 1
-    assert "main checkout" in p.stderr
-    assert world.git("rev-parse", "--abbrev-ref", "HEAD") == "main"
-
-
-def test_move_refuses_a_name_already_taken(world) -> None:
-    wt = world.worktree("fix-parser")
-    world.git("branch", "taken", "main")
-    p = run(world, "gwm", "taken", at=wt)
-    assert p.returncode == 1
-    assert "already a branch" in p.stderr
-    assert world.git("rev-parse", "--verify", "refs/heads/fix-parser")
-
-
-def test_move_leaves_no_empty_directory_behind(world) -> None:
-    wt = world.worktree("feat/one")
-    run(world, "gwm", "two", at=wt)
-    assert not (world.parent / ".worktrees" / "feat").exists()
 
 
 # --------------------------------------------------------------------------

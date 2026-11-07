@@ -93,3 +93,6 @@ jobs:
 
       - name: Run tests
         run: uv run --no-sync pytest tests -q
+
+      - name: Run integration tests
+        run: uv run --no-sync pytest tests -q -m integration

@@ -65,6 +65,30 @@ def submodule_status() -> None:
     """Initialized submodules have a status prefix other than '-'."""
 
 
+@git("rev-parse --path-format=absolute --git-path modules")
+def modules_dir() -> None:
+    """Where this worktree keeps its submodules' git directories."""
+
+
+def submodule_protection(path: str) -> str:
+    """Why `git worktree remove` would refuse this worktree, if it would.
+
+    git refuses while a submodule is initialized, and also while the
+    worktree's own modules directory exists, which `deinit` leaves behind.
+    """
+    initialized = any(
+        line and not line.startswith("-") for line in submodule_status(repo=path).lines
+    )
+    store = modules_dir(repo=path).value
+    if not initialized and not Path(store).exists():
+        return ""
+    return (
+        "it has an initialized submodule or a submodule store; run "
+        f"git submodule deinit --all in it, then delete {store} once nothing "
+        "in it is needed, since it holds the submodules' own commits, and retry"
+    )
+
+
 def assess(
     records: list[R.Worktree],
     only: str,
@@ -122,19 +146,19 @@ def assess(
             protections.append("it is locked")
         ignored = 0
         ignored_paths: tuple[str, ...] = ()
-        if wt.path != main:
+        if wt.path != main and not Path(wt.path).is_dir():
+            # A locked worktree keeps its record while its directory is away,
+            # on a removable disk say. git refuses to remove it until it is
+            # unlocked, so there is nothing here to read and nothing to delete.
+            protections.append("its directory is missing")
+        elif wt.path != main:
             progress.say(f"{wt.label}: reading its status")
             status = R.status_of(wt.path)
             if status.dirty:
                 protections.append("it has uncommitted changes or untracked files")
-            if any(
-                line and not line.startswith("-")
-                for line in submodule_status(repo=wt.path).lines
-            ):
-                protections.append(
-                    "it has an initialized submodule; run "
-                    "git submodule deinit --all in it and retry"
-                )
+            submodule = submodule_protection(wt.path)
+            if submodule:
+                protections.append(submodule)
             ignored_paths = tuple(status.ignored)
             ignored = len(status.ignored)
             if ignored and not delete_ignored and "ignored-files" not in permissions:
@@ -161,8 +185,10 @@ def assess(
         )
         row.permissions = permissions
         row.keep_branch = keep_branch
+        # --keep-branch waives completion proof because the branch keeps the
+        # commits. A detached worktree has no branch to keep them.
         row.eligible = not protections and (
-            keep_branch
+            (keep_branch and bool(wt.branch))
             or verdict == REMOVE
             or (verdict == EMPTY and "empty" in permissions)
         )

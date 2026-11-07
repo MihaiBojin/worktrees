@@ -101,19 +101,6 @@ def test_listing_marks_exact_current_root(world, suffix):
     assert row["here"]
 
 
-@pytest.mark.parametrize("suffix", [" ", "\t", "\n", "\r\n"])
-def test_move_uses_exact_current_root(world, suffix):
-    original = world.worktree("topic")
-    target = world.root / ("linked" + suffix)
-    world.git("worktree", "move", str(original), str(target))
-    result = run(world, "gwm", "renamed", "--json", at=target)
-    assert result.returncode == 0, result.stderr
-    destination = world.root / ".worktrees" / "renamed" / "repo"
-    assert json.loads(result.stdout)["path"] == str(destination)
-    assert destination.exists() and not target.exists()
-    assert world.git("rev-parse", "renamed")
-
-
 @pytest.mark.parametrize("suffix", [" ", "\t", "\ninside ", "\r\ninside "])
 def test_main_whitespace_root_is_the_exact_departure_destination(
     world, monkeypatch, capsys, suffix

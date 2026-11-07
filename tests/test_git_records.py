@@ -86,20 +86,6 @@ def test_configured_default_remote_name_is_exact(world, separator):
 
 
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085", "\u00a0"])
-def test_move_renames_exact_branch_without_touching_trimmed_sibling(world, separator):
-    name = "topic" + separator
-    path = world.worktree(name)
-    sibling = world.git("rev-parse", "main")
-    world.git("branch", "topic", sibling)
-    tip = world.commit("feature", at=path)
-    moved = run(world, "gwm", "renamed", "--json", at=path)
-    assert moved.returncode == 0, moved.stderr
-    assert world.git("rev-parse", "topic") == sibling
-    assert world.git("rev-parse", "renamed") == tip
-    assert not world.git("branch", "--list", name)
-
-
-@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085", "\u00a0"])
 def test_branch_start_uses_exact_symbolic_head(world, separator):
     name = "topic" + separator
     before = world.git("rev-parse", "main")

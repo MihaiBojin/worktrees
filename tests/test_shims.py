@@ -22,7 +22,7 @@ import pytest
 from conftest import World, env_for
 
 ROOT = Path(__file__).resolve().parents[1]
-CD_COMMANDS = ("gw", "gwa", "gwm", "gwr")
+CD_COMMANDS = ("gw", "gwa", "gwr")
 # A shortcut calls a command with its flags fixed, and nothing else.
 SHORTCUTS = {
     "gwr!": "gwr --delete ignored-files",
@@ -550,7 +550,7 @@ def test_gw_missing_name_does_not_move(world, shell):
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("name", ["gw", "gwr", "gwa", "gwm"])
+@pytest.mark.parametrize("name", ["gw", "gwr", "gwa"])
 @pytest.mark.parametrize("suffix", [" space \t", "line\nbreak", "final\n"])
 def test_navigation_preserves_exact_destination_bytes(tmp_path, shell, name, suffix):
     target = tmp_path / suffix
@@ -586,7 +586,7 @@ def test_gwr_lands_after_partial_failure_and_keeps_the_exit_code(tmp_path, shell
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("name", ["gw", "gwr", "gwa", "gwm"])
+@pytest.mark.parametrize("name", ["gw", "gwr", "gwa"])
 def test_adapter_preserves_data_output_on_failure(tmp_path, shell, name):
     payload = b'{"error": "cleanup failed"}\n\n'
     bin_dir = _fake(

@@ -553,8 +553,6 @@ def test_retired_status_spellings_select_worktree_metadata_through_list(
     [
         ("p", "prune"),
         ("a", "add"),
-        ("m", "move"),
-        ("mv", "move"),
         ("rm", "remove"),
         ("rot", "rotate"),
     ],
@@ -1272,7 +1270,7 @@ def test_sync_verbose_traces_git_and_forge_to_stderr_with_json(world, network, f
 
 
 @pytest.mark.parametrize("flag", ["-q", "--quiet", "-v", "--verbose"])
-@pytest.mark.parametrize("entry", ["gwa", "gwr", "gwbd", "gwbc", "gwrot", "gwp", "gwm"])
+@pytest.mark.parametrize("entry", ["gwa", "gwr", "gwbd", "gwbc", "gwrot", "gwp"])
 def test_mutating_commands_accept_each_output_flag_without_assessment(
     world, network, entry, flag
 ):

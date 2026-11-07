@@ -8,6 +8,7 @@ through `subprocess` so env, cwd, both streams and the exit code stay per-test.
 uv sync --all-extras
 uv run --no-sync pre-commit install
 uv run --no-sync pytest tests
+uv run --no-sync pytest tests -m integration
 uv run --no-sync pre-commit run --all-files
 ```
 
@@ -413,12 +414,14 @@ branch and merge ancestry. Closed unmerged requests are never proof.
 
 `eligible` combines proof, protections and `--delete` permissions.
 `prune.removable()` selects only eligible rows. `main`, `master` and the
-head branch are protected. Locked or dirty worktrees, untracked files and
-initialized submodules block removal. Ignored paths, empty branches and
+head branch are protected. Locked or dirty worktrees, untracked files,
+initialized submodules and a submodule store left by `deinit` block removal;
+`git worktree remove` refuses each. A locked worktree whose directory is away
+is assessed from its record. Ignored paths, empty branches and
 matching stashes require their own permission. `--yes` grants none.
 `gwp` also protects the current worktree; `gwr` needs a second terminal
 confirmation for it. `--keep-branch` retains the branch and its stashes,
-needs no completion proof for the checkout, and combines only with
+needs no completion proof for an attached checkout, and combines only with
 `--delete ignored-files`.
 
 The removal snapshot pins the branch and head SHAs, exact path, ignored

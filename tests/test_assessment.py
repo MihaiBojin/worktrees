@@ -149,6 +149,56 @@ def test_initialized_submodule_blocks_finished_worktree(world, detached):
     assert (wt / "module" / "README").exists()
 
 
+def test_a_submodule_store_left_by_deinit_blocks_removal_until_deleted(world):
+    """`git worktree remove` refuses while the store exists, so gwp must too."""
+    module = world.root / "module"
+    world.git("init", "--quiet", "-b", "main", str(module))
+    world.commit("README", at=module)
+    wt = world.worktree("done")
+    world.git(
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "--quiet",
+        str(module),
+        "module",
+        at=wt,
+    )
+    world.git("commit", "--quiet", "-m", "module", at=wt)
+    world.git("merge", "--quiet", "--no-ff", "-m", "merge", "done")
+    world.git("submodule", "deinit", "--quiet", "--all", "--force", at=wt)
+    store = world.git(
+        "rev-parse", "--path-format=absolute", "--git-path", "modules", at=wt
+    )
+    row = next(r for r in rows(world) if r["path"] == str(wt))
+    assert not row["eligible"]
+    assert f"then delete {store}" in row["why"]
+    shutil.rmtree(store)
+    result = run(world, "gwp", "--yes")
+    assert result.returncode == 0, result.stderr
+    assert not wt.exists()
+
+
+def test_a_locked_worktree_whose_directory_is_away_is_kept_and_assessed(world):
+    away = world.worktree("away")
+    world.git("worktree", "lock", str(away))
+    away.rename(away.with_name("elsewhere"))
+    done = world.merged_worktree("done")
+    found = {r["branch"]: r for r in rows(world)}
+    assert found["away"]["verdict"] == "empty"
+    assert not found["away"]["eligible"]
+    assert "it is locked" in found["away"]["protections"]
+    assert "its directory is missing" in found["away"]["protections"]
+    assert found["done"]["eligible"]
+    result = run(world, "gwp", "--yes")
+    assert result.returncode == 0, result.stderr
+    assert not done.exists()
+    assert "branch refs/heads/away\nlocked" in world.git(
+        "worktree", "list", "--porcelain"
+    )
+
+
 @pytest.mark.parametrize("name", ["main", "master", "trunk"])
 def test_protected_branch_names_with_nonconventional_remote_head(world, name):
     world.git("branch", "master")
@@ -764,3 +814,26 @@ def test_prune_yes_approves_metadata_modes_with_category_permissions(
     else:
         assert (done / "kept.secret").read_bytes() == b"keep until approved\n"
         assert world.git("rev-parse", "done") == tip
+
+
+def test_keep_branch_does_not_waive_proof_for_a_detached_worktree(world):
+    """No branch keeps a detached worktree's commits, so they need proof."""
+    wt = world.root / "detached"
+    world.git("worktree", "add", "--quiet", "--detach", str(wt))
+    tip = world.commit("detached work", at=wt)
+    result = run(world, "gwr", "--keep-branch", "--yes", str(wt))
+    assert result.returncode != 0
+    assert wt.exists()
+    assert world.git("rev-parse", "HEAD", at=wt) == tip
+
+
+def test_untracked_files_protect_under_show_untracked_files_no(world):
+    wt = world.merged_worktree("done")
+    (wt / "notes.txt").write_text("precious\n")
+    world.git("config", "status.showUntrackedFiles", "no")
+    row = next(r for r in rows(world) if r["branch"] == "done")
+    assert not row["eligible"]
+    assert "it has uncommitted changes or untracked files" in row["protections"]
+    result = run(world, "gwp", "--yes")
+    assert result.returncode == 0, result.stderr
+    assert (wt / "notes.txt").exists()

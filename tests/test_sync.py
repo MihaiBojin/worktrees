@@ -306,7 +306,6 @@ def test_branch_creation_refuses_unresolved_inferred_head(world, network, entry,
         ("gwp", ["--yes", "--json"]),
         ("gwbs", ["--json"]),
         ("gwbc", ["new", "--json"]),
-        ("gwm", ["renamed", "--json"]),
         ("gwbd", ["--dry-run", "--json"]),
         ("gwa", ["new", "--json"]),
         ("gw", ["--json"]),
@@ -663,31 +662,6 @@ def test_remote_main_and_local_trunk_do_not_replace_head_inference(world, networ
     origin(world)
     world.git("branch", "-m", "main", "trunk")
     assert listing(world, network)["head"] == {"ref": None, "source": "inferred"}
-
-
-def test_move_refuses_unresolved_head_without_renaming(world, network):
-    linked = world.worktree("linked")
-    world.git("branch", "-m", "main", "feature")
-    before = world.git("worktree", "list", "--porcelain")
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import gwm; raise SystemExit(gwm())",
-            "renamed",
-            "--json",
-        ],
-        cwd=linked,
-        env=network.env(),
-        capture_output=True,
-        text=True,
-    )
-    assert proc.returncode != 0
-    assert "No main or master branch." in proc.stderr
-    assert world.git("worktree", "list", "--porcelain") == before
-    assert world.git("rev-parse", "refs/heads/linked")
-    assert linked.exists()
-    assert not (linked.parent.parent / "renamed" / world.repo.name).exists()
 
 
 def test_inferred_head_notice_paints_both_branch_names_on_stderr(world, network):

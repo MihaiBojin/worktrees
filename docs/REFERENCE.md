@@ -50,7 +50,10 @@ permits removal.
 `main`, `master` and the assessed head branch cannot be deleted. The main
 checkout, locked worktrees, tracked changes, untracked files and initialized
 submodules block worktree deletion. The submodule refusal names
-`git submodule deinit --all`. Detached worktrees receive the same checks.
+`git submodule deinit --all`. A submodule store that `deinit` leaves in the
+worktree's git directory also blocks deletion, and the refusal names it. A
+locked worktree whose directory is missing is assessed from its record and
+kept. Detached worktrees receive the same checks.
 `gwp` also protects the current worktree.
 
 Ignored paths require `--delete ignored-files`; branch stashes require
@@ -61,7 +64,8 @@ branches and stashes for `gwbd`. `gwbs` rejects `--delete`; `gwbd` rejects
 mutation. `--yes` grants none of these permissions.
 
 `gwr --keep-branch` retains the branch and stashes and needs no completion
-proof for the checkout. It permits a checkout on a protected branch, while
+proof for the checkout. A detached checkout has no branch to keep its
+commits and still needs proof. It permits a checkout on a protected branch, while
 all other worktree protections remain. Only `--delete ignored-files` can be
 combined with it.
 
@@ -155,7 +159,9 @@ prefetch: 2.45.1 or newer, or maintenance series 2.39.4, 2.40.2, 2.41.1,
 2.42.2, 2.43.4 or 2.44.1 and later patches in each series. Lower reported
 vendor versions are refused even when a vendor may have backported the fix.
 Full clones do not have this version restriction. Missing local objects
-cannot trigger implicit network access from an offline command.
+cannot trigger implicit network access from an offline command: a proof that
+needs one gives `unknown`, and human output warns once, naming
+`git backfill`. Quiet and JSON omit the warning.
 
 ## JSON and streams
 

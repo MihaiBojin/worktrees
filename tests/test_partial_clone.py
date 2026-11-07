@@ -83,12 +83,26 @@ def test_partial_clone_assessment_never_fetches_or_writes(world, entry, args):
             "GIT_TRACE2_EVENT": str(trace),
         },
     )
-    assert result.returncode != 0, result.stdout
+    assert result.returncode == 0, result.stderr
+    rows = {r["branch"]: r for r in json.loads(result.stdout)["verdicts"]}
+    lacking = rows["loose" if entry == "gwbs" else "feature"]
+    assert lacking["verdict"] == "unknown"
+    assert lacking["why"].startswith("this partial clone lacks objects")
     assert git_snapshot(partial.repo) == before
     assert not any(
         "fetch" in child or any("upload-pack" in arg for arg in child)
         for child in trace_children(trace)
     )
+
+
+@pytest.mark.parametrize("quiet", [False, True])
+def test_partial_clone_says_once_why_verdicts_are_unknown(world, quiet):
+    partial = partial_clone(world)
+    partial.git("branch", "loose", "origin/feature")
+    result = cli(partial, *(["-q"] if quiet else []), entry="gwbs")
+    assert result.returncode == 0, result.stderr
+    warning = "some verdicts are unknown: this partial clone lacks objects"
+    assert result.stderr.count(warning) == (0 if quiet else 1)
 
 
 def git_version_stub(world, version: str) -> Path:

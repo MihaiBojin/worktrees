@@ -565,6 +565,11 @@ def test_initialized_submodule_after_confirmation_is_preserved(world, monkeypatc
     world.git("commit", "-qm", "module", at=path)
     world.git("merge", "--no-ff", "-qm", "merge", "topic")
     world.git("submodule", "deinit", "--all", at=path)
+    shutil.rmtree(
+        world.git(
+            "rev-parse", "--path-format=absolute", "--git-path", "modules", at=path
+        )
+    )
 
     def initialize(*args, **kwargs):
         world.git(
@@ -807,8 +812,6 @@ def test_stash_repair_uses_preceding_listed_subject(world, network, entry, pendi
     if entry == "gwbd":
         world.git("worktree", "remove", str(path))
     marker = world.root / "stash-race.json"
-    wrapper = network.bin / "git"
-    original = wrapper.read_text()
     injection = (
         "    if command[:2] == ['stash', 'drop']:\n"
         "        listing = [real_git, *prefix, 'stash', 'list', '--format=%H %gs']\n"
@@ -829,12 +832,7 @@ def test_stash_repair_uses_preceding_listed_subject(world, network, entry, pendi
         "        sys.stderr.write(actual.stderr)\n"
         "        sys.exit(actual.returncode)\n"
     )
-    wrapper.write_text(
-        original.replace(
-            "    if command[:1] == ['fetch']:\n",
-            injection + "    if command[:1] == ['fetch']:\n",
-        )
-    )
+    network.intercept(injection)
     proc = subprocess_cli(
         world,
         "topic",
@@ -891,8 +889,6 @@ def test_later_batch_target_is_rechecked(world, network, entry):
         world.git("worktree", "remove", str(first))
         world.git("worktree", "remove", str(second))
     marker = world.root / "batch-race.json"
-    wrapper = network.bin / "git"
-    original = wrapper.read_text()
     injection = (
         "    if command[:4] == ['update-ref', '--no-deref', '-d', "
         "'refs/heads/a-first']:\n"
@@ -908,12 +904,7 @@ def test_later_batch_target_is_rechecked(world, network, entry):
         "        sys.stderr.write(actual.stderr)\n"
         "        sys.exit(actual.returncode)\n"
     )
-    wrapper.write_text(
-        original.replace(
-            "    if command[:1] == ['fetch']:\n",
-            injection + "    if command[:1] == ['fetch']:\n",
-        )
-    )
+    network.intercept(injection)
     proc = subprocess_cli(
         world,
         *(["a-first", "b-second"] if entry == "gwbd" else []),

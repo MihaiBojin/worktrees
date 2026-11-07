@@ -14,8 +14,15 @@ between them.
 from __future__ import annotations
 
 import os
+import threading
 
+from .errors import MissingObjects
 from .git import git
+
+# Set when a proof needed an object this partial clone lacks, so the command
+# can say once why those branches are unknown.
+lacking = threading.Event()
+LACKING = "this partial clone lacks objects the proof needs"
 
 
 @git("merge-base --is-ancestor $ref $head", ok=(0, 1))
@@ -165,6 +172,24 @@ def branch_proof(
             "first-parent",
             data,
         )
+    try:
+        found = _local_proof(sha, head, repo)
+    except MissingObjects:
+        lacking.set()
+        return "unknown", LACKING, "", data
+    if found:
+        return "remove", found[1], found[0], data
+    if invalid:
+        return "unknown", invalid, "", data
+    if not merge_bases(sha, head, repo=repo).lines:
+        return "unknown", "no common history with the head branch", "", data
+    return "keep", "its commits are not contained in the head branch", "", data
+
+
+def _local_proof(
+    sha: str, head: str, repo: str | os.PathLike[str] | None
+) -> tuple[str, str] | None:
+    """The first local proof that the tip's change is in the head, if any."""
     for proof, why, check in (
         ("ancestry", "its tip is an ancestor of the head branch", is_ancestor),
         (
@@ -175,9 +200,5 @@ def branch_proof(
         ("content", "every changed path matches the head branch", content_matches),
     ):
         if check(sha, head, repo=repo):
-            return "remove", why, proof, data
-    if invalid:
-        return "unknown", invalid, "", data
-    if not merge_bases(sha, head, repo=repo).lines:
-        return "unknown", "no common history with the head branch", "", data
-    return "keep", "its commits are not contained in the head branch", "", data
+            return proof, why
+    return None

@@ -5,8 +5,13 @@ Python 3.11 through 3.14, no runtime dependencies, `uv` for everything else.
 ```console
 uv sync --all-extras
 uv run --no-sync pytest tests
+uv run --no-sync pytest tests -m integration
 uv run --no-sync pre-commit run --all-files
 ```
+
+The first run skips the integration tests: real fish and zsh, partial
+clones and the stand-in forge, about a second each. The second runs only
+those. CI runs both.
 
 `uv sync --all-extras --locked` is what CI runs, so a stale `uv.lock` fails
 there rather than resolving something the lock never described.
@@ -112,7 +117,7 @@ and ref deletion without a full expected SHA are refused.
 A binary cannot `cd` its caller. Its shell adapter captures stdout, changes
 directory when it receives a destination, and prints data otherwise. A
 terminal selection prints a destination path; a nonterminal list prints
-metadata. `gwa`, `gwm`, `gwr` and `gw` have adapters, for fish under
+metadata. `gwa`, `gwr` and `gw` have adapters, for fish under
 `functions/` and for zsh under
 `zsh/plugins/worktrees/functions/`. `gwp`, `gwbs`, `gwbd`, `gwbc` and `gwrot` need
 none.
