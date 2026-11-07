@@ -258,13 +258,28 @@ def test_empty_filter_preserves_ineligible_empty_rows(world):
 
 @pytest.mark.parametrize(
     "args",
-    [("status",), ("s",), ("st",), ("prune", "done"), ("prune", "--branch", "done")],
+    [
+        ("status", "--json"),
+        ("s", "--json"),
+        ("st", "--json"),
+        ("prune", "done"),
+        ("prune", "--branch", "done"),
+    ],
 )
 def test_retired_status_and_prune_targets_are_usage_errors(world, args):
     wt = finished(world)
     result = run(world, "gw", *args)
     assert result.returncode == 2, result.stderr
     assert wt.exists()
+
+
+@pytest.mark.parametrize("name", ["status", "s", "st"])
+def test_retired_status_names_select_exact_worktrees(world, name):
+    target = world.worktree(name)
+    result = run(world, "gw", name)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == str(target.resolve()) + "\n"
+    assert target.is_dir()
 
 
 def test_first_parent_history_is_read_once_per_assessment(world):

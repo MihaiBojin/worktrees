@@ -12,14 +12,16 @@ import os
 import pty
 import re
 import select
+import shlex
 import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from conftest import PATH, env_for
+from conftest import PATH, World, env_for
 
 from worktrees.cli import _CANONICAL, command_rows
 
@@ -31,12 +33,13 @@ ZSH = ROOT / "zsh" / "plugins" / "worktrees" / "completions"
 BINARIES = sorted(c.binary for _, c in command_rows() if c.binary)
 
 
-def _help(entry: str) -> str:
+def _help(entry: str, *args: str) -> str:
     p = subprocess.run(
         [
             sys.executable,
             "-c",
             f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            *args,
             "--help",
         ],
         capture_output=True,
@@ -47,9 +50,9 @@ def _help(entry: str) -> str:
     return p.stdout + p.stderr
 
 
-def _parsed_flags(entry: str) -> set[str]:
+def _parsed_flags(entry: str, *args: str) -> set[str]:
     """Every long flag `entry --help` lists, minus the hidden ones."""
-    return set(re.findall(r"(--[a-z][a-z-]+)", _help(entry)))
+    return set(re.findall(r"(--[a-z][a-z-]+)", _help(entry, *args)))
 
 
 def _fish_flags(binary: str) -> set[str]:
@@ -230,15 +233,7 @@ def test_a_path_holding_a_tab_is_still_offered(world) -> None:
 @pytest.mark.skipif(not shutil.which("zsh"), reason="zsh is not installed")
 @pytest.mark.parametrize("prefix", ["gw branch delete --dry", "gwbd --dry"])
 def test_zsh_completes_branch_flags_without_errors(world, prefix) -> None:
-    bin_dir = world.root / "bin"
-    bin_dir.mkdir()
-    for entry in ("gw", "gwbs", "gwbd"):
-        wrapper = bin_dir / entry
-        wrapper.write_text(
-            f"#!{sys.executable}\nfrom worktrees.cli import {entry}\n"
-            f"raise SystemExit({entry}())\n"
-        )
-        wrapper.chmod(0o755)
+    bin_dir = _completion_binaries(world)
     env = env_for(world)
     env.update(PATH=f"{bin_dir}:{env['PATH']}", TERM="xterm", ZDOTDIR=str(world.root))
     parent, child = pty.openpty()
@@ -279,3 +274,183 @@ def test_zsh_completes_branch_flags_without_errors(world, prefix) -> None:
         process.kill()
         process.wait(timeout=5)
         os.close(parent)
+
+
+def _completion_binaries(world: World) -> Path:
+    bin_dir = world.root / "completion-bin"
+    bin_dir.mkdir(exist_ok=True)
+    for entry in ["gw", *BINARIES]:
+        wrapper = bin_dir / entry
+        wrapper.write_text(
+            f"#!{sys.executable}\nfrom worktrees.cli import {entry}\n"
+            f"raise SystemExit({entry}())\n"
+        )
+        wrapper.chmod(0o755)
+    return bin_dir
+
+
+def _fish_complete(world: World, prefix: str) -> set[str]:
+    fish = shutil.which("fish")
+    if not fish:
+        pytest.fail("fish is required for completion verification")
+    bin_dir = _completion_binaries(world)
+    setup = f"set fish_complete_path {FISH}; " + "; ".join(
+        f"source {shlex.quote(str(path))}" for path in FISH.glob("*.fish")
+    )
+    process = subprocess.run(
+        [fish, "--no-config", "-c", f"{setup}; complete -C {shlex.quote(prefix)}"],
+        env={**env_for(world), "PATH": f"{bin_dir}:{PATH}"},
+        cwd=world.repo,
+        capture_output=True,
+        text=True,
+    )
+    assert process.returncode == 0, process.stderr
+    assert process.stderr == ""
+    return {line.split("\t")[0] for line in process.stdout.splitlines()}
+
+
+COMMAND_COMPLETIONS = [
+    ("gw", "gwp", ()),
+    ("gw --json", "gwp", ()),
+    ("gwp --dry-run", "gwp", ()),
+    ("gw sync", "main", ("sync",)),
+    ("gw prune", "gwp", ()),
+    ("gw p", "gwp", ()),
+    ("gw add", "gwa", ()),
+    ("gw a", "gwa", ()),
+    ("gw list", "gwl", ()),
+    ("gw list sync", "gwl", ()),
+    ("gw ls", "gwl", ()),
+    ("gw remove", "gwr", ()),
+    ("gw rm", "gwr", ()),
+    ("gw move", "gwm", ()),
+    ("gw mv", "gwm", ()),
+    ("gw rotate", "gwrot", ()),
+    ("gw rot", "gwrot", ()),
+    ("gw branch create", "gwbc", ()),
+    ("gw branch status", "gwbs", ()),
+    ("gw branch delete", "gwbd", ()),
+    ("gw prune --dry-run", "gwp", ()),
+]
+
+
+@pytest.mark.parametrize("prefix,entry,args", COMMAND_COMPLETIONS)
+def test_fish_dispatches_each_command_to_its_own_flags(world, prefix, entry, args):
+    wanted = _parsed_flags(entry, *args) | set(
+        re.findall(r"(?:^|\s)(-[a-z])(?:,|\s)", _help(entry, *args))
+    )
+    if prefix in ("gw", "gw --json", "gwp --dry-run", "gw prune --dry-run"):
+        wanted -= {"--verbose", "-v"}
+    offered = {
+        word for word in _fish_complete(world, prefix + " -") if word.startswith("-")
+    }
+    assert offered == wanted
+
+
+@pytest.mark.parametrize(
+    "prefix,values",
+    [
+        ("gwp --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gw --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gw --only", {"remove", "empty", "keep", "unknown"}),
+        ("gwr --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gwbd --delete", {"empty", "stashes", "all"}),
+        ("gwp --only", {"remove", "empty", "keep", "unknown"}),
+        ("gwbs --only", {"remove", "empty", "keep", "unknown"}),
+        ("gw prune --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gw branch delete --delete", {"empty", "stashes", "all"}),
+        ("gw branch status --only", {"remove", "empty", "keep", "unknown"}),
+    ],
+)
+def test_fish_offers_the_complete_option_value_set(world, prefix, values):
+    assert _fish_complete(world, prefix + " ") == values
+
+
+def _zsh_complete(world: World, prefix: str) -> set[str]:
+    zsh = shutil.which("zsh")
+    if not zsh:
+        pytest.fail("zsh is required for completion verification")
+    # The same wrappers give both shells the installed command interface.
+    _completion_binaries(world)
+    matches = world.root / "zsh-matches"
+    ready = world.root / "zsh-ready"
+    env = {
+        **env_for(world),
+        "PATH": f"{world.root / 'completion-bin'}:{PATH}",
+        "TERM": "xterm",
+        "ZDOTDIR": str(world.root),
+    }
+    parent, child = pty.openpty()
+    process = subprocess.Popen(
+        [zsh, "-f"], stdin=child, stdout=child, stderr=child, cwd=world.repo, env=env
+    )
+    os.close(child)
+    output = bytearray()
+
+    def read_until(predicate: Callable[[], bool]) -> None:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if select.select([parent], [], [], 0.05)[0]:
+                output.extend(os.read(parent, 65536))
+            if predicate():
+                return
+        pytest.fail(f"zsh completion did not finish: {bytes(output)!r}")
+
+    try:
+        setup = (
+            f"fpath=({ZSH} $fpath); autoload -Uz compinit; compinit -D -u; "
+            "PS1='REA''DY> '; "
+            'compadd() { local -a captured; builtin compadd -O captured "$@"; '
+            "(( $#captured )) && print -rl -- $captured >> "
+            f"{shlex.quote(str(matches))}; "
+            'builtin compadd "$@"; }; '
+            "_task_complete() { _main_complete; "
+            f"print done > {shlex.quote(str(ready))}; "
+            "}; zle -C task-complete complete-word _task_complete; "
+            "bindkey '^I' task-complete\n"
+        )
+        os.write(parent, setup.encode())
+        read_until(lambda: b"READY> " in output)
+        output.clear()
+        os.write(parent, (prefix + "\t").encode())
+        read_until(ready.exists)
+        assert b"bad option" not in output, output
+        assert b"command not found" not in output, output
+        return set(matches.read_text().splitlines()) if matches.exists() else set()
+    finally:
+        process.kill()
+        process.wait(timeout=5)
+        os.close(parent)
+
+
+@pytest.mark.parametrize("prefix,entry,args", COMMAND_COMPLETIONS)
+def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry, args):
+    wanted = _parsed_flags(entry, *args) | set(
+        re.findall(r"(?:^|\s)(-[a-z])(?:,|\s)", _help(entry, *args))
+    )
+    if prefix in ("gw", "gw --json", "gwp --dry-run", "gw prune --dry-run"):
+        wanted -= {"--verbose", "-v"}
+    wanted -= set(prefix.split())
+    offered = {
+        word for word in _zsh_complete(world, prefix + " -") if word.startswith("-")
+    }
+    assert offered == wanted
+
+
+@pytest.mark.parametrize(
+    "prefix,values",
+    [
+        ("gwp --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gw --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gw --only", {"remove", "empty", "keep", "unknown"}),
+        ("gwr --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gwbd --delete", {"empty", "stashes", "all"}),
+        ("gwp --only", {"remove", "empty", "keep", "unknown"}),
+        ("gwbs --only", {"remove", "empty", "keep", "unknown"}),
+        ("gw prune --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gw branch delete --delete", {"empty", "stashes", "all"}),
+        ("gw branch status --only", {"remove", "empty", "keep", "unknown"}),
+    ],
+)
+def test_zsh_offers_the_complete_option_value_set(world, prefix, values):
+    assert _zsh_complete(world, prefix + " ") == values

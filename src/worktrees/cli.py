@@ -71,6 +71,14 @@ def _same(a: str, b: str) -> bool:
     return bool(a) and bool(b) and Path(a).resolve() == Path(b).resolve()
 
 
+def _refuse_ambiguous(found: list[R.Worktree]) -> None:
+    if len(found) > 1 and not sys.stdin.isatty():
+        raise Refused(
+            "ambiguous worktree name; use an exact path:\n"
+            + "\n".join(w.path for w in found)
+        )
+
+
 def _verdict_table(rows: list[verdicts.Verdict]) -> str:
     """The assessment table for worktree previews and pruning."""
 
@@ -825,6 +833,9 @@ def run_list(args: argparse.Namespace) -> int:
         _err(render.note(f"already in {render.branch(found[0].label)}"))
         return 0
 
+    if args.query:
+        _refuse_ambiguous(offered)
+
     # Which repository this is, above the list, so nobody has to run
     # `git remote -v` to find out. Only where the picker is drawn: --list and
     # --json are what a script reads, and a query that narrows to one takes it
@@ -900,11 +911,7 @@ def run_remove(args: argparse.Namespace) -> int:
             found = [
                 w for w in worktrees if args.query in (layout.name_of(w.path), w.branch)
             ]
-        if len(found) > 1 and not sys.stdin.isatty():
-            raise Refused(
-                "ambiguous worktree name; use an exact path:\n"
-                + "\n".join(w.path for w in found)
-            )
+        _refuse_ambiguous(found)
     by_path = {v.path: v for v in rows}
     candidates = [by_path[w.path] for w in found if w.path in by_path]
 
@@ -1084,6 +1091,9 @@ def run_help(args: argparse.Namespace) -> int:
         "standing in.\nA binary cannot do that, so each needs the shell function "
         "of the same name\nfrom the plugin; the rest need nothing but $PATH."
     )
+    print("gw NAME selects a worktree; subcommands take precedence.")
+    print("gwp! skips confirmation; gwr! deletes ignored files.")
+    print("gwp!! deletes empty branches, ignored files and branch stashes.")
     text, same = plugin_state()
     print(o(text, "" if same else YELLOW))
     print()
@@ -1118,6 +1128,7 @@ def _complete_commands() -> int:
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
     add_status_flags(p)
+    p.epilog = "gwp!! deletes empty branches, ignored files and branch stashes."
     p.add_argument("--dry-run", action="store_true", help="report without deleting")
     p.add_argument(
         "-y", "--yes", action="store_true", help="do not ask before removing"
@@ -1505,6 +1516,8 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     if not args_in:
         args_in = ["prune", "--dry-run"]
     if args_in and not args_in[0].startswith("-") and args_in[0] not in _CANONICAL:
+        if len(args_in) == 1:
+            return gwl(args_in)
         return _unknown_command(prog, args_in[0])
 
     p = _parser(prog, "Git worktree commands that refuse to lose work.")
