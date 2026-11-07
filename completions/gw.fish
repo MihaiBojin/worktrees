@@ -23,7 +23,7 @@ complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcomman
 complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from delete' \
     -l dry-run -d 'report without deleting'
 complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from delete' \
-    -l delete -x -a 'empty all' -d 'also delete a branch this covers'
+    -l delete -x -a 'empty all' -d 'also delete a branch VALUE covers'
 complete -c gw -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from delete' \
     -s y -l yes -d 'skip deletion confirmation'
 

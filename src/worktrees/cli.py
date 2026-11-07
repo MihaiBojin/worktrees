@@ -36,7 +36,7 @@ def _same(a: str, b: str) -> bool:
 def _verdict_table(rows: list[verdicts.Verdict], plain: bool = False) -> str:
     """The table `gwp` prints. `plain` is `gwp --list`'s, never
     coloured, since like --json it is what a script reads."""
-    from .verdicts import REMOVE
+    from .verdicts import EMPTY, REMOVE
 
     if plain:
         return table(
@@ -51,8 +51,8 @@ def _verdict_table(rows: list[verdicts.Verdict], plain: bool = False) -> str:
         Cell("VERDICT", BOLD),
         Cell("WHY", BOLD),
     )
-    # A `remove` row that a protection holds back keeps its verdict's colour
-    # and dims the rest, so it reads as finished and not removable.
+    # A `remove` or `empty` row held back keeps its verdict's colour
+    # and dims the rest, so it reads as done and not removable.
     body: list[Row] = [
         (
             Cell(v.label, DIM if held else render.BRANCH),
@@ -60,7 +60,9 @@ def _verdict_table(rows: list[verdicts.Verdict], plain: bool = False) -> str:
             Cell(v.verdict, render.VERDICT.get(v.verdict, "")),
             Cell(v.why, DIM if held else ""),
         )
-        for v, held in ((v, v.verdict == REMOVE and not v.eligible) for v in rows)
+        for v, held in (
+            (v, v.verdict in (REMOVE, EMPTY) and not v.eligible) for v in rows
+        )
     ]
     return table([head, *body])
 

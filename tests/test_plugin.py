@@ -107,6 +107,9 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
     started = world.worktree("started")
     world.git("branch", "idle")
     world.finished("dirty").joinpath("wip").write_text("x")
+    # Empty, but held back by more than the permission: not offered.
+    world.worktree("master")
+    world.worktree("busy").joinpath("wip").write_text("x")
 
     branches = _jq(_filter("gwbs"), _json(world, "gwbs"))
     out = _jq(_filter("gwp"), _json(world, "gwp"))
@@ -118,8 +121,9 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
         ("started", str(started))
     ]
     assert [r["branch"] for r in branches["empty"]] == ["idle"]
-    # The main checkout, and a finished worktree with uncommitted changes.
-    assert (out["kept"], out["unknown"], out["ignored"]) == (2, 0, [])
+    # The main checkout, a finished worktree with uncommitted changes, master
+    # and an empty worktree with uncommitted changes.
+    assert (out["kept"], out["unknown"], out["ignored"]) == (4, 0, [])
 
     # Every other branch is checked out, so gwbs leaves it to gwp.
     assert [row["branch"] for row in branches["branches"]] == ["loose"]
