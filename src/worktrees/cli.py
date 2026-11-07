@@ -161,7 +161,7 @@ def _permits(args: argparse.Namespace, value: str) -> bool:
 
 
 def _add_assess_flags(p: argparse.ArgumentParser) -> None:
-    _add_delete_flag(p, "count a worktree as eligible though this goes with it")
+    _add_delete_flag(p, "make a worktree eligible though VALUE goes with it")
     p.add_argument("--json", action="store_true", help="verdicts as data")
     p.add_argument("-q", "--quiet", action="store_true", help="verdicts only")
     p.add_argument(
@@ -737,7 +737,7 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "-f", "--force", action="store_true", help="remove it even when unfinished"
     )
-    _add_delete_flag(p, "also delete this; nothing restores it")
+    _add_delete_flag(p, "also delete VALUE; nothing restores it")
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
     # Its own, not gw list's: assess skips the main checkout, so gwr can never act
     # on it and offering it would complete to "no worktree matches".
