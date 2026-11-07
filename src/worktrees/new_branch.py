@@ -64,7 +64,7 @@ def create(
     resolved = R.head(repo)
     if not resolved.ref:
         raise Refusal(resolved.unresolved)
-    base = R.symbolic_ref(resolved.ref, repo=repo).out.strip() or resolved.ref
+    base = R.symbolic_ref(resolved.ref, repo=repo).value or resolved.ref
 
     sha = short_sha(base, repo=repo)
     switch_create(name, base, repo=repo)

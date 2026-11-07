@@ -120,7 +120,7 @@ def rotate(
     repo: str | os.PathLike[str] | None = None,
 ) -> Rotated | CaughtUp:
     """Start the next branch after this one, or catch the head branch up."""
-    branch = R.current_branch(repo=repo).out.strip()
+    branch = R.current_branch(repo=repo).value
     if not branch:
         raise Refusal(
             "HEAD is detached, so there is no branch to name the next one "
@@ -131,7 +131,7 @@ def rotate(
     resolved = R.head(repo)
     if not resolved.ref:
         raise Refusal(resolved.unresolved)
-    base = R.symbolic_ref(resolved.ref, repo=repo).out.strip() or resolved.ref
+    base = R.symbolic_ref(resolved.ref, repo=repo).value or resolved.ref
 
     head_name = R.ref_name(base)
     if remote:

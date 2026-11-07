@@ -54,8 +54,13 @@ class Run:
         return self.code == 0
 
     @property
+    def value(self) -> str:
+        """One Git value, excluding only its output-terminating LF."""
+        return self.out.removesuffix("\n")
+
+    @property
     def lines(self) -> list[str]:
-        return self.out.splitlines()
+        return self.value.split("\n") if self.out else []
 
 
 class Options:
@@ -392,13 +397,14 @@ def git(
             proc = subprocess.run(
                 full,
                 capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="surrogateescape",
-                input=input,
+                input=input.encode("utf-8", "surrogateescape")
+                if input is not None
+                else None,
                 env=environ,
                 check=False,
             )
+            stdout = proc.stdout.decode("utf-8", "surrogateescape")
+            stderr = proc.stderr.decode("utf-8", "surrogateescape")
             if options.verbose:
                 # After it ran, so the command and its answer print as one
                 # block even when eight threads are asking at once.
@@ -406,8 +412,8 @@ def git(
                     render.trace(
                         full,
                         proc.returncode,
-                        proc.stdout,
-                        proc.stderr,
+                        stdout,
+                        stderr,
                         failed=proc.returncode not in accept,
                     )
                 )
@@ -417,9 +423,9 @@ def git(
                 command = render.command("git " + shlex.join(argv))
                 raise GitError(
                     f"{command} exited {proc.returncode}:\n"
-                    f"{proc.stderr.strip() or '(no output)'}"
+                    f"{stderr.strip() or '(no output)'}"
                 )
-            return Run(proc.returncode, proc.stdout, proc.stderr)
+            return Run(proc.returncode, stdout, stderr)
 
         _registry.append(
             Command(

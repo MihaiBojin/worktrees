@@ -16,8 +16,8 @@
 }
 
 _arguments -s \
-    '(-f --force)'{-f,--force}'[remove it even when unfinished]' \
-    '--delete-ignored[also delete its gitignored files]' \
+    '*--delete[permit deletion categories]:value:' \
+    '--keep-branch[retain the branch and its stashes]' \
     '(-y --yes)'{-y,--yes}'[do not ask]' \
     '--json[the result as data]' \
     '(-q --quiet)'{-q,--quiet}'[the path alone]' \

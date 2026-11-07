@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import branches
 
 from . import render
 from . import repo as R
-from .git import GitError, Refused, git
+from .git import Refused, git
 from .verdicts import REMOVE as REMOVE
 from .verdicts import Verdict
 
@@ -52,6 +58,168 @@ def object_type(sha: str) -> None:
 @git("stash list --format='%gd %H %gs'")
 def stash_list() -> None:
     """Every stash entry: its selector, then the subject naming its branch."""
+
+
+@dataclass(frozen=True)
+class HeadState:
+    ref: str
+    target: str
+    sha: str
+    branch: str
+    first_parents: frozenset[str]
+    notices: tuple[str, ...]
+
+
+def head_state(
+    ref: str,
+    branch: str,
+    repo: str | os.PathLike[str] | None = None,
+    *,
+    sha: str | None = None,
+    first_parents: set[str] | None = None,
+) -> HeadState:
+    from . import merged, sync
+
+    tip = sha if sha is not None else sha_of(ref, repo=repo).out.strip() if ref else ""
+    parents = (
+        first_parents
+        if first_parents is not None
+        else (merged.first_parent_history(tip, repo=repo).lines if tip else [])
+    )
+    target = R.symbolic_ref(ref, repo=repo).value if ref else ""
+    return HeadState(
+        ref,
+        target or ref,
+        tip,
+        branch,
+        frozenset(parents),
+        tuple(sync.notices(True, repo)),
+    )
+
+
+def check_head(state: HeadState, repo=None) -> None:
+    current = R.head(repo)
+    ref = current.ref or ""
+    target = R.symbolic_ref(ref, repo=repo).value if ref else ""
+    sha = sha_of(ref, repo=repo).out.strip() if ref else ""
+    if (ref, target or ref, sha, current.branch) != (
+        state.ref,
+        state.target,
+        state.sha,
+        state.branch,
+    ):
+        raise Refused("the head branch changed after assessment; run the command again")
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    head: HeadState
+    branch: str
+    sha: str
+    path: str = ""
+    flags: frozenset[str] = frozenset()
+    ignored: tuple[str, ...] = ()
+    stashes: tuple[tuple[str, str], ...] = ()
+
+
+def stash_subjects(shas: list[str], entries: list[str]) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        sorted(
+            (sha, subject)
+            for _, sha, subject in (line.split(" ", 2) for line in entries)
+            if sha in shas
+        )
+    )
+
+
+@dataclass
+class Outcome:
+    path: str = ""
+    branch: str = ""
+    worktree_removed: bool = False
+    branch_removed: bool = False
+    retained: list[str] = field(default_factory=list)
+    dropped: list[str] = field(default_factory=list)
+    skipped: list[str] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
+    destination: str = ""
+
+
+@git("stash drop $selector", mutates=True, env={"LC_ALL": "C"})
+def stash_drop(selector: str) -> None:
+    """Drop a current index and report the SHA Git actually removed."""
+
+
+@git("stash store -m $subject $sha", mutates=True)
+def stash_store(subject: str, sha: str) -> None:
+    """Restore a stash with its recorded subject."""
+
+
+@git("log -1 --format=%s $sha")
+def stash_subject(sha: str) -> None:
+    """Read the subject of an entry inserted after the last listing."""
+
+
+def drop_stashes(snapshot: Snapshot, outcome: Outcome, repo=None) -> None:
+    wanted = {sha for sha, _ in snapshot.stashes}
+    listing = [line.split(" ", 2) for line in stash_list(repo=repo).lines]
+    ordered = [sha for _, sha, _ in reversed(listing) if sha in wanted]
+    vanished = wanted - set(ordered)
+    outcome.skipped.extend(sorted(vanished))
+    outcome.retained = [sha for sha in outcome.retained if sha not in vanished]
+    for sha in ordered:
+        entries = [line.split(" ", 2) for line in stash_list(repo=repo).lines]
+        found = next((item for item in entries if item[1] == sha), None)
+        if found is None:
+            outcome.skipped.append(sha)
+            outcome.retained.remove(sha)
+            continue
+        result = stash_drop(found[0], repo=repo)
+        match = re.search(r"Dropped stash@\{\d+\} \(([0-9a-f]+)\)", result.out)
+        if not match:
+            raise Refused(
+                f"stash {sha} not dropped: Git did not identify the dropped entry"
+            )
+        actual = match.group(1)
+        if actual != sha:
+            subject = next((item[2] for item in entries if item[1] == actual), None)
+            if subject is None:
+                subject = stash_subject(actual, repo=repo).value
+            stash_store(subject, actual, repo=repo)
+            raise Refused(
+                f"stash {sha} not dropped: concurrent stash change; restored {actual}"
+            )
+        outcome.dropped.append(sha)
+        outcome.retained.remove(sha)
+
+
+def delete_ref(snapshot: Snapshot, outcome: Outcome, repo=None) -> None:
+    if any(wt.branch == snapshot.branch for wt in R.worktrees(repo)):
+        raise Refused(
+            f"branch {snapshot.branch} kept: it is checked out in another worktree"
+        )
+    if R.symbolic_ref(f"refs/heads/{snapshot.branch}", repo=repo).value:
+        raise Refused(f"branch {snapshot.branch} kept: it is a symbolic branch ref")
+    ref_delete(f"refs/heads/{snapshot.branch}", snapshot.sha, repo=repo)
+    outcome.branch_removed = True
+    drop_stashes(snapshot, outcome, repo)
+
+
+def report(outcome: Outcome, say: Callable[[str], None]) -> None:
+    if outcome.path:
+        state = "removed" if outcome.worktree_removed else "kept"
+        say(render.note(f"worktree {outcome.path}: {state}"))
+    if outcome.branch:
+        state = "deleted" if outcome.branch_removed else "retained"
+        say(render.note(f"branch {render.branch(outcome.branch)}: {state}"))
+    for sha in outcome.retained:
+        say(render.note(f"stash {sha}: retained"))
+    for sha in outcome.dropped:
+        say(render.note(f"stash {sha}: dropped"))
+    for sha in outcome.skipped:
+        say(render.note(f"stash {sha}: already absent"))
+    for failure in outcome.failed:
+        say(render.fail(failure))
 
 
 def removable(verdicts: list[Verdict]) -> list[Verdict]:
@@ -114,51 +282,51 @@ def stashes_on(
 
 
 def branch_protections(
-    branch: str, head_branch: str, verdict: str, stashes: list[str]
+    branch: str,
+    head_branch: str,
+    verdict: str,
+    stashes: list[str],
+    permissions: frozenset[str] = frozenset(),
+    keep_branch: bool = False,
 ) -> list[str]:
     """Branch rules that apply to loose refs and checked-out branches."""
-    reasons = []
+    reasons: list[str] = []
+    if keep_branch:
+        return reasons
     if branch and branch in ("main", "master", head_branch):
         reasons.append("it is a protected branch")
-    if stashes:
+    if stashes and "stashes" not in permissions:
         reasons.append("its branch has stashes")
-    if verdict == "empty":
+    if verdict == "empty" and "empty" not in permissions:
         reasons.append("empty branches require deletion permission")
     return reasons
 
 
 def plan(
-    go: list[Verdict],
+    go: Sequence[Verdict | branches.Verdict],
     say: Callable[[str], None],
     repo: str | os.PathLike[str] | None = None,
+    *,
+    keep_branch: bool = False,
 ) -> None:
-    """Print what would go, and what puts it back, before anything does.
-
-    --quiet and --yes do not silence this.
-
-    Every ignored path is named, whatever flag got the worktree this far:
-    `git worktree remove` takes the whole directory, so --delete-ignored
-    decides consent and never decides what is deleted.
-    """
-    entries = stash_list(repo=repo).lines
+    """Disclose the immutable assessed state before confirmation."""
     for v in go:
-        say(f"{render.branch(v.label)}  {render.err(v.path, render.DIM)}")
-        sha = restore_sha(v.branch, repo=repo)
-        if sha:
-            restore = render.restore(v.branch, sha)
-            say(f"  {render.err('restore with:', render.DIM)} {restore}")
-        # A stash survives the branch it was made on: refs/stash pins its own
-        # commits. What does not survive is the name in its subject, so say
-        # which entry is about to start pointing at nothing.
-        for selector in stashes_on(v.branch, entries):
-            say(
-                render.err(
-                    f"  {selector} was made on this branch and outlives it: "
-                    f"git stash branch <new> {selector}",
-                    render.DIM,
-                )
-            )
-        for path in R.ignored_paths(v.path):
+        snapshot = v.snapshot
+        if snapshot is None:
+            raise Refused("no assessed deletion snapshot")
+        for notice in snapshot.head.notices:
+            say(render.note(notice))
+        say(
+            f"{render.branch(v.branch or '(detached)')}  "
+            f"{render.err(snapshot.path, render.DIM)}"
+        )
+        if v.branch:
+            say(f"  restore with: {render.restore(v.branch, snapshot.sha)}")
+            if keep_branch:
+                say("  branch and its stashes retained")
+        for sha, subject in snapshot.stashes:
+            say(f"  stash {sha}: git stash store -m {shlex.quote(subject)} {sha}")
+        for path in snapshot.ignored:
             say(render.err(f"  deleting ignored, unrecoverable: {path}", render.YELLOW))
 
 
@@ -173,7 +341,9 @@ def _prompt(text: str) -> str:
     return sys.stdin.readline()
 
 
-def confirm(count: int, ask: Callable[[str], str] | None = None) -> bool:
+def confirm(
+    count: int, ask: Callable[[str], str] | None = None, *, never: bool = False
+) -> bool:
     """Ask before removing. Anything but yes is no.
 
     A run whose stdin is not a terminal cannot answer, so it is refused
@@ -187,41 +357,26 @@ def confirm(count: int, ask: Callable[[str], str] | None = None) -> bool:
                 "pass --yes to remove them"
             )
         ask = _prompt
-    question = render.ask(f"remove {count} worktree(s)?", "[y/N]")
+    question = render.ask(
+        "Never synced. Delete anyway?" if never else f"remove {count} worktree(s)?",
+        "[y/N]",
+    )
     return ask(question).strip().lower() in ("y", "yes")
 
 
-def sweep(
-    go: list[Verdict],
-    say: Callable[[str], None],
-    repo: str | os.PathLike[str] | None = None,
-) -> int:
-    """Remove each one, in order. Returns how many failed.
+def never_synced(go: Sequence[Verdict | branches.Verdict]) -> bool:
+    from . import sync
 
-    Serial because `worktree remove` and `update-ref` take the repository's
-    shared refs and its worktrees/ directory. One that git refuses is not a
-    reason to abandon the rest.
-    """
-    main = R.main_worktree(repo)
-    failed = 0
-    for v in go:
-        try:
-            worktree_remove(v.path, repo=repo)
-        except (GitError, Refused) as exc:
-            say(render.fail(f"{render.branch(v.label)} kept: {exc}"))
-            failed += 1
-            continue
+    return any(v.snapshot and sync.NEVER in v.snapshot.head.notices for v in go)
 
-        _prune_empty_parents(Path(v.path).parent, main)
 
-        if v.branch:
-            try:
-                ref_delete(f"refs/heads/{v.branch}", v.sha, repo=repo)
-            except (GitError, Refused) as exc:
-                say(render.fail(f"branch {render.branch(v.branch)} kept: {exc}"))
+def sweep(go: list[Verdict], say: Callable[[str], None], repo=None) -> list[Outcome]:
+    """Remove independently approved targets and retain each step's outcome."""
+    from . import worktree
 
+    outcomes = [worktree.remove(v, say, repo=repo) for v in go]
     worktree_prune(repo=repo)
-    return failed
+    return outcomes
 
 
 def _prune_empty_parents(start: Path, main: str) -> None:

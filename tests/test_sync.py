@@ -406,7 +406,7 @@ def test_dangling_clone_head_refuses_branch_creation_with_sync_hint(
     "entry, args",
     [
         ("gwp", ["--yes"]),
-        ("gwr", ["linked", "--yes", "--force"]),
+        ("gwr", ["linked", "--yes", "--keep-branch"]),
         ("gwbd", ["feature", "--yes"]),
     ],
 )
