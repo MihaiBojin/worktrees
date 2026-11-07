@@ -2,7 +2,7 @@
 
 complete -c gwp -f
 
-complete -c gwp -l delete -x -a 'empty ignored-files stashes all' -d 'count a worktree as eligible though this goes with it'
+complete -c gwp -l delete -x -a 'empty ignored-files stashes all' -d 'make a worktree eligible though VALUE goes with it'
 complete -c gwp -l only -x -a 'remove empty keep unknown' -d 'narrow the table; what is removed stays the same'
 complete -c gwp -s l -l list -d 'print the table uncoloured and ask nothing'
 complete -c gwp -s y -l yes -d 'do not ask before removing'
