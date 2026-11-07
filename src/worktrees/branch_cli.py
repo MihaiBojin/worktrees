@@ -63,7 +63,7 @@ def delete_flags(p: argparse.ArgumentParser) -> None:
         "--all", action="store_true", help="assess all local branches for deletion"
     )
     p.add_argument("--dry-run", action="store_true", help="report without deleting")
-    add_delete_flag(p, "also delete a branch this covers", DELETE_VALUES)
+    add_delete_flag(p, "also delete a branch VALUE covers", DELETE_VALUES)
     p.add_argument(
         "-y", "--yes", action="store_true", help="skip deletion confirmation"
     )
