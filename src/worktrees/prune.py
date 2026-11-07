@@ -97,6 +97,76 @@ def restore_sha(branch: str, repo: str | os.PathLike[str] | None = None) -> str:
     return text
 
 
+# The quotes survive shlex.split, so the format stays one argv element.
+@git("stash list --format='%gd %H %gs'")
+def stash_list() -> None:
+    """Every stash: its selector, its sha and its subject."""
+
+
+@git("stash drop $selector", mutates=True)
+def stash_drop(selector: str) -> None:
+    """Drop one entry by index. git prints `Dropped stash@{N} (SHA)`."""
+
+
+@git("stash store -m $subject $sha", mutates=True)
+def stash_store(subject: str, sha: str) -> None:
+    """Put a dropped entry back at the top of the list."""
+
+
+@git("log -1 --format=%s $sha")
+def subject_of(sha: str) -> None:
+    """A commit's subject line."""
+
+
+def _listed() -> dict[str, tuple[str, str]]:
+    """Each stash's sha, mapped to its selector and its subject."""
+    found = {}
+    for line in stash_list().lines:
+        selector, sha, subject = line.split(" ", 2)
+        found[sha] = (selector, subject)
+    return found
+
+
+def drop_stashes(stashes: list[R.Stash], say: Callable[[str], None]) -> bool:
+    """Drop each of these, by sha, and put back anything dropped by mistake.
+    Returns whether none was left behind.
+
+    The stash list is shared by every worktree, so an index read a moment
+    ago may name another entry now. Each drop reads the list again, and the
+    sha git prints says which entry went. Highest index first, so the
+    indexes still to come stay where they were.
+    """
+    first = _listed()
+    order = sorted(
+        stashes,
+        key=lambda s: int(first[s.sha][0][7:-1]) if s.sha in first else -1,
+        reverse=True,
+    )
+    clean = True
+    for stash in order:
+        now = _listed()
+        if stash.sha not in now:
+            say(render.note(f"stash {stash.subject} is already gone"))
+            continue
+        selector = now[stash.sha][0]
+        out = stash_drop(selector).out.strip()
+        dropped = out.rpartition("(")[2].rstrip(")")
+        if dropped == stash.sha:
+            say(render.note(f"dropped stash {stash.subject}"))
+            continue
+        # Somebody changed the list in between: put that entry back.
+        subject = now[dropped][1] if dropped in now else subject_of(dropped).out.strip()
+        stash_store(subject, dropped)
+        say(
+            render.fail(
+                f"stash {stash.subject} not dropped: the stash list changed, "
+                f"and {dropped} was put back"
+            )
+        )
+        clean = False
+    return clean
+
+
 def stash_restore(stash: R.Stash) -> str:
     """The command that puts a dropped stash back, while `git gc` has not
     pruned its commit."""
@@ -124,9 +194,11 @@ def plan(
         if sha:
             restore = render.restore(v.branch, sha)
             say(f"  {render.err('restore with:', render.DIM)} {restore}")
+        # An eligible row with stashes goes with --delete stashes alone.
+        verb = "dropping stash" if v.eligible else "stash"
         for stash in v.stashes:
             say(
-                f"  {render.err('stash ' + stash.subject + ':', render.DIM)} "
+                f"  {render.err(f'{verb} {stash.subject}, restore with:', render.DIM)} "
                 f"{stash_restore(stash)}"
             )
         for path in R.ignored_paths(v.path):
@@ -292,7 +364,9 @@ def remove(
         say(render.fail(f"branch {render.branch(v.branch)} not deleted: {exc}"))
         return True, False
     say(render.note(f"deleted branch {render.branch(v.branch)}"))
-    return True, True
+    # Only now: a branch that stayed keeps its stashes. An eligible row
+    # holds stashes only when --delete stashes was given.
+    return True, drop_stashes(v.stashes, say)
 
 
 def sweep(

@@ -18,7 +18,8 @@ gwbd old-fix --yes --json
 | No names | Show a numbered selector. Enter space-separated numbers, or blank to cancel. |
 | `--all` | Assess every local branch and offer the eligible set for confirmation. |
 | `--dry-run` | Report the assessment and undo commands without deleting. With no names, assess all branches without a selector. |
-| `--delete empty` | Also make `empty` branches eligible. `--delete all` grants the same. Repeatable; any other value is a usage error. |
+| `--delete empty` | Also make `empty` branches eligible. Repeatable; any value but `empty`, `stashes` and `all` is a usage error. |
+| `--delete stashes` | Also make a branch with stashes eligible, and drop those stashes once its ref is deleted. `--delete all` grants both. |
 
 `--all` and names cannot be combined. An unknown name stops the entire request
 before any deletion. The selector shows branches that are not eligible without
@@ -50,8 +51,8 @@ branch prevents deletion. The final operation is
 full SHA and deletes the named ref without following a symbolic ref.
 
 Deletion affects local branch refs. It does not delete remote branches,
-worktrees, working files, or stashes. It runs no fetch; it judges from the
-refs already here.
+worktrees or working files, and drops stashes only under `--delete
+stashes`. It runs no fetch; it judges from the refs already here.
 
 ## Undo
 

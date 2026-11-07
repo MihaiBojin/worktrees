@@ -306,8 +306,9 @@ in a worktree, which appears only as its worktree here. Named, it reads
 `keep`, `checked out in a worktree; see gwp`.
 
 `--delete VALUE` is the permission to delete something a verdict alone does
-not cover. `gwp` and `gwr` take `empty`, `ignored-files` and `all`, and
-`gwbd` takes `empty` and `all`; `all` grants every value the command takes.
+not cover. `gwp` and `gwr` take `empty`, `ignored-files`, `stashes` and
+`all`, and `gwbd` takes `empty`, `stashes` and `all`; `all` grants every
+value the command takes.
 It repeats, and the values add up. An unknown value, or one the command does
 not take, is a usage error at exit 2 before anything is judged, and `gwbs`
 takes no `--delete`. `--yes` skips the question and grants nothing.
@@ -340,6 +341,15 @@ Each stash that belongs to the branch is named too, with the line that
 restores it, `git stash store -m 'On wip: half finished' SHA`, which works
 until `git gc` prunes the commit. `gwr --force` removes the worktree and
 keeps the branch and its stashes.
+
+With `--delete stashes`, `gwp`, `gwr` and `gwbd` drop those stashes, and
+only once the branch ref is deleted: a branch that stays keeps them. The
+stash list is shared by every worktree, so an index is not an identity.
+Each drop reads the list again, drops the entry at the index its sha holds
+now, highest index first, and checks the sha git prints. When another
+process moved the list in between and a different entry went, that entry is
+stored back with its subject and the stash is reported not dropped, at exit
+1. A stash already gone is skipped.
 
 After the answer, and under `--yes` too, each target is assessed again. It is
 kept, and nothing of it is removed, when its branch, its commit, the head ref

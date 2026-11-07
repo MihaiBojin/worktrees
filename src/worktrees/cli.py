@@ -140,7 +140,7 @@ def _explain() -> int:
 
 
 # What --delete takes on gwp and gwr. `all` is every other value.
-DELETE_VALUES = ("empty", "ignored-files", "all")
+DELETE_VALUES = ("empty", "ignored-files", "stashes", "all")
 
 
 def add_delete_flag(

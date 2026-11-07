@@ -3,7 +3,7 @@
 # Flags as `gwp --help` lists them.
 
 _arguments -s \
-    '*--delete[count a worktree as eligible though this goes with it]:value:(empty ignored-files all)' \
+    '*--delete[count a worktree as eligible though this goes with it]:value:(empty ignored-files stashes all)' \
     '*--only[narrow the table; what is removed stays the same]:verdict:(remove empty keep unknown)' \
     '(-l --list)'{-l,--list}'[print the table uncoloured and ask nothing]' \
     '(-y --yes)'{-y,--yes}'[do not ask before removing]' \

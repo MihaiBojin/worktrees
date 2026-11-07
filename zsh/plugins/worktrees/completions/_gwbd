@@ -15,6 +15,6 @@ _arguments -s \
     '(-h --help)'{-h,--help}'[show the help and exit]' \
     '--all[assess all local branches for deletion]' \
     '--dry-run[report without deleting]' \
-    '*--delete[also delete a branch this covers]:value:(empty all)' \
+    '*--delete[also delete a branch this covers]:value:(empty stashes all)' \
     '(-y --yes)'{-y,--yes}'[skip deletion confirmation]' \
     '*:branch:{_describe -t branches branch descriptions names}'

@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
+import pytest
 from conftest import env_for
 from test_cli import run
 
@@ -31,7 +35,10 @@ def test_a_stash_on_the_branch_clears_eligible(world) -> None:
     plain = stash(world, wt)
     row = rows(world)["wip"]
     assert (row["verdict"], row["eligible"]) == ("remove", False)
-    assert row["why"] == f"{PROOF}; 2 stash(es) belong to its branch"
+    assert (
+        row["why"]
+        == f"{PROOF}; 2 stash(es) belong to its branch, and need --delete stashes"
+    )
     assert row["stashes"] == [plain, named]
     assert world.git("stash", "list", "--format=%gs").splitlines() == [
         "WIP on wip: " + world.git("log", "-1", "--format=%h %s", "wip"),
@@ -107,8 +114,6 @@ def test_gwr_force_keeps_the_branch_and_its_stashes_and_says_how_to_restore(
 
 
 def test_gwbd_refuses_a_branch_that_gained_a_stash_after_assessment(world) -> None:
-    import pytest
-
     from worktrees import branches
     from worktrees.git import Refused
 
@@ -122,3 +127,151 @@ def test_gwbd_refuses_a_branch_that_gained_a_stash_after_assessment(world) -> No
     with pytest.raises(Refused, match="stashes changed"):
         branches.delete(row, "refs/heads/main", head, "main")
     assert world.git("branch", "--list", "done")
+
+
+# --------------------------------------------------------------------------
+# --delete stashes drops them, after the branch and by sha
+# --------------------------------------------------------------------------
+
+
+def stash_shas(world) -> list[str]:
+    return world.git("stash", "list", "--format=%H").splitlines()
+
+
+@pytest.mark.parametrize("value", ["stashes", "all"])
+def test_gwp_drops_the_branchs_stashes_after_its_branch(world, value) -> None:
+    wt = world.finished("wip")
+    sha = stash(world, wt, "half")
+    other = stash(world, world.repo, "on main")
+    p = run(world, "gwp", "--yes", "--delete", value)
+    assert p.returncode == 0, p.stderr
+    assert "dropping stash On wip: half, restore with: git stash store" in p.stderr
+    assert "deleted branch wip" in p.stderr
+    assert "dropped stash On wip: half" in p.stderr
+    assert not wt.exists()
+    assert stash_shas(world) == [other]
+    assert sha not in stash_shas(world)
+
+
+def test_gwr_drops_them_with_permission(world) -> None:
+    wt = world.finished("wip")
+    stash(world, wt, "half")
+    p = run(world, "gwr", "wip", "--yes", "--delete", "stashes")
+    assert p.returncode == 0, p.stderr
+    assert stash_shas(world) == []
+
+
+@pytest.mark.parametrize("value", ["stashes", "all"])
+def test_gwbd_drops_them_with_permission(world, value) -> None:
+    wt = world.finished("wip")
+    sha = stash(world, wt, "half")
+    world.git("worktree", "remove", str(wt))
+    p = run(world, "gwbd", "wip", "--yes", "--delete", value)
+    assert p.returncode == 0, p.stderr
+    assert f"git stash store -m 'On wip: half' {sha}" in p.stderr
+    assert world.git("branch", "--list", "wip") == ""
+    assert stash_shas(world) == []
+
+
+def test_a_failed_ref_deletion_keeps_the_stashes(world, monkeypatch, capsys) -> None:
+    from worktrees import cli, prune
+    from worktrees.git import GitError
+
+    wt = world.finished("wip")
+    sha = stash(world, wt, "half")
+
+    def refuse(*args, **kwargs):
+        raise GitError("cannot lock ref")
+
+    monkeypatch.setattr(prune, "branch_delete", refuse)
+    assert cli.gwp(["--yes", "--delete", "stashes"]) == 1
+    assert "branch wip not deleted" in capsys.readouterr().err
+    assert stash_shas(world) == [sha]
+
+
+def test_the_highest_index_goes_first_and_others_stay(world) -> None:
+    from worktrees.git import options
+
+    wt = world.finished("wip")
+    older = stash(world, wt, "one")
+    other = stash(world, world.repo, "on main")
+    newer = stash(world, wt, "two")
+    assert stash_shas(world) == [newer, other, older]
+    from worktrees import cli
+
+    assert cli.gwp(["--yes", "--delete", "stashes"]) == 0
+    drops = [e[-1] for e in options.log if "drop" in e]
+    assert drops == ["stash@{2}", "stash@{0}"]
+    assert stash_shas(world) == [other]
+
+
+def test_a_stash_already_gone_is_skipped(world, capsys) -> None:
+    from worktrees import prune
+    from worktrees import repo as R
+
+    sha = stash(world, world.repo, "gone")
+    world.git("stash", "drop", "--quiet")
+    said: list[str] = []
+    gone = R.Stash(sha, "On main: gone", world.git("rev-parse", "HEAD"))
+    assert prune.drop_stashes([gone], said.append)
+    assert said == ["stash On main: gone is already gone"]
+
+
+def _racing_git(world, intruder: str) -> dict[str, str]:
+    """A git that stores `intruder` on the stash list once, just before the
+    first real `stash drop`, the way another worktree's process could."""
+    real = shutil.which("git")
+    bin_dir = world.root / "racing-bin"
+    bin_dir.mkdir()
+    marker = world.root / "raced"
+    script = bin_dir / "git"
+    script.write_text(
+        "#!/bin/sh\n"
+        'case " $* " in *" stash drop "*)\n'
+        f'  if [ ! -e "{marker}" ]; then\n'
+        f'    touch "{marker}"\n'
+        f'    "{real}" -C "{world.repo}" stash store \\\n'
+        f'      -m "On other: intruder" {intruder}\n'
+        "  fi;;\n"
+        "esac\n"
+        f'exec "{real}" "$@"\n'
+    )
+    script.chmod(0o755)
+    env = env_for(world)
+    return {**env, "PATH": f"{bin_dir}{os.pathsep}{env['PATH']}"}
+
+
+@pytest.mark.parametrize("at", [0, 1], ids=["newest", "below-another"])
+def test_a_stash_list_that_changes_mid_drop_loses_nothing(world, at) -> None:
+    intruder = stash(world, world.repo, "intruder")
+    world.git("stash", "drop", "--quiet")
+    wt = world.finished("wip")
+    if at:
+        mine = stash(world, wt, "mine")
+        above = stash(world, world.repo, "above")
+    else:
+        above = stash(world, world.repo, "above")
+        mine = stash(world, wt, "mine")
+    p = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gwp; raise SystemExit(gwp())",
+            "--yes",
+            "--delete",
+            "stashes",
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=_racing_git(world, intruder),
+    )
+    assert p.returncode == 1, p.stderr
+    assert "stash On wip: mine not dropped: the stash list changed" in p.stderr
+    # Every entry is still there: the one dropped by mistake came back.
+    assert sorted(stash_shas(world)) == sorted([intruder, mine, above])
+    # A mistaken drop of an entry the first listing held takes its subject
+    # from there; one it did not hold takes its commit's subject.
+    intruded = "On main: intruder" if at == 0 else "On other: intruder"
+    subjects = world.git("stash", "list", "--format=%gs").splitlines()
+    assert sorted(subjects) == sorted([intruded, "On wip: mine", "On main: above"])

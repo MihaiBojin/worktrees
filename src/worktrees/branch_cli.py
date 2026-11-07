@@ -24,7 +24,7 @@ from .git import GitError, Refused, options
 from .render import BOLD, DIM, YELLOW, Cell, table
 
 # What --delete takes on gwbd. `all` is every other value.
-DELETE_VALUES = ("empty", "all")
+DELETE_VALUES = ("empty", "stashes", "all")
 
 if TYPE_CHECKING:  # names used in annotations, which never run
     from . import repo as R
@@ -282,6 +282,12 @@ def delete(args: argparse.Namespace) -> int:
     if go:
         _err(render.note(f"deleting {_branches(len(go))}:"))
         _err(_plan(go))
+        for row in go:
+            for stash in row.stashes:
+                _err(
+                    f"  {render.branch(row.branch)}: dropping stash "
+                    f"{stash.subject}, restore with: {prune.stash_restore(stash)}"
+                )
         if never:
             _err(render.warn(sync.NEVER))
     if go and not args.yes:
@@ -311,6 +317,11 @@ def delete(args: argparse.Namespace) -> int:
                 _err(render.fail(f"{render.branch(row.branch)} kept: {exc}"))
             else:
                 removed.append(row.branch)
+                # After the ref, never before: a branch that stayed keeps them.
+                if not prune.drop_stashes(row.stashes, _err):
+                    failures.append(
+                        {"branch": row.branch, "why": "a stash was not dropped"}
+                    )
     if args.json:
         _report(args, head_sha, rows, removed=removed, failed=failures)
     elif removed:

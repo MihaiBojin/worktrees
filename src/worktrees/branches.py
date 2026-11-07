@@ -117,7 +117,7 @@ def assess(
                 if found.verdict in (verdicts.REMOVE, verdicts.EMPTY):
                     if name in verdicts.PROTECTED:
                         row.why = f"{found.why}; {verdicts.MAIN_OR_MASTER}"
-                    elif row.stashes:
+                    elif row.stashes and "stashes" not in permitted:
                         row.why = f"{found.why}; {verdicts.stashed(len(row.stashes))}"
                     elif found.verdict == verdicts.EMPTY and "empty" not in permitted:
                         row.why = f"{found.why}; {verdicts.NEEDS_EMPTY}"

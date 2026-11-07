@@ -126,7 +126,7 @@ def stashes_of(branch: str, tip: str, entries: list[R.Stash]) -> list[R.Stash]:
 
 
 def stashed(count: int) -> str:
-    return f"{count} stash(es) belong to its branch"
+    return f"{count} stash(es) belong to its branch, and need --delete stashes"
 
 
 def stale(records: list[R.Worktree]) -> list[R.Worktree]:
@@ -343,7 +343,7 @@ def assess(
                 block = "it has uncommitted changes"
             elif R.has_submodule(wt.path):
                 block = SUBMODULE
-            elif row.stashes:
+            elif row.stashes and "stashes" not in permitted:
                 block = stashed(len(row.stashes))
             elif found.verdict == EMPTY and "empty" not in permitted:
                 block = NEEDS_EMPTY
