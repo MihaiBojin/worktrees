@@ -62,6 +62,17 @@ def test_a_stash_from_a_commit_the_branch_left_does_not_belong(world) -> None:
     assert (row["eligible"], row["stashes"]) == (True, [])
 
 
+def test_a_renamed_branch_leaves_its_stashes_behind(world) -> None:
+    """The subject keeps the name the stash was made under, so after
+    `git branch -m` the stash names a branch that no longer exists."""
+    wt = world.finished("old")
+    stash(world, wt, "half")
+    world.git("branch", "-m", "old", "new", at=wt)
+    row = rows(world)["new"]
+    assert (row["eligible"], row["stashes"]) == (True, [])
+    assert world.git("stash", "list", "--format=%gs") == "On old: half"
+
+
 def test_a_stash_made_on_a_detached_head_belongs_to_no_branch(world) -> None:
     wt = world.parent / ".worktrees" / "loose" / world.repo.name
     world.git("worktree", "add", "--quiet", "--detach", str(wt), "main")
