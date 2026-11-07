@@ -76,6 +76,28 @@ def test_console_aliases_work(world, entry):
     assert json.loads(p.stdout)["verdicts"][0]["verdict"] == "remove"
 
 
+@pytest.mark.parametrize("where", ["current", "linked"])
+def test_a_named_checked_out_branch_is_never_deleted(world, where):
+    """Proved finished is not enough: the branch a checkout stands on stays."""
+    if where == "linked":
+        world.merged_worktree("done")
+    else:
+        world.merged_branch("done")
+        world.git("checkout", "-q", "done")
+    sha = world.git("rev-parse", "refs/heads/done")
+    p = cli(world, "done", "--yes", "--delete", "all", entry="gwbd")
+    assert p.returncode == 3, p.stderr
+    assert "checked out in a worktree" in p.stderr
+    assert world.git("rev-parse", "refs/heads/done") == sha
+
+
+def test_delete_help_names_every_permission_value(world):
+    p = cli(world, "-h", entry="gwbd")
+    assert p.returncode == 0, p.stderr
+    text = " ".join((p.stdout + p.stderr).split())
+    assert "empty branches or stashes; all permits both" in text
+
+
 def test_multiple_exact_names_do_not_select_a_prefix(world):
     for name in ("one", "two", "one-more"):
         world.merged_branch(name)

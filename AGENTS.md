@@ -29,7 +29,7 @@ prompt and from a script unless the function is a pure adapter.
 
 A navigation function carries the binary's name and calls `command <name>`.
 It changes directory when stdout is a destination and prints data otherwise.
-`gw` changes directory for terminal default and explicit list selections.
+`gw list` changes directory for terminal selections.
 Metadata flags and nonterminal input print data; its adapter gets subcommands
 from `--complete`.
 `gwr` can return a destination after checkout removal and failure for later
@@ -157,9 +157,10 @@ faster:
 
 ```
   #  WORKTREE    BRANCH      PATH
-> 1  fix-parser  fix-parser  /home/you/git/.worktrees/fix-parser/repo
-  2  add-tests   add-tests   /home/you/git/.worktrees/add-tests/repo
-which? [up/down and enter, 1-2, or esc to cancel]
+> 1  repo        main        /home/you/git/repo
+  2  fix-parser  fix-parser  /home/you/git/.worktrees/fix-parser/repo
+  3  add-tests   add-tests   /home/you/git/.worktrees/add-tests/repo
+which? [up/down and enter, 1-3, or esc to cancel]
 ```
 
 Up and down move the highlight and wrap, enter takes it, a digit takes that
@@ -192,7 +193,7 @@ tightly they cluster. About twenty lines, `difflib` not required.
 'ruff'   -> ['renovate/ruff-0.x']
 ```
 
-Two rules, both the shape `gwp`'s prompt already has:
+Two rules about when the list appears:
 
 - A query that narrows to one takes it outright, with no prompt at all. No
   query asks however many there are, because being moved without being asked
@@ -200,7 +201,7 @@ Two rules, both the shape `gwp`'s prompt already has:
 - Without a terminal, listing prints metadata for all matching worktrees.
   Removal pickers refuse at exit 3 rather than blocking.
 
-Two more about what is in the list at all:
+Three more about what is in the list at all:
 
 - The main checkout is a destination. It is the one that is always there and
   the one a finished branch leaves you in, so leaving it out leaves out the
@@ -230,11 +231,13 @@ executable commands for help and completion checks. A row carries the function, 
 the one-line description, the console script, the argument shape, the
 shorthands and whether the command changes the caller's directory. `gwp` and
 `gw prune` reach the same function because that row says so.
-`gw --help` prints this registry and the full command guide. Bare `gw` runs
-`gw list`; a non-subcommand query and its flags run `gw list QUERY [FLAGS]`.
-Terminal input uses the picker. Without a terminal, or with `--json` or
-`--list`, it prints matching metadata. `gw list NAME` escapes command-name
-collisions. `gwl`, `gwh`, list aliases and the help subcommand are absent.
+`gw --help` and bare `gw` print this registry and the full command guide;
+`gw --explain` prints every git command the program can run. Any other
+word that is not a command is a usage error at exit 2 that suggests
+`gw list WORD`, so a worktree name never competes with a shorthand. `gw list
+[QUERY]` uses the picker on terminal input; without a terminal, or with
+`--json` or `--list`, it prints matching metadata. `gwl`, `gwh`, list
+aliases and the help subcommand are absent.
 
 `list`, `version` and `sync` install no console script of their own.
 `gw --help` prints
@@ -305,9 +308,10 @@ replaces it atomically. Remote identity changes invalidate it; malformed or
 mismatched evidence is never proof.
 
 `sync._FRESH` is 10 minutes. Warnings compare the oldest non-null component
-time, with exactly 10 minutes still fresh. Quiet suppresses stale warnings,
-but never-synced and inferred-head notices remain. JSON carries `lastSync`
-and `head` instead. A repository without remotes has no sync warning.
+time, with exactly 10 minutes still fresh. Quiet suppresses every warning,
+the never-synced and inferred-head notices included; a removal's disclosure
+still repeats them. `gw sync` and `gw version` print the head line. JSON
+carries `lastSync` and `head` instead. A repository without remotes has no sync warning.
 
 Partial-clone object reads require Git 2.45.1 onward or the maintenance
 cohorts in `repo.require_offline_git`. Lower reported vendor versions refuse;
@@ -327,7 +331,7 @@ prints the specs themselves.
 def is_ancestor(ref, head): ...
 
 
-@git("--no-optional-locks status --porcelain --ignored=traditional")
+@git("--no-optional-locks status --porcelain --ignored=matching")
 def ignored_paths(): ...
 
 
@@ -373,7 +377,7 @@ refs refresh from partial forge refresh; assessments retain usable local
 proof without asking the network. The cache records each successful
 component's time separately.
 
-One `git status --porcelain --ignored=traditional` answers both questions a
+One `git status --porcelain --ignored=matching` answers both questions a
 worktree is asked. It is a strict superset of plain `--porcelain`, so `dirty`
 is "a line that does not start with `!! `" and `ignored` is the rest. Asking
 both ways was 18 of an assessment's 35 calls over nine worktrees.
@@ -420,8 +424,9 @@ needs no completion proof for the checkout, and combines only with
 The removal snapshot pins the branch and head SHAs, exact path, ignored
 paths and stash identities. Recheck after confirmation precedes plain
 worktree removal, full-SHA ref deletion and approved stash drops. Ignored
-directories may be collapsed status entries; the snapshot is a path listing,
-not a recursive content fingerprint. Stash drops verify SHA and repair a
+paths are what an ignore pattern names, so a matched directory is one entry;
+the snapshot is a path listing, not a recursive content fingerprint, and a
+file created inside a listed directory after assessment goes with it. Stash drops verify SHA and repair a
 concurrent wrong-entry drop using the exact subject. Restoration remains
 possible until Git garbage collection prunes the unreachable stash commit.
 Report checkout, branch and stash outcomes separately after partial failure.
@@ -429,7 +434,7 @@ Report checkout, branch and stash outcomes separately after partial failure.
 Branch assessment and deletion are documented in
 [branch status](docs/commands/branch-status.md) and
 [branch delete](docs/commands/branch-delete.md). Checked-out branches appear
-only as worktrees. Every JSON result is an object with `head` and `lastSync`;
+only as worktrees; `gwbd NAME` naming one keeps it and exits 3. Every JSON result is an object with `head` and `lastSync`;
 `gw list --json` stores navigation rows in `worktrees`.
 
 ## Reproduce a failure before asserting its fix

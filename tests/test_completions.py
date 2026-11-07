@@ -313,9 +313,6 @@ def _fish_complete(world: World, prefix: str) -> set[str]:
 
 
 COMMAND_COMPLETIONS = [
-    ("gw", "gw", ("list",)),
-    ("gw --json", "gw", ("list",)),
-    ("gw topic", "gw", ("list",)),
     ("gw version", "gw", ("version",)),
     ("gw v", "gw", ("version",)),
     ("gwp --list", "gwp", ()),
@@ -337,6 +334,18 @@ COMMAND_COMPLETIONS = [
     ("gw branch delete", "gwbd", ()),
     ("gw prune --list", "gwp", ()),
 ]
+
+
+@pytest.mark.parametrize("complete", ["fish", "zsh"])
+def test_bare_gw_completes_commands_and_never_worktrees(world, complete):
+    """A worktree is reached through `gw list`, so the first word is a command."""
+    world.worktree("topic")
+    run = _fish_complete if complete == "fish" else _zsh_complete
+    words = run(world, "gw ")
+    assert {"list", "sync", "prune"} <= words
+    assert "topic" not in words
+    if complete == "fish":
+        assert _fish_complete(world, "gw -") == {"-h", "--help"}
 
 
 @pytest.mark.parametrize("prefix,entry,args", COMMAND_COMPLETIONS)

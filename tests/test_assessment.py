@@ -291,9 +291,12 @@ def test_retired_status_and_prune_targets_are_usage_errors(world, args):
 
 
 @pytest.mark.parametrize("name", ["status", "s", "st"])
-def test_retired_status_names_select_exact_worktrees(world, name):
+def test_retired_status_names_are_usage_errors_that_point_at_list(world, name):
     target = world.worktree(name)
     result = run(world, "gw", name)
+    assert result.returncode == 2
+    assert f"gw list {name}" in result.stderr
+    result = run(world, "gw", "list", name)
     assert result.returncode == 0, result.stderr
     assert "WORKTREE" in result.stdout and str(target.resolve()) in result.stdout
     assert target.is_dir()

@@ -52,6 +52,16 @@ def test_the_portable_manifest_is_the_claude_one_rewritten() -> None:
     assert text == json.dumps(wanted, indent=2, ensure_ascii=False) + "\n"
 
 
+def test_the_prune_command_preapproves_reads_and_sync_alone() -> None:
+    """`gwp --yes` removes worktrees, so no pattern may cover it; each removal
+    goes through a command the user is asked to approve."""
+    text = (PLUGIN / "commands" / "prune.md").read_text()
+    tools = re.findall(r"^  - (.+)$", text.split("---")[1], re.M)
+    wide = [t for t in tools if re.match(r"Bash\((gw|gwp)(:| [^)]*:)", t)]
+    assert wide == []
+    assert {"Bash(gw sync)", "Bash(gw list --json)", "Bash(gwp --json)"} <= set(tools)
+
+
 def _filter(entry: str) -> str:
     """Read the actual assessment pipeline from the installed skill."""
     command = "gwp" if entry == "worktrees" else "gwbs"
@@ -103,6 +113,10 @@ def test_filters_preserve_exact_targets_permissions_and_restore_commands(world) 
     world.merged_branch("loose'quoted")
     world.git("branch", "loose-empty")
     current = world.merged_worktree("current")
+    unfinished = world.worktree("unfinished")
+    world.commit("unfinished-file", at=unfinished)
+    (unfinished / "README").write_text("stash me too")
+    world.git("stash", "push", "-m", "unfinished work", at=unfinished)
 
     raw = json.loads(_json(world, "gwp", cwd=current))
     out = _jq(_filter("worktrees"), json.dumps(raw))
@@ -114,7 +128,9 @@ def test_filters_preserve_exact_targets_permissions_and_restore_commands(world) 
     assert row["path"] == str(exact)
     assert row["proof"] == "squash"
     assert not row["protections"] and not row["stashes"]
-    assert any(v["path"] == str(empty) for v in out["empty"])
+    # The main checkout is empty too, but no permission makes it removable.
+    assert [v["path"] for v in out["empty"]] == [str(empty)]
+    # A kept branch with a stash is kept for its commits, not its stash.
     assert [v["branch"] for v in out["stash_blocked"]] == ["stash-blocked"]
     assert out["stash_blocked"][0]["stashes"]
     assert not any(v["path"] == str(current) for v in out["worktrees"])

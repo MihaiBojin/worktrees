@@ -1,9 +1,6 @@
 function gw --wraps gw --description 'cd to where gw lands you'
-    set -l commands (command gw --complete | string replace -r '\t.*$' '')
-    set -l navigation 1
-    if test (count $argv) -gt 0; and contains -- "$argv[1]" $commands; and test "$argv[1]" != list
-        set navigation 0
-    end
+    set -l navigation 0
+    test "$argv[1]" = list; and set navigation 1
     for arg in $argv
         test "$arg" != --; or break
         if contains -- "$arg" --json --list -l --help -h --complete --explain; set navigation 0; end

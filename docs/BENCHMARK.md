@@ -15,8 +15,9 @@ which is a command rather than a bare import because argparse builds its
 parser when one runs. This is one view of it, and a question about a
 module missing below is a filter rather than another run.
 
-These measurements describe the recorded release. Its `gws --help` command
-is historical; current assessment uses `gwp --json`.
+These measurements describe the recorded release. Its `gwh` and
+`gws --help` commands are historical: `gw --help` prints the guide, and
+current assessment uses `gwp --json`.
 
 Measured 2026-09-22T08:21:15Z against `3b7b937`, version 0.4.3, on macOS-26.6.2-arm64-arm-64bit-Mach-O. 50 runs each, wall clock divided, after 3 discarded.
 

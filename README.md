@@ -18,7 +18,8 @@ other repositories under the same worktree root are outside their scope.
 
 | Command | What it does |
 | --- | --- |
-| `gw [QUERY] [flags]` | list worktrees or choose a destination in a terminal |
+| `gw` | print every command and what it does |
+| `gw list [QUERY] [flags]` | list worktrees or choose a destination in a terminal |
 | `gw sync` | fetch the default remote and refresh forge evidence |
 | `gwp` | confirm and remove eligible worktrees |
 | `gwr [NAME\|PATH]` | remove one worktree and its finished branch |
@@ -356,9 +357,8 @@ Without a terminal, the command prints a table of every matching worktree.
 
 A current linked worktree is shown with `*` and cannot be selected. The main
 checkout remains a destination from inside it, so you can return from a
-subdirectory. `gw NAME [flags]` means `gw list NAME [flags]`; recognized
-subcommands take precedence. Use `gw list sync` to select a worktree named
-`sync`. The fish and zsh adapters preserve stdout and status for metadata and
+subdirectory. A worktree is selected through `gw list NAME`, so a worktree
+named `sync` or `p` never collides with a command. The fish and zsh adapters preserve stdout and status for metadata and
 change directory for terminal selections.
 
 `gwa NAME [BASE]` creates or enters a worktree. `gwm NEW` renames its branch
@@ -385,7 +385,7 @@ both is a usage error.
 | --- | --- | --- |
 | `gw sync`, `gwp`, `gwr`, `gwbd`, `gwa`, `gwbc`, `gwrot` | yes | yes |
 | `gwbs` | yes | no |
-| `gw`, `gw list`, `gw NAME` | no | no |
+| `gw list` | no | no |
 
 Other commands retain their own flags; use `--help`. Help, version and
 completion work without an assessment. `--only` filters assessment verdicts
@@ -421,7 +421,7 @@ gw list --json | jq -r '.worktrees[].path'
 | `--delete-ignored` | `--delete ignored-files` |
 | `gwr --force`, `gwr -f` | `gwr --keep-branch` |
 | `--no-fetch`, `--no-forge`, `--force-refresh`, refresh `-f` | offline by default; run `gw sync` explicitly |
-| `gwl`, `gw l`, `gw ls` | `gw list` or bare `gw` |
+| `gwl`, `gw l`, `gw ls`, `gw NAME` | `gw list`, `gw list NAME` |
 | `gwh`, `gw help`, `gw h` | `gw --help` or `gw -h` |
 | `gwl --json` array, `.[]` | `gw list --json` object, `.worktrees[]` |
 

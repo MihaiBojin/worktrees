@@ -1,9 +1,5 @@
-local -a commands=("${(@f)$(command gw --complete)}")
-commands=("${commands[@]%%$'\t'*}")
-local navigation=1 arg
-if (( $# )) && (( ${commands[(Ie)$1]} )) && [[ $1 != list ]]; then
-    navigation=0
-fi
+local navigation=0 arg
+[[ $1 == list ]] && navigation=1
 for arg in "$@"; do
     [[ $arg != -- ]] || break
     case $arg in --json|--list|-l|--help|-h|--complete|--explain) navigation=0 ;; esac

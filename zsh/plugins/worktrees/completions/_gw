@@ -24,10 +24,6 @@ _gw() {
     local -a subs descs
     local line curcontext="$curcontext" state
 
-    if [[ ${words[2]} == -* ]]; then
-        __worktrees_list
-        return
-    fi
     _arguments -C \
         '(-h --help)'{-h,--help}'[show the help and exit]' \
         '1: :->command' \
@@ -40,7 +36,6 @@ _gw() {
                 descs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
             done
             (( $#subs )) && _describe -t commands 'gw command' descs subs
-            __worktrees_list
             ;;
         rest)
             case ${words[1]} in
@@ -80,7 +75,6 @@ _gw() {
                             ;;
                     esac
                     ;;
-                *) __worktrees_list ;;
             esac
             ;;
     esac

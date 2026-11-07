@@ -80,7 +80,7 @@ def test_configured_default_remote_name_is_exact(world, separator):
     world.git("branch", "trunk")
     world.git("update-ref", f"refs/remotes/{name}/trunk", "trunk")
     world.git("symbolic-ref", f"refs/remotes/{name}/HEAD", f"refs/remotes/{name}/trunk")
-    result = run(world, "gw", "--json")
+    result = run(world, "gw", "list", "--json")
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["head"]["ref"] == f"refs/remotes/{name}/HEAD"
 

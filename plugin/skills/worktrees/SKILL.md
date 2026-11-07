@@ -16,23 +16,29 @@ missing, report that and stop. Work inside the requested repository.
 Read worktrees, then loose branches, using these pipelines:
 
 ```sh
-gwp --json | jq -c '{
+gwp --json | jq -c '
+def permission: test("^(empty branches require deletion permission|its branch has stashes|it holds [0-9]+ ignored path\\(s\\); pass --delete ignored-files)$");
+def grantable: .eligible == false and (.verdict == "remove" or .verdict == "empty") and all(.protections[]; permission);
+{
   head, lastSync,
   worktrees: [.verdicts[] | select(.eligible)],
-  empty: [.verdicts[] | select(.verdict == "empty")],
-  stash_blocked: [.verdicts[] | select(.eligible == false and (.stashes | length) > 0)],
-  ignored: [.verdicts[] | select(.eligible == false and .ignored > 0)],
+  empty: [.verdicts[] | select(.verdict == "empty" and grantable)],
+  stash_blocked: [.verdicts[] | select(grantable and (.stashes | length) > 0)],
+  ignored: [.verdicts[] | select(grantable and .ignored > 0)],
   kept: [.verdicts[] | select(.verdict == "keep")] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length
 }'
 ```
 
 ```sh
-gwbs --json | jq -c '{
+gwbs --json | jq -c '
+def permission: test("^(empty branches require deletion permission|its branch has stashes)$");
+def grantable: .eligible == false and (.verdict == "remove" or .verdict == "empty") and all(.protections[]; permission);
+{
   head, lastSync,
   branches: [.verdicts[] | select(.eligible)],
-  empty: [.verdicts[] | select(.verdict == "empty")],
-  stash_blocked: [.verdicts[] | select(.eligible == false and (.stashes | length) > 0)],
+  empty: [.verdicts[] | select(.verdict == "empty" and grantable)],
+  stash_blocked: [.verdicts[] | select(grantable and (.stashes | length) > 0)],
   kept: [.verdicts[] | select(.verdict == "keep")] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length
 }'
@@ -65,8 +71,10 @@ removal reply does not erase that sync choice or require asking again.
 ## Show candidates and ask what to remove
 
 Show eligible worktrees first, then eligible loose branches, with their
-proofs and worktree paths. Show `empty` rows and stash-blocked rows in
-separate groups, retaining all their protections; offer those categories
+proofs and worktree paths. The `empty`, `stash_blocked` and `ignored` groups hold
+only rows that the matching deletion permissions would make eligible; the
+main checkout, the current checkout, protected branches and `keep` rows never
+appear there. Show those groups separately, retaining all their protections; offer those categories
 only when the user asks. Name ignored-file blockers separately. A row can
 have more than one blocker, so show every required permission.
 

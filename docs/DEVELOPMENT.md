@@ -125,7 +125,7 @@ the final destination-record newline and require an absolute existing
 directory. Data is printed byte for byte and the binary's status is retained.
 
 `gw` reads subcommands from the CLI's completion output. It changes directory
-for terminal default and explicit list selections; metadata flags and
+for terminal `gw list` selections; metadata flags and
 nonterminal input pass stdout and status through. `gwr`
 can print a destination after checkout removal and still return failure for
 later cleanup; its adapter moves to that destination and preserves failure.

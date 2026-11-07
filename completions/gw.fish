@@ -4,9 +4,7 @@ function __worktrees_complete_gw
     set -l args $tokens[3..]
     set -l target
     switch "$tokens[2]"
-        case ''
-            set target __worktrees_list
-        case sync version v
+        case '' sync version v
             return
         case prune p
             set target gwp
@@ -33,9 +31,6 @@ function __worktrees_complete_gw
                     set target gwbd
             end
             set args $tokens[4..]
-        case '*'
-            set target __worktrees_list
-            set args $tokens[2..]
     end
     test -n "$target"; or return
     set -l line (string join ' ' -- $target (string escape -- $args))
@@ -46,7 +41,7 @@ end
 complete -c gw -f -a '(__worktrees_complete_gw)'
 complete -c gw -n 'contains -- (commandline -opc)[2] version v' -s h -l help -d 'show the help and exit'
 complete -c gw -n 'test (count (commandline -opc)) -eq 1' -a '(command gw --complete)'
-complete -c gw -n 'test (count (commandline -opc)) -eq 1' -a '(command gw list --complete)'
+complete -c gw -n 'test (count (commandline -opc)) -eq 1' -s h -l help -d 'show the help and exit'
 complete -c gw -n 'contains -- sync (commandline -opc)[2]' -l json -d 'sync state as data'
 complete -c gw -n 'contains -- sync (commandline -opc)[2]' -s q -l quiet -d 'omit the summary'
 complete -c gw -n 'contains -- sync (commandline -opc)[2]' -s v -l verbose -d 'print every command'

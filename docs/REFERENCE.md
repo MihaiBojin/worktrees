@@ -1,8 +1,10 @@
 # Runtime contracts
 
-`gw` defaults to `gw list`: terminal input selects a destination; nonterminal
-input prints matching worktree metadata. `--json` and `--list` always print
-metadata. `gw --help` prints the command guide outside a repository. `gwp`
+Bare `gw` and `gw --help` print the command guide, outside a repository too.
+`gw list` selects a destination on terminal input; nonterminal input prints
+matching worktree metadata. `--json` and `--list` always print metadata.
+`gw WORD` with a word that is not a command exits 2 and suggests
+`gw list WORD`. `gwp`
 assesses worktrees and asks before removal on a terminal. Nonterminal input,
 `--json` and `--list` assess without mutation; `--yes` approves removal in any
 mode. `--list` prints an uncoloured table. `--only` filters assessment rows and
@@ -102,9 +104,10 @@ The shell functions move to it and preserve that status. JSON includes
 `path` and `outcome.destination`. The agent plugin never targets its current
 checkout.
 
-Approved pruning may clear stale Git worktree bookkeeping. `gw` and pruning
-assessment modes never write refs, cache files or directories. Assessment
-returns before stale-record pruning, deletion disclosure and confirmation.
+Terminal `gwp` and `gwp --yes` clear stale Git worktree bookkeeping before
+assessment, whether or not removal is approved. `gw list` and pruning
+assessment modes never write refs, cache files or directories; they return
+before stale-record pruning, deletion disclosure and confirmation.
 Pruning JSON with `--yes` includes the assessment verdicts and the actual
 removed, failed and per-target outcomes in one object with head and sync state.
 
@@ -138,9 +141,10 @@ by branch and source SHA; moved or new branches need sync for forge proof.
 A remote repository with no refs sync time prints a never-synced warning.
 The older non-null sync time is stale after 10 minutes, with exactly
 10 minutes still fresh. Human output prints age and suggests `gw sync`.
-Quiet suppresses the stale warning, but keeps the never-synced and inferred
-head notices. Sync itself, JSON output and repositories without remotes
-omit these warnings. JSON provides the state instead. Staleness never causes
+Quiet suppresses every warning, the never-synced and inferred head notices
+included; a removal's disclosure still repeats them. JSON output and
+repositories without remotes omit these warnings. `gw sync` and `gw version`
+print the head line, and a head that does not resolve is named in it. JSON provides the state instead. Staleness never causes
 a network call.
 
 Offline commands in partial clones need a Git release whose lazy-fetch guard covers patch
@@ -160,7 +164,10 @@ or `inferred`; `head.ref` is null when unresolved.
 Worktree and branch assessment put rows in `verdicts`. Both retain
 `verdict`, `eligible`, `proof`, `request`, `protections`, `stashes`, `branch`,
 `sha` and `why`. Worktree rows add exact `path` and an ignored-path count;
-branch rows add `paths`, `error` and shell-quoted `undo`.
+branch rows add `paths`, `error` and shell-quoted `undo`. `gwp --json` also
+carries `stale`, the paths of worktree records whose directories are gone, and
+`neighbours`, the count of worktrees under the shared root that belong to
+another repository.
 `gw list --json` puts navigation rows in `worktrees`, with `branch`, `path`,
 `main`, `here` and `flags`. Do not apply a top-level array filter.
 
@@ -194,7 +201,7 @@ terminals only, and stays off under quiet or verbose output.
 The command registry owns functions, names, aliases, flags and directory
 behavior. Help and completions read it. Shell functions handle directory
 changes and fixed-flag shortcuts; they hold no assessment or deletion logic.
-The `gw` adapter reads subcommand candidates to distinguish navigation from
-command dispatch. Completion tests compare shell flags with real CLI help.
+The `gw` adapter navigates only for `gw list`; every other call passes
+stdout and status through. Completion tests compare shell flags with real CLI help.
 Plugin tests extract the actual skill jq filters and apply them to real CLI
 JSON, including exact paths and permission-blocked rows.

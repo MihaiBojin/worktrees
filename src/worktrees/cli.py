@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -51,6 +52,7 @@ def _add_sync_flags(p: argparse.ArgumentParser) -> None:
 
 
 def run_sync(args: argparse.Namespace) -> int:
+    from . import repo as R
     from . import sync
     from .git import options
 
@@ -61,8 +63,10 @@ def run_sync(args: argparse.Namespace) -> int:
         _err(render.fail(message))
     if args.json:
         print(_json({}))
-    elif not code and not args.quiet:
-        print("Sync complete.")
+    elif not args.quiet:
+        if not code:
+            print("Sync complete.")
+        _err(render.note(sync.head_line(R.head())))
     return code
 
 
@@ -218,7 +222,7 @@ def _add_delete_flags(p: argparse.ArgumentParser, *, branch: bool = False) -> No
         else ("empty", "ignored-files", "stashes", "all"),
         default=[],
         metavar="VALUE",
-        help="permit empty branches or stashes"
+        help="permit empty branches or stashes; all permits both; repeat to combine"
         if branch
         else "permit empty branches, ignored-files or stashes; "
         "all permits every category; repeat to combine",
@@ -1066,9 +1070,14 @@ def plugin_state() -> tuple[str, bool]:
 def run_version(args: argparse.Namespace) -> int:
     """The version of the installed distribution on stdout, which is what a
     script reads, and the shell plugin's on stderr."""
+    from . import repo as R
+    from . import sync
+
     print(__version__)
     text, same = plugin_state()
     _err(render.note(text) if same else render.warn(text))
+    if R.toplevel().value:
+        _err(render.note(sync.head_line(R.head())))
     return 0
 
 
@@ -1116,10 +1125,8 @@ def _guide() -> int:
         "standing in.\nA binary cannot do that, so each needs the shell function "
         "of the same name\nfrom the plugin; the rest need nothing but $PATH."
     )
-    print("gw list is the default; gw NAME means gw list NAME.")
-    print("In a terminal, pick a destination; subcommands take precedence.")
-    print("Without a terminal, or with --json or --list, print metadata.")
-    print("gw list NAME selects names that collide with subcommands.")
+    print("gw list [QUERY] picks a destination in a terminal.")
+    print("Without a terminal, or with --json or --list, it prints metadata.")
     print("gwp! skips confirmation; gwr! deletes ignored files.")
     print("gwp!! deletes empty branches, ignored files and branch stashes.")
     text, same = plugin_state()
@@ -1499,11 +1506,24 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     args_in = sys.argv[1:] if argv is None else argv
     if args_in and args_in[0] == "--complete":
         return _complete_commands()
-    if args_in in (["-h"], ["--help"]):
+    if args_in in ([], ["-h"], ["--help"]):
         render.setup()
         return _guide()
-    if not args_in or args_in[0] not in _CANONICAL:
-        args_in = ["list", *args_in]
+    if args_in == ["--explain"]:
+        render.setup()
+        return _explain()
+    if args_in[0] not in _CANONICAL:
+        # A worktree is reached through `gw list`, so no name competes with a
+        # command or a shorthand.
+        render.setup()
+        word = shlex.quote(args_in[0])
+        _err(
+            render.fail(
+                f"{prog}: {word} is not a command\n"
+                f"Run: gw list {word} to pick a worktree, or gw --help"
+            )
+        )
+        return 2
 
     p = _parser(prog, "Git worktree commands that refuse to lose work.")
     subs = p.add_subparsers(dest="command")
@@ -1560,8 +1580,11 @@ def _dispatch(
 
             options.verbose = getattr(args, "verbose", False)
             R.require_offline_git()
-            if not getattr(args, "json", False) and R.toplevel().value:
-                for notice in sync.notices(getattr(args, "quiet", False)):
+            # -q hides every warning, the never-synced and inferred-head
+            # lines included; a removal's disclosure still repeats them.
+            quiet = getattr(args, "quiet", False)
+            if not getattr(args, "json", False) and not quiet and R.toplevel().value:
+                for notice in sync.notices():
                     _err(render.note(notice))
         return run(args)
     except KeyboardInterrupt:

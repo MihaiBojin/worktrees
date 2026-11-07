@@ -23,6 +23,7 @@ def listing(world, network, entry="gw", at=None) -> dict:
             sys.executable,
             "-c",
             f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            *(["list"] if entry == "gw" else []),
             "--json",
         ],
         cwd=at or world.repo,
@@ -357,7 +358,7 @@ def test_stale_notice_boundary_and_units(
     cache_path(world).write_text(json.dumps(cached))
     stamp = datetime(2026, 1, 1, tzinfo=UTC).timestamp()
     monkeypatch.setattr(sync.time, "time", lambda: stamp + seconds)
-    assert C.gw([]) == 0
+    assert C.gw(["list"]) == 0
     error = capsys.readouterr().err
     if text:
         assert text in error and "gw sync" in error
@@ -366,28 +367,30 @@ def test_stale_notice_boundary_and_units(
         assert "Last sync:" not in error
     assert C.gwp(["-q"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
-    assert C.gw(["--json"]) == 0
+    assert C.gw(["list", "--json"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("quiet", [False, True])
-def test_never_synced_and_inferred_notices_survive_quiet(world, network, quiet):
+def test_never_synced_and_inferred_notices_yield_only_to_quiet(world, network, quiet):
     origin(world)
     proc = cli(world, *(["-q"] if quiet else []), entry="gwp", env=network.env())
     assert proc.returncode == 0, proc.stderr
-    assert (
+    never = (
         "Never synced: verdicts use refs from the clone or last fetch "
-        "and no forge evidence. Run: gw sync" in proc.stderr
+        "and no forge evidence. Run: gw sync"
     )
-    assert "Head: main (inferred)" in proc.stderr
-    data = cli(world, "--json", entry="gw", env=network.env())
+    assert (never in proc.stderr) is not quiet
+    assert ("Head: main (inferred)" in proc.stderr) is not quiet
+    data = cli(world, "list", "--json", env=network.env())
     assert "Never synced:" not in data.stderr and "Head:" not in data.stderr
-    proc = cli(world, "sync", env=network.env())
-    assert "Never synced:" not in proc.stderr and "Head:" not in proc.stderr
+    proc = cli(world, "sync", *(["-q"] if quiet else []), env=network.env())
+    assert "Never synced:" not in proc.stderr
+    assert ("Head: main (remote)" in proc.stderr) is not quiet, proc.stderr
 
 
 def test_repository_without_remote_reports_only_inferred_head(world, network):
-    proc = cli(world, entry="gw", env=network.env())
+    proc = cli(world, "list", env=network.env())
     assert "Head: main (inferred)" in proc.stderr
     assert "Never synced:" not in proc.stderr and "Last sync:" not in proc.stderr
 
@@ -698,7 +701,6 @@ def test_inferred_head_notice_paints_both_branch_names_on_stderr(world, network)
             sys.executable,
             "-c",
             "from worktrees.cli import gwp; raise SystemExit(gwp())",
-            "-q",
         ],
         cwd=world.repo,
         env=network.env(TERM="xterm"),
@@ -1019,3 +1021,23 @@ def test_unresolved_head_marks_real_preview_rows_unknown(world, network, head_so
         for call in network.calls()
         for argument in call[1:]
     )
+
+
+@pytest.mark.parametrize("state", ["missing", "deleted", "plain"])
+def test_the_head_line_names_an_unresolved_remote_head(world, network, state):
+    """A head line never reads `Head:  (remote)` with nothing in the gap."""
+    origin(world)
+    if state == "missing":
+        world.git(
+            "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/missing"
+        )
+        wanted = "Head: missing, which does not resolve (clone). Run: gw sync"
+    else:
+        assert cli(world, "sync", env=network.env()).returncode == 0
+        world.git("update-ref", "--no-deref", "-d", "refs/remotes/origin/HEAD")
+        if state == "plain":
+            world.git("update-ref", "--no-deref", "refs/remotes/origin/HEAD", "main")
+        wanted = "Head: unresolved (remote). Run: gw sync"
+    proc = cli(world, entry="gwp", env=network.env())
+    assert proc.returncode == 0, proc.stderr
+    assert wanted in proc.stderr

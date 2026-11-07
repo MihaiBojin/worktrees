@@ -172,11 +172,13 @@ def common_dir() -> None:
 # a spec shows and a tuple hides. Without it a listing writes another
 # worktree's index and contends with a `git add` there.
 #
-# --ignored=traditional collapses an ignored directory into one entry, so
-# node_modules/ is one line rather than forty thousand. It is also a strict
+# --ignored=matching lists the path an ignore pattern names: a directory the
+# pattern matches is one entry, so node_modules/ is one line rather than forty
+# thousand, and sub/gen/ stays sub/gen/ where traditional mode widens it to
+# sub/. A directory no pattern names lists its ignored files. It is also a strict
 # superset of plain --porcelain, which is why there is one spec here and not
 # two: asking twice was 18 of this program's 35 calls over nine worktrees.
-@git("--no-optional-locks status --porcelain --ignored=traditional")
+@git("--no-optional-locks status --porcelain --ignored=matching")
 def status_lines() -> None:
     """Every change in a worktree, the gitignored paths included."""
 

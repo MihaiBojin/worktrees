@@ -1,4 +1,4 @@
-"""Default listing, navigation and the root command guide."""
+"""Listing, navigation and the root command guide."""
 
 import json
 import os
@@ -9,11 +9,10 @@ from test_cli import run
 from test_shims import _cli_binaries, _drive, _fake
 
 
-@pytest.mark.parametrize("prefix", [(), ("list",)])
 @pytest.mark.parametrize("suffix", [(), ("--list",), ("--json",)])
-def test_default_listing_returns_all_matches_without_a_terminal(world, prefix, suffix):
+def test_listing_returns_all_matches_without_a_terminal(world, suffix):
     targets = [world.worktree(name) for name in ("fix-one", "fix-two")]
-    p = run(world, "gw", *prefix, "fix", *suffix)
+    p = run(world, "gw", "list", "fix", *suffix)
     assert p.returncode == 0, p.stderr
     if "--json" in suffix:
         payload = json.loads(p.stdout)
@@ -25,25 +24,44 @@ def test_default_listing_returns_all_matches_without_a_terminal(world, prefix, s
     assert "which?" not in p.stderr
 
 
-@pytest.mark.parametrize("args", [(), ("list",)])
-def test_default_without_a_query_lists_the_main_checkout(world, args):
-    p = run(world, "gw", *args)
+def test_listing_without_a_query_lists_the_main_checkout(world):
+    p = run(world, "gw", "list")
     assert p.returncode == 0, p.stderr
     assert "WORKTREE" in p.stdout and str(world.repo) in p.stdout
     assert "VERDICT" not in p.stdout
 
 
-@pytest.mark.parametrize("name", ["l", "ls", "help", "h"])
-def test_retired_command_names_are_worktree_queries(world, name):
-    target = world.worktree(name)
-    p = run(world, "gw", name, "--json")
+def test_bare_gw_prints_the_guide_and_lists_nothing(world):
+    world.worktree("topic")
+    p = run(world, "gw")
+    assert p.returncode == 0, p.stderr
+    assert "COMMAND" in p.stdout and "gw list [QUERY]" in p.stdout
+    assert "WORKTREE" not in p.stdout and "topic" not in p.stdout
+
+
+@pytest.mark.parametrize("name", ["l", "ls", "help", "h", "topic", "--json"])
+def test_a_word_that_is_not_a_command_is_a_usage_error(world, name):
+    world.worktree(name.lstrip("-"))
+    p = run(world, "gw", name)
+    assert p.returncode == 2
+    assert not p.stdout
+    assert f"gw list {name}" in p.stderr
+
+
+def test_a_worktree_named_like_a_shorthand_is_reached_through_list(world):
+    """`gw p` is prune; the worktree named p is `gw list p`."""
+    target = world.worktree("p")
+    p = run(world, "gw", "list", "p", "--json")
     assert p.returncode == 0, p.stderr
     assert [row["path"] for row in json.loads(p.stdout)["worktrees"]] == [str(target)]
+    p = run(world, "gw", "p", "--json")
+    assert p.returncode == 0, p.stderr
+    assert "verdicts" in json.loads(p.stdout)
 
 
 @pytest.mark.parametrize("flag", ["--yes", "--dry-run", "--delete", "--only"])
-def test_default_listing_rejects_pruning_flags(world, flag):
-    p = run(world, "gw", flag)
+def test_listing_rejects_pruning_flags(world, flag):
+    p = run(world, "gw", "list", flag)
     assert p.returncode == 2
     assert "unrecognized arguments" in p.stderr
 
@@ -54,7 +72,7 @@ def test_root_help_prints_the_full_guide_outside_a_repository(world, entry, flag
     p = run(world, entry, flag, at=world.root)
     assert p.returncode == 0, p.stderr
     assert "COMMAND" in p.stdout and "GW" in p.stdout and "DOES" in p.stdout
-    assert "gw list is the default" in p.stdout
+    assert "gw list is the default" not in p.stdout
     assert "gw list [QUERY]" in p.stdout
     assert "gwp!!" in p.stdout and "NO_COLOR" in p.stdout
     assert "gwl" not in p.stdout and "gwh" not in p.stdout
@@ -63,11 +81,10 @@ def test_root_help_prints_the_full_guide_outside_a_repository(world, entry, flag
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
 @pytest.mark.parametrize(
-    "words,answer", [([], b"2"), (["list", "topic"], b""), (["topic", "--"], b"")]
+    "words,answer",
+    [(["list"], b"2"), (["list", "topic"], b""), (["list", "topic", "--"], b"")],
 )
-def test_terminal_default_and_explicit_listing_change_directory(
-    world, shell, words, answer
-):
+def test_terminal_listing_changes_directory(world, shell, words, answer):
     target = world.worktree("topic")
     p, cwd = _drive(
         shell,
@@ -85,7 +102,7 @@ def test_terminal_default_and_explicit_listing_change_directory(
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
 @pytest.mark.parametrize(
     "words",
-    [["topic"], ["list", "topic"], ["topic", "--json"], ["list", "topic", "--list"]],
+    [["list", "topic"], ["list", "topic", "--json"], ["list", "topic", "--list"]],
 )
 def test_nonterminal_listing_keeps_the_callers_directory(world, shell, words):
     target = world.worktree("topic")
@@ -106,7 +123,10 @@ def test_explicit_list_help_lists_its_flags_outside_a_repository(world):
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("words", [["--json"], ["list", "--list"], ["topic", "-l"]])
+@pytest.mark.parametrize(
+    "words",
+    [[], ["--help"], ["list", "--json"], ["list", "--list"], ["list", "x", "-l"]],
+)
 def test_terminal_metadata_never_treats_directory_text_as_a_destination(
     tmp_path, shell, words
 ):
@@ -144,8 +164,8 @@ def test_help_never_runs_repository_or_forge_commands(world, network, args):
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("words", [[], ["main"], ["list"], ["list", "main"]])
-def test_terminal_default_list_selects_sole_main(world, shell, words):
+@pytest.mark.parametrize("words", [["list"], ["list", "main"]])
+def test_terminal_list_selects_sole_main(world, shell, words):
     subdirectory = world.repo / "nested"
     subdirectory.mkdir()
     query = "main" in words
@@ -169,7 +189,7 @@ def test_terminal_default_list_selects_sole_main(world, shell, words):
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("words", [["--json"], ["list", "--list"]])
+@pytest.mark.parametrize("words", [["list", "--json"], ["list", "--list"]])
 def test_terminal_metadata_preserves_subdirectory_in_sole_main(world, shell, words):
     subdirectory = world.repo / "nested"
     subdirectory.mkdir()

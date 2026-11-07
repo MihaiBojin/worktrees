@@ -366,6 +366,20 @@ def test_prune_clears_a_stale_record(world) -> None:
     assert "gone" not in world.git("worktree", "list", "--porcelain")
 
 
+def test_declined_terminal_prune_still_clears_a_stale_record(world) -> None:
+    """Stale records go before assessment; the answer governs removal alone."""
+    import shutil
+
+    kept = world.merged_worktree("done")
+    shutil.rmtree(world.worktree("gone"))
+    code, out = run_on_a_terminal(world, "gwp", answer="n\n")
+    assert code == 0, out
+    assert "nothing removed" in out
+    records = world.git("worktree", "list", "--porcelain")
+    assert "gone" not in records
+    assert kept.is_dir() and world.git("rev-parse", "--verify", "refs/heads/done")
+
+
 def test_prune_says_so_when_there_is_nothing(world) -> None:
     p = run(world, "gwp", "--yes")
     assert p.returncode == 0, p.stderr
@@ -392,7 +406,8 @@ def test_version_is_a_command_and_not_a_flag(world) -> None:
     for entry in ("gw", "gwp", "main"):
         p = run(world, entry, "--version")
         assert p.returncode == 2
-        assert "unrecognized arguments: --version" in p.stderr
+        wanted = "--version is not a command" if entry != "gwp" else "unrecognized"
+        assert wanted in p.stderr
 
 
 def test_prune_metadata_reports_without_removing(world) -> None:
@@ -428,7 +443,7 @@ def test_status_never_issues_a_mutating_command(world, network) -> None:
     world.merged_worktree("done")
     from test_branches import cli as invoke
 
-    p = invoke(world, entry="gw", env=network.env())
+    p = invoke(world, "list", env=network.env())
     assert p.returncode == 0, p.stderr
     trace = "\n".join(
         "+ " + shlex.join(call) for call in network.calls() if call[0] == "git"
@@ -493,22 +508,25 @@ def test_the_cli_name_takes_a_subcommand(world) -> None:
     assert "done" in {v["branch"] for v in json.loads(p.stdout)["verdicts"]}
 
 
-def test_the_cli_name_with_no_argument_lists_worktrees(world) -> None:
-    world.worktree("empty")
+def test_the_cli_name_with_no_argument_prints_the_guide(world) -> None:
+    world.worktree("quokka")
     p = run(world, "main")
     assert p.returncode == 0, p.stderr
-    assert "BRANCH" in p.stdout and "empty" in p.stdout
+    assert "COMMAND" in p.stdout and "quokka" not in p.stdout
 
 
-def test_a_default_list_flag_explains_commands(world) -> None:
+def test_the_cli_name_explains_every_command(world) -> None:
     p = run(world, "main", "--explain")
     assert p.returncode == 0, p.stderr
     assert "git worktree list --porcelain -z" in p.stdout
 
 
 @pytest.mark.parametrize("entry", ["gw", "main"])
-def test_a_default_query_rejects_extra_positional_arguments(world, entry) -> None:
+def test_a_mistyped_command_is_a_usage_error(world, entry) -> None:
     p = run(world, entry, "verison", "extra")
+    assert p.returncode == 2
+    assert "verison is not a command" in p.stderr
+    p = run(world, entry, "list", "verison", "extra")
     assert p.returncode == 2
     assert "unrecognized arguments: extra" in p.stderr
 
@@ -519,11 +537,12 @@ def test_a_default_query_rejects_extra_positional_arguments(world, entry) -> Non
 
 
 @pytest.mark.parametrize("spelling", ["status", "st", "s"])
-def test_retired_status_spellings_select_worktree_metadata(
+def test_retired_status_spellings_select_worktree_metadata_through_list(
     world, spelling: str
 ) -> None:
     wt = world.worktree(spelling)
-    p = run(world, "main", spelling, "--json")
+    assert run(world, "main", spelling, "--json").returncode == 2
+    p = run(world, "main", "list", spelling, "--json")
     assert p.returncode == 0, p.stderr
     assert [row["path"] for row in json.loads(p.stdout)["worktrees"]] == [str(wt)]
     assert wt.exists()
@@ -1270,7 +1289,7 @@ def test_mutating_commands_accept_each_output_flag_without_assessment(
     "entry, args",
     [("gw", ("prune",)), ("gwp", ()), ("gwbs", ())],
 )
-def test_quiet_keeps_verdicts_and_head_notice_without_summary(world, entry, args, flag):
+def test_quiet_keeps_verdicts_without_summary_or_notices(world, entry, args, flag):
     path = world.merged_worktree("topic")
     if entry == "gwbs":
         world.git("worktree", "remove", str(path))
@@ -1278,7 +1297,7 @@ def test_quiet_keeps_verdicts_and_head_notice_without_summary(world, entry, args
     assert p.returncode == 0, p.stderr
     assert "topic" in p.stdout and "remove" in p.stdout
     assert not re.search(r"\d+ eligible", p.stdout)
-    assert "Head: main (inferred)" in p.stderr
+    assert "Head:" not in p.stderr
 
 
 @pytest.mark.parametrize("flag", ["-q", "--quiet"])
@@ -1286,7 +1305,7 @@ def test_quiet_keeps_destination_and_errors(world, flag):
     p = run(world, "gwa", "topic", flag)
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip() == str(world.parent / ".worktrees" / "topic" / "repo")
-    assert "Head: main (inferred)" in p.stderr
+    assert "Head:" not in p.stderr
     assert "on a new branch" not in p.stderr
     failure = run(world, "gwr", "missing", flag)
     assert failure.returncode != 0
@@ -1359,9 +1378,9 @@ def test_quiet_omits_progress_on_stderr_terminal(world, flag):
             if child >= 0:
                 os.close(child)
             os.close(parent)
-    assert b"\r\x1b[2K" in outputs[0]
-    assert b"\r\x1b[2K" not in outputs[1]
-    assert b"Head:" in outputs[1]
+    assert b"\r\x1b[2K" in outputs[0] and b"Head:" in outputs[0]
+    # Nothing is wrong here, so quiet leaves the terminal untouched.
+    assert outputs[1] == b""
 
 
 @pytest.mark.parametrize("quiet", [False, True])

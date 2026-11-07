@@ -244,7 +244,10 @@ def test_each_partial_clone_configuration_requires_patched_git(world, key, value
     stub = git_version_stub(world, "2.43.0")
     env = env_for(partial)
     result = cli(
-        partial, "--json", env={**env, "PATH": f"{stub}{os.pathsep}{env['PATH']}"}
+        partial,
+        "list",
+        "--json",
+        env={**env, "PATH": f"{stub}{os.pathsep}{env['PATH']}"},
     )
     assert result.returncode == 3, result.stderr
     assert "partial clone requires Git" in result.stderr

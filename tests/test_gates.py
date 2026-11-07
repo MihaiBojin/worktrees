@@ -139,7 +139,7 @@ def test_ignored_files_stop_the_verdict(world) -> None:
 
 
 def test_ignored_directory_collapses_to_one_entry(world) -> None:
-    """--ignored=traditional, so node_modules/ is one line not forty thousand."""
+    """--ignored=matching, so node_modules/ is one line not forty thousand."""
     (world.repo / ".gitignore").write_text("node_modules\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
@@ -148,6 +148,19 @@ def test_ignored_directory_collapses_to_one_entry(world) -> None:
     for i in range(20):
         (wt / "node_modules" / f"{i}.js").write_text("x\n")
     assert R.ignored_paths(str(wt)) == ["node_modules/"]
+
+
+def test_ignored_paths_are_what_the_patterns_name(world) -> None:
+    """Traditional mode would report `sub/` and `out/`: wider than any pattern,
+    and one entry for files the patterns name one by one."""
+    world.commit(".gitignore", "sub/gen/\n*.o\n")
+    wt = world.worktree("built")
+    (wt / "sub" / "gen" / "deep").mkdir(parents=True)
+    (wt / "sub" / "gen" / "deep" / "c").write_text("x\n")
+    (wt / "out").mkdir()
+    for name in ("a.o", "b.o"):
+        (wt / "out" / name).write_text("x\n")
+    assert sorted(R.ignored_paths(str(wt))) == ["out/a.o", "out/b.o", "sub/gen/"]
 
 
 # --------------------------------------------------------------------------
@@ -411,7 +424,7 @@ def test_no_unexpected_git_command_ran(world) -> None:
     # The canary. An empty log is indistinguishable from a run that never
     # reached git, and would pass every assertion below. Named commands
     # rather than a count, so dropping a redundant call does not fail here.
-    for flag in ("--ignored=traditional", "--is-ancestor"):
+    for flag in ("--ignored=matching", "--is-ancestor"):
         assert any(flag in argv for argv in options.log), options.log
 
     def subcommand(argv: tuple[str, ...]) -> str:
@@ -476,7 +489,7 @@ def test_the_upstream_spec_is_a_flag_git_accepts(world) -> None:
 
 
 def test_a_worktree_is_read_once(world) -> None:
-    """`--ignored=traditional` is a superset of plain `--porcelain`, so asking
+    """`--ignored=matching` is a superset of plain `--porcelain`, so asking
     both ways was half of every assessment's git calls.
     """
     from worktrees.git import options
@@ -485,9 +498,9 @@ def test_a_worktree_is_read_once(world) -> None:
         world.worktree(name)
     verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
 
-    status = [argv for argv in options.log if "--ignored=traditional" in argv]
+    status = [argv for argv in options.log if "--ignored=matching" in argv]
     assert len(status) == 3, status
-    assert all("--ignored=traditional" in argv for argv in status)
+    assert all("--ignored=matching" in argv for argv in status)
 
 
 def test_the_guard_names_every_rule_it_enforces(world) -> None:
