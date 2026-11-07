@@ -444,9 +444,10 @@ def run_prune(args: argparse.Namespace) -> int:
             result |= {"removed": [], "failed": 0}
         if args.json:
             print(json.dumps(result, indent=2))
-        if not go:
+        # Both are summaries, which -q drops.
+        if not go and not args.quiet:
             _err(render.note("nothing to remove"))
-        elif not args.json:
+        elif go and not args.json and not args.quiet:
             _err(render.note(f"{len(go)} would be removed; gwp --yes removes them"))
         return errors
 

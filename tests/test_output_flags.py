@@ -106,3 +106,25 @@ def test_quiet_keeps_results_and_errors(world) -> None:
     p = run(world, "gwr", "gone", "--yes", "-q")
     assert p.returncode == 1
     assert "no worktree matches" in p.stderr
+
+
+def test_quiet_drops_gwps_summary_notes(world) -> None:
+    p = run(world, "gwp", "-q")
+    assert p.returncode == 0, p.stderr
+    assert "nothing to remove" not in p.stderr
+    world.finished("done")
+    p = run(world, "gwp", "-q")
+    assert p.returncode == 0, p.stderr
+    assert "would be removed" not in p.stderr
+    p = run(world, "gwp")
+    assert "1 would be removed; gwp --yes removes them" in p.stderr
+
+
+def test_quiet_keeps_the_answer_to_a_declined_prompt(world) -> None:
+    from test_cli import run_on_a_terminal
+
+    wt = world.finished("done")
+    code, out = run_on_a_terminal(world, "gwp", "-q", answer="n\n")
+    assert code == 0, out
+    assert "nothing removed" in out
+    assert wt.exists()
