@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import argv
 from test_branch_forge import evidence
 from test_branches import cli
 from test_sync import cache_path, first_parent_proof, origin
@@ -26,7 +27,7 @@ def synced_worktree(world, network) -> Path:
 
 
 def worktree_status(world, network) -> dict:
-    proc = cli(world, "--json", entry="gwp", env=network.env())
+    proc = cli(world, "--json", entry="gw prune", env=network.env())
     assert proc.returncode == 0, proc.stderr
     return next(
         row for row in json.loads(proc.stdout)["verdicts"] if row["branch"] == "feature"
@@ -51,15 +52,9 @@ def test_cached_forge_proof_keeps_worktree_protections(world, network, protectio
         world.git("worktree", "lock", str(wt))
     if protection == "current":
         import subprocess
-        import sys
 
         proc = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                "from worktrees.cli import gwp; raise SystemExit(gwp())",
-                "--json",
-            ],
+            argv("gw prune", "--json"),
             cwd=wt,
             env=network.env(),
             capture_output=True,
@@ -182,17 +177,21 @@ def test_malformed_cached_request_cannot_authorize_deletion(
     assert row["verdict"] == want, row
     assert row["proof"] != "forge", row
     assert not row["eligible"]
-    denied = cli(world, str(wt), "--yes", "--json", entry="gwr", env=network.env())
+    denied = cli(
+        world, str(wt), "--yes", "--json", entry="gw remove", env=network.env()
+    )
     assert denied.returncode != 0, denied.stderr
     assert wt.exists()
     assert world.git("rev-parse", "feature") == tip
     world.git("worktree", "remove", str(wt))
-    loose = cli(world, "feature", "--json", entry="gwbs", env=network.env())
+    loose = cli(world, "feature", "--json", entry="gw branch status", env=network.env())
     assert loose.returncode == 0, loose.stderr
     row = json.loads(loose.stdout)["verdicts"][0]
     assert row["verdict"] == want, row
     assert row["proof"] != "forge", row
-    denied = cli(world, "feature", "--yes", "--json", entry="gwbd", env=network.env())
+    denied = cli(
+        world, "feature", "--yes", "--json", entry="gw branch delete", env=network.env()
+    )
     assert denied.returncode != 0, denied.stderr
     assert json.loads(denied.stdout)["removed"] == []
     assert world.git("rev-parse", "feature") == tip

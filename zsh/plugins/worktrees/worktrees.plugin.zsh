@@ -1,13 +1,13 @@
-# Navigation functions change the caller’s directory; shortcuts forward flags.
+# gw changes the caller's directory; each shortcut calls gw with fixed words.
 #
-# $PATH is the package's business. `uv tool install` puts the binaries in
+# $PATH is the package's business. `uv tool install` puts gw in
 # ~/.local/bin; nothing here adds a directory to it.
 
 0="${${ZERO:-${0:#$ZSH_ARGZERO}}:-${(%):-%N}}"
 0="${${(M)0:#/*}:-$PWD/$0}"
 
 fpath+=("${0:h}/functions" "${0:h}/completions")
-autoload -Uz gw gwa gwr 'gwr!' 'gwp!' 'gwp!!'
+autoload -Uz gw gwa gwbc gwbd gwbs gwp 'gwp!' gwpa 'gwpa!' gwr 'gwr!' gwrot
 
 # The release this plugin came from, which `gw --help` and `gw version` compare
 # with their own. Exported, because the environment is all a binary can see

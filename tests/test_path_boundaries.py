@@ -21,7 +21,7 @@ def test_current_whitespace_root_is_protected_from_pruning(world, suffix):
     original = world.merged_worktree("topic")
     target = world.root / ("linked" + suffix)
     world.git("worktree", "move", str(original), str(target))
-    p = run(world, "gwp", "--json", at=target)
+    p = run(world, "gw prune", "--json", at=target)
     assert p.returncode == 0, p.stderr
     row = next(
         row for row in json.loads(p.stdout)["verdicts"] if row["branch"] == "topic"
@@ -29,7 +29,7 @@ def test_current_whitespace_root_is_protected_from_pruning(world, suffix):
     assert row["path"] == str(target)
     assert not row["eligible"]
     assert "you are standing in it" in row["protections"]
-    p = run(world, "gwp", "--yes", "--delete", "all", at=target)
+    p = run(world, "gw prune", "--yes", "--delete", "all", at=target)
     assert p.returncode == 0, p.stderr
     assert target.exists()
     assert world.git("rev-parse", "topic")
@@ -43,7 +43,7 @@ def test_nonterminal_current_whitespace_root_is_not_removed(world, suffix, keep)
     world.git("worktree", "move", str(original), str(target))
     p = run(
         world,
-        "gwr",
+        "gw remove",
         str(target),
         "--yes",
         *(["--keep-branch"] if keep else []),
@@ -78,7 +78,7 @@ def test_approved_whitespace_root_leaves_before_removal(
         return original_remove(*args, **kwargs)
 
     monkeypatch.setattr(prune, "worktree_remove", remove_from_main)
-    assert cli.gwr([str(target), "--yes", "--json"]) == 0
+    assert cli.gw(["remove", str(target), "--yes", "--json"]) == 0
     assert len(prompts) == 1
     assert str(target) in prompts[0]
     assert not target.exists()
@@ -114,7 +114,7 @@ def test_main_whitespace_root_is_the_exact_departure_destination(
     monkeypatch.chdir(linked)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(prune, "_prompt", lambda _: "yes")
-    assert cli.gwr([str(linked), "--yes"]) == 0
+    assert cli.gw(["remove", str(linked), "--yes"]) == 0
     assert capsys.readouterr().out == str(target) + "\n"
     assert os.getcwd() == str(target)
     assert sync.path() == target / ".git" / "git-worktrees-sync.json"
@@ -211,16 +211,16 @@ def test_remote_url_whitespace_invalidates_cache(world, network, suffix):
 
 
 @pytest.mark.parametrize("suffix", ["\n", "\r\n"])
-@pytest.mark.parametrize("entry", ["gwp", "gwr"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw remove"])
 def test_current_root_ending_lf_is_never_removed_without_departure(
     world, suffix, entry
 ):
     original = world.merged_worktree("topic")
     target = world.root / ("linked" + suffix)
     world.git("worktree", "move", str(original), str(target))
-    args = [] if entry == "gwp" else [str(target)]
+    args = [] if entry == "gw prune" else [str(target)]
     p = run(world, entry, *args, "--yes", "--delete", "all", at=target)
-    assert p.returncode != 0 or entry == "gwp"
+    assert p.returncode != 0 or entry == "gw prune"
     assert target.exists()
     assert world.git("rev-parse", "topic")
 
@@ -233,13 +233,13 @@ def test_real_terminal_confirms_current_whitespace_root(world, suffix):
     target = world.root / ("linked" + suffix)
     world.git("worktree", "move", str(original), str(target))
     code, output = run_on_a_terminal_at(
-        world, target, "gwr", str(target), "--yes", answer="n\n"
+        world, target, "gw remove", str(target), "--yes", answer="n\n"
     )
     assert code == 0, output
     assert "remove current worktree" in output
     assert target.exists()
     code, output = run_on_a_terminal_at(
-        world, target, "gwr", str(target), "--yes", answer="y\n"
+        world, target, "gw remove", str(target), "--yes", answer="y\n"
     )
     assert code == 0, output
     assert output.endswith(str(world.repo) + "\n")

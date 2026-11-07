@@ -51,7 +51,8 @@ what to run.
 | `src/worktrees/worktree.py` | adding, moving and removing a checkout |
 | `src/worktrees/cli.py` | argument parsing and output |
 
-`pyproject.toml` maps each console script to an entry point in `cli.py`.
+`pyproject.toml` installs two console scripts, `gw` and `worktrees`, both
+entry points in `cli.py`. Shortcuts such as `gwp` are shell plugin functions.
 
 `new_branch.py` and `rotate.py` start branches rather than worktrees. Their
 names, stem-stripping and collision check match `origin new-branch` and
@@ -81,8 +82,7 @@ command only the working copy has, such as one renamed since that release,
 leaves `~/.local/bin` with it.
 
 The distribution is `git-worktrees` because PyPI already holds `worktrees`.
-The import package is `worktrees` and every console script keeps its own
-name.
+The import package is `worktrees`, and so is the long name of `gw`.
 
 ## Every git call is a spec
 
@@ -114,26 +114,27 @@ and ref deletion without a full expected SHA are refused.
 
 ## Commands that land you somewhere need a shell function
 
-A binary cannot `cd` its caller. Its shell adapter captures stdout, changes
-directory when it receives a destination, and prints data otherwise. A
-terminal selection prints a destination path; a nonterminal list prints
-metadata. `gwa`, `gwr` and `gw` have adapters, for fish under
-`functions/` and for zsh under
-`zsh/plugins/worktrees/functions/`. `gwp`, `gwbs`, `gwbd`, `gwbc` and `gwrot` need
-none.
+A binary cannot `cd` its caller. The plugin's `gw` function captures stdout
+for `gw add`, `gw remove` and a terminal `gw list`, changes directory when it
+receives a destination, and prints data otherwise. It lives under
+`functions/` for fish and `zsh/plugins/worktrees/functions/` for zsh.
 
-The [fish adapter](../functions/gwa.fish) captures bytes with
+The [fish function](../functions/gw.fish) captures bytes with
 `string collect -N` and reads the command status from `$pipestatus[1]`.
-The [zsh adapter](../zsh/plugins/worktrees/functions/gwa) uses a sentinel to
+The [zsh function](../zsh/plugins/worktrees/functions/gw) uses a sentinel to
 preserve trailing newlines through command substitution. Both remove only
 the final destination-record newline and require an absolute existing
 directory. Data is printed byte for byte and the binary's status is retained.
 
-`gw` reads subcommands from the CLI's completion output. It changes directory
-for terminal `gw list` selections; metadata flags and
-nonterminal input pass stdout and status through. `gwr`
-can print a destination after checkout removal and still return failure for
-later cleanup; its adapter moves to that destination and preserves failure.
+Metadata flags and nonterminal `gw list` pass stdout and status through.
+`gw remove` can print a destination after checkout removal and still return
+failure for later cleanup; the function moves to that destination and
+preserves the failure.
+
+Each shortcut, such as `gwa` or `gwp!`, is a one-line function beside it that
+calls the `gw` function with fixed words, so `gwa` lands where `gw add` does.
+The `shortcuts` field of each row in `cli.py` is the table `gw --help` prints,
+and `tests/test_shims.py` holds both plugins' files to it.
 
 ## Offline assessment
 

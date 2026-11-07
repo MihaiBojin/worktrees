@@ -98,7 +98,7 @@ def choose(
 
     `shown` are drawn dimmed above the numbered ones, each after its mark,
     and the highlight never lands on them: the worktree `gw list` stands in, the
-    main checkout `gwr` cannot remove. A list that leaves them out shows
+    main checkout `gw remove` cannot remove. A list that leaves them out shows
     fewer rows than `git worktree list`, which reads as though something went
     missing. `at` is the candidate highlighted first, and `here` is one that
     can be picked and is also where you stand, marked `*` after its name.

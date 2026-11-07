@@ -21,27 +21,26 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from conftest import PATH, World, env_for
+from conftest import PATH, World, argv, env_for
 
-from worktrees.cli import _CANONICAL, command_rows
+from worktrees.cli import _CANONICAL, command_rows, shortcuts
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = str(ROOT / "src")
 FISH = ROOT / "completions"
+FISH_GW = FISH / "gw.fish"
+SRC = str(ROOT / "src")
 ZSH = ROOT / "zsh" / "plugins" / "worktrees" / "completions"
+ZSH_GW = ZSH / "_gw"
 
-BINARIES = sorted(c.binary for _, c in command_rows() if c.binary)
+PATHS = [path for path, _ in command_rows()]
+SHORTCUTS = {
+    name: words for path, c in command_rows() for name, words in shortcuts(path, c)
+}
 
 
-def _help(entry: str, *args: str) -> str:
+def _help(entry: str) -> str:
     p = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
-            *args,
-            "--help",
-        ],
+        argv(entry, "--help"),
         capture_output=True,
         text=True,
         env={"PATH": PATH, "PYTHONPATH": SRC, "COLUMNS": "200"},
@@ -50,55 +49,75 @@ def _help(entry: str, *args: str) -> str:
     return p.stdout + p.stderr
 
 
-def _parsed_flags(entry: str, *args: str) -> set[str]:
+def _parsed_flags(entry: str) -> set[str]:
     """Every long flag `entry --help` lists, minus the hidden ones."""
-    return set(re.findall(r"(--[a-z][a-z-]+)", _help(entry, *args)))
+    return set(re.findall(r"(--[a-z][a-z-]+)", _help(entry)))
 
 
-def _fish_flags(binary: str) -> set[str]:
-    text = (FISH / f"{binary}.fish").read_text()
-    return {f"--{m}" for m in re.findall(r"\s-l\s+([a-z][a-z-]*)", text)}
+def _parsed_options(entry: str) -> set[str]:
+    """Every flag `entry --help` lists, short ones included."""
+    return _parsed_flags(entry) | set(
+        re.findall(r"(?:^|\s)(-[a-z])(?:,|\s)", _help(entry))
+    )
 
 
-def _zsh_flags(binary: str) -> set[str]:
-    text = (ZSH / f"_{binary}").read_text()
+def _fish_flags(path: str) -> set[str]:
+    """The long flags gw.fish offers under `gw PATH`."""
+    first, *rest = path.split()
+    condition = (
+        f"'__worktrees_on_branch {rest[0]}'" if rest else f"'__worktrees_on {first}[ ']"
+    )
+    return {
+        f"--{flag}"
+        for line in FISH_GW.read_text().splitlines()
+        if re.search(condition, line)
+        for flag in re.findall(r"\s-l\s+([a-z][a-z-]*)", line)
+    }
+
+
+def _zsh_flags(path: str) -> set[str]:
+    """The long flags _gw's function for `gw PATH` offers."""
+    name = "__worktrees_" + path.replace(" ", "_")
+    found = re.search(rf"^{name}\(\) \{{\n(.*?)^\}}", ZSH_GW.read_text(), re.S | re.M)
+    assert found, f"_gw has no {name}"
+    body = found.group(1)
     # A leading `*` is zsh for an option that may be given more than once.
-    found = set(re.findall(r"'\*?(--[a-z][a-z-]+)\[", text))
-    found |= set(re.findall(r"\{(?:-[a-z],)?(--[a-z][a-z-]+)\}", text))
-    return found
+    flags = set(re.findall(r"'\*?(--[a-z][a-z-]+)\[", body))
+    flags |= set(re.findall(r"\{(?:-[a-z],)?(--[a-z][a-z-]+)\}", body))
+    return flags
 
 
-@pytest.mark.parametrize("binary", BINARIES)
-def test_every_binary_has_a_completion_in_both_shells(binary: str) -> None:
-    assert (FISH / f"{binary}.fish").is_file()
-    assert (ZSH / f"_{binary}").is_file()
+@pytest.mark.parametrize("path", PATHS)
+def test_fish_offers_exactly_the_flags_each_command_parses(path: str) -> None:
+    assert _fish_flags(path) == _parsed_flags(f"gw {path}")
 
 
-def test_gw_itself_has_one_in_both_shells() -> None:
-    assert (FISH / "gw.fish").is_file()
-    assert (ZSH / "_gw").is_file()
+@pytest.mark.parametrize("path", PATHS)
+def test_zsh_offers_exactly_the_flags_each_command_parses(path: str) -> None:
+    assert _zsh_flags(path) == _parsed_flags(f"gw {path}")
 
 
-@pytest.mark.parametrize("binary", BINARIES)
-def test_fish_offers_exactly_the_flags_the_command_parses(binary: str) -> None:
-    entry = binary if binary != "gw" else "main"
-    assert _fish_flags(binary) == _parsed_flags(entry)
+def test_zsh_registers_gw_and_every_shortcut() -> None:
+    compdef = ZSH_GW.read_text().splitlines()[0]
+    assert compdef.startswith("#compdef ")
+    assert set(compdef.split()[1:]) == {"gw", "worktrees", *SHORTCUTS}
 
 
-@pytest.mark.parametrize("binary", BINARIES)
-def test_zsh_offers_exactly_the_flags_the_command_parses(binary: str) -> None:
-    entry = binary if binary != "gw" else "main"
-    assert _zsh_flags(binary) == _parsed_flags(entry)
+def test_zsh_completes_each_shortcut_as_the_words_it_runs() -> None:
+    """fish reads a shortcut's `--wraps`; zsh has this table, so it is held to
+    the one `gw --help` prints."""
+    rewrites = {
+        name.strip("'"): words.split()
+        for name, words in re.findall(
+            r"^\s*('?[\w!]+'?)\) fixed=\(([^)]*)\) ;;$", ZSH_GW.read_text(), re.M
+        )
+    }
+    assert rewrites == {name: words[1:] for name, words in SHORTCUTS.items()}
 
 
 def test_complete_lists_every_command_and_shorthand(world) -> None:
     p = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import main; raise SystemExit(main())",
-            "--complete",
-        ],
+        argv("main", "--complete"),
         cwd=str(world.repo),
         capture_output=True,
         text=True,
@@ -110,36 +129,9 @@ def test_complete_lists_every_command_and_shorthand(world) -> None:
     assert all("\t" in line for line in p.stdout.splitlines())
 
 
-def test_complete_lists_the_worktree_you_are_standing_in(world) -> None:
-    """The shell narrows; a completion that hides a candidate is worse."""
-    here = world.worktree("fix-parser")
-    p = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import gw; raise SystemExit(gw())",
-            "list",
-            "--complete",
-        ],
-        cwd=str(here),
-        capture_output=True,
-        text=True,
-        env=env_for(world),
-    )
-    assert p.returncode == 0, p.stderr
-    offered = {line.split("\t")[0] for line in p.stdout.splitlines()}
-    assert offered == {"main", "fix-parser"}
-
-
 def _complete(entry: str, world, at=None) -> list[str]:
     p = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
-            *(["list"] if entry == "gw" else []),
-            "--complete",
-        ],
+        argv(entry, "--complete"),
         cwd=str(at or world.repo),
         capture_output=True,
         text=True,
@@ -149,20 +141,26 @@ def _complete(entry: str, world, at=None) -> list[str]:
     return [line.split("\t")[0] for line in p.stdout.splitlines()]
 
 
-def test_list_offers_the_main_checkout_and_gwr_does_not(world) -> None:
-    """assess skips the main checkout, so gwr can never act on it."""
+def test_complete_lists_the_worktree_you_are_standing_in(world) -> None:
+    """The shell narrows; a completion that hides a candidate is worse."""
+    here = world.worktree("fix-parser")
+    assert set(_complete("gw list", world, at=here)) == {"main", "fix-parser"}
+
+
+def test_list_offers_the_main_checkout_and_remove_does_not(world) -> None:
+    """assess skips the main checkout, so remove can never act on it."""
     world.worktree("one")
-    offered_by_list = _complete("gw", world)
-    offered_by_gwr = _complete("gwr", world)
+    offered_by_list = _complete("gw list", world)
+    offered_by_remove = _complete("gw remove", world)
 
     assert any("(main)" in name or name == "main" for name in offered_by_list)
-    assert not [n for n in offered_by_gwr if "(main)" in n]
+    assert not [n for n in offered_by_remove if "(main)" in n]
     assert "one" in offered_by_list
-    assert offered_by_gwr == ["one"]
+    assert offered_by_remove == ["one"]
 
 
-def test_gwr_offers_nothing_it_then_refuses_to_match(world) -> None:
-    """Every candidate reaches gwr's own picker, or the completion lies.
+def test_remove_offers_nothing_it_then_refuses_to_match(world) -> None:
+    """Every candidate reaches remove's own picker, or the completion lies.
 
     Driven through the entry point rather than compared against a second
     copy of the filter: a candidate that cannot be matched is the defect,
@@ -170,14 +168,9 @@ def test_gwr_offers_nothing_it_then_refuses_to_match(world) -> None:
     """
     world.worktree("one")
     world.worktree("two")
-    for name in _complete("gwr", world):
+    for name in _complete("gw remove", world):
         p = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                "from worktrees.cli import gwr; raise SystemExit(gwr())",
-                name,
-            ],
+            argv("gw remove", name),
             cwd=str(world.repo),
             capture_output=True,
             text=True,
@@ -198,7 +191,7 @@ def _at(world, path: Path, branch: str) -> None:
     world.git("worktree", "add", "--quiet", "-b", branch, str(path), "main")
 
 
-@pytest.mark.parametrize("entry", ["gw", "gwr"])
+@pytest.mark.parametrize("entry", ["gw list", "gw remove"])
 def test_a_path_holding_a_newline_is_not_offered(world, entry: str) -> None:
     """Both shells split records on the newline, so such a row arrives as
     two and its tail becomes a candidate of its own."""
@@ -206,13 +199,7 @@ def test_a_path_holding_a_newline_is_not_offered(world, entry: str) -> None:
     _at(world, world.root / "we\nird", "odd")
 
     p = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
-            *(["list"] if entry == "gw" else []),
-            "--complete",
-        ],
+        argv(entry, "--complete"),
         cwd=str(world.repo),
         capture_output=True,
         text=True,
@@ -229,7 +216,7 @@ def test_a_path_holding_a_newline_is_not_offered(world, entry: str) -> None:
 def test_a_path_holding_a_tab_is_still_offered(world) -> None:
     """A row is split at its first tab, so a later one is description."""
     _at(world, world.root / "ta\tbbed", "tabbed")
-    rows = _complete("gw", world)
+    rows = _complete("gw list", world)
     assert "tabbed" in rows
 
 
@@ -282,13 +269,11 @@ def test_zsh_completes_branch_flags_without_errors(world, prefix) -> None:
 def _completion_binaries(world: World) -> Path:
     bin_dir = world.root / "completion-bin"
     bin_dir.mkdir(exist_ok=True)
-    for entry in ["gw", *BINARIES]:
-        wrapper = bin_dir / entry
-        wrapper.write_text(
-            f"#!{sys.executable}\nfrom worktrees.cli import {entry}\n"
-            f"raise SystemExit({entry}())\n"
-        )
-        wrapper.chmod(0o755)
+    wrapper = bin_dir / "gw"
+    wrapper.write_text(
+        f"#!{sys.executable}\nfrom worktrees.cli import gw\nraise SystemExit(gw())\n"
+    )
+    wrapper.chmod(0o755)
     return bin_dir
 
 
@@ -297,8 +282,10 @@ def _fish_complete(world: World, prefix: str) -> set[str]:
     if not fish:
         pytest.fail("fish is required for completion verification")
     bin_dir = _completion_binaries(world)
+    # The functions too: a shortcut's completions come from its `--wraps`.
+    sources = [*FISH.glob("*.fish"), *(ROOT / "functions").glob("*.fish")]
     setup = f"set fish_complete_path {FISH}; " + "; ".join(
-        f"source {shlex.quote(str(path))}" for path in FISH.glob("*.fish")
+        f"source {shlex.quote(str(path))}" for path in sources
     )
     process = subprocess.run(
         [fish, "--no-config", "-c", f"{setup}; complete -C {shlex.quote(prefix)}"],
@@ -312,26 +299,32 @@ def _fish_complete(world: World, prefix: str) -> set[str]:
     return {line.split("\t")[0] for line in process.stdout.splitlines()}
 
 
+# What is typed, and the command whose --help says what it should offer.
 COMMAND_COMPLETIONS = [
-    ("gw version", "gw", ("version",)),
-    ("gw v", "gw", ("version",)),
-    ("gwp --list", "gwp", ()),
-    ("gw sync", "main", ("sync",)),
-    ("gw prune", "gwp", ()),
-    ("gw p", "gwp", ()),
-    ("gw add", "gwa", ()),
-    ("gw a", "gwa", ()),
-    ("gw list", "gw", ("list",)),
-    ("gw list sync", "gw", ("list",)),
-    ("gw remove", "gwr", ()),
-    ("gw rm", "gwr", ()),
-    ("gw rotate", "gwrot", ()),
-    ("gw rot", "gwrot", ()),
-    ("gw branch create", "gwbc", ()),
-    ("gw branch status", "gwbs", ()),
-    ("gw branch delete", "gwbd", ()),
-    ("gw prune --list", "gwp", ()),
+    ("gw version", "gw version"),
+    ("gw v", "gw version"),
+    ("gw sync", "main sync"),
+    ("gw prune", "gw prune"),
+    ("gw p", "gw prune"),
+    ("gw prune --list", "gw prune"),
+    ("gw add", "gw add"),
+    ("gw a", "gw add"),
+    ("gw list", "gw list"),
+    ("gw list sync", "gw list"),
+    ("gw remove", "gw remove"),
+    ("gw rm", "gw remove"),
+    ("gw rotate", "gw rotate"),
+    ("gw rot", "gw rotate"),
+    ("gw branch create", "gw branch create"),
+    ("gw branch status", "gw branch status"),
+    ("gw branch delete", "gw branch delete"),
+    ("gwp --list", "gw prune"),
+    *((name, " ".join(words)) for name, words in SHORTCUTS.items()),
 ]
+# Options zsh still offers once given, and the short spelling it drops with
+# a long one.
+REPEATABLE = {"--delete", "--only"}
+SHORT = {"--yes": "-y", "--quiet": "-q", "--verbose": "-v", "--help": "-h"}
 
 
 @pytest.mark.parametrize("complete", ["fish", "zsh"])
@@ -346,11 +339,9 @@ def test_bare_gw_completes_commands_and_never_worktrees(world, complete):
         assert _fish_complete(world, "gw -") == {"-h", "--help"}
 
 
-@pytest.mark.parametrize("prefix,entry,args", COMMAND_COMPLETIONS)
-def test_fish_dispatches_each_command_to_its_own_flags(world, prefix, entry, args):
-    wanted = _parsed_flags(entry, *args) | set(
-        re.findall(r"(?:^|\s)(-[a-z])(?:,|\s)", _help(entry, *args))
-    )
+@pytest.mark.parametrize("prefix,entry", COMMAND_COMPLETIONS)
+def test_fish_dispatches_each_command_to_its_own_flags(world, prefix, entry):
+    wanted = _parsed_options(entry)
     offered = {
         word for word in _fish_complete(world, prefix + " -") if word.startswith("-")
     }
@@ -361,11 +352,12 @@ def test_fish_dispatches_each_command_to_its_own_flags(world, prefix, entry, arg
     "prefix,values",
     [
         ("gwp --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gwr --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gwr! --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gwbd --delete", {"empty", "stashes", "all"}),
         ("gwp --only", {"remove", "empty", "keep", "unknown"}),
         ("gwbs --only", {"remove", "empty", "keep", "unknown"}),
         ("gw prune --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gw rm --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gw branch delete --delete", {"empty", "stashes", "all"}),
         ("gw branch status --only", {"remove", "empty", "keep", "unknown"}),
     ],
@@ -431,12 +423,13 @@ def _zsh_complete(world: World, prefix: str) -> set[str]:
         os.close(parent)
 
 
-@pytest.mark.parametrize("prefix,entry,args", COMMAND_COMPLETIONS)
-def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry, args):
-    wanted = _parsed_flags(entry, *args) | set(
-        re.findall(r"(?:^|\s)(-[a-z])(?:,|\s)", _help(entry, *args))
-    )
-    wanted -= set(prefix.split())
+@pytest.mark.parametrize("prefix,entry", COMMAND_COMPLETIONS)
+def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry):
+    """zsh offers an option once, so one already on the line, typed or fixed
+    by a shortcut, is not offered again."""
+    given = {w for w in (*prefix.split(), *entry.split()) if w.startswith("-")}
+    given -= REPEATABLE
+    wanted = _parsed_options(entry) - given - {SHORT[g] for g in given if g in SHORT}
     offered = {
         word for word in _zsh_complete(world, prefix + " -") if word.startswith("-")
     }
@@ -447,14 +440,39 @@ def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry, args
     "prefix,values",
     [
         ("gwp --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gwr --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gwr! --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gwbd --delete", {"empty", "stashes", "all"}),
         ("gwp --only", {"remove", "empty", "keep", "unknown"}),
         ("gwbs --only", {"remove", "empty", "keep", "unknown"}),
         ("gw prune --delete", {"empty", "ignored-files", "stashes", "all"}),
+        ("gw rm --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gw branch delete --delete", {"empty", "stashes", "all"}),
         ("gw branch status --only", {"remove", "empty", "keep", "unknown"}),
     ],
 )
 def test_zsh_offers_the_complete_option_value_set(world, prefix, values):
     assert _zsh_complete(world, prefix + " ") == values
+
+
+# What each form offers before a flag: worktrees, branch actions or branch
+# names, all from the CLI's own --complete.
+CANDIDATES = [
+    ("gw list ", {"main", "one"}),
+    ("gw remove ", {"one"}),
+    ("gwr ", {"one"}),
+    ("gwr! ", {"one"}),
+    ("gw branch ", {"create", "delete", "status"}),
+    ("gw branch status ", {"done", "main", "one"}),
+    ("gwbs ", {"done", "main", "one"}),
+    ("gwbd ", {"done", "main", "one"}),
+    ("gwa ", set()),
+]
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+@pytest.mark.parametrize("prefix,wanted", CANDIDATES)
+def test_each_form_offers_its_commands_candidates(world, shell, prefix, wanted):
+    world.worktree("one")
+    world.merged_branch("done")
+    run = _fish_complete if shell == "fish" else _zsh_complete
+    assert {w for w in run(world, prefix) if not w.startswith("-")} == wanted

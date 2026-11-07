@@ -1,14 +1,15 @@
 # worktrees branch status
 
-`gwbs` assesses local branches with no worktree. It changes nothing and uses
+`gw branch status` assesses local branches with no worktree, and the shell
+plugin's `gwbs` runs it. It changes nothing and uses
 local refs plus cached forge evidence. Run `gw sync` explicitly to refresh
-that evidence. A checked-out branch appears in `gwp --json`, not here.
+that evidence. A checked-out branch appears in `gw prune --json`, not here.
 
 ```console
-gwbs
-gwbs feature old-fix
-gwbs --only empty --json
-worktrees branch status --json
+gw branch status
+gw branch status feature old-fix
+gw branch status --only empty --json
+gwbs --only empty
 ```
 
 `remove` means matching cached forge evidence or local ancestry, squash or
@@ -21,8 +22,8 @@ check order and forge identity checks.
 A verdict does not grant permission. `main`, `master`, the head branch,
 branch stashes and an empty verdict can block deletion. Rows record these
 in `protections`; `eligible` is true only when deletion needs no additional
-permission and no protection applies. `gwbs` rejects `--delete`; use approved
-values with [gwbd](branch-delete.md).
+permission and no protection applies. `gw branch status` rejects `--delete`;
+use approved values with [gw branch delete](branch-delete.md).
 
 `--only VERDICT` can be repeated. `--json` prints an object with `head`,
 `lastSync`, `head_sha` and `verdicts`. Each row includes `branch`, `sha`,

@@ -1,2 +1,1 @@
-# gwp! skips confirmation when removing eligible worktrees.
-gwp --yes "$@"
+gw prune --yes "$@"

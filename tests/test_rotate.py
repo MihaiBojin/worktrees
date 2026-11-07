@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from datetime import date
 from pathlib import Path
 
 import pytest
-from conftest import env_for
+from conftest import argv, env_for
 
 from worktrees import rotate as R_
 from worktrees.new_branch import Refusal
@@ -18,14 +17,9 @@ SRC = str(Path(__file__).resolve().parents[1] / "src")
 TODAY = date.today().isoformat()
 
 
-def gwrot(world, *args: str) -> subprocess.CompletedProcess[str]:
+def gw_rotate(world, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import gwrot; raise SystemExit(gwrot())",
-            *args,
-        ],
+        argv("gw rotate", *args),
         cwd=str(world.repo),
         capture_output=True,
         text=True,
@@ -102,7 +96,7 @@ def test_a_detached_head_is_refused(world) -> None:
     world.git("checkout", "--quiet", "--detach", "HEAD")
     with pytest.raises(Refusal, match="HEAD is detached"):
         R_.rotate()
-    assert "gwbc" in _refusal(world)
+    assert "gw branch create" in _refusal(world)
 
 
 def _refusal(world) -> str:
@@ -122,7 +116,7 @@ def test_a_head_branch_ahead_of_the_remote_is_refused(world) -> None:
     with pytest.raises(Refusal) as exc:
         R_.rotate()
     assert "1 commit(s) ahead of origin/main" in str(exc.value)
-    assert "gwbc" in str(exc.value)
+    assert "gw branch create" in str(exc.value)
     assert world.git("rev-parse", "HEAD") == before
 
 
@@ -166,7 +160,7 @@ def test_a_head_branch_already_level_is_refused(world) -> None:
     with pytest.raises(Refusal, match="main is already at origin/main"):
         R_.rotate()
 
-    p = gwrot(world)
+    p = gw_rotate(world)
     assert p.returncode == 1
     assert p.stdout == ""
     assert "nothing to catch up" in p.stderr
@@ -188,10 +182,10 @@ def test_a_branch_at_its_base_with_nothing_of_its_own_is_refused(world) -> None:
 
 def test_rotating_again_without_committing_exits_1(world) -> None:
     with_work(world)
-    first = gwrot(world)
+    first = gw_rotate(world)
     assert first.returncode == 0, first.stderr
 
-    again = gwrot(world)
+    again = gw_rotate(world)
     assert again.returncode == 1
     assert again.stdout == ""
     assert f"fix-parser-{TODAY}_001 is already at main" in again.stderr
@@ -233,7 +227,7 @@ def test_the_binary_reports_where_it_was_and_where_it_is(world, flags) -> None:
     was = world.git("rev-parse", "--short", "refs/heads/fix-parser")
     now = world.git("rev-parse", "--short", "refs/heads/main")
 
-    p = gwrot(world, *flags)
+    p = gw_rotate(world, *flags)
     assert p.returncode == 0, p.stderr
     first, second = p.stdout.splitlines()
     assert first.split()[:3] == ["was", "fix-parser", was]
@@ -251,7 +245,7 @@ def test_a_caught_up_head_branch_reports_both_commits(world, flags) -> None:
     world.git("switch", "--quiet", "main")
     after = world.git("rev-parse", "--short", "refs/remotes/origin/main")
 
-    p = gwrot(world, *flags)
+    p = gw_rotate(world, *flags)
     assert p.returncode == 0, p.stderr
     first, second = p.stdout.splitlines()
     assert first.split() == ["was", "main", before]
@@ -262,7 +256,7 @@ def test_a_caught_up_head_branch_reports_both_commits(world, flags) -> None:
 def test_json_is_data_on_stdout(world) -> None:
     with_work(world)
     was = world.git("rev-parse", "--short", "refs/heads/fix-parser")
-    p = gwrot(world, "--json")
+    p = gw_rotate(world, "--json")
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
     assert payload["stem"] == "fix-parser"
@@ -274,13 +268,13 @@ def test_json_is_data_on_stdout(world) -> None:
 
 def test_it_takes_no_argument(world) -> None:
     world.git("switch", "--quiet", "--create", "fix-parser")
-    p = gwrot(world, "some-name")
+    p = gw_rotate(world, "some-name")
     assert p.returncode == 2
     assert "unrecognized arguments" in p.stderr
 
 
 def test_rotate_rejects_retired_refresh_alias(world) -> None:
     before = world.git("rev-parse", "HEAD")
-    p = gwrot(world, "-f", "-v")
+    p = gw_rotate(world, "-f", "-v")
     assert p.returncode == 2
     assert world.git("rev-parse", "HEAD") == before

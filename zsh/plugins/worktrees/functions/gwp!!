@@ -1,2 +1,0 @@
-# gwp!! deletes empty branches, ignored files and branch stashes.
-gwp --delete all --yes "$@"

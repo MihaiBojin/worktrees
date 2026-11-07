@@ -42,17 +42,10 @@ dev = [
 "Bug reports" = "https://github.com/MihaiBojin/worktrees/issues/new"
 "Source" = "https://github.com/MihaiBojin/worktrees"
 
-# One venv, N names. `gwp` is the alias a person types; `worktrees` is the CLI
-# a shim and an agent call.
+# One CLI under two names. Shortcuts such as `gwp` are shell plugin functions
+# that call `gw`, and have no console script.
 [project.scripts]
 gw = "worktrees.cli:gw"
-gwa = "worktrees.cli:gwa"
-gwbc = "worktrees.cli:gwbc"
-gwbd = "worktrees.cli:gwbd"
-gwbs = "worktrees.cli:gwbs"
-gwp = "worktrees.cli:gwp"
-gwr = "worktrees.cli:gwr"
-gwrot = "worktrees.cli:gwrot"
 worktrees = "worktrees.cli:main"
 
 # uv is the front end; hatchling stays the build backend.

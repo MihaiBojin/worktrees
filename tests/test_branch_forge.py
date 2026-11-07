@@ -196,7 +196,7 @@ def test_invalid_provider_identity_cannot_supply_proof(
     row = evidence(world, provider, **changes)
     env = stub(world, provider, [row], network)
     before = network.network_calls()
-    result = cli(world, "feature", "--json", entry="gwbs", env=env)
+    result = cli(world, "feature", "--json", entry="gw branch status", env=env)
     assert result.returncode == 0, result.stderr
     assessed = json.loads(result.stdout)["verdicts"][0]
     assert assessed["verdict"] == ("remove" if local_proof else "keep"), assessed
@@ -204,7 +204,9 @@ def test_invalid_provider_identity_cannot_supply_proof(
     if local_proof:
         assert world.git("rev-parse", "main") != tip
         assert assessed["proof"] in ("squash", "content"), assessed
-    deleted = cli(world, "feature", "--yes", "--json", entry="gwbd", env=env)
+    deleted = cli(
+        world, "feature", "--yes", "--json", entry="gw branch delete", env=env
+    )
     if local_proof:
         assert deleted.returncode == 0, deleted.stderr
         assert json.loads(deleted.stdout)["removed"] == ["feature"]

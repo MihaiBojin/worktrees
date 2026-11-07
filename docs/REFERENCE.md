@@ -4,12 +4,14 @@ Bare `gw` and `gw --help` print the command guide, outside a repository too.
 `gw list` selects a destination on terminal input; nonterminal input prints
 matching worktree metadata. `--json` and `--list` always print metadata.
 `gw WORD` with a word that is not a command exits 2 and suggests
-`gw list WORD`. `gwp`
-assesses worktrees and asks before removal on a terminal. Nonterminal input,
-`--json` and `--list` assess without mutation; `--yes` approves removal in any
-mode. `--list` prints an uncoloured table. `--only` filters assessment rows and
-rejects `--yes`. `gwr` selects one. `gwbs` assesses loose local branches and
-`gwbd` deletes selected eligible refs. A checked-out branch appears only as a worktree.
+`gw list WORD`. `gw prune` assesses worktrees and asks before removal on a
+terminal. Nonterminal input, `--json` and `--list` assess without mutation;
+`--yes` approves removal in any mode. `--list` prints an uncoloured table.
+`--only` filters assessment rows and rejects `--yes`. `gw remove` selects one.
+`gw branch status` assesses loose local branches and `gw branch delete`
+deletes selected eligible refs. A checked-out branch appears only as a
+worktree. Each shell plugin shortcut, such as `gwp!`, runs one of these with
+fixed words, and `gw --help` lists them under the command they run.
 [The README](../README.md) covers invocation, permissions and migration.
 
 ## Head and evidence
@@ -21,8 +23,8 @@ the only `main` or `master`, the newer committer date when both exist, and
 A remote HEAD that is a plain ref rather than a symbolic one takes its
 branch name from the one remote-tracking branch at its commit, and does
 not resolve when several sit there.
-Unresolved head means unknown verdicts and no mutation. `gwa`, `gwbc` and
-`gwrot` also fail in that state.
+Unresolved head means unknown verdicts and no mutation. `gw add`,
+`gw branch create` and `gw rotate` also fail in that state.
 
 Completion checks run in this order:
 
@@ -54,16 +56,17 @@ submodules block worktree deletion. The submodule refusal names
 worktree's git directory also blocks deletion, and the refusal names it. A
 locked worktree whose directory is missing is assessed from its record and
 kept. Detached worktrees receive the same checks.
-`gwp` also protects the current worktree.
+`gw prune` also protects the current worktree.
 
 Ignored paths require `--delete ignored-files`; branch stashes require
 `--delete stashes`; an `empty` verdict requires `--delete empty`. Repeated
 values combine. `all` expands to those three for worktrees, and to empty
-branches and stashes for `gwbd`. `gwbs` rejects `--delete`; `gwbd` rejects
-`ignored-files`. Unsupported combinations fail at usage parsing before
-mutation. `--yes` grants none of these permissions.
+branches and stashes for `gw branch delete`. `gw branch status` rejects
+`--delete`; `gw branch delete` rejects `ignored-files`. Unsupported
+combinations fail at usage parsing before mutation. `--yes` grants none of
+these permissions.
 
-`gwr --keep-branch` retains the branch and stashes and needs no completion
+`gw remove --keep-branch` retains the branch and stashes and needs no completion
 proof for the checkout. A detached checkout has no branch to keep its
 commits and still needs proof. It permits a checkout on a protected branch, while
 all other worktree protections remain. Only `--delete ignored-files` can be
@@ -103,20 +106,20 @@ commands verbatim. Branch restore recreates a ref, not a checkout. Stash
 restore works until Git garbage collection prunes the unreachable commit.
 Ignored files have no restore command.
 
-For current-worktree removal, `gwr` requires a second terminal confirmation
-that `--yes` cannot skip. The process changes to the main checkout before
-removal. If checkout removal succeeds, stdout carries that destination even
-when branch or stash cleanup later fails; exit status still reports failure.
-The shell functions move to it and preserve that status. JSON includes
-`path` and `outcome.destination`. The agent plugin never targets its current
-checkout.
+For current-worktree removal, `gw remove` requires a second terminal
+confirmation that `--yes` cannot skip. The process changes to the main
+checkout before removal. If checkout removal succeeds, stdout carries that
+destination even when branch or stash cleanup later fails; exit status still
+reports failure. The shell functions move to it and preserve that status. JSON
+includes `path` and `outcome.destination`. The agent plugin never targets its
+current checkout.
 
-Terminal `gwp` and `gwp --yes` clear stale Git worktree bookkeeping before
-assessment, whether or not removal is approved. `gw list` and pruning
+Terminal `gw prune` and `gw prune --yes` clear stale Git worktree bookkeeping
+before assessment, whether or not removal is approved. `gw list` and pruning
 assessment modes never write refs, cache files or directories; they return
-before stale-record pruning, deletion disclosure and confirmation.
-Pruning JSON with `--yes` includes the assessment verdicts and the actual
-removed, failed and per-target outcomes in one object with head and sync state.
+before stale-record pruning, deletion disclosure and confirmation. Pruning
+JSON with `--yes` includes the assessment verdicts and the actual removed,
+failed and per-target outcomes in one object with head and sync state.
 
 ## Sync cache
 
@@ -173,26 +176,26 @@ or `inferred`; `head.ref` is null when unresolved.
 Worktree and branch assessment put rows in `verdicts`. Both retain
 `verdict`, `eligible`, `proof`, `request`, `protections`, `stashes`, `branch`,
 `sha` and `why`. Worktree rows add exact `path` and an ignored-path count;
-branch rows add `paths`, `error` and shell-quoted `undo`. `gwp --json` also
+branch rows add `paths`, `error` and shell-quoted `undo`. `gw prune --json` also
 carries `stale`, the paths of worktree records whose directories are gone, and
 `neighbours`, the count of worktrees under the shared root that belong to
 another repository.
 `gw list --json` puts navigation rows in `worktrees`, with `branch`, `path`,
 `main`, `here` and `flags`. Do not apply a top-level array filter.
 
-Removal JSON reports actual outcomes. `gwp` has `removed`, `failed` and
-`outcomes`; `gwr` has `removed`, destination `path` and `outcome`. Each outcome
-records `worktree_removed`, `branch_removed`, `retained`, `dropped`,
-`skipped`, `failed` and `destination`, along with its path and branch.
-`gwbd` reports `removed`, `failed`, `verdicts` and `outcomes`.
+Removal JSON reports actual outcomes. `gw prune` has `removed`, `failed` and
+`outcomes`; `gw remove` has `removed`, destination `path` and `outcome`. Each
+outcome records `worktree_removed`, `branch_removed`, `retained`, `dropped`,
+`skipped`, `failed` and `destination`, along with its path and branch. `gw
+branch delete` reports `removed`, `failed`, `verdicts` and `outcomes`.
 
-Stdout carries results and destinations; stderr carries diagnostics,
-prompts and disclosures. JSON and list output never contain colour. Colour
-is decided per stream. Nonempty `NO_COLOR` or `TERM=dumb` disables it.
-Quiet preserves results, including `gwbc`'s branch/base/SHA line and both
-`gwrot` result tables. Verbose traces subprocesses to stderr; quiet plus
-verbose fails before mutation. The [README's output matrix](../README.md#output-and-json)
-lists which commands accept each flag.
+Stdout carries results and destinations; stderr carries diagnostics, prompts
+and disclosures. JSON and list output never contain colour. Colour is decided
+per stream. Nonempty `NO_COLOR` or `TERM=dumb` disables it. Quiet preserves
+results, including `gw branch create`'s branch/base/SHA line and both `gw
+rotate` result tables. Verbose traces subprocesses to stderr; quiet plus
+verbose fails before mutation. The [README's output
+matrix](../README.md#output-and-json) lists which commands accept each flag.
 
 ## Implementation boundaries
 

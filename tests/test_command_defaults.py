@@ -71,10 +71,10 @@ def test_listing_rejects_pruning_flags(world, flag):
 def test_root_help_prints_the_full_guide_outside_a_repository(world, entry, flag):
     p = run(world, entry, flag, at=world.root)
     assert p.returncode == 0, p.stderr
-    assert "COMMAND" in p.stdout and "GW" in p.stdout and "DOES" in p.stdout
+    assert "COMMAND" in p.stdout and "DOES" in p.stdout
     assert "gw list is the default" not in p.stdout
     assert "gw list [QUERY]" in p.stdout
-    assert "gwp!!" in p.stdout and "NO_COLOR" in p.stdout
+    assert "gwpa!" in p.stdout
     assert "gwl" not in p.stdout and "gwh" not in p.stdout
     assert "gw help" not in p.stdout
 

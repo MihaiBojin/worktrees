@@ -118,6 +118,22 @@ class World:
         return path
 
 
+def argv(entry: str, *args: str) -> list[str]:
+    """Run `entry` from this checkout's source, without installing it.
+
+    `entry` is a command as typed: `gw prune` calls the `gw` entry point with
+    `prune` as its first argument, and `main` is the one `worktrees` installs.
+    """
+    name, *words = entry.split()
+    return [
+        sys.executable,
+        "-c",
+        f"from worktrees.cli import {name}; raise SystemExit({name}())",
+        *words,
+        *args,
+    ]
+
+
 def env_for(world: World) -> dict[str, str]:
     """What a driven test hands the console script it runs.
 
