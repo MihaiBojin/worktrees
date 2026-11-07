@@ -494,8 +494,8 @@ somebody to act on the wrong one.
 Eligible is a second answer, not a fourth verdict. A row is eligible when its
 verdict is `remove` and no protection applies: a branch named `main` or
 `master`, whatever the head branch is, the worktree you stand in, a
-lock, uncommitted or untracked files, an initialized submodule, and ignored
-files without `--delete ignored-files`. A protection clears `eligible` and leaves the verdict and its proof alone, and
+lock, uncommitted or untracked files, an initialized submodule or a
+submodule store, and ignored files without `--delete ignored-files`. A protection clears `eligible` and leaves the verdict and its proof alone, and
 `why` names the first one after the proof. The main checkout and the head
 branch are not judged and read `keep`. `gwbs` leaves out a branch checked
 out in a worktree unless it is named, and then reads `keep`, since it

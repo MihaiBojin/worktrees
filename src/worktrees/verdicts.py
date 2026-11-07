@@ -23,7 +23,7 @@ MAIN_CHECKOUT = "it is the main checkout, and never removable"
 HEAD_BRANCH = "it is the head branch"
 MAIN_OR_MASTER = "it is main or master, which nothing deletes"
 PROTECTED = ("main", "master")
-SUBMODULE = "it has an initialized submodule"
+SUBMODULE = "it has an initialized submodule or a submodule store"
 
 
 class Verdict:
