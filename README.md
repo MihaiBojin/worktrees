@@ -757,8 +757,20 @@ import if two commands ever claim one name.
 
 `gw version`, or `gw v`, prints the version. No command takes a `--version`
 flag. Every command but that one, which prints one thing and has nothing to
-be quiet about, takes `--json`, `-q`, `-v` and `--explain`, and `gws`
-takes all of them but `--json`. Beyond those:
+be quiet about, takes `--json` and `--explain`, and `gws` takes all but
+`--json`. `-q` and `-v` go by command:
+
+| | `-q`, `--quiet` | `-v`, `--verbose` |
+| --- | --- | --- |
+| `gw sync`, `gwp`, `gwr`, `gwbd`, `gwa`, `gwbc`, `gwrot`, `gwm` | yes | yes |
+| `gwbs` | yes | no |
+| `gw`, `gw list`, `gw NAME` | no | no |
+
+`-q` drops summaries, progress and the stale-sync warning, and keeps
+results, errors, the inferred-head line, the never-synced line and the
+deletion plan. `-v` prints each git and forge command after it runs, with
+its output, on stderr, so `--json` on stdout stays whole. Giving both is a
+usage error at exit 2, before anything runs. Beyond those:
 
 | | |
 | --- | --- |

@@ -325,11 +325,16 @@ it prints: a table, the picker, a message, a result line. A prompt is
 `render.ask`, the question bold and the answers it takes dim. The line that
 puts a branch back is `render.restore`, painted the way a table paints a
 branch and a sha, and it pastes the same. Off a terminal it is the words
-alone, so a test or a log reads what the code wrote. `-v` prints each command once it has run, as
-`render.trace` lays it out: the line that pastes back, what it printed,
-indented, its exit code when that is not 0 or is the only answer, then a
-blank line. Printing after the run keeps a command and its answer together
-when eight threads are asking at once.
+alone, so a test or a log reads what the code wrote. `-v` prints each git
+and forge command once it has run, as `render.trace` lays it out: the line
+that pastes back, what it printed, indented, its exit code when that is not
+0 or is the only answer, then a blank line. Printing after the run keeps a
+command and its answer together when eight threads are asking at once.
+
+`cli.add_output_flags` declares `-q` and `-v` for every command, in one
+mutually exclusive group, so giving both is argparse's exit 2. `gwbs` takes
+no `-v` and `gw list` neither flag; a command without one still reads it as
+False. `tests/test_output_flags.py` holds the matrix.
 
 ## Only gw sync reaches the network
 

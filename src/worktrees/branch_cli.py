@@ -17,6 +17,7 @@ from .cli import (
     _require,
     _Stop,
     add_delete_flag,
+    add_output_flags,
     add_status_flags,
     permitted,
 )
@@ -37,14 +38,13 @@ def status_flags(p: argparse.ArgumentParser) -> None:
         metavar="NAME",
         help="exact local branch names; all when omitted",
     )
-    _assessment_flags(p)
+    _assessment_flags(p, verbose=False)
     add_status_flags(p)
 
 
-def _assessment_flags(p: argparse.ArgumentParser) -> None:
+def _assessment_flags(p: argparse.ArgumentParser, verbose: bool = True) -> None:
     p.add_argument("--json", action="store_true", help="verdicts and evidence as data")
-    p.add_argument("-q", "--quiet", action="store_true", help="omit the summary")
-    p.add_argument("-v", "--verbose", action="store_true", help="print every command")
+    add_output_flags(p, "omit the summary", verbose)
     p.add_argument(
         "--explain", action="store_true", help="print every git command and exit"
     )

@@ -9,7 +9,7 @@ complete -c gwp -s y -l yes -d 'do not ask before removing'
 
 complete -c gwp -l json -d 'verdicts as data'
 complete -c gwp -s q -l quiet -d 'verdicts only'
-complete -c gwp -s v -l verbose -d 'print every git command'
+complete -c gwp -s v -l verbose -d 'print every git and forge command'
 complete -c gwp -l explain -d 'print every git command and exit'
 
 complete -c gwp -s h -l help -d 'show the help and exit'

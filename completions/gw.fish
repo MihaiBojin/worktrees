@@ -35,8 +35,11 @@ complete -c gw -n '__fish_seen_subcommand_from remove rm' \
     -a '(command gwr --complete)'
 
 complete -c gw -n 'not __fish_seen_subcommand_from sync' -l json -d 'the result as data'
-complete -c gw -s q -l quiet -d 'less output'
-complete -c gw -s v -l verbose -d 'print every git command'
+# gw list, which a bare gw runs, takes neither.
+complete -c gw -n 'not __fish_use_subcommand; and not __fish_seen_subcommand_from list' \
+    -s q -l quiet -d 'less output'
+complete -c gw -n 'not __fish_use_subcommand; and not __fish_seen_subcommand_from list' \
+    -s v -l verbose -d 'print every git and forge command'
 complete -c gw -l explain -d 'print every git command and exit'
 
 complete -c gw -s h -l help -d 'show this help message and exit'

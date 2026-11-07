@@ -29,8 +29,6 @@ _gw() {
         '(-h --help)'{-h,--help}'[show the help and exit]' \
         '(-l --list)'{-l,--list}'[print them all and pick none]' \
         '--json[the result as data]' \
-        '(-q --quiet)'{-q,--quiet}'[less output]' \
-        '(-v --verbose)'{-v,--verbose}'[print every git command]' \
         '--explain[print every git command and exit]' \
         '1: :->command' \
         '*:: :->rest'
@@ -66,21 +64,20 @@ _gw() {
                 esac
                 return
             fi
-            # gw list and gwr do not offer the same set: the main checkout
-            # is one gw list can take you to and one gwr can never remove.
+            # Each subcommand completes as its binary does, so its flags
+            # are held to that binary's --help. gw list, which takes no -q
+            # or -v, has no binary and completes here.
             case ${words[1]} in
-                list)        __gw_worktrees gw list ;;
-                remove|rm)   __gw_worktrees gwr ;;
+                prune|p)        _gwp ;;
+                add|a)          _gwa ;;
+                move|m|mv)      _gwm ;;
+                remove|rm)      _gwr ;;
+                rotate|rot)     _gwrot ;;
+                sync)           _gws ;;
+                list)           __gw_worktrees gw list ;;
             esac
-            local -a flags=(
-                '(-q --quiet)'{-q,--quiet}'[less output]'
-                '(-v --verbose)'{-v,--verbose}'[print every git command]'
-                '--explain[print every git command and exit]'
-            )
             [[ ${words[1]} == list ]] &&
-                flags+=( '(-l --list)'{-l,--list}'[print them all and pick none]' )
-            [[ ${words[1]} == sync ]] || flags+=( '--json[the result as data]' )
-            _arguments -s $flags
+                _arguments -s '(-l --list)'{-l,--list}'[print them all and pick none]' '--json[the result as data]' '--explain[print every git command and exit]'
             ;;
     esac
 }

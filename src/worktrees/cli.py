@@ -165,13 +165,28 @@ def permitted(
     return frozenset(values[:-1] if "all" in given else given)
 
 
+# What -v says it does, wherever it is taken.
+TRACE = "print every git and forge command it runs, with its output"
+
+
+def add_output_flags(
+    p: argparse.ArgumentParser, quiet: str = "", verbose: bool = True
+) -> None:
+    """`-q` with what it leaves, and `-v` unless `verbose` is False. Both at
+    once is argparse's usage error, before anything runs; a command without
+    one still reads it, as False."""
+    group = p.add_mutually_exclusive_group()
+    if quiet:
+        group.add_argument("-q", "--quiet", action="store_true", help=quiet)
+    if verbose:
+        group.add_argument("-v", "--verbose", action="store_true", help=TRACE)
+    p.set_defaults(quiet=False, verbose=False)
+
+
 def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     add_delete_flag(p, "count a worktree as eligible though this goes with it")
     p.add_argument("--json", action="store_true", help="verdicts as data")
-    p.add_argument("-q", "--quiet", action="store_true", help="verdicts only")
-    p.add_argument(
-        "-v", "--verbose", action="store_true", help="print every git command"
-    )
+    add_output_flags(p, "verdicts only")
     p.add_argument(
         "--explain", action="store_true", help="print every git command and exit"
     )
@@ -472,10 +487,7 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
         "name", nargs="?", default="", metavar="NAME", help="the branch to start"
     )
     p.add_argument("--json", action="store_true", help="the result as data")
-    p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
-    p.add_argument(
-        "-v", "--verbose", action="store_true", help="print every git command"
-    )
+    add_output_flags(p, "say nothing on success")
     p.add_argument(
         "--explain", action="store_true", help="print every git command and exit"
     )
@@ -530,10 +542,7 @@ def run_new_branch(args: argparse.Namespace) -> int:
 
 def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--json", action="store_true", help="the result as data")
-    p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
-    p.add_argument(
-        "-v", "--verbose", action="store_true", help="print every git command"
-    )
+    add_output_flags(p, "say nothing on success")
     p.add_argument(
         "--explain", action="store_true", help="print every git command and exit"
     )
@@ -616,10 +625,7 @@ def run_rotate(args: argparse.Namespace) -> int:
 
 
 def _add_sync_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument("-q", "--quiet", action="store_true", help="say nothing on success")
-    p.add_argument(
-        "-v", "--verbose", action="store_true", help="print every git command"
-    )
+    add_output_flags(p, "say nothing on success")
     p.add_argument(
         "--explain", action="store_true", help="print every git command and exit"
     )
@@ -700,13 +706,15 @@ def _commits(n: int) -> str:
 # --------------------------------------------------------------------------
 
 
-def _add_cd_flags(p: argparse.ArgumentParser) -> None:
-    """Shared by every command whose answer is a directory."""
+def _add_cd_flags(p: argparse.ArgumentParser, output: bool = True) -> None:
+    """Shared by every command whose answer is a directory. `gw list` takes
+    neither -q nor -v: its answer is the path or the table, and nothing else
+    reaches either stream."""
     p.add_argument("--json", action="store_true", help="the result as data")
-    p.add_argument("-q", "--quiet", action="store_true", help="the path alone")
-    p.add_argument(
-        "-v", "--verbose", action="store_true", help="print every git command"
-    )
+    if output:
+        add_output_flags(p, "the path alone")
+    else:
+        p.set_defaults(quiet=False, verbose=False)
     p.add_argument(
         "--explain", action="store_true", help="print every git command and exit"
     )
@@ -731,7 +739,7 @@ def _add_list_flags(p: argparse.ArgumentParser) -> None:
     # Hidden because a person has --list, which is the same answer formatted
     # for eyes.
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
-    _add_cd_flags(p)
+    _add_cd_flags(p, output=False)
 
 
 def _add_move_flags(p: argparse.ArgumentParser) -> None:

@@ -10,7 +10,7 @@ complete -c gwr -s y -l yes -d 'do not ask'
 
 complete -c gwr -l json -d 'the result as data'
 complete -c gwr -s q -l quiet -d 'the path alone'
-complete -c gwr -s v -l verbose -d 'print every git command'
+complete -c gwr -s v -l verbose -d 'print every git and forge command'
 complete -c gwr -l explain -d 'print every git command and exit'
 
 complete -c gwr -s h -l help -d 'show the help and exit'
