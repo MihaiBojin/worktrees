@@ -67,7 +67,7 @@ def _verdict_table(rows: list[verdicts.Verdict], plain: bool = False) -> str:
 
 def add_status_flags(
     p: argparse.ArgumentParser,
-    text: str = "show only rows with this verdict (remove, keep or unknown); "
+    text: str = "show only rows with this verdict (remove, empty, keep or unknown); "
     "repeat for more",
 ) -> None:
     """The `--only` that `gwp` and `gwbs` take."""
@@ -140,28 +140,33 @@ def _explain() -> int:
 
 
 # What --delete takes on gwp and gwr. `all` is every other value.
-DELETE_VALUES = ("ignored-files", "all")
+DELETE_VALUES = ("empty", "ignored-files", "all")
 
 
-def _add_delete_flag(p: argparse.ArgumentParser, text: str) -> None:
+def add_delete_flag(
+    p: argparse.ArgumentParser, text: str, values: tuple[str, ...] = DELETE_VALUES
+) -> None:
     p.add_argument(
         "--delete",
         action="append",
         default=[],
-        choices=DELETE_VALUES,
+        choices=values,
         metavar="VALUE",
-        help=f"{text}: ignored-files or all; repeatable",
+        help=f"{text}: {', '.join(values[:-1])} or {values[-1]}; repeatable",
     )
 
 
-def _permits(args: argparse.Namespace, value: str) -> bool:
-    """Whether --delete granted `value`. --yes never does."""
-    given = getattr(args, "delete", [])
-    return value in given or "all" in given
+def permitted(
+    args: argparse.Namespace, values: tuple[str, ...] = DELETE_VALUES
+) -> frozenset[str]:
+    """What --delete granted, with `all` read as every other value the
+    command takes. --yes never grants anything."""
+    given = set(getattr(args, "delete", []))
+    return frozenset(values[:-1] if "all" in given else given)
 
 
 def _add_assess_flags(p: argparse.ArgumentParser) -> None:
-    _add_delete_flag(p, "count a worktree as eligible though this goes with it")
+    add_delete_flag(p, "count a worktree as eligible though this goes with it")
     p.add_argument("--json", action="store_true", help="verdicts as data")
     p.add_argument("-q", "--quiet", action="store_true", help="verdicts only")
     p.add_argument(
@@ -208,18 +213,18 @@ def _judge_all(
     found, head_branch = head
     ref = found.ref
 
-    ignored = _permits(args, "ignored-files")
+    allowed = permitted(args)
     records = R.worktrees()
     rows = (
         verdicts.unresolved(records, head_branch, found.problem())
         if not found.resolves
-        else judge(ref, head_branch, ignored)
+        else judge(ref, head_branch, allowed)
         if judge
         else verdicts.assess(
             records,
             ref,
             head_branch,
-            ignored,
+            allowed,
             # `gwp` reports; `gwr` acts, and takes this list as its
             # candidates, so it asks through `judge` and gets it without.
             include_main=True,
@@ -438,11 +443,11 @@ def run_prune(args: argparse.Namespace) -> int:
         _err(render.note("nothing removed"))
         return errors
 
-    ignored = _permits(args, "ignored-files")
+    allowed = permitted(args)
 
     def again(path: str) -> verdicts.Verdict | None:
         found = [w for w in R.worktrees() if w.path == path]
-        return next(iter(verdicts.assess(found, ref, head_branch, ignored)), None)
+        return next(iter(verdicts.assess(found, ref, head_branch, allowed)), None)
 
     removed, failed = prune.sweep(go, recorded, again, _err)
     if args.json:
@@ -745,7 +750,7 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "-f", "--force", action="store_true", help="remove it even when unfinished"
     )
-    _add_delete_flag(p, "also delete this; nothing restores it")
+    add_delete_flag(p, "also delete this; nothing restores it")
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
     # Its own, not gw list's: assess skips the main checkout, so gwr can never act
     # on it and offering it would complete to "no worktree matches".
@@ -1012,7 +1017,7 @@ def run_remove(args: argparse.Namespace) -> int:
         )
         return 1
 
-    ignored = _permits(args, "ignored-files")
+    allowed = permitted(args)
     if (
         not chosen.eligible
         and chosen.ignored
@@ -1027,9 +1032,9 @@ def run_remove(args: argparse.Namespace) -> int:
             f"{render.branch(chosen.label)} is finished, but holds "
             f"{chosen.ignored} ignored path(s); they go with it"
         )
-        ignored = True
+        allowed |= {"ignored-files"}
         chosen = prune.Verdict(
-            wt_mod.REMOVE,
+            chosen.verdict,
             chosen.branch,
             chosen.path,
             chosen.why,
@@ -1042,7 +1047,9 @@ def run_remove(args: argparse.Namespace) -> int:
         # branch. Saying so would contradict the reason printed beside it,
         # and --force is the wrong answer to it: it deletes those files just
         # the same, and keeps a branch whose work already landed.
-        state = "is finished" if chosen.verdict == wt_mod.REMOVE else "is not finished"
+        state = {wt_mod.REMOVE: "is finished", verdicts.EMPTY: "is empty"}.get(
+            chosen.verdict, "is not finished"
+        )
         why = f"{render.branch(chosen.label)} {state}: {chosen.why}"
         if chosen.ignored:
             _err(render.fail(why))
@@ -1068,7 +1075,7 @@ def run_remove(args: argparse.Namespace) -> int:
     def again(path: str) -> verdicts.Verdict | None:
         found = [w for w in R.worktrees() if w.path == path]
         return next(
-            iter(verdicts.assess(found, ref, head_branch, ignored, here="")), None
+            iter(verdicts.assess(found, ref, head_branch, allowed, here="")), None
         )
 
     # --force keeps the branch: the worktree was in the way, the work was not.
@@ -1261,7 +1268,7 @@ def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
     add_status_flags(
         p,
-        text="narrow the table to rows with this verdict (remove, keep or "
+        text="narrow the table to rows with this verdict (remove, empty, keep or "
         "unknown), repeatable; what is removed stays the same",
     )
     p.add_argument(

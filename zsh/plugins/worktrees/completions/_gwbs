@@ -8,7 +8,7 @@ for line in ${(f)"$(command gwbs --complete 2>/dev/null)"}; do
 done
 
 _arguments -s \
-    '*--only[show only rows with this verdict]:verdict:(remove keep unknown)' \
+    '*--only[show only rows with this verdict]:verdict:(remove empty keep unknown)' \
     '--json[verdicts and evidence as data]' \
     '(-q --quiet)'{-q,--quiet}'[omit the summary]' \
     '(-v --verbose)'{-v,--verbose}'[print every command]' \

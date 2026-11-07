@@ -26,6 +26,8 @@ branch is `unknown`.
 worktree and a loose branch at the same commit read the same verdict.
 
 A row is eligible when its verdict is `remove` and it is not checked out.
+`gwbs` takes no `--delete`, so an `empty` row is never eligible here; `gwbd
+--delete empty` is what deletes one.
 `gwbd` deletes only eligible rows, and the summary counts them:
 `1 eligible, 2 kept, 0 unclear`.
 
@@ -34,10 +36,12 @@ A row is eligible when its verdict is `remove` and it is not checked out.
 | Verdict | Meaning |
 | --- | --- |
 | `remove` | A check proves the branch's work is in the head branch. |
+| `empty` | The branch tip is on the head ref's first-parent history: never committed to, or merged by fast-forward. |
 | `keep` | The available checks do not prove the work is finished, or it is the head branch. |
 | `unknown` | History or merge evidence is insufficient to decide. |
 
-The checks run in this order and stop at the first proof:
+The checks run in this order and stop at the first proof. `empty` is
+decided after a matching `forge` record and before `ancestry`.
 
 | `proof` | Check |
 | --- | --- |

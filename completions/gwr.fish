@@ -5,7 +5,7 @@ complete -c gwr -f
 complete -c gwr -a '(command gwr --complete)'
 
 complete -c gwr -s f -l force -d 'remove it even when unfinished'
-complete -c gwr -l delete -x -a 'ignored-files all' -d 'also delete this; nothing restores it'
+complete -c gwr -l delete -x -a 'empty ignored-files all' -d 'also delete this; nothing restores it'
 complete -c gwr -s y -l yes -d 'do not ask'
 
 complete -c gwr -l json -d 'the result as data'

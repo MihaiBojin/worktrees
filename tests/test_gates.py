@@ -67,7 +67,7 @@ def test_the_probe_separates_them(world) -> None:
 
     seen = {
         v.branch: v
-        for v in verdicts.assess(R.worktrees(), "refs/heads/main", "main", False)
+        for v in verdicts.assess(R.worktrees(), "refs/heads/main", "main", frozenset())
     }
     assert seen["squashed"].verdict == verdicts.REMOVE
     assert seen["squashed"].why == (
@@ -77,14 +77,21 @@ def test_the_probe_separates_them(world) -> None:
     assert seen["unmerged"].why == "no proof that its change is in the head branch"
 
 
-def test_a_branch_that_changed_nothing_is_finished(world) -> None:
-    """Short-circuit: branch^{tree} == head^{tree}, whatever history says."""
+def test_a_branch_that_changed_nothing_is_empty(world) -> None:
+    """Its tip is on main's first-parent line, which git cannot tell from a
+    fast-forward merge, so it is `empty` and needs --delete empty."""
     world.worktree("noop")
     seen = {
         v.branch: v
-        for v in verdicts.assess(R.worktrees(), "refs/heads/main", "main", False)
+        for v in verdicts.assess(R.worktrees(), "refs/heads/main", "main", frozenset())
     }
-    assert seen["noop"].verdict == verdicts.REMOVE
+    assert (seen["noop"].verdict, seen["noop"].eligible) == (verdicts.EMPTY, False)
+    allowed = frozenset({"empty"})
+    seen = {
+        v.branch: v
+        for v in verdicts.assess(R.worktrees(), "refs/heads/main", "main", allowed)
+    }
+    assert (seen["noop"].verdict, seen["noop"].eligible) == (verdicts.EMPTY, True)
 
 
 # --------------------------------------------------------------------------
@@ -116,14 +123,14 @@ def test_ignored_files_stop_eligibility(world) -> None:
     (world.repo / ".gitignore").write_text(".env\nnode_modules\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
-    wt = world.worktree("holds")
+    wt = world.finished("holds")
     (wt / ".env").write_text("SECRET=1\n")
     (wt / "node_modules").mkdir()
     (wt / "node_modules" / "pkg.js").write_text("x\n")
 
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "refs/heads/main", "main", False)
+        for x in verdicts.assess(R.worktrees(), "refs/heads/main", "main", frozenset())
     }["holds"]
     assert (v.verdict, v.eligible) == (verdicts.REMOVE, False)
     assert "2 ignored path(s)" in v.why
@@ -132,7 +139,9 @@ def test_ignored_files_stop_eligibility(world) -> None:
     # --yes must not answer that question; only --delete ignored-files does.
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "refs/heads/main", "main", True)
+        for x in verdicts.assess(
+            R.worktrees(), "refs/heads/main", "main", frozenset({"ignored-files"})
+        )
     }["holds"]
     assert (v.verdict, v.eligible) == (verdicts.REMOVE, True)
 
@@ -165,7 +174,7 @@ def test_a_branch_that_moved_since_the_verdict_is_not_deleted(world) -> None:
 
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "refs/heads/main", "main", False)
+        for x in verdicts.assess(R.worktrees(), "refs/heads/main", "main", frozenset())
     }["squashed"]
     assert v.verdict == verdicts.REMOVE
 
@@ -190,7 +199,7 @@ def test_a_tag_cannot_answer_for_a_branch(world) -> None:
 
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "refs/heads/main", "main", False)
+        for x in verdicts.assess(R.worktrees(), "refs/heads/main", "main", frozenset())
     }["feature"]
     assert v.verdict != verdicts.REMOVE, "the tag answered for the branch"
 
@@ -260,7 +269,7 @@ def test_the_head_branch_is_never_proposed(world) -> None:
     # A worktree on the head branch itself, made the way git allows.
     world.git("worktree", "add", "--quiet", "--detach", str(path.parent / "x"), "main")
 
-    rows = verdicts.assess(R.worktrees(), "refs/heads/main", "main", False)
+    rows = verdicts.assess(R.worktrees(), "refs/heads/main", "main", frozenset())
     assert all(v.branch != "main" for v in rows)
 
 
@@ -278,7 +287,7 @@ def test_a_tag_shadowing_the_head_branch_does_not_shadow_it(world) -> None:
 
     head = R.head_ref("origin").ref
     assert head == "refs/remotes/origin/main"
-    v = {x.branch: x for x in verdicts.assess(R.worktrees(), head, "main", False)}
+    v = {x.branch: x for x in verdicts.assess(R.worktrees(), head, "main", frozenset())}
     assert v["feature"].verdict != verdicts.REMOVE
 
 
@@ -287,7 +296,7 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
     path = world.parent / ".worktrees" / "detached" / "repo"
     path.parent.mkdir(parents=True)
     world.git("worktree", "add", "--quiet", "--detach", str(path), "main")
-    v = verdicts.assess(R.worktrees(), "refs/heads/main", "main", False)
+    v = verdicts.assess(R.worktrees(), "refs/heads/main", "main", frozenset())
     assert len(v) == 1
     assert v[0].branch == ""
     assert v[0].label == "(detached)"
@@ -406,8 +415,8 @@ def test_no_unexpected_git_command_ran(world) -> None:
     """The registry is the whole surface; a run stays inside it."""
     from worktrees.git import commands, options
 
-    world.worktree("done")
-    verdicts.assess(R.worktrees(), "refs/heads/main", "main", False)
+    world.finished("done")
+    verdicts.assess(R.worktrees(), "refs/heads/main", "main", frozenset())
 
     # The canary. An empty log is indistinguishable from a run that never
     # reached git, and would pass every assertion below. Named commands
@@ -441,7 +450,7 @@ def test_a_worktree_is_read_once(world) -> None:
 
     for name in ("a", "b", "c"):
         world.worktree(name)
-    verdicts.assess(R.worktrees(), "refs/heads/main", "main", False)
+    verdicts.assess(R.worktrees(), "refs/heads/main", "main", frozenset())
 
     status = [argv for argv in options.log if "status" in argv]
     assert len(status) == 3, status

@@ -232,7 +232,7 @@ row, so it reads as finished and not removable. That
 decision is made per stream: redirect it, pipe it, set `NO_COLOR` to anything
 non-empty or run under `TERM=dumb` and the bytes are the ones above.
 
-### Three verdicts
+### Four verdicts
 
 Each is the instruction it gives. `unknown` is not `keep` with a softer
 word.
@@ -240,8 +240,17 @@ word.
 | | means |
 | --- | --- |
 | `remove` | finished, and safe to remove. The reason says how it was proved: by a merged request the last `gw sync` recorded, by ancestry, by squash, by content, or by a ref reaching a detached commit |
+| `empty` | its tip is on the head branch's first-parent line, so it holds nothing the head branch lacks. That is a branch started at a main-line commit and never committed to, and a branch merged by fast-forward: git cannot tell the two apart. Removed only with `--delete empty` |
 | `keep` | the branch shares history with the head branch and holds work it lacks. The main checkout and the head branch are `keep` too, and are not judged |
 | `unknown` | it could not tell. A branch with no common history with the head branch, forge evidence that does not match this tip, or a git command that failed while judging it, which also makes the command exit 1 |
+
+They are checked in order: a matching merged request the last sync
+recorded, then `empty`, then ancestry, squash and content, and the first
+that answers wins. A branch merged through a merge commit is an ancestor of
+the head without being on its first-parent line, so it reads `remove`. The
+first-parent line is read once a run, and only the head ref's: a local
+`main` ahead of `origin/main` adds nothing to it. A detached worktree has no
+branch, and keeps its ref-reaches-the-commit proof.
 
 A worktree's branch is judged by the proof `gwbs` uses for a loose branch,
 and a worktree and a branch at the same commit read the same verdict and the
@@ -267,23 +276,26 @@ verdict. `gwp` names how many there are. `git worktree prune` clears them, and
 ### Eligible
 
 A verdict says whether the work landed. Eligible says whether this run may
-delete it: the verdict is `remove` and no protection applies. `gwp` removes
+delete it: the verdict is `remove`, or `empty` under `--delete empty`, and
+no protection applies. `gwp` removes
 the eligible rows, the counts line counts them, and `--json` carries
 `eligible` on every row.
 
 A protection never changes the verdict. For a worktree they are the one you
 are standing in, a lock, uncommitted changes or untracked files, an
-initialized submodule, and ignored files without `--delete ignored-files`. A
-`remove` row held back by one names the first that applies after the proof,
+initialized submodule, an `empty` verdict without `--delete empty`, and
+ignored files without `--delete ignored-files`. A `remove` or `empty` row
+held back by one names the first that applies after the proof,
 as in `its tip is an ancestor of the head branch; it has uncommitted
 changes`. In `gwbs` the protection is being checked
 out in a worktree, since that branch goes with its worktree.
 
 `--delete VALUE` is the permission to delete something a verdict alone does
-not cover. `gwp` and `gwr` take `ignored-files` and `all`, which grants every
-value the command takes. It repeats, and the values add up. An unknown value
-is a usage error at exit 2 before anything is judged, and `gwbs` and `gwbd`
-take no `--delete`. `--yes` skips the question and grants nothing.
+not cover. `gwp` and `gwr` take `empty`, `ignored-files` and `all`, and
+`gwbd` takes `empty` and `all`; `all` grants every value the command takes.
+It repeats, and the values add up. An unknown value, or one the command does
+not take, is a usage error at exit 2 before anything is judged, and `gwbs`
+takes no `--delete`. `--yes` skips the question and grants nothing.
 
 ### Removing
 
@@ -712,11 +724,11 @@ takes all of them but `--json`. Beyond those:
 | `gwp` | `--delete VALUE`, `--only VERDICT`, `-l` and `-y` |
 | `gwr` | `-f`, `--delete VALUE`, `-y` |
 | `gwbs` | `--only VERDICT` |
-| `gwbd` | `--all`, `--dry-run` and `-y` |
+| `gwbd` | `--all`, `--delete VALUE`, `--dry-run` and `-y` |
 | `gw`, `gw list` | `-l` |
 | `gwa`, `gwbc`, `gwrot`, `gwm`, `gws` | none |
 
-`--only` takes `remove`, `keep` or `unknown` and can be given more than
+`--only` takes `remove`, `empty`, `keep` or `unknown` and can be given more than
 once. It narrows the table and `--json`; the counts under the table still
 cover every row.
 

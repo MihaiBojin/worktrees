@@ -87,6 +87,22 @@ class World:
         self.git("worktree", "add", "--quiet", "-b", branch, str(path), base)
         return path
 
+    def finished_branch(self, branch: str) -> None:
+        """A branch main took in a merge commit: proved finished by
+        ancestry, and not `empty`, since its tip is off main's first-parent
+        line."""
+        tip = self.git("commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", branch)
+        self.git("branch", branch, tip)
+        self.git("merge", "--quiet", "--no-ff", "-m", f"Merge {branch}", branch)
+
+    def finished(self, branch: str) -> Path:
+        """A worktree on a `finished_branch`, in the derived layout."""
+        self.finished_branch(branch)
+        path = self.parent / ".worktrees" / branch / self.repo.name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.git("worktree", "add", "--quiet", str(path), branch)
+        return path
+
     def sibling(self, name: str, branch: str) -> Path:
         """A second repository beside this one, with a worktree of its own.
 

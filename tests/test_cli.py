@@ -128,7 +128,7 @@ def test_prune_takes_no_branch(world) -> None:
 
 
 def test_status_leaves_a_removable_worktree_alone(world) -> None:
-    wt = world.worktree("done")
+    wt = world.finished("done")
     p = run(world, "gwp")
     assert p.returncode == 0, p.stderr
     assert "remove" in p.stdout
@@ -148,7 +148,7 @@ def test_status_says_when_there_is_nothing(world) -> None:
 
 
 def test_status_json_is_data_on_stdout(world) -> None:
-    world.worktree("done")
+    world.finished("done")
     p = run(world, "gwp", "--json")
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
@@ -162,12 +162,7 @@ def test_status_json_is_data_on_stdout(world) -> None:
 def test_json_carries_the_ignored_count_as_a_number(world) -> None:
     """A caller deciding whether to pass --delete ignored-files wants the count, not
     a sentence it has to find the count inside."""
-    wt = world.worktree("holds-secrets")
-    world.repo.joinpath(".gitignore").write_text(".env\n")
-    world.git("add", ".gitignore")
-    world.git("commit", "--quiet", "-m", "ignore")
-    world.git("merge", "--quiet", "--ff-only", "main", at=wt)
-    wt.joinpath(".env").write_text("S=1\n")
+    _ignoring_env(world, "holds-secrets")
 
     p = run(world, "gwp", "--json")
     assert p.returncode == 0, p.stderr
@@ -243,12 +238,12 @@ def test_prune_removes_exactly_what_status_marks(world, extra: tuple[str, ...]) 
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
 
-    world.worktree("finished")
-    holds = world.worktree("holds-env")
+    world.finished("finished")
+    holds = world.finished("holds-env")
     (holds / ".env").write_text("SECRET=1\n")
-    busy = world.worktree("busy")
+    busy = world.finished("busy")
     (busy / "scratch.txt").write_text("wip\n")
-    mystery = world.worktree("mystery")
+    mystery = world.finished("mystery")
     world.commit("m.txt", "m\n", at=mystery)
 
     p = run(world, "gwp", "--json", *extra)
@@ -269,7 +264,7 @@ def test_prune_removes_exactly_what_status_marks(world, extra: tuple[str, ...]) 
 
 
 def test_prune_asks_before_removing(world) -> None:
-    wt = world.worktree("done")
+    wt = world.finished("done")
     code, out = run_on_a_terminal(world, "gwp", answer="y\n")
     assert code == 0, out
     assert "remove 1 worktree(s)? [y/N]" in out
@@ -278,7 +273,7 @@ def test_prune_asks_before_removing(world) -> None:
 
 
 def test_answering_no_removes_nothing(world) -> None:
-    wt = world.worktree("done")
+    wt = world.finished("done")
     code, out = run_on_a_terminal(world, "gwp", answer="n\n")
     assert code == 0, out
     assert "nothing removed" in out
@@ -288,7 +283,7 @@ def test_answering_no_removes_nothing(world) -> None:
 
 def test_bare_enter_removes_nothing(world) -> None:
     """[y/N]: the capital is the default, and it has to be true."""
-    wt = world.worktree("done")
+    wt = world.finished("done")
     code, out = run_on_a_terminal(world, "gwp", answer="\n")
     assert code == 0, out
     assert "nothing removed" in out
@@ -297,7 +292,7 @@ def test_bare_enter_removes_nothing(world) -> None:
 
 def test_without_a_terminal_it_reports_and_removes_nothing(world) -> None:
     """An agent or a pipe gets the assessment, and nothing blocks on a prompt."""
-    wt = world.worktree("done")
+    wt = world.finished("done")
     p = run(world, "gwp")
     assert p.returncode == 0, p.stderr
     assert "done" in p.stdout and "remove" in p.stdout
@@ -337,7 +332,7 @@ def test_confirm_takes_yes_and_nothing_else(answer: str, expected: bool) -> None
 
 
 def test_prune_deletes_the_branch_and_the_empty_parents(world) -> None:
-    wt = world.worktree("done")
+    wt = world.finished("done")
     p = run(world, "gwp", "--yes")
     assert p.returncode == 0, p.stderr
     assert not wt.exists()
@@ -363,8 +358,8 @@ def test_a_squash_merged_branch_goes_with_its_checkout(world) -> None:
 
 
 def test_prune_clears_a_stale_record_when_it_removes(world) -> None:
-    world.worktree("done")
-    wt = world.worktree("gone")
+    world.finished("done")
+    wt = world.finished("gone")
     import shutil
 
     shutil.rmtree(wt)
@@ -484,7 +479,7 @@ def test_a_gwp_that_removes_nothing_writes_nothing(world, args, terminal) -> Non
 
 
 def test_gwp_prints_the_table_before_it_asks(world) -> None:
-    world.worktree("done")
+    world.finished("done")
     code, out = run_on_a_terminal(world, "gwp", answer="n\n")
     assert code == 0, out
     assert "nothing removed" in out
@@ -493,7 +488,7 @@ def test_gwp_prints_the_table_before_it_asks(world) -> None:
 
 
 def test_gwp_yes_at_a_terminal_does_not_ask(world) -> None:
-    wt = world.worktree("done")
+    wt = world.finished("done")
     code, out = run_on_a_terminal(world, "gwp", "--yes", answer="n\n")
     assert code == 0, out
     assert "[y/N]" not in out
@@ -503,7 +498,7 @@ def test_gwp_yes_at_a_terminal_does_not_ask(world) -> None:
 
 @pytest.mark.parametrize("flag", ["--json", "--list"])
 def test_gwp_at_a_terminal_with_a_script_flag_does_not_ask(world, flag) -> None:
-    wt = world.worktree("done")
+    wt = world.finished("done")
     code, out = run_on_a_terminal(world, "gwp", flag, answer="y\n")
     assert code == 0, out
     assert "[y/N]" not in out
@@ -513,7 +508,7 @@ def test_gwp_at_a_terminal_with_a_script_flag_does_not_ask(world, flag) -> None:
 
 @pytest.mark.parametrize("flag", [(), ("--json",), ("--list",)])
 def test_gwp_yes_removes_in_every_mode(world, flag) -> None:
-    wt = world.worktree("done")
+    wt = world.finished("done")
     p = run(world, "gwp", "--yes", *flag)
     assert p.returncode == 0, p.stderr
     assert "restore with: git branch done " in p.stderr
@@ -521,7 +516,7 @@ def test_gwp_yes_removes_in_every_mode(world, flag) -> None:
 
 
 def test_gwp_json_with_yes_adds_what_it_removed(world) -> None:
-    world.worktree("done")
+    world.finished("done")
     assessed = json.loads(run(world, "gwp", "--json").stdout)
     p = run(world, "gwp", "--json", "--yes")
     assert p.returncode == 0, p.stderr
@@ -543,7 +538,7 @@ def test_gwp_list_is_never_coloured(world) -> None:
 
 
 def test_gwp_list_puts_the_table_alone_on_stdout(world) -> None:
-    world.worktree("done")
+    world.finished("done")
     listed = run(world, "gwp", "--list")
     assert len(listed.stdout.splitlines()) == 3, listed.stdout
     assert "1 eligible, 1 kept, 0 unclear" in listed.stderr
@@ -560,8 +555,8 @@ def test_gwp_only_help_says_the_targets_stay(world) -> None:
 
 
 def test_gwp_only_narrows_the_table_and_not_the_targets(world) -> None:
-    wt = world.worktree("done")
-    world.commit("wip", at=world.worktree("busy"))
+    wt = world.finished("done")
+    world.commit("wip", at=world.finished("busy"))
     p = run(world, "gwp", "--only", "keep", "--yes")
     assert p.returncode == 0, p.stderr
     table_rows = p.stdout.split("removed")[0]
@@ -573,9 +568,9 @@ def test_gwp_only_narrows_the_table_and_not_the_targets(world) -> None:
 
 def test_gwp_only_narrows_the_json_rows(world) -> None:
     """By verdict, so a protected `remove` row is among them."""
-    world.worktree("done")
-    world.worktree("busy")
-    world.commit("wip", at=world.worktree("mine"))
+    world.finished("done")
+    world.finished("busy")
+    world.commit("wip", at=world.finished("mine"))
     (world.parent / ".worktrees" / "busy" / "repo" / "wip").write_text("x")
     p = run(world, "gwp", "--only", "remove", "--json")
     assert p.returncode == 0, p.stderr
@@ -604,7 +599,7 @@ def test_explain_lists_every_command_and_runs_none(world) -> None:
 
 
 def test_verbose_prints_the_argv(world) -> None:
-    world.worktree("done")
+    world.finished("done")
     p = run(world, "gwp", "--verbose")
     assert p.returncode == 0, p.stderr
     # The canary: a run that never reached git would print nothing here, and an
@@ -871,7 +866,7 @@ def test_help_stays_inside_eighty_columns(world) -> None:
 
 
 def test_colour_reaches_a_terminal(world) -> None:
-    world.worktree("done")
+    world.finished("done")
     code, out = run_with_a_terminal_on_stdout(world, "gwp")
     assert code == 0, out
     assert "[32mremove" in out
@@ -1144,7 +1139,7 @@ def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
 )
 def test_ctrl_c_at_every_prompt(world, entry, args, prompt) -> None:
     """SIGINT cancels selection and confirmation without changing any worktree."""
-    paths = [world.worktree(name) for name in ("one", "two")]
+    paths = [world.finished(name) for name in ("one", "two")]
     before = world.git("worktree", "list", "--porcelain")
     refs = world.git("show-ref")
     parent, child = pty.openpty()
@@ -1201,7 +1196,7 @@ def test_ctrl_c_at_every_prompt(world, entry, args, prompt) -> None:
 def test_status_lists_the_main_checkout_and_never_proposes_it(world) -> None:
     """A listing that leaves it out shows one row where `git worktree list`
     shows two, which reads as though something went missing."""
-    world.worktree("done")
+    world.finished("done")
     p = run(world, "gwp")
     assert p.returncode == 0, p.stderr
     assert "it is the main checkout, and never removable" in p.stdout
@@ -1257,7 +1252,7 @@ def test_remove_asks_before_deleting_ignored_files_on_a_terminal(world) -> None:
     (world.repo / ".gitignore").write_text(".env\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
-    wt = world.worktree("holds")
+    wt = world.finished("holds")
     (wt / ".env").write_text("SECRET=1\n")
 
     code, out = run_on_a_terminal(world, "gwr", "holds", answer="n\n")
@@ -1556,26 +1551,28 @@ def _rows(world, *args: str, at: Path | None = None) -> dict[str, dict]:
     return {v["branch"] or "(detached)": v for v in json.loads(p.stdout)["verdicts"]}
 
 
-def _ignoring_env(world, wt: Path) -> None:
+def _ignoring_env(world, name: str) -> Path:
+    """A finished worktree holding one ignored file, .env."""
     world.repo.joinpath(".gitignore").write_text(".env\n")
     world.git("add", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
-    world.git("merge", "--quiet", "--ff-only", "main", at=wt)
+    wt = world.finished(name)
     wt.joinpath(".env").write_text("S=1\n")
+    return wt
 
 
 PROOF = "its tip is an ancestor of the head branch"
 
 
 def test_each_protection_keeps_the_verdict_and_clears_eligible(world) -> None:
-    dirty = world.worktree("dirty")
+    dirty = world.finished("dirty")
     dirty.joinpath("README").write_text("changed\n")
-    world.worktree("untracked").joinpath("new").write_text("x")
-    locked = world.worktree("locked")
+    world.finished("untracked").joinpath("new").write_text("x")
+    locked = world.finished("locked")
     world.git("worktree", "lock", str(locked))
-    _ignoring_env(world, world.worktree("secrets"))
-    here = world.worktree("here")
-    world.worktree("done")
+    _ignoring_env(world, "secrets")
+    here = world.finished("here")
+    world.finished("done")
 
     rows = _rows(world, at=here)
     blocks = {
@@ -1612,14 +1609,13 @@ def test_a_detached_worktree_is_protected_the_same_way(world) -> None:
     ],
 )
 def test_delete_ignored_files_makes_the_ignored_row_eligible(world, delete) -> None:
-    _ignoring_env(world, world.worktree("secrets"))
+    _ignoring_env(world, "secrets")
     row = _rows(world, *delete)["secrets"]
     assert (row["verdict"], row["eligible"], row["why"]) == ("remove", True, PROOF)
 
 
 def test_yes_grants_no_permission(world) -> None:
-    wt = world.worktree("secrets")
-    _ignoring_env(world, wt)
+    wt = _ignoring_env(world, "secrets")
     p = run(world, "gwp", "--yes", "--json")
     assert p.returncode == 0, p.stderr
     assert json.loads(p.stdout)["removed"] == []
@@ -1634,12 +1630,11 @@ def test_yes_grants_no_permission(world) -> None:
         ("gwr", "secrets", "--yes", "--delete", "bogus"),
         ("gwr", "secrets", "--yes", "--delete-ignored"),
         ("gwbs", "--delete", "all"),
-        ("gwbd", "secrets", "--yes", "--delete", "all"),
+        ("gwbd", "secrets", "--yes", "--delete", "ignored-files"),
     ],
 )
 def test_a_delete_value_a_command_does_not_take_is_a_usage_error(world, argv) -> None:
-    wt = world.worktree("secrets")
-    _ignoring_env(world, wt)
+    wt = _ignoring_env(world, "secrets")
     p = run(world, *argv)
     assert p.returncode == 2, p.stderr
     assert "--delete" in p.stderr
@@ -1669,8 +1664,8 @@ def test_the_head_branch_worktree_is_not_judged(world) -> None:
 
 
 def test_the_counts_count_eligible_rows(world) -> None:
-    world.worktree("done")
-    world.worktree("dirty").joinpath("wip").write_text("x")
+    world.finished("done")
+    world.finished("dirty").joinpath("wip").write_text("x")
     p = run(world, "gwp")
     assert p.returncode == 0, p.stderr
     assert "1 eligible, 2 kept, 0 unclear" in p.stdout
@@ -1678,10 +1673,10 @@ def test_the_counts_count_eligible_rows(world) -> None:
 
 
 def test_prune_yes_removes_only_eligible_rows(world) -> None:
-    done = world.worktree("done")
-    dirty = world.worktree("dirty")
+    done = world.finished("done")
+    dirty = world.finished("dirty")
     dirty.joinpath("wip").write_text("x")
-    locked = world.worktree("locked")
+    locked = world.finished("locked")
     world.git("worktree", "lock", str(locked))
 
     p = run(world, "gwp", "--yes", "--json")
@@ -1694,7 +1689,7 @@ def test_prune_yes_removes_only_eligible_rows(world) -> None:
 
 
 def test_a_protected_remove_row_is_dimmed_on_a_terminal(world) -> None:
-    world.worktree("dirty").joinpath("wip").write_text("x")
+    world.finished("dirty").joinpath("wip").write_text("x")
     code, out = run_with_a_terminal_on_stdout(world, "gwp")
     assert code == 0, out
     line = next(ln for ln in out.splitlines() if "dirty" in ln)
@@ -1705,7 +1700,7 @@ def test_a_protected_remove_row_is_dimmed_on_a_terminal(world) -> None:
 def test_a_locked_worktree_whose_directory_is_away_is_judged(world) -> None:
     """A lock is how git keeps a worktree on a drive that is not mounted, so
     its directory being gone is no error."""
-    locked = world.worktree("portable")
+    locked = world.finished("portable")
     world.git("worktree", "lock", str(locked))
     locked.rename(locked.with_name("unmounted"))
     row = _rows(world)["portable"]
@@ -1756,12 +1751,12 @@ def test_git_refuses_a_worktree_with_an_initialized_submodule(world) -> None:
 
 def test_an_initialized_submodule_clears_eligible(world) -> None:
     _with_submodule(world)
-    attached = world.worktree("lib-work")
+    attached = world.finished("lib-work")
     _init_submodule(world, attached)
     loose = world.parent / ".worktrees" / "loose" / world.repo.name
     world.git("worktree", "add", "--quiet", "--detach", str(loose), "main")
     _init_submodule(world, loose)
-    world.worktree("untouched")
+    world.finished("untouched")
     # Judged without the network: the submodule's origin is gone.
     for path in sorted((world.root / "lib").rglob("*"), reverse=True):
         path.rmdir() if path.is_dir() else path.unlink()
@@ -1780,7 +1775,7 @@ def test_an_initialized_submodule_clears_eligible(world) -> None:
 
 def test_a_deinitialized_submodule_still_clears_eligible(world) -> None:
     _with_submodule(world)
-    wt = world.worktree("lib-work")
+    wt = world.finished("lib-work")
     _init_submodule(world, wt)
     world.git("submodule", "deinit", "--quiet", "--all", at=wt)
     row = _rows(world)["lib-work"]
@@ -1871,7 +1866,7 @@ def test_a_change_after_the_question_removes_nothing(
     world, monkeypatch, capsys, entry, change
 ) -> None:
     _ignore_env(world)
-    wt = world.worktree("done")
+    wt = world.finished("done")
     make, why = CHANGES[change]
     _between(monkeypatch, lambda: make(world, wt))
     argv = ["--yes"] if entry == "gwp" else ["done", "--yes", "--delete", "all"]
@@ -1903,7 +1898,7 @@ def test_a_target_no_longer_eligible_after_the_question_is_kept(
 
 
 def test_each_outcome_is_reported_on_its_own(world, capsys) -> None:
-    wt = world.worktree("done")
+    wt = world.finished("done")
     code = cli.gwp(["--yes"])
     err = capsys.readouterr().err
     assert code == 0, err
@@ -1916,7 +1911,7 @@ def test_a_failed_ref_deletion_is_reported_as_failed(
 ) -> None:
     from worktrees.git import GitError
 
-    wt = world.worktree("done")
+    wt = world.finished("done")
 
     def refuse(ref, sha, **kwargs):
         raise GitError("cannot lock ref")
@@ -1935,7 +1930,7 @@ def test_a_failed_ref_deletion_is_reported_as_failed(
 def test_git_refusing_the_worktree_skips_its_branch(world, monkeypatch, capsys) -> None:
     from worktrees.git import GitError
 
-    wt = world.worktree("done")
+    wt = world.finished("done")
 
     def refuse(path, **kwargs):
         raise GitError("it is busy")
@@ -1964,7 +1959,7 @@ def test_a_detached_worktree_goes_without_a_ref_deletion(world, capsys) -> None:
 def test_removal_never_forces(world, capsys) -> None:
     from worktrees.git import options
 
-    world.worktree("done")
+    world.finished("done")
     assert cli.gwp(["--yes"]) == 0
     removes = [" ".join(e) for e in options.log if "remove" in e]
     assert removes and not any("--force" in e for e in removes)

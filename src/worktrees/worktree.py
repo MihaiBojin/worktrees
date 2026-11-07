@@ -207,7 +207,7 @@ def remove(
 def removable(
     head: str,
     head_branch: str,
-    delete_ignored: bool,
+    permitted: frozenset[str],
 ) -> list[Verdict]:
     """Every worktree, judging the one you stand in like any other.
 
@@ -219,7 +219,7 @@ def removable(
         R.worktrees(),
         head,
         head_branch,
-        delete_ignored,
+        permitted,
         here="",
     )
 

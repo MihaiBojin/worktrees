@@ -1,7 +1,7 @@
 complete -c gwbs -f
 complete -c gwbs -a '(command gwbs --complete)'
 
-complete -c gwbs -l only -x -a 'remove keep unknown' -d 'show only rows with this verdict'
+complete -c gwbs -l only -x -a 'remove empty keep unknown' -d 'show only rows with this verdict'
 complete -c gwbs -l json -d 'verdicts and evidence as data'
 complete -c gwbs -s q -l quiet -d 'omit the summary'
 complete -c gwbs -s v -l verbose -d 'print every command'

@@ -17,7 +17,7 @@
 
 _arguments -s \
     '(-f --force)'{-f,--force}'[remove it even when unfinished]' \
-    '*--delete[also delete this; nothing restores it]:value:(ignored-files all)' \
+    '*--delete[also delete this; nothing restores it]:value:(empty ignored-files all)' \
     '(-y --yes)'{-y,--yes}'[do not ask]' \
     '--json[the result as data]' \
     '(-q --quiet)'{-q,--quiet}'[the path alone]' \

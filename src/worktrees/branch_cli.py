@@ -16,10 +16,15 @@ from .cli import (
     _only,
     _require,
     _Stop,
+    add_delete_flag,
     add_status_flags,
+    permitted,
 )
 from .git import GitError, Refused, options
 from .render import BOLD, DIM, YELLOW, Cell, table
+
+# What --delete takes on gwbd. `all` is every other value.
+DELETE_VALUES = ("empty", "all")
 
 if TYPE_CHECKING:  # names used in annotations, which never run
     from . import repo as R
@@ -58,6 +63,7 @@ def delete_flags(p: argparse.ArgumentParser) -> None:
         "--all", action="store_true", help="assess all local branches for deletion"
     )
     p.add_argument("--dry-run", action="store_true", help="report without deleting")
+    add_delete_flag(p, "also delete a branch this covers", DELETE_VALUES)
     p.add_argument(
         "-y", "--yes", action="store_true", help="skip deletion confirmation"
     )
@@ -81,7 +87,13 @@ def _prepare(
         head_sha = prune.sha_of(found.ref).out.strip() if found.resolves else ""
         progress.say("reading local branches")
         try:
-            rows = branches.assess(args.names, head_sha, head_branch, found.problem())
+            rows = branches.assess(
+                args.names,
+                head_sha,
+                head_branch,
+                found.problem(),
+                permitted(args, DELETE_VALUES),
+            )
         except ValueError as exc:
             raise _Stop(str(exc), 2) from exc
     return found, head_sha, head_branch, rows
@@ -295,7 +307,9 @@ def delete(args: argparse.Namespace) -> int:
                 f"{row.branch}: checking again, then deleting ({i} of {len(go)})"
             )
             try:
-                branches.delete(row, head, head_sha, head_branch)
+                branches.delete(
+                    row, head, head_sha, head_branch, permitted(args, DELETE_VALUES)
+                )
             except (GitError, Refused, ValueError) as exc:
                 failures.append({"branch": row.branch, "why": str(exc)})
                 _err(render.fail(f"{render.branch(row.branch)} kept: {exc}"))

@@ -48,14 +48,19 @@ def local_refs() -> dict[str, tuple[str, str]]:
 
 
 def assess(
-    names: list[str], head_sha: str, head_branch: str, no_head: str = ""
+    names: list[str],
+    head_sha: str,
+    head_branch: str,
+    no_head: str = "",
+    permitted: frozenset[str] = frozenset(),
 ) -> list[Verdict]:
     """Every branch asked for, judged against `head_sha`. With no head sha,
     `no_head` says why, and every branch a head would have to prove is
     `unknown`, `main` and `master` apart.
 
     The head branch and a symbolic ref are not judged. A branch checked out
-    in a worktree is judged and never eligible."""
+    in a worktree is judged and never eligible. An `empty` one is eligible
+    only when `permitted` holds `empty`."""
     refs = local_refs()
     evidence = (sync.read() or {}).get("evidence", {})
     repository = branch_forge.repository_for(R.remote())
@@ -66,6 +71,7 @@ def assess(
     for wt in R.worktrees():
         if wt.branch:
             checked.setdefault(wt.branch, []).append(wt.path)
+    firsts = verdicts.first_parents(head_sha) if head_sha else frozenset()
     rows = []
     wanted = list(dict.fromkeys(names or refs))
     for i, name in enumerate(wanted, 1):
@@ -95,13 +101,17 @@ def assess(
 
             try:
                 found = verdicts.prove(
-                    sha, name, head_sha, head_branch, evidence, repository, say
+                    sha, name, head_sha, head_branch, evidence, repository, say, firsts
                 )
                 row.verdict, row.why = found.verdict, found.why
                 row.proof, row.request = found.proof, found.request
-                row.eligible = found.verdict == verdicts.REMOVE and not row.paths
-                if found.verdict == verdicts.REMOVE and row.paths:
-                    row.why = f"{found.why}; {CHECKED_OUT}"
+                if found.verdict in (verdicts.REMOVE, verdicts.EMPTY):
+                    if row.paths:
+                        row.why = f"{found.why}; {CHECKED_OUT}"
+                    elif found.verdict == verdicts.EMPTY and "empty" not in permitted:
+                        row.why = f"{found.why}; {verdicts.NEEDS_EMPTY}"
+                    else:
+                        row.eligible = True
             except GitError as exc:
                 row.error, row.why = True, exc.line()
     return rows
@@ -112,11 +122,12 @@ def delete(
     head_ref: str,
     head_sha: str,
     head_branch: str,
+    permitted: frozenset[str] = frozenset(),
 ) -> None:
     """Recheck the verdict and delete only the commit the user approved."""
     if prune.sha_of(head_ref).out.strip() != head_sha:
         raise Refused("the head branch changed after assessment; run the command again")
-    fresh = assess([row.branch], head_sha, head_branch)[0]
+    fresh = assess([row.branch], head_sha, head_branch, permitted=permitted)[0]
     if fresh.sha != row.sha:
         raise Refused(f"{row.branch} changed after assessment; run the command again")
     if not fresh.eligible:

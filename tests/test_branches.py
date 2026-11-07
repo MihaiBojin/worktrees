@@ -96,7 +96,7 @@ def test_a_never_pushed_unmerged_worktree_is_kept(world):
 
 @pytest.mark.parametrize("shape", ["ancestry", "squash", "content", "unmerged"])
 def test_a_worktree_and_a_loose_branch_share_one_proof(world, shape):
-    wt = world.worktree("feature")
+    wt = world.finished("feature")
     if shape != "ancestry":
         world.commit("feature", "branch\n", at=wt)
     if shape == "squash":
@@ -192,8 +192,8 @@ def test_a_git_failure_in_a_branch_is_an_error(world):
 
 
 def test_a_checked_out_branch_keeps_its_verdict_and_is_not_eligible(world):
-    world.worktree("occupied")
-    world.git("branch", "done")
+    world.finished("occupied")
+    world.finished_branch("done")
     rows = {r["branch"]: r for r in status(world)["verdicts"]}
     assert set(rows) == {"main", "occupied", "done"}
     occupied = rows["occupied"]
@@ -208,7 +208,7 @@ def test_a_checked_out_branch_keeps_its_verdict_and_is_not_eligible(world):
 
 @pytest.mark.parametrize("entry", ["gwbs", "gwbd"])
 def test_console_aliases_work(world, entry):
-    world.git("branch", "done")
+    world.finished_branch("done")
     args = ["done", "--json"]
     if entry == "gwbd":
         args += ["--dry-run"]
@@ -242,7 +242,7 @@ def test_unknown_name_prevents_any_deletion(world):
 
 @pytest.mark.parametrize("name", ["done", "a'b", "$(id)"])
 def test_delete_prints_an_executable_undo_command(world, name):
-    world.git("branch", name)
+    world.finished_branch(name)
     sha = world.git("rev-parse", f"refs/heads/{name}")
     p = cli(world, "branch", "delete", name, "--yes", "--json")
     assert p.returncode == 0, p.stderr
@@ -265,7 +265,7 @@ def test_a_pipe_cannot_delete_without_yes(world, args):
 
 
 def test_no_arguments_requires_a_selector_even_with_yes(world):
-    world.git("branch", "done")
+    world.finished_branch("done")
     p = cli(world, "branch", "delete", "--yes")
     assert p.returncode == 3
     assert "terminal" in p.stderr
@@ -329,8 +329,8 @@ def test_content_proof_accepts_matching_deletions_and_unusual_paths(world):
 def test_selector_requires_a_selection_then_confirmation(world, answer):
     from test_cli import run_on_a_terminal
 
-    world.git("branch", "one")
-    world.git("branch", "two")
+    world.finished_branch("one")
+    world.finished_branch("two")
     code, out = run_on_a_terminal(world, "gwbd", answer=answer)
     assert code == (3 if answer == "9\n" else 0), out
     names = world.git(
@@ -341,7 +341,7 @@ def test_selector_requires_a_selection_then_confirmation(world, answer):
 
 
 def test_all_deletes_only_proven_branches(world):
-    world.git("branch", "done")
+    world.finished_branch("done")
     local_branch(world)
     p = cli(
         world,
@@ -429,7 +429,7 @@ def test_json_reports_only_successful_deletions(world, monkeypatch, capsys):
     from worktrees.git import GitError
 
     for name in ("one", "two"):
-        world.git("branch", name)
+        world.finished_branch(name)
     original = prune.ref_delete
 
     def fail_one(ref, sha, **kwargs):
@@ -448,7 +448,7 @@ def test_json_reports_only_successful_deletions(world, monkeypatch, capsys):
 
 
 def test_successful_deletion_is_reported_to_a_person(world):
-    world.git("branch", "done")
+    world.finished_branch("done")
     p = cli(world, "branch", "delete", "done", "--yes")
     assert p.returncode == 0, p.stderr
     assert "deleted 1 branch: done" in p.stdout
@@ -458,7 +458,7 @@ def test_the_selector_and_the_plan_name_each_verdict(world):
     """keep and unknown are different reasons a row cannot be picked."""
     from test_cli import run_on_a_terminal
 
-    world.git("branch", "done")
+    world.finished_branch("done")
     code, out = run_on_a_terminal(world, "gwbd", answer="1\nn\n")
     assert code == 0, out
     rows = {
@@ -475,7 +475,7 @@ def test_the_spinner_line_names_each_branch_and_how_far_along(world, monkeypatch
     from worktrees import branches, progress
 
     for name in ("one", "two"):
-        world.git("branch", name)
+        world.finished_branch(name)
     said: list[str] = []
     monkeypatch.setattr(progress, "say", said.append)
     head = world.git("rev-parse", "HEAD")
@@ -485,8 +485,8 @@ def test_the_spinner_line_names_each_branch_and_how_far_along(world, monkeypatch
 
 
 def test_branch_delete_holds_back_a_checked_out_branch(world):
-    world.worktree("occupied")
-    world.git("branch", "done")
+    world.finished("occupied")
+    world.finished_branch("done")
     p = cli(world, "branch", "delete", "occupied", "done", "--yes")
     assert p.returncode == 3, p.stderr
     assert "occupied kept: its tip is an ancestor" in p.stderr
@@ -495,7 +495,7 @@ def test_branch_delete_holds_back_a_checked_out_branch(world):
 
 
 def test_json_keeps_the_disclosure_on_stderr(world):
-    world.git("branch", "done")
+    world.finished_branch("done")
     sha = world.git("rev-parse", "done")
     p = cli(world, "branch", "delete", "done", "--yes", "--json")
     assert p.returncode == 0, p.stderr

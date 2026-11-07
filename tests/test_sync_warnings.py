@@ -199,9 +199,9 @@ def test_a_fresh_sync_prints_no_sync_line(world) -> None:
 def test_the_plan_repeats_the_never_synced_line(world, argv) -> None:
     bare(world)
     if argv[0] == "gwbd":
-        world.git("branch", "done")
+        world.finished_branch("done")
     else:
-        world.worktree("done")
+        world.finished("done")
     p = run(world, *argv)
     assert p.returncode == 0, p.stderr
     assert p.stderr.splitlines().count(NEVER) == 2, p.stderr
@@ -212,9 +212,9 @@ def test_the_plan_repeats_the_never_synced_line(world, argv) -> None:
 def test_a_never_synced_deletion_asks_so(world, argv) -> None:
     bare(world)
     if argv[0] == "gwbd":
-        world.git("branch", "done")
+        world.finished_branch("done")
     else:
-        wt = world.worktree("done")
+        wt = world.finished("done")
     code, out = run_on_a_terminal(world, *argv, answer="n\n")
     assert code == 0, out
     assert "Never synced. Delete anyway? [y/N]" in out
@@ -226,7 +226,7 @@ def test_a_never_synced_deletion_asks_so(world, argv) -> None:
 def test_a_synced_deletion_asks_the_usual_question(world) -> None:
     bare(world)
     assert sync(world).returncode == 0
-    world.worktree("done")
+    world.finished("done")
     code, out = run_on_a_terminal(world, "gwp", answer="n\n")
     assert code == 0, out
     assert "remove 1 worktree(s)? [y/N]" in out

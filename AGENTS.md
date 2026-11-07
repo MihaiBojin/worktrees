@@ -158,10 +158,9 @@ going quiet in a completion nobody is watching.
 each through a jq filter and removes only with `gwr` and `gwbd`, so the JSON
 fields those filters name are an interface. `tests/test_plugin.py` runs both
 filters, read out of `SKILL.md`, against the commands' output: a renamed or
-dropped field fails there. They are two plain pipelines, and the head sha is
-written into the second as a literal rather than passed as a jq variable,
-because Claude Code refused both a `{ ...; } | jq` group and a jq program
-holding a `$` under the command's `allowed-tools`.
+dropped field fails there. They are two plain pipelines with no jq
+variable, because Claude Code refused both a `{ ...; } | jq` group and a jq
+program holding a `$` under the command's `allowed-tools`.
 
 The plugin carries the release version in three manifests, and
 `scripts/bump_version.py` stamps all three. `plugin/plugin.json` is the
@@ -484,19 +483,24 @@ request that fails a check reads `unknown` unless ancestry, squash or content
 proves the branch. Evidence for this tip proves it, subject to the worktree
 protections.
 
-## Three verdicts, and the third is not a softer second
+## Four verdicts, and `unknown` is not a softer `keep`
 
-`remove` was proved finished, `keep` has a reason not to be, and `unknown` could
-not tell. "No common history with the head branch" is a different fact from
-"holds work the head branch lacks", and printing them the same way invites
-somebody to act on the wrong one.
+`remove` was proved finished, `empty` holds nothing the head branch lacks,
+`keep` has a reason not to be, and `unknown` could not tell. "No common
+history with the head branch" is a different fact from "holds work the head
+branch lacks", and printing them the same way invites somebody to act on the
+wrong one. `empty` is a tip on the head ref's first-parent line, read once
+per assessment by `verdicts.first_parents`: a branch nobody committed to and
+a fast-forward merge look the same, so neither goes without `--delete
+empty`.
 
-Eligible is a second answer, not a fourth verdict. A row is eligible when its
-verdict is `remove` and no protection applies: the worktree you stand in, a
-lock, uncommitted or untracked files, an initialized submodule, ignored
-files without `--delete ignored-files`, and for `gwbs` a branch checked out
-in a worktree. A protection clears `eligible` and leaves the verdict and its proof alone, and
-`why` names the first one after the proof. The main checkout and the head
+Eligible is a second answer, not a fifth verdict. A row is eligible when its
+verdict is `remove`, or `empty` with `--delete empty`, and no protection
+applies: the worktree you stand in, a lock, uncommitted or untracked files,
+an initialized submodule, ignored files without `--delete ignored-files`,
+and for `gwbs` a branch checked out in a worktree. A protection clears
+`eligible` and leaves the verdict and its proof alone, and `why` names the
+first one after the proof. The main checkout and the head
 branch are not judged and read `keep`. `prune.removable()` returns the
 eligible rows; the counts line and the removal both use it, so what one
 prints and the other removes cannot drift.

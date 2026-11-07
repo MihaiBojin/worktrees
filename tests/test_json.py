@@ -16,7 +16,7 @@ TIME = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ"
 
 def every_json_command(world) -> list[tuple[tuple[str, ...], Path]]:
     """One run of each command that takes --json, and where to run it."""
-    world.worktree("feature")
+    world.finished("feature")
     moving = world.worktree("moving")
     rotating = world.worktree("rotating")
     world.commit("r.txt", at=rotating)

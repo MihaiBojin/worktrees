@@ -63,9 +63,9 @@ def _filter(entry: str) -> str:
     return found.group(1)
 
 
-def _jq(program: str, piped: str, head: str = "") -> dict:
-    """Runs the program with `HEAD_SHA` written over, as the skill says."""
-    program = program.replace("HEAD_SHA", head)
+def _jq(program: str, piped: str) -> dict:
+    """Runs the program as the skill writes it."""
+    assert "$" not in program, "Claude Code refuses a jq program holding a $"
     proc = subprocess.run(
         ["jq", "-c", program], input=piped, capture_output=True, text=True, check=True
     )
@@ -104,17 +104,20 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
     for branch in ("squashed", "loose"):
         world.git("merge", "--quiet", "--squash", branch)
         world.git("commit", "--quiet", "-m", f"{branch} (#1)")
-    world.worktree("started")
-    world.worktree("dirty").joinpath("wip").write_text("x")
+    started = world.worktree("started")
+    world.git("branch", "idle")
+    world.finished("dirty").joinpath("wip").write_text("x")
 
     branches = _jq(_filter("gwbs"), _json(world, "gwbs"))
-    out = _jq(_filter("gwp"), _json(world, "gwp"), branches["head_sha"])
+    out = _jq(_filter("gwp"), _json(world, "gwp"))
 
     worktrees = {row["branch"]: row for row in out["worktrees"]}
-    assert set(worktrees) == {"squashed", "started"}
-    assert worktrees["squashed"]["at_head"] is False
-    assert worktrees["started"]["at_head"] is True
+    assert set(worktrees) == {"squashed"}
     assert worktrees["squashed"]["path"] == str(squashed)
+    assert [(r["branch"], r["path"]) for r in out["empty"]] == [
+        ("started", str(started))
+    ]
+    assert [r["branch"] for r in branches["empty"]] == ["idle"]
     # The main checkout, and a finished worktree with uncommitted changes.
     assert (out["kept"], out["unknown"], out["ignored"]) == (2, 0, [])
 
@@ -122,7 +125,7 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
     assert [row["branch"] for row in branches["branches"]] == ["loose"]
     assert branches["branches"][0]["proof"] == "squash"
     assert branches["branches"][0]["undo"].startswith("git branch loose ")
-    assert (branches["kept"], branches["unknown"]) == (4, 0)
+    assert (branches["kept"], branches["unknown"]) == (3, 0)
 
 
 def test_the_skill_removes_only_the_chosen_worktree_by_its_path(world) -> None:
@@ -135,9 +138,8 @@ def test_the_skill_removes_only_the_chosen_worktree_by_its_path(world) -> None:
         world.commit(f"{name}-file", at=wt)
         world.git("merge", "--quiet", "--squash", name)
         world.git("commit", "--quiet", "-m", f"{name} (#1)")
-    head = world.git("rev-parse", "HEAD")
 
-    out = _jq(_filter("gwp"), _json(world, "gwp"), head)
+    out = _jq(_filter("gwp"), _json(world, "gwp"))
     rows = {row["branch"]: row for row in out["worktrees"]}
     assert set(rows) == {"done", "done-more"}
     chosen = rows["done"]["path"]

@@ -30,21 +30,23 @@ Branches first:
 
 ```sh
 gwbs --json | jq -c '{
-  head_sha,
   branches: [.verdicts[] | select(.eligible) | {branch, proof, undo}],
-  kept: [.verdicts[] | select((.eligible | not) and .verdict != "unknown")] | length,
+  empty: [.verdicts[] | select(.verdict == "empty" and (.paths | length) == 0)
+    | {branch, undo}],
+  kept: [.verdicts[] | select((.eligible | not)
+    and .verdict != "unknown" and .verdict != "empty")] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length
 }'
 ```
 
-Then worktrees, with the `head_sha` that printed written in place of
-`HEAD_SHA`:
+Then worktrees:
 
 ```sh
 gwp --json | jq -c '{
-  worktrees: [.verdicts[] | select(.eligible)
-    | {branch, path, why, at_head: (.sha == "HEAD_SHA")}],
-  kept: [.verdicts[] | select((.eligible | not) and .verdict != "unknown")] | length,
+  worktrees: [.verdicts[] | select(.eligible) | {branch, path, why}],
+  empty: [.verdicts[] | select(.verdict == "empty") | {branch, path, why}],
+  kept: [.verdicts[] | select((.eligible | not)
+    and .verdict != "unknown" and .verdict != "empty")] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length,
   ignored: [.verdicts[] | select((.eligible | not) and .ignored > 0) | .branch]
 }'
@@ -57,14 +59,16 @@ gwp --json | jq -c '{
 - `worktrees` are linked worktrees `gwr` would remove, together with their
   branches. `why` names the proof, such as `its tree or combined patch is
   already in the head branch`.
-- `at_head` is true when the worktree's branch sits exactly on the head
-  branch's tip. That is a worktree with no commits of its own, which is what
-  one somebody has just started looks like.
+- `empty`, in both, lists branches and worktrees whose tip is on the head
+  branch's main line: no commits of their own, which is what one somebody
+  has just started looks like, and what a fast-forward merge leaves. The CLI
+  removes them only with `--delete empty`, so they are listed apart.
 - `ignored` names finished worktrees held back only because they hold
   gitignored files.
 - `kept` and `unknown` count the rest. `kept` includes finished rows that a
-  protection holds back, such as uncommitted changes, a lock or an initialized submodule. The main
-  checkout and the head branch are always among the kept.
+  protection holds back, such as uncommitted changes, a lock or an
+  initialized submodule. The main checkout and the head branch are always
+  among the kept.
 
 A branch checked out in a worktree is never eligible in `branches` and
 appears in `worktrees` instead, so nothing is listed twice.
@@ -79,7 +83,8 @@ worktree  fix-parser          its tree or combined patch is already in the head 
 branch    chore/old-renovate  squash
 ```
 
-Shorten `$HOME` to `~`. Mark an `at_head` row `(no commits of its own)`.
+Shorten `$HOME` to `~`. Then the `empty` rows, worktrees and branches, as a
+second table headed `no commits of their own`.
 Under the table, one line each: how many worktrees and branches were kept, how
 many are unknown, and the `ignored` names if there are any. Then say that
 nothing is removed without proof from the CLI, and that both commands assess
@@ -94,13 +99,13 @@ Never remove anything without an answer.
 In Claude Code, use the AskUserQuestion tool. It takes two to four options;
 offer the ones that apply:
 
-- Remove all proven: every row except those marked `at_head`.
+- Remove all proven: every `worktrees` and `branches` row.
 - Only branches: the `branches` rows.
-- Only worktrees: the `worktrees` rows not marked `at_head`.
+- Only worktrees: the `worktrees` rows.
 - Remove nothing.
 
 "Other" carries names: a list to remove, or "all except" a list to keep. An
-`at_head` worktree is removed only when the user names it.
+`empty` row is removed only when the user names it.
 
 Where there is no AskUserQuestion tool, as in Codex, ask the same question in
 plain text and wait for the reply.
@@ -115,11 +120,14 @@ the shell.
   removes the worktree and its branch. `command` runs the binary, not the
   shell function that would change directory.
 - The chosen branches, in one call: `gwbd 'NAME' 'NAME' ... --yes 2>&1`.
+- A named `empty` worktree: `command gwr 'PATH' --delete empty --yes 2>&1`.
+  Named `empty` branches: `gwbd 'NAME' ... --delete empty --yes 2>&1`.
 
 Never `git branch -D`, `git worktree remove`, `git update-ref -d` or `rm`.
 Never pass `--force`, whatever a refusal suggests: it removes a worktree that
 is not proved finished. Never run `gwp --yes`: it removes every eligible
-worktree, not the ones the user chose. Never pass `--delete all`. Never pass
+worktree, not the ones the user chose. Never pass `--delete all`, nor
+`--delete empty` for a row the user did not name. Never pass
 `--delete ignored-files` unless the user asked for it by name: it deletes the
 gitignored files in the worktree, and nothing restores them. When they do
 ask for a worktree in `ignored`, it is

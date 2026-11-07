@@ -18,6 +18,7 @@ gwbd old-fix --yes --json
 | No names | Show a numbered selector. Enter space-separated numbers, or blank to cancel. |
 | `--all` | Assess every local branch and offer the eligible set for confirmation. |
 | `--dry-run` | Report the assessment and undo commands without deleting. With no names, assess all branches without a selector. |
+| `--delete empty` | Also make `empty` branches eligible. `--delete all` grants the same. Repeatable; any other value is a usage error. |
 
 `--all` and names cannot be combined. An unknown name stops the entire request
 before any deletion. The selector shows branches that are not eligible without

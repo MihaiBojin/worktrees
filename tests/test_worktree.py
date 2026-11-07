@@ -320,7 +320,8 @@ def _gwr(world, *args: str) -> subprocess.CompletedProcess[str]:
 def _add(world, name: str, branch: str) -> Path:
     """A worktree whose directory name and branch differ."""
     path = world.parent / ".worktrees" / name / world.repo.name
-    world.git("worktree", "add", "--quiet", "-b", branch, str(path))
+    world.finished_branch(branch)
+    world.git("worktree", "add", "--quiet", str(path), branch)
     return path
 
 
@@ -342,8 +343,8 @@ def test_remove_takes_no_substring(world) -> None:
 
 def test_remove_by_a_path_already_gone_leaves_its_prefix_sibling(world) -> None:
     """Asked twice for `fix`, the second call must not settle on `fix-more`."""
-    fix = world.worktree("fix")
-    more = world.worktree("fix-more")
+    fix = world.finished("fix")
+    more = world.finished("fix-more")
     assert _gwr(world, str(fix), "--yes").returncode == 0
     assert not fix.exists()
 
@@ -368,7 +369,7 @@ def test_remove_refuses_several_exact_matches_without_a_terminal(world) -> None:
 
 def test_remove_prints_nothing_when_you_were_not_standing_in_it(world) -> None:
     """Empty stdout means stay put."""
-    wt = world.worktree("done")
+    wt = world.finished("done")
     p = run(world, "gwr", "done", "--yes")
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip() == ""
@@ -377,7 +378,7 @@ def test_remove_prints_nothing_when_you_were_not_standing_in_it(world) -> None:
 
 
 def test_remove_prints_the_main_checkout_when_you_were(world) -> None:
-    wt = world.worktree("done")
+    wt = world.finished("done")
     p = run(world, "gwr", "--yes", at=wt)
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip() == str(world.repo)
@@ -401,7 +402,7 @@ def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     (world.repo / ".gitignore").write_text(".env\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
-    wt = world.worktree("holds")
+    wt = world.finished("holds")
     (wt / ".env").write_text("SECRET=1\n")
 
     p = run(world, "gwr", "holds", "--yes")
@@ -444,7 +445,7 @@ def test_force_removes_the_checkout_and_keeps_the_branch(world) -> None:
 
 
 def test_remove_prints_the_restore_line_once(world) -> None:
-    world.worktree("done")
+    world.finished("done")
     p = run(world, "gwr", "done", "--yes")
     assert p.stderr.count("restore with: git branch done ") == 1
 

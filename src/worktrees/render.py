@@ -126,7 +126,7 @@ def table(rows: list[Row], ink: Ink | None = None) -> str:
 
 # What each verdict prints in, in `gwp` and `gwbs` alike, and in the
 # counts under them. A branch is the same bold magenta it is on stderr.
-VERDICT = {"remove": GREEN, "keep": BLUE, "unknown": YELLOW}
+VERDICT = {"remove": GREEN, "empty": CYAN, "keep": BLUE, "unknown": YELLOW}
 BRANCH = BOLD + MAGENTA
 VERDICTS = tuple(VERDICT)
 

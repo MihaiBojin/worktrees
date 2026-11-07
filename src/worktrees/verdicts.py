@@ -9,13 +9,14 @@ from pathlib import Path
 
 from . import branch_forge, merged, progress, sync
 from . import repo as R
-from .git import GitError
+from .git import GitError, git
 
 # The verdicts, each the instruction it gives. `unknown` is not `keep` with a
 # softer word: "no common history with the head branch" is a different fact
 # from "this has commits the head branch lacks", and a sweep printing them the
 # same way invites somebody to act on the wrong one.
 REMOVE = "remove"
+EMPTY = "empty"
 KEEP = "keep"
 UNKNOWN = "unknown"
 
@@ -23,6 +24,7 @@ MAIN_CHECKOUT = "it is the main checkout, and never removable"
 HEAD_BRANCH = "it is the head branch"
 MAIN_OR_MASTER = "it is main or master"
 SUBMODULE = "it has an initialized submodule"
+NEEDS_EMPTY = "needs --delete empty"
 
 
 class Verdict:
@@ -82,6 +84,23 @@ class Verdict:
         return self.branch or "(detached)"
 
 
+EMPTY_WHY = "its tip is on the head branch's first-parent history"
+
+
+@git("rev-list --first-parent $head")
+def first_parent_list(head: str) -> None:
+    """Every commit on the head ref's main line."""
+
+
+def first_parents(head: str) -> frozenset[str]:
+    """The commits an `empty` tip sits on, read once per assessment.
+
+    A local counterpart ahead of the remote head adds nothing: the set is
+    the assessed head's alone.
+    """
+    return frozenset(first_parent_list(head).lines)
+
+
 def stale(records: list[R.Worktree]) -> list[R.Worktree]:
     """Records answering for a directory somebody deleted by hand.
 
@@ -119,6 +138,7 @@ def prove(
     evidence: dict,
     repository: str,
     say: Callable[[str], None],
+    firsts: frozenset[str] = frozenset(),
 ) -> Proof:
     """Whether the change at `sha` is in the head branch.
 
@@ -153,6 +173,10 @@ def prove(
                 )
                 return found
             found.why = no or "the request's merge commit is not in the head branch"
+    # A branch started at an old main-line commit and one merged by
+    # fast-forward look the same from here, and neither holds work.
+    if sha in firsts:
+        return Proof(EMPTY, EMPTY_WHY, "first-parent", found.request)
     for proof, why, question, check in (
         (
             "ancestry",
@@ -211,7 +235,7 @@ def assess(
     records: list[R.Worktree],
     head: str,
     head_branch: str,
-    delete_ignored: bool,
+    permitted: frozenset[str],
     here: str | None = None,
     include_main: bool = False,
 ) -> list[Verdict]:
@@ -234,6 +258,7 @@ def assess(
     main = R.main_worktree()
     evidence = (sync.read() or {}).get("evidence", {})
     repository = branch_forge.repository_for(R.remote())
+    firsts = first_parents(head)
     if here is None:
         here = R.toplevel().out.strip()
 
@@ -264,9 +289,10 @@ def assess(
                 evidence,
                 repository,
                 lambda question: progress.say(f"{wt.label}: {question}"),
+                firsts,
             )
         row = say(found.verdict, found.why)
-        if found.verdict != REMOVE:
+        if found.verdict not in (REMOVE, EMPTY):
             return row
 
         # The first protection that applies. The status is read last: a
@@ -280,11 +306,13 @@ def assess(
             # assessment's git calls.
             progress.say(f"{wt.label}: reading its status")
             status = R.status_of(wt.path)
-            ignored = 0 if delete_ignored else len(status.ignored)
+            ignored = 0 if "ignored-files" in permitted else len(status.ignored)
             if status.dirty:
                 block = "it has uncommitted changes"
             elif R.has_submodule(wt.path):
                 block = SUBMODULE
+            elif found.verdict == EMPTY and "empty" not in permitted:
+                block = NEEDS_EMPTY
             elif ignored:
                 block = (
                     f"it holds {ignored} ignored path(s), "
