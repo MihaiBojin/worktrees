@@ -222,7 +222,7 @@ Four behaviours the field survey found nowhere else, of which three are here:
 | a merged request as evidence only when it names this branch tip and a merge commit the head branch contains, asked by `gw sync` of the repository the remote names and no other | `branch_forge.py`, `forge.REDIRECTS`, `sync.py` and `verdicts.prove` |
 | a worktree belonging to another repository, which makes `git worktree list` return empty and so reads as "nothing is there" | `layout.owner_of`, reached from `gwa` |
 | the derived layout | `layout.destination` |
-| stash entries parked on a branch counting as work | `verdicts.stashes_of`: a stash whose subject names the branch and whose first parent its tip contains holds the branch back, and the disclosure prints `git stash store -m SUBJECT SHA` for each |
+| stash entries parked on a branch counting as work | `verdicts.stashes_of`: a stash whose subject names the branch and whose first parent its tip contains holds the branch back, and the disclosure prints `git stash store -m 'SUBJECT' SHA` for each |
 
 ## 5. Failure classes that stay tested
 
