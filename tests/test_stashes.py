@@ -215,8 +215,8 @@ def test_a_stash_already_gone_is_skipped(world, capsys) -> None:
     assert said == ["stash On main: gone is already gone"]
 
 
-def _racing_git(world, intruder: str) -> dict[str, str]:
-    """A git that stores `intruder` on the stash list once, just before the
+def _racing_git(world, race: str) -> dict[str, str]:
+    """A git that runs `race` against the stash list once, just before the
     first real `stash drop`, the way another worktree's process could."""
     real = shutil.which("git")
     bin_dir = world.root / "racing-bin"
@@ -228,8 +228,7 @@ def _racing_git(world, intruder: str) -> dict[str, str]:
         'case " $* " in *" stash drop "*)\n'
         f'  if [ ! -e "{marker}" ]; then\n'
         f'    touch "{marker}"\n'
-        f'    "{real}" -C "{world.repo}" stash store \\\n'
-        f'      -m "On other: intruder" {intruder}\n'
+        f'    "{real}" -C "{world.repo}" {race}\n'
         "  fi;;\n"
         "esac\n"
         f'exec "{real}" "$@"\n'
@@ -262,7 +261,7 @@ def test_a_stash_list_that_changes_mid_drop_loses_nothing(world, at) -> None:
         cwd=str(world.repo),
         capture_output=True,
         text=True,
-        env=_racing_git(world, intruder),
+        env=_racing_git(world, f'stash store -m "On other: intruder" {intruder}'),
     )
     assert p.returncode == 1, p.stderr
     assert "stash On wip: mine not dropped: the stash list changed" in p.stderr
@@ -273,3 +272,60 @@ def test_a_stash_list_that_changes_mid_drop_loses_nothing(world, at) -> None:
     intruded = "On main: intruder" if at == 0 else "On other: intruder"
     subjects = world.git("stash", "list", "--format=%gs").splitlines()
     assert sorted(subjects) == sorted([intruded, "On wip: mine", "On main: above"])
+
+
+def test_a_drop_git_refuses_is_reported_and_the_sweep_goes_on(world) -> None:
+    """The target leaves the list between the listing and the drop, so the
+    index read a moment ago names nothing and git refuses the drop."""
+    wt = world.finished("wip")
+    stash(world, wt, "mine")
+    two = world.finished("two")
+    p = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gwp; raise SystemExit(gwp())",
+            "--yes",
+            "--delete",
+            "stashes",
+        ],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=_racing_git(world, "stash drop --quiet"),
+    )
+    assert p.returncode == 1, p.stderr
+    assert "stash On wip: mine not dropped: " in p.stderr
+    assert "Traceback" not in p.stderr
+    assert not wt.exists() and not two.exists()
+    assert "removed 2 worktree(s): wip, two" in p.stdout
+
+
+def test_a_put_back_git_refuses_prints_the_restore_command(world, monkeypatch) -> None:
+    from worktrees import prune
+    from worktrees import repo as R
+    from worktrees.git import GitError, Run
+
+    mine = stash(world, world.repo, "mine")
+    other = stash(world, world.repo, "other")
+
+    def drop(selector, **kwargs):
+        # The entry above went in its place.
+        world.git("stash", "drop", "--quiet", "stash@{0}")
+        return Run(0, f"Dropped stash@{{0}} ({other})\n", "")
+
+    def refuse(subject, sha, **kwargs):
+        raise GitError("git stash store exited 1:\nerror: cannot lock ref")
+
+    monkeypatch.setattr(prune, "stash_drop", drop)
+    monkeypatch.setattr(prune, "stash_store", refuse)
+    said: list[str] = []
+    target = R.Stash(mine, "On main: mine", world.git("rev-parse", "HEAD"))
+    assert not prune.drop_stashes([target], said.append)
+    assert said[-1].endswith(
+        f"restore it with: git stash store -m 'On main: other' {other}"
+    )
+    assert (
+        "could not be put back: git stash store exited 1: error: cannot lock ref"
+        in (said[-1])
+    )
