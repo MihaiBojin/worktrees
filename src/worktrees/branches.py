@@ -25,8 +25,8 @@ class Verdict:
     paths: list[str] = field(default_factory=list)
     request: dict | None = None
     error: bool = False
-    # The verdict is `remove` and the branch is not checked out: what gwbd
-    # deletes. Being checked out never changes the verdict, only this.
+    # The verdict is `remove` and the branch is not main or master: what
+    # gwbd deletes. That protection never changes the verdict, only this.
     eligible: bool = False
 
     @property
@@ -37,7 +37,7 @@ class Verdict:
         return {**asdict(self), "undo": self.undo}
 
 
-CHECKED_OUT = "it is checked out in a worktree"
+CHECKED_OUT = "checked out in a worktree; see gwp"
 
 
 def local_refs() -> dict[str, tuple[str, str]]:
@@ -58,9 +58,10 @@ def assess(
     `no_head` says why, and every branch a head would have to prove is
     `unknown`, `main` and `master` apart.
 
-    The head branch and a symbolic ref are not judged. A branch checked out
-    in a worktree is judged and never eligible. An `empty` one is eligible
-    only when `permitted` holds `empty`."""
+    With no names, a branch checked out in a worktree is left out: it
+    appears only as its worktree, in gwp. Named, it is a `keep` row. The
+    head branch and a symbolic ref are not judged either. An `empty` one is
+    eligible only when `permitted` holds `empty`."""
     refs = local_refs()
     evidence = (sync.read() or {}).get("evidence", {})
     repository = branch_forge.repository_for(R.remote())
@@ -73,7 +74,7 @@ def assess(
             checked.setdefault(wt.branch, []).append(wt.path)
     firsts = verdicts.first_parents(head_sha) if head_sha else frozenset()
     rows = []
-    wanted = list(dict.fromkeys(names or refs))
+    wanted = list(dict.fromkeys(names or (r for r in refs if r not in checked)))
     for i, name in enumerate(wanted, 1):
         sha, symbolic = refs[name]
         row = Verdict(
@@ -83,11 +84,11 @@ def assess(
         rows.append(row)
         if name == head_branch:
             row.verdict, row.why = "keep", "it is the head branch"
-        elif not head_sha and row.paths:
+        elif row.paths:
             row.verdict, row.why = "keep", CHECKED_OUT
         elif symbolic:
             row.verdict, row.why = "keep", "it is a symbolic branch ref"
-        elif not head_sha and name in ("main", "master"):
+        elif not head_sha and name in verdicts.PROTECTED:
             row.verdict, row.why = "keep", verdicts.MAIN_OR_MASTER
         elif not head_sha:
             row.error, row.why = True, no_head
@@ -106,8 +107,8 @@ def assess(
                 row.verdict, row.why = found.verdict, found.why
                 row.proof, row.request = found.proof, found.request
                 if found.verdict in (verdicts.REMOVE, verdicts.EMPTY):
-                    if row.paths:
-                        row.why = f"{found.why}; {CHECKED_OUT}"
+                    if name in verdicts.PROTECTED:
+                        row.why = f"{found.why}; {verdicts.MAIN_OR_MASTER}"
                     elif found.verdict == verdicts.EMPTY and "empty" not in permitted:
                         row.why = f"{found.why}; {verdicts.NEEDS_EMPTY}"
                     else:
@@ -139,4 +140,4 @@ def delete(
     # update-ref does not enforce git branch's checked-out protection.
     if any(wt.branch == row.branch for wt in R.worktrees()):
         raise Refused(f"{row.branch} is checked out in a worktree")
-    prune.ref_delete(f"refs/heads/{row.branch}", row.sha)
+    prune.branch_delete(row.branch, row.sha, head_branch)

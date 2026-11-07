@@ -496,14 +496,21 @@ empty`.
 
 Eligible is a second answer, not a fifth verdict. A row is eligible when its
 verdict is `remove`, or `empty` with `--delete empty`, and no protection
-applies: the worktree you stand in, a lock, uncommitted or untracked files,
-an initialized submodule, ignored files without `--delete ignored-files`,
-and for `gwbs` a branch checked out in a worktree. A protection clears
-`eligible` and leaves the verdict and its proof alone, and `why` names the
-first one after the proof. The main checkout and the head
-branch are not judged and read `keep`. `prune.removable()` returns the
+applies: a branch named `main` or `master`, whatever the head branch is, the
+worktree you stand in, a lock, uncommitted or untracked files, an initialized
+submodule, ignored files without `--delete ignored-files`. A protection
+clears `eligible` and leaves the verdict and its proof alone, and `why` names
+the first one after the proof. The main checkout and the head branch are not
+judged and read `keep`. `gwbs` leaves out a branch checked out in a worktree
+unless it is named, and then reads `keep`, since it appears only as its
+worktree. `prune.removable()` returns the
 eligible rows; the counts line and the removal both use it, so what one
 prints and the other removes cannot drift.
+
+Every branch deletion goes through `prune.branch_delete`, which refuses
+`main`, `master` and the head branch before it reaches `update-ref`. A
+verdict that wrongly proposed one still deletes nothing. `gwm` refuses to
+rename these, since a rename takes the old name away as a delete does.
 
 ## Reproduce a failure before asserting its fix
 

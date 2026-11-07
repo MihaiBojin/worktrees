@@ -22,7 +22,8 @@ UNKNOWN = "unknown"
 
 MAIN_CHECKOUT = "it is the main checkout, and never removable"
 HEAD_BRANCH = "it is the head branch"
-MAIN_OR_MASTER = "it is main or master"
+MAIN_OR_MASTER = "it is main or master, which nothing deletes"
+PROTECTED = ("main", "master")
 SUBMODULE = "it has an initialized submodule"
 NEEDS_EMPTY = "needs --delete empty"
 
@@ -222,7 +223,7 @@ def unresolved(records: list[R.Worktree], head_branch: str, why: str) -> list[Ve
             rows.append(Verdict(KEEP, wt.branch, wt.path, MAIN_CHECKOUT, sha=wt.sha))
         elif wt.branch and wt.branch == head_branch:
             rows.append(Verdict(KEEP, wt.branch, wt.path, HEAD_BRANCH, sha=wt.sha))
-        elif wt.branch in ("main", "master"):
+        elif wt.branch in PROTECTED:
             rows.append(Verdict(KEEP, wt.branch, wt.path, MAIN_OR_MASTER, sha=wt.sha))
         else:
             rows.append(
@@ -297,7 +298,9 @@ def assess(
 
         # The first protection that applies. The status is read last: a
         # locked worktree may be on a drive that is not mounted.
-        if here and Path(wt.path).resolve() == Path(here).resolve():
+        if wt.branch in PROTECTED:
+            block = MAIN_OR_MASTER
+        elif here and Path(wt.path).resolve() == Path(here).resolve():
             block = "you are standing in it"
         elif "locked" in wt.flags:
             block = "it is locked"

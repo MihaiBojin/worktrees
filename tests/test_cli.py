@@ -1247,6 +1247,29 @@ def test_remove_starts_on_the_worktree_you_stand_in_and_lists_main_unnumbered(
     assert "nothing picked" in out
 
 
+def test_remove_asks_again_before_removing_the_worktree_you_are_in(world) -> None:
+    """--yes answers the first question and not the second, which names the
+    path; on a yes the process leaves first and prints the main checkout."""
+    wt = world.finished("done")
+    code, out = run_on_a_terminal_at(world, wt, "gwr", "done", "--yes", answer="y\n")
+    assert code == 0, out
+    assert f"you are in {wt}; remove it? [y/N]" in out
+    assert "remove 1 worktree(s)?" not in out
+    assert out.rstrip().endswith(str(world.repo)), out
+    assert not wt.exists()
+
+
+def test_remove_asks_both_questions_without_yes(world) -> None:
+    wt = world.finished("done")
+    code, out = run_on_a_terminal_at(world, wt, "gwr", "done", answer="y\nn\n")
+    assert code == 0, out
+    assert "remove 1 worktree(s)? [y/N]" in out
+    assert f"you are in {wt}; remove it? [y/N]" in out
+    assert "nothing removed" in out
+    assert wt.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/done")
+
+
 def test_remove_asks_before_deleting_ignored_files_on_a_terminal(world) -> None:
     """The refusal becomes a question, and every ignored path is named first."""
     (world.repo / ".gitignore").write_text(".env\n")

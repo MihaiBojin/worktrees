@@ -121,11 +121,11 @@ def test_the_skill_filter_keeps_what_the_user_decides_on(world) -> None:
     # The main checkout, and a finished worktree with uncommitted changes.
     assert (out["kept"], out["unknown"], out["ignored"]) == (2, 0, [])
 
-    # Checked out in a worktree, so gwbs keeps it and only gwp may take it.
+    # Every other branch is checked out, so gwbs leaves it to gwp.
     assert [row["branch"] for row in branches["branches"]] == ["loose"]
     assert branches["branches"][0]["proof"] == "squash"
     assert branches["branches"][0]["undo"].startswith("git branch loose ")
-    assert (branches["kept"], branches["unknown"]) == (3, 0)
+    assert (branches["kept"], branches["unknown"]) == (0, 0)
 
 
 def test_the_skill_removes_only_the_chosen_worktree_by_its_path(world) -> None:

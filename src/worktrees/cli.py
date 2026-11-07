@@ -241,10 +241,7 @@ def _assessment_head(args: argparse.Namespace) -> tuple[R.Head, str]:
     progress.say("finding the head branch")
     head = R.head_ref(remote)
     _shower(args)(head)
-    head_branch = head.name
-    if remote:
-        head_branch = head_branch.removeprefix(remote + "/")
-    return head, head_branch
+    return head, head.branch
 
 
 def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
@@ -449,7 +446,7 @@ def run_prune(args: argparse.Namespace) -> int:
         found = [w for w in R.worktrees() if w.path == path]
         return next(iter(verdicts.assess(found, ref, head_branch, allowed)), None)
 
-    removed, failed = prune.sweep(go, recorded, again, _err)
+    removed, failed = prune.sweep(go, recorded, again, head_branch, _err)
     if args.json:
         result |= {"removed": [v.label for v in removed], "failed": failed}
         print(json.dumps(result, indent=2))
@@ -913,6 +910,7 @@ def run_list(args: argparse.Namespace) -> int:
 
 def run_move(args: argparse.Namespace) -> int:
     from . import new_branch
+    from . import repo as R
     from . import worktree as wt_mod
     from .git import options
 
@@ -923,7 +921,7 @@ def run_move(args: argparse.Namespace) -> int:
         return _needs(args, "NEW")
 
     try:
-        landed = wt_mod.move(args.name)
+        landed = wt_mod.move(args.name, R.head_ref(R.remote()).branch)
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -996,6 +994,12 @@ def run_remove(args: argparse.Namespace) -> int:
         _err(render.note("nothing picked"))
         return 0
     chosen = by_path[picked.path]
+    standing_in = _same(chosen.path, here)
+    if standing_in and not sys.stdin.isatty():
+        raise Refused(
+            f"{chosen.path} is the worktree you are in, and only a terminal "
+            "can confirm removing it"
+        )
 
     if chosen.error:
         _err(
@@ -1071,6 +1075,13 @@ def run_remove(args: argparse.Namespace) -> int:
     if not args.yes and not prune.confirm(1, never=never):
         _err(render.note("nothing removed"))
         return 0
+    # The second question, which --yes does not answer: the caller's shell
+    # is in this directory.
+    if standing_in and prune._prompt(
+        render.ask(f"you are in {chosen.path}; remove it?", "[y/N]")
+    ).strip().lower() not in ("y", "yes"):
+        _err(render.note("nothing removed"))
+        return 0
 
     def again(path: str) -> verdicts.Verdict | None:
         found = [w for w in R.worktrees() if w.path == path]
@@ -1080,7 +1091,7 @@ def run_remove(args: argparse.Namespace) -> int:
 
     # --force keeps the branch: the worktree was in the way, the work was not.
     destination, went, ok = wt_mod.remove(
-        chosen, was, again, _err, keep_branch=not chosen.eligible
+        chosen, was, again, _err, head[1], keep_branch=not chosen.eligible
     )
     if args.json:
         print(
