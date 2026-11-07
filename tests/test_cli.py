@@ -1690,7 +1690,14 @@ def test_a_locked_worktree_whose_directory_is_away_is_judged(world) -> None:
     assert row["why"] == f"{PROOF}; it is locked"
 
 
-SUBMODULE = "it has an initialized submodule"
+SUBMODULE = "it has an initialized submodule or a submodule store"
+
+
+def _store(world, wt: Path) -> Path:
+    """Where git keeps this worktree's submodule repositories."""
+    return Path(
+        world.git("rev-parse", "--path-format=absolute", "--git-path", "modules", at=wt)
+    )
 
 
 def _with_submodule(world) -> None:
@@ -1772,9 +1779,26 @@ def test_remove_refuses_a_worktree_with_an_initialized_submodule(world, flags) -
     p = run(world, "gwr", "lib-work", *flags)
     assert p.returncode == 1, p.stderr
     assert f"lib-work cannot be removed: {SUBMODULE}" in p.stderr
-    assert f"run git submodule deinit --all in {wt} and retry" in p.stderr
+    assert f"run git submodule deinit --all in {wt}" in p.stderr
+    assert f"then delete {_store(world, wt)}" in p.stderr
     assert wt.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/lib-work")
+
+
+def test_the_two_steps_the_refusal_names_let_gwr_remove_it(world) -> None:
+    import shutil
+
+    _with_submodule(world)
+    wt = world.finished("lib-work")
+    _init_submodule(world, wt)
+    world.git("submodule", "deinit", "--quiet", "--all", at=wt)
+    p = run(world, "gwr", "lib-work", "--yes")
+    assert p.returncode == 1, "deinit alone leaves the store, and git refuses"
+
+    shutil.rmtree(_store(world, wt))
+    p = run(world, "gwr", "lib-work", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert not wt.exists()
 
 
 def test_remove_refuses_an_unfinished_worktree_with_a_submodule_on_a_terminal(

@@ -498,9 +498,9 @@ Eligible is a second answer, not a fifth verdict. A row is eligible when its
 verdict is `remove`, or `empty` with `--delete empty`, and no protection
 applies: a branch named `main` or `master`, whatever the head branch is, the
 worktree you stand in, a lock, uncommitted or untracked files, an initialized
-submodule, stashes that belong to the branch (`verdicts.stashes_of`)
-without `--delete stashes`, and ignored files without `--delete
-ignored-files`. `prune.drop_stashes` drops them after the ref, by sha, and
+submodule or a submodule store, stashes that belong to the branch
+(`verdicts.stashes_of`) without `--delete stashes`, and ignored files without
+`--delete ignored-files`. `prune.drop_stashes` drops them after the ref, by sha, and
 stores back any entry a concurrent change made it drop instead. A protection
 clears `eligible` and leaves the verdict and its proof alone, and `why` names
 the first one after the proof. The main checkout and the head branch are not

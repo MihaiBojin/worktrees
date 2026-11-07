@@ -17,7 +17,7 @@
 
 _arguments -s \
     '--keep-branch[remove the worktree, finished or not, and keep its branch and stashes]' \
-    '*--delete[also delete this; nothing restores it]:value:(empty ignored-files stashes all)' \
+    '*--delete[also delete VALUE; nothing restores it]:value:(empty ignored-files stashes all)' \
     '(-y --yes)'{-y,--yes}'[do not ask]' \
     '--json[the result as data]' \
     '(-q --quiet)'{-q,--quiet}'[the path alone]' \

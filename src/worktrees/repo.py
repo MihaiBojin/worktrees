@@ -403,9 +403,10 @@ def ignored_paths(path: str) -> list[str]:
     return status_of(path).ignored
 
 
-@git("rev-parse --git-path modules")
+@git("rev-parse --path-format=absolute --git-path modules")
 def modules_dir() -> None:
-    """Where this worktree keeps the git directories of its submodules."""
+    """Where this worktree keeps the git directories of its submodules: the
+    submodule store, which `git submodule deinit` leaves behind."""
 
 
 @git("ls-files --stage -z")
@@ -421,7 +422,7 @@ def has_submodule(path: str) -> bool:
     `git submodule deinit` leaves behind, or while a submodule's path holds
     a checkout.
     """
-    modules = Path(path, modules_dir(repo=path).out.strip())
+    modules = Path(modules_dir(repo=path).out.strip())
     if modules.is_dir():
         return True
     for entry in index_entries(repo=path).out.split("\0"):

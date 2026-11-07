@@ -31,10 +31,10 @@ Branches first:
 ```sh
 gwbs --json | jq -c '{
   branches: [.verdicts[] | select(.eligible) | {branch, proof, undo}],
-  empty: [.verdicts[] | select(.verdict == "empty" and (.paths | length) == 0)
+  empty: [.verdicts[] | select(.why | endswith("needs --delete empty"))
     | {branch, undo}],
-  kept: [.verdicts[] | select((.eligible | not)
-    and .verdict != "unknown" and .verdict != "empty")] | length,
+  kept: [.verdicts[] | select((.eligible | not) and .verdict != "unknown"
+    and (.why | endswith("needs --delete empty") | not))] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length
 }'
 ```
@@ -44,9 +44,10 @@ Then worktrees:
 ```sh
 gwp --json | jq -c '{
   worktrees: [.verdicts[] | select(.eligible) | {branch, path, why}],
-  empty: [.verdicts[] | select(.verdict == "empty") | {branch, path, why}],
-  kept: [.verdicts[] | select((.eligible | not)
-    and .verdict != "unknown" and .verdict != "empty")] | length,
+  empty: [.verdicts[] | select(.why | endswith("needs --delete empty"))
+    | {branch, path, why}],
+  kept: [.verdicts[] | select((.eligible | not) and .verdict != "unknown"
+    and (.why | endswith("needs --delete empty") | not))] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length,
   ignored: [.verdicts[] | select((.eligible | not) and .ignored > 0) | .branch]
 }'
@@ -60,16 +61,17 @@ gwp --json | jq -c '{
   branches. `why` names the proof, such as `its tree or combined patch is
   already in the head branch`.
 - `empty`, in both, lists branches and worktrees whose tip is on the head
-  branch's main line: no commits of their own, which is what one somebody
-  has just started looks like, and what a fast-forward merge leaves. The CLI
-  removes them only with `--delete empty`, so they are listed apart.
+  branch's main line and that only `--delete empty` holds back: no commits
+  of their own, which is what one somebody has just started looks like, and
+  what a fast-forward merge leaves. They are listed apart because the CLI
+  removes them only with that flag.
 - `ignored` names finished worktrees held back only because they hold
   gitignored files.
-- `kept` and `unknown` count the rest. `kept` includes finished rows that a
-  protection holds back, such as uncommitted changes, a lock, an
-  initialized submodule or stashes on the branch. The main checkout is
-  always among the kept worktrees, and `main` and `master` are never
-  eligible.
+- `kept` and `unknown` count the rest. `kept` includes finished and `empty`
+  rows that a protection holds back, such as uncommitted changes, a lock, an
+  initialized submodule or its store, or stashes on the branch. The main
+  checkout is always among the kept worktrees, and `main` and `master` are
+  never eligible.
 
 `gwbs` leaves out every branch checked out in a worktree. Those appear only
 in `worktrees`, so nothing is listed twice.
