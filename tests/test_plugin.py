@@ -159,3 +159,70 @@ def test_the_skill_removes_only_the_chosen_worktree_by_its_path(world) -> None:
     assert again.returncode == 1
     assert Path(rows["done-more"]["path"]).exists()
     assert world.git("branch", "--list", "done-more") != ""
+
+
+def _stash(world, at: Path, message: str) -> str:
+    at.joinpath("README").write_text(f"{message}\n")
+    world.git("stash", "push", "--quiet", "-m", message, at=at)
+    return world.git("rev-parse", "stash@{0}")
+
+
+def test_the_skill_reads_the_head_and_the_sync_state(world) -> None:
+    from test_sync import bare, sync
+
+    out = _jq(_filter("gwp"), _json(world, "gwp"))
+    assert out["head"] == {"ref": "refs/heads/main", "source": "inferred"}
+    assert out["sync"] == "never"
+
+    bare(world)
+    assert sync(world).returncode == 0
+    out = _jq(_filter("gwp"), _json(world, "gwp"))
+    assert out["head"] == {"ref": "refs/remotes/origin/main", "source": "remote"}
+    assert out["sync"] == "fresh"
+
+
+def test_the_skill_calls_an_old_sync_stale(world) -> None:
+    from test_sync_warnings import synced_ago
+
+    synced_ago(world, 3600)
+    assert _jq(_filter("gwp"), _json(world, "gwp"))["sync"] == "stale"
+
+
+def test_the_skill_lists_stash_held_rows_apart(world) -> None:
+    held = world.finished("held")
+    sha = _stash(world, held, "half")
+    loose = world.finished("loose")
+    loose_sha = _stash(world, loose, "loose half")
+    world.git("worktree", "remove", str(loose))
+
+    out = _jq(_filter("gwp"), _json(world, "gwp"))
+    branches = _jq(_filter("gwbs"), _json(world, "gwbs"))
+    assert out["worktrees"] == []
+    assert [(r["branch"], r["stashes"]) for r in out["stashed"]] == [("held", [sha])]
+    assert branches["branches"] == []
+    assert [(r["branch"], r["stashes"]) for r in branches["stashed"]] == [
+        ("loose", [loose_sha])
+    ]
+    # Neither is counted as kept: each is a list of its own.
+    assert out["kept"] == 1  # the main checkout
+    assert branches["kept"] == 0
+
+    # Removed only with the permission the skill adds for that list.
+    text = SKILL.read_text()
+    assert "`--delete stashes` for a row from" in text
+    proc = _run(world, "gwr", out["stashed"][0]["path"], "--delete", "stashes", "--yes")
+    assert proc.returncode == 0, proc.stderr
+    assert "dropped stash On held: half" in proc.stderr
+    proc = _run(world, "gwbd", "loose", "--delete", "stashes", "--yes")
+    assert proc.returncode == 0, proc.stderr
+    assert world.git("stash", "list") == ""
+
+
+def test_the_skill_never_syncs_unasked_and_removes_through_the_binaries() -> None:
+    text = SKILL.read_text()
+    assert "Never run `gw sync` unless the user asks" in text
+    assert "`command gwr 'PATH' --yes 2>&1`" in text
+    assert "`command gwbd 'NAME' 'NAME' ... --yes" in text
+    tools = (PLUGIN / "commands" / "prune.md").read_text()
+    for tool in ("Bash(gw sync:*)", "Bash(git remote:*)", "Bash(command gwr:*)"):
+        assert tool in tools, tool

@@ -33,30 +33,37 @@ The commands, from the same release:
 uv tool install git-worktrees
 ```
 
-The plugin runs `gwp`, `gwbs`, `gwr`, `gwbd` and `jq`. It installs none of
-them.
+The plugin runs `gwp`, `gwbs`, `gwr`, `gwbd`, `gw sync` and `jq`. It
+installs none of them.
 
 ## What it does
 
 1. Runs `gwp --json` and `gwbs --json` against the refs already here, and
-   keeps only the eligible rows, `remove` with nothing holding them back,
-   with their proof, plus counts of the rest.
-2. Shows them in one table. A worktree whose branch sits on the head branch's
-   tip, with no commits of its own, is marked: that is also what a worktree
-   somebody has just started looks like.
-3. Asks what to remove. Claude Code offers the choices as a question; Codex
-   asks in plain text.
-4. Removes each chosen worktree with `command gwr PATH --yes` and the chosen
-   branches with `gwbd NAME... --yes`. Both assess again before removing.
-5. Reports what was removed, what the CLI refused and why, and the
-   `git branch NAME SHA` line that restores each branch.
+   keeps the eligible rows with their proof, the `empty` rows and the rows
+   held back by stashes, plus counts of the rest.
+2. Says what the head is and how fresh the last `gw sync` is. When the
+   repository was never synced, or the sync is more than ten minutes old, it
+   asks whether to run `gw sync` first, and runs it only on a yes.
+3. Shows the eligible rows in one table, then the `empty` and stash-held
+   rows as two short lists.
+4. Asks what to remove. Claude Code offers the choices as a question; Codex
+   asks in plain text. `empty` and stash-held rows are removed only when you
+   name them.
+5. Removes each chosen worktree with `command gwr 'PATH' --yes` and the
+   chosen branches with `command gwbd NAME... --yes`, adding `--delete
+   empty`, `--delete stashes` or `--delete ignored-files` only for the rows
+   you approved in that list. Both assess again before removing.
+6. Reports what was removed, what the CLI refused and why, and the `git
+   branch NAME SHA` and `git stash store` lines that restore each branch
+   and stash.
 
 ## What it will not do
 
-Remove anything before you answer, or anything the CLI did not prove. Delete a
-remote branch. Run `git branch -D`, `git worktree remove` or `rm`. Pass
-`--delete ignored-files`, which deletes a worktree's gitignored files for
-good, unless you ask for it, or `--delete all` at all.
+Remove anything before you answer, or anything the CLI did not prove. Run
+`gw sync` without asking. Delete a remote branch. Run `git branch -D`, `git
+worktree remove`, `git stash drop` or `rm`. Pass `--keep-branch`, or
+`--delete all`. Pass `--delete ignored-files`, which deletes a worktree's
+gitignored files for good, unless you ask for it.
 
 ## Versions
 

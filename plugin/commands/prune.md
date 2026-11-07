@@ -7,6 +7,10 @@ allowed-tools:
   - Bash(gwp --json:*)
   - Bash(gwr:*)
   - Bash(gwbd:*)
+  - Bash(command gwr:*)
+  - Bash(command gwbd:*)
+  - Bash(gw sync:*)
+  - Bash(git remote:*)
   - Bash(jq:*)
   - Bash(git status:*)
   - Bash(git worktree list:*)
@@ -22,4 +26,5 @@ jq filters, the question to ask and how to report. Nothing below repeats it.
 `$ARGUMENTS` may name worktrees or branches the user wants considered: offer
 only those.
 
-Remove nothing until the user has answered.
+Run `gw sync` only when the user says to, and remove nothing until the user
+has answered.
