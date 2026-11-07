@@ -159,6 +159,39 @@ newer than the bundle, so a tag edited before the purge leaves a new shell
 with no plugin until the file changes again. The same three steps move a clone
 without a tag onto one.
 
+### From a checkout
+
+Both managers accept a local directory in place of `MihaiBojin/worktrees`, so
+the commands and the plugin can come from one clone and agree on a version.
+Install the commands from the same directory:
+
+```console
+uv tool install --reinstall ~/src/worktrees
+```
+
+Remove the published plugin first. Fisher refuses to install a second plugin
+that owns the same files, and Antidote would load both.
+
+In fish:
+
+```console
+fisher remove MihaiBojin/worktrees
+fisher install ~/src/worktrees
+```
+
+Fisher copies the files at install, so a change in the checkout reaches the
+shell after `fisher update ~/src/worktrees`.
+
+In zsh, replace the `MihaiBojin/worktrees` line in `zsh_plugins.txt` with the
+plugin's directory:
+
+```
+~/src/worktrees/zsh/plugins/worktrees   # in zsh_plugins.txt
+```
+
+Antidote clones nothing for a local path. It sources the plugin from the
+checkout, so a new shell runs whatever the checkout holds.
+
 ### What the shell code does
 
 Each function runs `command <name>` and `cd`s to what it printed, provided
