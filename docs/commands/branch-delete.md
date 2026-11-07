@@ -1,77 +1,62 @@
 # worktrees branch delete
 
-`worktrees branch delete [NAME ...]`, `gw branch delete [NAME ...]`, and
-`gwbd [NAME ...]` delete local branches proved finished by
-[branch status](branch-status.md). They print each branch's full SHA and undo
-command before asking for confirmation.
+`gwbd` deletes eligible loose local branches after confirmation and a fresh
+assessment. It uses local refs and cached forge evidence; only `gw sync`
+refreshes them. Checked-out branches cannot be deleted here.
 
 ```console
-gwbd old-fix finished-feature
-gwbd
+gwbd old-fix another-fix
 gwbd --all --dry-run
-gwbd old-fix --no-fetch --no-forge --yes --json
+gwbd old-fix --yes --json
+gwbd unused --delete empty
+gwbd finished-with-stashes --delete stashes
 ```
 
-| Selection | Behaviour |
-| --- | --- |
-| `NAME ...` | Assess exact local names and offer those proved removable. |
-| No names | Show a numbered selector. Enter space-separated numbers, or blank to cancel. |
-| `--all` | Assess every local branch and offer the removable set for confirmation. |
-| `--dry-run` | Report the assessment and undo commands without deleting. With no names, assess all branches without a selector. |
+Names select those branches; no names opens a selector on a terminal.
+`--all` selects all loose branches. `--dry-run` previews without deletion.
+[Branch status](branch-status.md) defines the
+assessment fields and completion proofs.
 
-`--all` and names cannot be combined. An unknown name stops the entire request
-before any deletion. The selector shows protected branches without numbers;
-only removable branches can be selected. Selection is followed by a separate
-confirmation. Blank input, a negative confirmation, or Ctrl-C at either
-prompt deletes nothing.
+## Permission and confirmation
 
-## Confirmation and protection
+`main`, `master` and the assessed head branch are always protected.
+`empty` needs `--delete empty`; matching branch stashes need
+`--delete stashes`. Values repeat and combine; `--delete all` grants both.
+`ignored-files` is a usage error for this command. `--yes` skips confirmation
+and grants no permission. Unknown or unsupported values fail before mutation.
 
-`--yes` skips deletion confirmation. It does not choose branches or override
-a verdict. Without a terminal, supply names or `--all`, and `--yes` to delete.
-`--dry-run` needs neither a terminal nor confirmation.
+Before confirmation, stderr lists branches and SHAs, their branch restore
+commands, and matching stashes with exact restore commands. Quiet and JSON
+keep the disclosure. Never-synced repositories ask
+`Never synced. Delete anyway?` unless `--yes` skips it.
 
-The command checks the head SHA and assesses the selected branch again after
-confirmation. A changed branch tip, changed head ref, or newly checked-out
-branch prevents deletion. The final operation is
-`git update-ref --no-deref -d refs/heads/NAME SHA`: git checks the expected
-full SHA and deletes the named ref without following a symbolic ref.
+The recheck pins the branch SHA, head identity and matching stashes. Deletion
+uses `git update-ref --no-deref -d REF FULL_SHA`; the full SHA prevents a
+concurrent branch update from being deleted. A failed ref deletion retains
+its stashes. Stash drops follow successful ref deletion and verify the
+recorded SHA against Git's reported result. A concurrent drop of a different
+entry restores it with its exact subject, at the top of the stash list.
 
-Deletion affects local branch refs. It does not delete remote branches,
-worktrees, working files, or stashes. Fetching can refresh or prune
-remote-tracking refs; pass `--no-fetch` to use the existing refs.
+## Recovery and results
 
-## Undo
-
-Every proposed deletion prints a command such as:
+Use the commands printed in the disclosure:
 
 ```console
-git branch old-fix 0123456789abcdef0123456789abcdef01234567
+git branch old-fix FULL_SHA
+git stash store -m 'On old-fix: saved work' STASH_SHA
 ```
 
-The command uses the actual assessed SHA and quotes the branch name for the
-shell. It recreates the local branch while that commit remains available.
-The printed SHA does not protect an unreachable commit from garbage
-collection, and the command does not recreate branch tracking configuration.
+Branch restore recreates the ref. Stash restore works until Git garbage
+collection prunes its unreachable commit. Quote names and subjects exactly
+as printed.
 
-There is no persistent event log yet. Deletion-event history, host and remote
-context, and stored recovery commands are tracked in
-[issue #93](https://github.com/MihaiBojin/worktrees/issues/93).
+Partial success is possible. Read each branch and stash outcome: a refused
+branch can remain while another is deleted. JSON includes `removed`,
+`failed`, `verdicts`, `outcomes`, `head` and `lastSync`; each verdict keeps
+its `undo` command. Exit 0 means the requested operation completed or was
+cancelled, exit 1 reports a cleanup failure, exit 2 is a usage error, and
+exit 3 is a refusal. Ctrl-C exits 130.
 
-## Output and exit codes
-
-All [branch status flags](branch-status.md#flags-and-output) apply. Add
-`--all`, `--dry-run`, or `-y` / `--yes` as needed.
-
-JSON includes the assessment plus `removed`, containing the names actually
-deleted, and `failed`, containing each failed branch name and reason. A dry
-run also sets `dry_run` to true. Undo commands remain on stderr even with
-`--quiet` or `--yes`, and each JSON verdict contains its `undo` command.
-
-| Exit | Meaning |
-| --- | --- |
-| `0` | Completed, cancelled, or no eligible branches in a scan. |
-| `1` | Assessment or deletion encountered an operational failure. Partial results remain in the report. |
-| `2` | Invalid arguments or an unknown branch name. |
-| `3` | A named branch was refused, a selector answer was invalid, or a required prompt has no terminal. |
-| `130` | Interrupted with Ctrl-C. |
+`-q` keeps results, errors and disclosures while suppressing summaries and
+stale warnings. `-v` traces subprocesses on stderr without changing JSON
+stdout. Passing both is a usage error.

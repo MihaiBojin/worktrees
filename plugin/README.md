@@ -1,10 +1,8 @@
 # worktrees, as an agent plugin
 
-`/worktrees:prune` asks the `worktrees` CLI which linked worktrees and local
-branches are finished, shows the ones it proved in one table with the proof,
-and removes the ones you pick. The decision is the CLI's, so it is the same in
-every repository, and the agent reads a filtered summary of about 4 KB for 30
-branches rather than the full assessment.
+`/worktrees:prune` assesses linked worktrees and loose local branches with
+the worktrees CLI. It shows the head and sync state first, then asks which
+targets and deletion categories you approve.
 
 ## Install
 
@@ -25,38 +23,42 @@ codex plugin marketplace add releasetools/agent-plugins
 codex plugin add worktrees@release-tools
 ```
 
-## What it needs
+## Requirements
 
-The commands, from the same release:
+Install the CLI from the same release:
 
-```shell
+```console
 uv tool install git-worktrees
 ```
 
-The plugin runs `gws`, `gwbs`, `gwp`, `gwbd` and `jq`. It installs none of
-them.
+The plugin needs `jq` too. It installs neither tool.
 
-## What it does
+## Cleanup
 
-1. Runs `gws --json` and `gwbs --json`, fetching first unless you pass
-   `--no-fetch`, and keeps only the rows marked `remove`, with their proof,
-   plus counts of the rest.
-2. Shows them in one table. A worktree whose branch sits on the head branch's
-   tip, with no commits of its own, is marked: that is also what a worktree
-   somebody has just started looks like.
-3. Asks what to remove. Claude Code offers the choices as a question; Codex
-   asks in plain text.
-4. Removes each chosen worktree with `gwp --branch NAME --yes` and the chosen
-   branches with `gwbd NAME... --yes`. Both assess again before removing.
-5. Reports what was removed, what the CLI refused and why, and the
-   `git branch NAME SHA` line that restores each branch.
+The skill reads `gwp --dry-run --json` and `gwbs --json`. These commands stay
+offline. If remote state is never synced or older than 10 minutes, it asks
+whether to run `gw sync`; it runs sync only on your answer. A previous
+approval or refusal remains in force for that cleanup.
 
-## What it will not do
+It lists eligible worktrees and loose branches, with proofs, and shows empty
+and stash-blocked rows separately. Ignored-file blockers remain visible.
+Those categories need explicit approval. `--yes` grants no deletion
+permission, and the plugin never targets its current checkout.
 
-Remove anything before you answer, or anything the CLI did not prove. Delete a
-remote branch. Run `git branch -D`, `git worktree remove` or `rm`. Pass
-`--delete-ignored`, which deletes a worktree's gitignored files for good,
-unless you ask for it.
+After you choose, each worktree goes through `command gwr` with its exact
+quoted JSON path and only its approved `--delete` values. Selected loose
+branches follow through `command gwbd`. Both commands reassess first and
+can refuse a target that changed. The skill retains target exclusions and
+category choices across a refresh.
+
+The report distinguishes checkout removal, branch deletion and stash
+outcomes, including partial failures. It keeps the CLI's exact restore
+commands. Branch restore recreates a ref, not a worktree directory. Stash
+restore remains possible until Git garbage collection prunes its unreachable
+commit. Ignored files cannot be restored.
+
+The plugin uses CLI proof and protections. It does not delete remote branches
+or bypass a refusal with raw Git deletion or filesystem removal.
 
 ## Versions
 

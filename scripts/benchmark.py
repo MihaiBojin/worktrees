@@ -46,7 +46,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("gw version", ("gw", "version")),
     ("gwh", ("gwh",)),
-    ("gws --help", ("gws", "--help")),
+    ("gw --help", ("gw", "--help")),
 )
 
 

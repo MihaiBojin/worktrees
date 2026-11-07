@@ -36,7 +36,9 @@ what to run.
 | `src/worktrees/repo.py` | what the repository is: worktrees, remote, head branch |
 | `src/worktrees/merged.py` | whether a branch's change is already upstream |
 | `src/worktrees/verdicts.py` | one verdict per worktree, and nothing that mutates |
-| `src/worktrees/prune.py` | the six commands that mutate, and the sweep |
+| `src/worktrees/prune.py` | removal snapshots, disclosures and stash cleanup |
+| `src/worktrees/branches.py` | loose-branch assessment and deletion |
+| `src/worktrees/sync.py` | explicit sync and shared evidence cache |
 | `src/worktrees/new_branch.py` | starting a branch off the head branch |
 | `src/worktrees/rotate.py` | the next branch in a series |
 | `src/worktrees/layout.py` | where a worktree lives, derived from the main checkout |
@@ -68,7 +70,7 @@ make reset            # uv tool install --force git-worktrees
 ```
 
 `make local-install` installs the working copy in place of anything
-published, so `gws` on your `$PATH` is the code in front of you. `make reset`
+published, so `gw` on your `$PATH` is the code in front of you. `make reset`
 undoes it: the latest release from PyPI replaces the working copy, and a
 command only the working copy has, such as one renamed since that release,
 leaves `~/.local/bin` with it.
@@ -102,42 +104,43 @@ prints every spec, marking the ones that mutate.
 
 A guard runs on the resolved argv inside the wrapper, so no call site can
 assemble its way past it: `reset --hard`, a forced `checkout` or `switch`,
-`clean -f`, a bare `push --force`, `worktree remove --force` and `branch -D`
-are refused whatever flags are passed.
+`clean -f`, a bare `push --force`, `worktree remove --force`, `branch -D`
+and ref deletion without a full expected SHA are refused.
 
 ## Commands that land you somewhere need a shell function
 
-A binary cannot `cd` its caller. A command that does gets a shell function of
-the same name, whose whole body is `command <name>` and a `cd`, so a script
-calling the binary still gets the path and only loses the move. `gwa`, `gwl`,
-`gwm` and `gwr` have one each, for fish under `functions/` and for zsh under
-`zsh/plugins/worktrees/functions/`. `gws`, `gwp`, `gwbc` and `gwrot` need
+A binary cannot `cd` its caller. Its shell adapter captures stdout, changes
+directory when it receives a destination, and prints data otherwise. A
+script calling the binary gets the destination path. `gwa`, `gwl`,
+`gwm`, `gwr` and `gw` have adapters, for fish under `functions/` and for zsh under
+`zsh/plugins/worktrees/functions/`. `gwp`, `gwbs`, `gwbd`, `gwbc` and `gwrot` need
 none.
 
-```fish
-function gwa --wraps gwa
-    set -l dest (command gwa $argv | string collect)
-    set -l code $pipestatus[1]
-    test $code -eq 0; or return $code
-    test -n "$dest"; or return 0
-    cd -- $dest
-end
-```
+The [fish adapter](../functions/gwa.fish) captures bytes with
+`string collect -N` and reads the command status from `$pipestatus[1]`.
+The [zsh adapter](../zsh/plugins/worktrees/functions/gwa) uses a sentinel to
+preserve trailing newlines through command substitution. Both remove only
+the final destination-record newline and require an absolute existing
+directory. Data is printed byte for byte and the binary's status is retained.
 
-`string collect` because fish splits command substitution on newlines and a
-path may hold one. `$pipestatus[1]` because that pipeline's `$status` belongs
-to `string collect`, which returns 1 whenever it collected nothing, which is
-the failure case. zsh needs neither, because `$(...)` strips only trailing
-newlines:
+`gw` distinguishes a single worktree name from subcommands using the CLI's
+completion output. Other invocations pass stdout and status through. `gwr`
+can print a destination after checkout removal and still return failure for
+later cleanup; its adapter moves to that destination and preserves failure.
 
-```bash
-gwa() {
-  local dest
-  dest="$(command gwa "$@")" || return
-  [ -n "$dest" ] || return 0
-  cd -- "$dest"
-}
-```
+## Offline assessment
+
+Only `gw sync` fetches, updates remote HEAD or queries a forge. `sync.py`
+atomically replaces `git-worktrees-sync.json` in the Git common directory.
+It records remote identity, successful component times and source-tip
+forge evidence. Assessment uses pinned head state, one first-parent set and
+read-only patch-id input. It creates no synthetic commits.
+
+`repo.require_offline_git` checks partial-clone settings before object reads.
+Accepted Git cohorts are 2.45.1 onward and patched maintenance releases
+2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4 and 2.44.1, including later patches
+within each series. Lower reported vendor versions fail conservatively;
+full clones keep older Git compatibility.
 
 ## Tests
 

@@ -1305,9 +1305,7 @@ _COMMANDS: dict[str, _Command] = {
         "gwh",
         aliases=("h",),
     ),
-    # The one row with no console script. Asking a tool its version is done
-    # through the tool's name, and a tenth binary for it would be a name
-    # nobody types.
+    # Version is available through the tool's name without a separate binary.
     "version": _Command(
         run_version,
         None,
@@ -1349,7 +1347,7 @@ _CANONICAL = _canonical()
 
 
 _PRUNE_HELP = "Assess worktrees and remove eligible ones, or preview with --dry-run."
-_NEW_BRANCH_HELP = "Fetch, then branch NAME off the head branch and check it out."
+_NEW_BRANCH_HELP = "Branch NAME off the head ref and check it out, without fetching."
 _ROTATE_HELP = (
     "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
     "head branch there is no chain to continue, so it catches that up to the "

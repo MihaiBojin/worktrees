@@ -1,139 +1,136 @@
 ---
 name: worktrees
 description: >
-  Remove the linked git worktrees and local branches that the worktrees CLI
-  proves finished, after showing them and asking which to remove. Use when the
-  user asks to clean up, tidy or prune finished, merged or squash-merged
-  branches or worktrees, or asks which of them are done. Triggers on: clean up
-  branches, prune worktrees, delete merged branches, squash-merged branches
-  left behind, which branches are finished, gws, gwp, gwbs, gwbd.
+  Use when the user asks to clean up, tidy or prune finished, merged or
+  squash-merged git worktrees or local branches, or asks which are done.
 ---
 
-# worktrees: remove what is proved finished
+# Clean up worktrees and loose branches
 
-The `worktrees` CLI decides. `gws` and `gwbs` say which worktrees and branches
-are finished, with the proof; `gwp` and `gwbd` remove them, assessing each
-again first and refusing anything that is no longer proved. This skill runs
-those four, shows the answer compactly and asks before removing anything. It
-makes no judgement of its own about whether a branch is merged.
+The `worktrees` CLI supplies completion proofs and deletion protections.
+It comes from `uv tool install git-worktrees`; if its commands or `jq` are
+missing, report that and stop. Work inside the requested repository.
 
-The commands come from `uv tool install git-worktrees`. If `gws` is not
-found, say so and stop.
+## Assess and show sync state first
 
-## 1. Assess
-
-Run these two from inside the repository, in this order, each exactly as
-written. Add `--no-fetch` to `gwbs` and `gws` only when the user asked for it.
-
-Branches first:
+Read worktrees, then loose branches, using these pipelines:
 
 ```sh
-gwbs --json | jq -c '{
-  head_sha,
-  branches: [.verdicts[] | select(.eligible) | {branch, proof, undo}],
-  empty: [.verdicts[] | select(.verdict == "empty")] | length,
+gwp --dry-run --json | jq -c '{
+  head, lastSync,
+  worktrees: [.verdicts[] | select(.eligible)],
+  empty: [.verdicts[] | select(.verdict == "empty")],
+  stash_blocked: [.verdicts[] | select(.eligible == false and (.stashes | length) > 0)],
+  ignored: [.verdicts[] | select(.eligible == false and .ignored > 0)],
   kept: [.verdicts[] | select(.verdict == "keep")] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length
 }'
 ```
 
-Then worktrees, with the `head_sha` that printed written in place of
-`HEAD_SHA`:
-
 ```sh
-gw --json | jq -c '{
-  worktrees: [.verdicts[] | select(.eligible)
-    | {branch, path, why, at_head: (.sha == "HEAD_SHA")}],
-  empty: [.verdicts[] | select(.verdict == "empty")] | length,
+gwbs --json | jq -c '{
+  head, lastSync,
+  branches: [.verdicts[] | select(.eligible)],
+  empty: [.verdicts[] | select(.verdict == "empty")],
+  stash_blocked: [.verdicts[] | select(.eligible == false and (.stashes | length) > 0)],
   kept: [.verdicts[] | select(.verdict == "keep")] | length,
-  unknown: [.verdicts[] | select(.verdict == "unknown")] | length,
-  ignored: [.verdicts[] | select(.ignored > 0) | .branch]
+  unknown: [.verdicts[] | select(.verdict == "unknown")] | length
 }'
 ```
 
-- `branches` are local branches with no worktree that `gwbd` would delete.
-  `proof` is `ancestry`, `squash`, `content` or `forge`; `undo` recreates the
-  branch.
-- `worktrees` are linked worktrees `gwp` would remove, together with their
-  branches. `why` is the proof, such as `squash-merged`.
-- `at_head` is true when the worktree's branch sits exactly on the head
-  branch's tip. That is a worktree with no commits of its own, which is what
-  one somebody has just started looks like.
-- `ignored` names worktrees kept only because they hold gitignored files.
-- `kept` and `unknown` count the rest. The main checkout and the head branch
-  are always among the kept.
+Before any candidate rows, show `Head: REF (SOURCE)` from `head`, followed
+by the refs and forge sync times from `lastSync`. Null means no successful
+sync for that component or that it does not apply. An unresolved head
+(`ref: null`) prevents removal; report it.
 
-A branch checked out in a worktree is `keep` in `branches` and appears in
-`worktrees` instead, so nothing is listed twice.
+Use `git remote` only to distinguish no remotes from never-synced remote
+state. With remotes and `lastSync.refs: null`, say never synced and ask
+whether to run `gw sync` before continuing. Otherwise, with remotes, use the
+older non-null sync time: more than 10 minutes old is stale, exactly
+10 minutes is fresh. Ask whether to sync only for never-synced or stale
+state. With no remotes, explain that assessment uses local evidence and do
+not offer sync on account of null times.
 
-## 2. Show
+For never-synced or stale remote state with no existing sync answer, the
+initial response contains the head line, sync state and sync question only.
+Wait for the reply. Show candidates and ask about removal after that answer.
+An existing sync approval or refusal already answers this stage.
 
-One table, worktrees first, then branches:
+Run `gw sync` only when the user asks or answers yes. Keep an existing sync
+approval or refusal for this cleanup request. On approval, show the command's
+actual outcome and rerun both assessments, including after a partial sync
+failure. On refusal, continue with the existing evidence. A selective
+removal reply does not erase that sync choice or require asking again.
 
+## Show candidates and ask what to remove
+
+Show eligible worktrees first, then eligible loose branches, with their
+proofs and worktree paths. Show `empty` rows and stash-blocked rows in
+separate groups, retaining all their protections; offer those categories
+only when the user asks. Name ignored-file blockers separately. A row can
+have more than one blocker, so show every required permission.
+
+A checked-out branch is already represented by its worktree and is absent
+from `gwbs`. Never target the current checkout, even if the user names it;
+identify it from the current working directory or `gwl --json`'s
+`worktrees[].here` if needed. The main checkout and protected branches remain
+blocked too. Do not infer eligibility from a verdict alone.
+
+Ask which displayed targets to remove and wait for an answer. Where
+AskUserQuestion is available, use it; otherwise ask in plain text. Offer all
+eligible rows, only worktrees, only loose branches, named selections or
+nothing as appropriate. Preserve the user's chosen targets and exclusions.
+A prior explicit selection and category approval for this cleanup already
+answers the question; do not ask again just because assessment was refreshed.
+
+Deletion permission covers only the category and targets the user approved:
+`empty`, `ignored-files` or `stashes`. `--yes` adds no permission. Explain
+that ignored files cannot be restored and that `empty` includes unused
+branches and fast-forward merges without forge proof. Keep other protections
+in place. If the user requests a blocked category, get the missing explicit
+permission before removing those rows. With no chosen targets, stop after
+the assessment.
+
+## Remove the approved targets
+
+For each chosen worktree, invoke the binary with its exact JSON path,
+quoted for the shell:
+
+```sh
+command gwr 'PATH' --yes
 ```
-KIND      NAME                PROOF          PATH
-worktree  fix-parser          squash-merged  ~/git/.worktrees/fix-parser/repo
-branch    chore/old-renovate  squash
+
+One call per worktree. Preserve spaces and literal quotes in the path; a
+single quote inside a single-quoted value needs shell escaping. Use the
+path, not a branch-name approximation. Add repeated `--delete VALUE` only
+for that target's approved categories. Do not substitute `--delete all`
+for a narrower approval or add `--keep-branch` on your own.
+
+Then invoke chosen loose branches, quoting every exact branch name:
+
+```sh
+command gwbd 'NAME' 'OTHER_NAME' --yes
 ```
 
-Shorten `$HOME` to `~`. Mark an `at_head` row `(no commits of its own)`.
-Under the table, one line each: how many worktrees and branches were kept, how
-many are unknown, and the `ignored` names if there are any. Then say that
-nothing is removed without proof from the CLI, and that both commands assess
-again before removing.
+Add only their approved `--delete empty` or `--delete stashes` values. Split
+branch calls when their category approvals differ. Do not run bulk `gwp`
+for a selective approval. The CLI reassesses before removing and can refuse
+changed targets. Use its commands rather than raw Git deletion or `rm`.
 
-When both lists are empty, say so with the counts and stop.
+## Report actual outcomes and restoration
 
-## 3. Ask
+Read stdout, stderr and status from every removal. Report checkout removal,
+branch deletion and stash outcomes separately, including refusals and
+partial failures. A failed command can already have removed its checkout or
+branch. Never turn a refused or retained step into a success report.
 
-Never remove anything without an answer.
+Keep exact branch restore commands printed by the CLI; loose-branch rows
+also carry `undo`. When a worktree row needs a branch restore command,
+construct `git branch NAME SHA` from its exact branch and full SHA with
+shell quoting. Stash subjects are absent from assessment JSON: retain the
+actual `git stash store -m SUBJECT SHA` commands from removal disclosure,
+including their exact subject quoting. Do not invent a subject.
 
-In Claude Code, use the AskUserQuestion tool. It takes two to four options;
-offer the ones that apply:
-
-- Remove all proven: every row except those marked `at_head`.
-- Only branches: the `branches` rows.
-- Only worktrees: the `worktrees` rows not marked `at_head`.
-- Remove nothing.
-
-"Other" carries names: a list to remove, or "all except" a list to keep. An
-`at_head` worktree is removed only when the user names it.
-
-Where there is no AskUserQuestion tool, as in Codex, ask the same question in
-plain text and wait for the reply.
-
-## 4. Remove
-
-Only through the CLI, and only what the user chose. Quote each name for the
-shell. Add `--no-fetch` when the user asked for it in step 1.
-
-- Each chosen worktree: `gwp --branch 'NAME' --yes 2>&1`. One call per
-  worktree. It removes the worktree and its branch.
-- The chosen branches, in one call: `gwbd 'NAME' 'NAME' ... --yes 2>&1`.
-
-Never `git branch -D`, `git worktree remove`, `git update-ref -d` or `rm`.
-Never pass `--delete-ignored` unless the user asked for it by name: it deletes
-the gitignored files in the worktree, and nothing restores them. When they do
-ask for a worktree in `ignored`, it is `gwp --branch 'NAME' --delete-ignored
---yes 2>&1`.
-
-What the output means:
-
-- `gwp` prints `restore with: git branch NAME SHA` before removing, then
-  `removed 1 worktree(s): NAME`. `NAME kept: REASON` is a refusal. When the
-  worktree is no longer proved finished it removes nothing and prints
-  `nothing to remove`.
-- `gwbd` prints `each comes back with:` and one `git branch NAME SHA` per
-  branch, then `deleted N branch: ...`. A branch it refuses prints
-  `NAME kept: REASON` and the command exits 3; the others are still deleted.
-
-## 5. Report
-
-Three short parts:
-
-- what was removed, worktrees and branches;
-- what the CLI refused, with its reason;
-- the undo commands, as printed, in one fenced block.
-
-Say that an undo command recreates the branch while its commit is still in
-the repository. It does not recreate a removed worktree's directory.
+Present restore commands for what was actually deleted. A branch restore
+recreates its ref, not its worktree directory. A dropped stash can be
+restored until Git garbage collection prunes its unreachable commit.

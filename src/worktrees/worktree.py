@@ -237,11 +237,10 @@ def removable(
     permissions: frozenset[str] = frozenset(),
     keep_branch: bool = False,
 ) -> list[Verdict]:
-    """Every worktree, judging the one you stand in like any other.
+    """Assess targets for gwr, including the current worktree.
 
-    `gws` keeps it, because a listing cannot step out of a directory on your
-    behalf. `gwr` is asked for one by name and does step out, so the rule
-    that protects a listing would only hide the answer here.
+    The caller requires a second terminal confirmation before removing its
+    current checkout and changes to the main checkout before removal.
     """
     return assess(
         R.worktrees(repo),

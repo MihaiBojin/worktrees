@@ -27,45 +27,32 @@ fish, and in fish it beats it in `fish -c` too, where the function is autoloaded
 from `functions/`. So a command that exists as both runs different code from a
 prompt and from a script unless the function is a pure adapter.
 
-The rule: **a function exists only for a command that must change the caller's
-directory, it carries the same name as the binary, and its body does nothing but
-call `command <name>` and `cd` to what that prints, when that is a directory,
-and print it otherwise.**
+A navigation function carries the binary's name and calls `command <name>`.
+It changes directory when stdout is a destination and prints data otherwise.
+`gw` changes directory only for a single worktree name that is not a
+subcommand; its adapter gets subcommands from `--complete`.
+`gwr` can return a destination after checkout removal and failure for later
+cleanup; its adapter changes directory and preserves the failure status.
 
-The last clause is not a hedge. `--json` and `--list` print what was asked for
-on the same stream a destination arrives on. A shim that cannot tell them
-apart tries to `cd` into a JSON object, and one that only refuses to prints
-nothing at all. `fish -c 'gwl --json'` reaches the
+`--json` and `--list` print data on the destination stream. A shim that cannot
+tell them apart can try to `cd` into a JSON object or suppress its output. `fish -c 'gwl --json'` reaches the
 function too, so this is the agent path as much as the human one.
 
 | | changes directory | ships as |
 | --- | --- | --- |
-| `gws`, `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`, `gwh` | no | a console script, and nothing else |
+| `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`, `gwh` | no | a console script, and nothing else |
 | a command that lands you somewhere | yes | a console script, plus a function of the same name |
 
 A binary cannot `cd` its caller. That is the only thing shell code is here for,
 and any logic that reaches a shell file is logic a script cannot call.
 
-Two traps a shim has to handle, both measured:
-
-- fish splits command substitution on newlines, so a path containing one
-  arrives as two elements. `(command gwa $argv | string collect)` keeps it
-  whole. bash and zsh strip only trailing newlines, so `"$(gwa)"` is already
-  correct there.
-- that pipeline's `$status` belongs to `string collect`, which returns 1
-  whenever it collected nothing, which is the failure case. The command's own
-  code is `$pipestatus[1]`.
-
-```fish
-function gwa --wraps gwa
-    set -l dest (command gwa $argv | string collect)
-    set -l code $pipestatus[1]
-    test $code -eq 0; or return $code
-    test -n "$dest"; or return 0
-    test -d "$dest"; or begin; printf '%s\n' $dest; return 0; end
-    cd -- $dest
-end
-```
+Adapters preserve stdout bytes, including trailing newlines in a path. Fish
+uses `string collect -N` and `$pipestatus[1]`; zsh appends a sentinel inside
+command substitution so it can recover trailing newlines. Both remove only
+the destination record's final newline, require an absolute existing
+directory, and preserve the binary's status. Data output is printed intact.
+Read [the fish adapter](functions/gwa.fish) and
+[the zsh adapter](zsh/plugins/worktrees/functions/gwa) for the implementation.
 
 `command` is what stops the function calling itself, in all three shells.
 
@@ -75,14 +62,11 @@ picks colour. A missing argument prints the error and then the help, both on
 stderr, at exit 2: the function prints nothing captured from a run that
 failed.
 
-One other kind of function exists: a shortcut, a banged name that calls a
-command with its flags fixed and does nothing else. `gwr!` is `gwr
---delete-ignored`, and `gwp!` is `gwp --force-refresh --delete-ignored
---yes`. A shortcut calls its command by its plain name, so `gwr!` reaches the
-`gwr` function rather than `command gwr` and the caller still lands where the
-binary says. No binary carries a banged name, so a shortcut shadows nothing,
-and none has a console script of its own.
-`SHORTCUTS` in `tests/test_shims.py` lists them and holds each to one line.
+Shortcuts are fixed-flag calls through the plain command name: `gwr!` calls
+`gwr --delete ignored-files`, `gwp!` calls `gwp --yes`, and `gwp!!` calls
+`gwp --delete all --yes`. No shortcut has a console script.
+`SHORTCUTS` in `tests/test_shims.py` holds each to one line. Interactive zsh
+with `BANG_HIST` requires quoted `'gwp!!'` to avoid history expansion.
 
 ## Two commands start branches
 
@@ -139,15 +123,19 @@ going quiet in a completion nobody is watching.
 
 ## The agent plugin reads `--json`
 
-`plugin/` is an agent plugin, installed from a release tag through the
-`release-tools` marketplace. Its skill pipes `gwbs --json` and `gws --json`
-each through a jq filter and removes only with `gwp` and `gwbd`, so the JSON
-fields those filters name are an interface. `tests/test_plugin.py` runs both
-filters, read out of `SKILL.md`, against the commands' output: a renamed or
-dropped field fails there. They are two plain pipelines, and the head sha is
-written into the second as a literal rather than passed as a jq variable,
-because Claude Code refused both a `{ ...; } | jq` group and a jq program
-holding a `$` under the command's `allowed-tools`.
+`plugin/` ships with the CLI. Its skill reads `gwp --dry-run --json` and
+`gwbs --json`, preserving head/sync state and full rows for eligible, empty,
+stash-blocked and ignored-file cases. `tests/test_plugin.py` extracts the
+actual jq filters and applies them to real CLI output. Checked-out branches
+are absent from the loose-branch list. Paths and restore commands must retain
+exact quoting.
+
+The skill asks before syncing stale or never-synced remote state, and runs
+`gw sync` only on the user's answer. Removal approval covers chosen targets
+and explicit deletion categories. Each worktree goes through `command gwr`
+with its exact quoted JSON path, then selected loose branches through
+`command gwbd`. The plugin never targets its current checkout. It reports
+partial checkout, branch and stash outcomes and actual restore commands.
 
 The plugin carries the release version in three manifests, and
 `scripts/bump_version.py` stamps all three. `plugin/plugin.json` is the
@@ -186,8 +174,9 @@ once and each move prints the row it lands on, so nothing writes a cursor
 code where it would show up as text.
 
 A query that is exactly one worktree's branch or path is that worktree
-alone. `gwr one` beside `one-more` is not a question, and neither is
-`gwr "$(gwl two)"`.
+alone. `gwl one` beside `one-more` is not a question, and neither is
+`gwr "$(gwl two)"`. `gwr NAME` uses exact names, with an exact path resolving
+one worktree; several name matches need a picker or a nonterminal refusal.
 
 Dropping `fzf` is less code, not more. It removes the spawn and the fallback
 branch a machine without `fzf` would otherwise need.
@@ -226,7 +215,7 @@ Two more about what is in the list at all:
   the way back to the top.
 - In `gwr`, the main checkout is shown dimmed and unnumbered, because `git
   worktree remove` refuses it whatever flag it is given, and the highlight
-  starts on the worktree you are standing in. `gws` and `gwp` keep the main
+  starts on the worktree you are standing in. `gw` and `gwp` keep the main
   checkout in their lists for the same reason, and never propose it.
 
 `--json` and `--list` answer the same question without any of this, and an
@@ -238,13 +227,13 @@ agent uses those.
 holds `branch status` and `branch delete`. `command_rows()` lists the
 executable commands for help and completion checks. A row carries the function, the flags,
 the one-line description, the console script, the argument shape, the
-shorthands and whether the command changes the caller's directory. `gws`,
-`gw status`, `gw st` and `gw s` reach the same function because that row says
-so, and `gwh` prints the table rather than a second list that can disagree
-with it.
+shorthands and whether the command changes the caller's directory. `gwp` and
+`gw prune` reach the same function because that row says so.
+`gwh` prints this registry. Bare `gw` assesses like `gwp --dry-run`; a single
+non-subcommand name navigates like `gwl`.
 
-`version` is the one row that installs no console script, and `gwh` prints a
-`—` in its first column to say so. A tool's version is asked through the
+`version` and `sync` install no console script of their own. `gwh` prints
+`—` in its first column for those rows. A tool's version is asked through the
 tool's name, so `gw version` and `gw v` are the two spellings and no parser
 carries a `--version` flag.
 
@@ -274,7 +263,7 @@ on a terminal: both are what a script reads. The colour is applied at the
 call site that formats a table, and neither path passes a code to one.
 
 `progress.py` draws a spinner on stderr and one line saying what is being
-checked, while `gws`, `gwp`, `gwr`, `gwbs` and `gwbd` fetch and judge. It runs only when
+checked, while `gw sync`, `gwp`, `gwr`, `gwbs` and `gwbd` assess or mutate. It runs only when
 stderr is a terminal that can clear a line, and never under `-q` or `-v`,
 since the verbose log writes to the line it redraws. Anything else printed on
 stderr while it spins goes through `progress.line`, which clears the spinner
@@ -301,29 +290,26 @@ indented, its exit code when that is not 0 or is the only answer, then a
 blank line. Printing after the run keeps a command and its answer together
 when eight threads are asking at once.
 
-## A recent fetch, and a forge answer that cannot change, are reused
+## Only explicit sync uses the network
 
-The README's "What is reused, and for how long" table lists every case and
-its lifetime. It is the one copy: the constants are `cli._FRESH`,
-`forge._IDLE_FOR` and `forge._PUSHED_FOR`, and a change to one changes that
-table in the same commit.
+`gw sync` fetches the default remote, updates its remote HEAD and queries the
+forge for every local branch tip. Every other command stays offline. The
+shared `git-worktrees-sync.json` cache in the Git common directory records
+remote name/URL, successful sync times and source-tip forge evidence. Sync
+replaces it atomically. Remote identity changes invalidate it; malformed or
+mismatched evidence is never proof.
 
-The fetch is most of what an assessment costs: about 1.1 s of a 1.9 s `gws`
-here, 750 ms of it the SSH handshake. `_should_fetch` decides for all eight
-commands that fetch. FETCH_HEAD is written per worktree, so
-`repo.fetched_at` reads every copy.
+`sync._FRESH` is 10 minutes. Warnings compare the oldest non-null component
+time, with exactly 10 minutes still fresh. Quiet suppresses stale warnings,
+but never-synced and inferred-head notices remain. JSON carries `lastSync`
+and `head` instead. A repository without remotes has no sync warning.
 
-An open request is reused only when it cannot merge until its author pushes;
-`forge._idle` holds that rule. Anything that could merge it on its own, or
-soon, means asking every time. No request on a pushed branch lasts a minute
-because a push is how a request gets opened, and from here it is usually
-the next step. A forge that fails to answer is never kept: `_ask` returns a
-`NONE` request for an empty answer and None for no answer, and only the
-first is cached.
+Partial-clone object reads require Git 2.45.1 onward or the maintenance
+cohorts in `repo.require_offline_git`. Lower reported vendor versions refuse;
+full clones keep older Git compatibility. Offline proof uses read-only
+patch-id input and creates no synthetic commits.
 
-The per-worktree checks run on eight threads. Each is independent, and the
-time goes waiting on git and on `gh`, one round trip per branch git cannot
-settle.
+The per-worktree checks run on eight threads. Mutations remain serial.
 
 ## Every git command is one spec
 
@@ -340,8 +326,8 @@ def is_ancestor(ref, head): ...
 def ignored_paths(): ...
 
 
-@git("commit-tree $tree -p $parent -m _", env=_SYNTHETIC, ok=(0, 128))
-def commit_tree(tree, parent): ...
+@git("worktree remove -- $path", mutates=True)
+def worktree_remove(path): ...
 ```
 
 `shlex.split` runs once, at decoration time, on the literal spec. Only then is
@@ -377,13 +363,10 @@ tested on what it returns rather than on its exit code. `upstream_of` takes
 `ok=(0, 1, 128)`, so a typo in one of its flags exits 128, reads as "no
 upstream", and turns every branch into `unknown` with nothing failing.
 
-The two calls that reach the network, `fetch` and `remote set-head --auto`,
-take `ok=(0, 128)` for the same reason in reverse: a remote that cannot be
-reached is an answer rather than a failure. The caller reads the result, says
-so on stderr, and carries on with the refs already here, which is where
-`--no-fetch` sends it on request. It also stops asking: a failed fetch means
-the head-branch ladder is told it is offline, rather than spending a second
-round trip proving it.
+The network calls belong to explicit sync. Their results distinguish failed
+refs refresh from partial forge refresh; assessments retain usable local
+proof without asking the network. The cache records each successful
+component's time separately.
 
 One `git status --porcelain --ignored=traditional` answers both questions a
 worktree is asked. It is a strict superset of plain `--porcelain`, so `dirty`
@@ -405,43 +388,44 @@ moment `update-ref` was added, and nothing failed.
 `verdicts.py` declares no mutating command. A read-only command may not call
 one: a test reads the verbose log and asserts it.
 
-## Content cannot settle a stacked branch
+## Verdicts and deletion are separate
 
-Branch assessment is documented in `docs/commands/branch-status.md`, and
-deletion in `docs/commands/branch-delete.md`. `gwbs` assesses local refs,
-including branches without worktrees. `gwbd` rechecks its verdicts after
-confirmation and deletes refs with the full expected SHA and `--no-deref`.
+`merged.branch_proof` checks matching cached forge proof, first-parent
+membership, local completion proof, then remaining commits or absent evidence.
+The verdicts are `remove`, `empty`, `keep` and `unknown`. A branch merged by
+fast-forward without forge proof is `empty`, because Git cannot distinguish
+it from an unused branch. First-parent history belongs to the assessed head,
+not a divergent local counterpart.
 
-The branch content check compares every path changed from the merge base to
-the tip with the current head tree, including modes and deletions. It can
-prove a re-imported change even when the head branch has unrelated edits.
-Forge evidence must match the source tip, source repository, and target
-branch, with a merge commit contained in the head branch. A closed unmerged
-request is never proof. These branch checks do not change worktree verdicts.
+Content proof compares changed paths, modes and deletions against the head.
+It cannot settle a stacked branch whose intermediate content the head later
+edited. Cached forge proof verifies source tip, source repository, target
+branch and merge ancestry. Closed unmerged requests are never proof.
 
-`merged_reason` answers by content: an ancestor, or a patch already upstream.
-That works for a branch squashed whole into one commit and fails for one
-merged as part of a stack, where the changes arrive across several squashes
-and the branch keeps an intermediate state the head branch edited further.
+`eligible` combines proof, protections and `--delete` permissions.
+`prune.removable()` selects only eligible rows. `main`, `master` and the
+head branch are protected. Locked or dirty worktrees, untracked files and
+initialized submodules block removal. Ignored paths, empty branches and
+matching stashes require their own permission. `--yes` grants none.
+`gwp` also protects the current worktree; `gwr` needs a second terminal
+confirmation for it. `--keep-branch` retains the branch and its stashes,
+needs no completion proof for the checkout, and combines only with
+`--delete ignored-files`.
 
-Measured on this repository's own stack: `rotate` changed `README.md` by
-+54/-5 from the merge base and the head branch by +96/-6 over the same
-regions. `git merge-tree` reports a conflict, and a diff cannot tell that
-from real work left over. There is no content probe that answers this.
+The removal snapshot pins the branch and head SHAs, exact path, ignored
+paths and stash identities. Recheck after confirmation precedes plain
+worktree removal, full-SHA ref deletion and approved stash drops. Ignored
+directories may be collapsed status entries; the snapshot is a path listing,
+not a recursive content fingerprint. Stash drops verify SHA and repair a
+concurrent wrong-entry drop using the exact subject. Restoration remains
+possible until Git garbage collection prunes the unreachable stash commit.
+Report checkout, branch and stash outcomes separately after partial failure.
 
-So the forge answers it, asked last because it costs a round trip and only
-where git already failed. A merged request with a configured upstream that
-Git reports as `[gone]` permits pruning, subject to the worktree protections.
-When the upstream exists, `unpushed_count` checks for local commits it lacks.
-No upstream configured stays `unknown`. `--no-forge` keeps a run offline.
-
-## Three verdicts, and the third is not a softer second
-
-`remove` was proved finished, `keep` has a reason not to be, and `unknown` could
-not tell. "No upstream, so nothing says whether this was pushed" is a different
-fact from "not merged", and printing them the same way invites somebody to act
-on the wrong one. `prune.removable()` returns the `remove` set and both commands
-call it, so what one prints and the other removes cannot drift.
+Branch assessment and deletion are documented in
+[branch status](docs/commands/branch-status.md) and
+[branch delete](docs/commands/branch-delete.md). Checked-out branches appear
+only as worktrees. Every JSON result is an object with `head` and `lastSync`;
+`gwl --json` stores navigation rows in `worktrees`.
 
 ## Reproduce a failure before asserting its fix
 
