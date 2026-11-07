@@ -36,6 +36,7 @@ class Verdict:
         "ignored",
         "path",
         "sha",
+        "stashes",
         "verdict",
         "why",
     )
@@ -56,6 +57,9 @@ class Verdict:
     # as the value the ref must still hold, so a commit made between the
     # judgement and the removal fails the delete rather than going with it.
     sha: str
+    # The stashes that belong to its branch, which hold it back and which
+    # the disclosure names with the command that restores each.
+    stashes: list[R.Stash]
     # git failed while judging it. The verdict is `unknown`, and the command
     # exits 1 the way `gwbs` does, so a script can tell this from unclear.
     error: bool
@@ -79,6 +83,7 @@ class Verdict:
         self.sha = sha
         self.error = error
         self.eligible = eligible
+        self.stashes = []
 
     @property
     def label(self) -> str:
@@ -100,6 +105,28 @@ def first_parents(head: str) -> frozenset[str]:
     the assessed head's alone.
     """
     return frozenset(first_parent_list(head).lines)
+
+
+def stashes_of(branch: str, tip: str, entries: list[R.Stash]) -> list[R.Stash]:
+    """The stashes that belong to `branch`: made on it by name, from a
+    commit its tip still contains.
+
+    `git stash` writes `WIP on <branch>: ...` and `git stash push -m` writes
+    `On <branch>: ...`. A stash made on a detached HEAD says `(no branch)`,
+    which no branch can be called, so it belongs to none.
+    """
+    if not branch:
+        return []
+    named = (f"WIP on {branch}:", f"On {branch}:")
+    return [
+        s
+        for s in entries
+        if s.subject.startswith(named) and merged.is_ancestor(s.first_parent, tip)
+    ]
+
+
+def stashed(count: int) -> str:
+    return f"{count} stash(es) belong to its branch"
 
 
 def stale(records: list[R.Worktree]) -> list[R.Worktree]:
@@ -260,6 +287,7 @@ def assess(
     evidence = (sync.read() or {}).get("evidence", {})
     repository = branch_forge.repository_for(R.remote())
     firsts = first_parents(head)
+    entries = R.stashes()
     if here is None:
         here = R.toplevel().out.strip()
 
@@ -293,6 +321,7 @@ def assess(
                 firsts,
             )
         row = say(found.verdict, found.why)
+        row.stashes = stashes_of(wt.branch, wt.sha, entries)
         if found.verdict not in (REMOVE, EMPTY):
             return row
 
@@ -314,6 +343,8 @@ def assess(
                 block = "it has uncommitted changes"
             elif R.has_submodule(wt.path):
                 block = SUBMODULE
+            elif row.stashes:
+                block = stashed(len(row.stashes))
             elif found.verdict == EMPTY and "empty" not in permitted:
                 block = NEEDS_EMPTY
             elif ignored:

@@ -24,8 +24,9 @@ other branch is `unknown`.
 `gwp` judges the branch of each worktree with these same checks, so a
 worktree and a loose branch at the same commit read the same verdict.
 
-A row is eligible when its verdict is `remove` and it is not `main` or
-`master`. A finished `main` reads `its tip is an ancestor of the head branch;
+A row is eligible when its verdict is `remove`, it is not `main` or
+`master`, and no stash belongs to it. `stashes` in `--json` lists those by
+sha. A finished `main` reads `its tip is an ancestor of the head branch;
 it is main or master, which nothing deletes`. `gwbs` takes no `--delete`, so
 an `empty` row is never eligible here; `gwbd --delete empty` is what deletes
 one. `gwbd` deletes only eligible rows, and the summary counts them:

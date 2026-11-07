@@ -429,3 +429,24 @@ def has_submodule(path: str) -> bool:
         if meta.startswith("160000 ") and Path(path, name, ".git").exists():
             return True
     return False
+
+
+# One call for the whole repository: refs/stash is shared by every worktree.
+@git("stash list --format=%H%x00%P%x00%gs")
+def stash_entries() -> None:
+    """Every stash: its sha, its parents, and the subject naming its branch."""
+
+
+class Stash(NamedTuple):
+    sha: str
+    subject: str
+    first_parent: str
+
+
+def stashes() -> list[Stash]:
+    """Every stash entry, newest first."""
+    found = []
+    for line in stash_entries().lines:
+        sha, parents, subject = line.split("\0", 2)
+        found.append(Stash(sha, subject, parents.split(" ")[0]))
+    return found

@@ -24,6 +24,8 @@ class Verdict:
     proof: str = ""
     paths: list[str] = field(default_factory=list)
     request: dict | None = None
+    # The stashes that belong to it, which hold it back.
+    stashes: list[R.Stash] = field(default_factory=list)
     error: bool = False
     # The verdict is `remove` and the branch is not main or master: what
     # gwbd deletes. That protection never changes the verdict, only this.
@@ -34,7 +36,11 @@ class Verdict:
         return f"git branch {shlex.quote(self.branch)} {self.sha}"
 
     def data(self) -> dict:
-        return {**asdict(self), "undo": self.undo}
+        return {
+            **asdict(self),
+            "stashes": [s.sha for s in self.stashes],
+            "undo": self.undo,
+        }
 
 
 CHECKED_OUT = "checked out in a worktree; see gwp"
@@ -73,6 +79,7 @@ def assess(
         if wt.branch:
             checked.setdefault(wt.branch, []).append(wt.path)
     firsts = verdicts.first_parents(head_sha) if head_sha else frozenset()
+    entries = R.stashes()
     rows = []
     wanted = list(dict.fromkeys(names or (r for r in refs if r not in checked)))
     for i, name in enumerate(wanted, 1):
@@ -106,9 +113,12 @@ def assess(
                 )
                 row.verdict, row.why = found.verdict, found.why
                 row.proof, row.request = found.proof, found.request
+                row.stashes = verdicts.stashes_of(name, sha, entries)
                 if found.verdict in (verdicts.REMOVE, verdicts.EMPTY):
                     if name in verdicts.PROTECTED:
                         row.why = f"{found.why}; {verdicts.MAIN_OR_MASTER}"
+                    elif row.stashes:
+                        row.why = f"{found.why}; {verdicts.stashed(len(row.stashes))}"
                     elif found.verdict == verdicts.EMPTY and "empty" not in permitted:
                         row.why = f"{found.why}; {verdicts.NEEDS_EMPTY}"
                     else:
@@ -131,6 +141,8 @@ def delete(
     fresh = assess([row.branch], head_sha, head_branch, permitted=permitted)[0]
     if fresh.sha != row.sha:
         raise Refused(f"{row.branch} changed after assessment; run the command again")
+    if [s.sha for s in fresh.stashes] != [s.sha for s in row.stashes]:
+        raise Refused(f"{row.branch}'s stashes changed after assessment")
     if not fresh.eligible:
         raise Refused(f"{row.branch}: {fresh.why}")
     if prune.sha_of(head_ref).out.strip() != head_sha:

@@ -291,9 +291,15 @@ ancestor of the head branch; it is main or master, which nothing deletes`,
 one of these.
 
 For a worktree the others are the one you are standing in, a lock,
-uncommitted changes or untracked files, an initialized submodule, an `empty`
-verdict without `--delete empty`, and ignored files without `--delete
-ignored-files`. A `remove` or `empty` row held back by one names the first
+uncommitted changes or untracked files, an initialized submodule, stashes
+that belong to its branch, an `empty` verdict without `--delete empty`, and
+ignored files without `--delete ignored-files`. Stashes hold back a loose
+branch in `gwbs` and `gwbd` the same way.
+
+A stash belongs to a branch when its subject starts `WIP on NAME:` or `On
+NAME:`, which is what `git stash` and `git stash push -m` write, and the
+commit it was made on is still in the branch. One made on a detached HEAD
+belongs to none. `--json` lists each row's stashes by sha. A `remove` or `empty` row held back by one names the first
 that applies after the proof, as in `its tip is an ancestor of the head
 branch; it has uncommitted changes`. `gwbs` leaves out a branch checked out
 in a worktree, which appears only as its worktree here. Named, it reads
@@ -330,11 +336,10 @@ for both the counts and the removal. What goes and what puts it back is printed 
 anything does, and neither `--quiet` nor `--yes` silences it. The sha in the
 restore line is full length, because that line is meant to be pasted.
 
-A stash made on a branch that is about to go is named too. `refs/stash` is
-per-repository and pins its own commits, so the entry survives the branch and
-`git stash branch <new> stash@{0}` still recovers it. What does not survive is
-the branch name in its subject, so the line says which entry is about to start
-pointing at nothing.
+Each stash that belongs to the branch is named too, with the line that
+restores it, `git stash store -m 'On wip: half finished' SHA`, which works
+until `git gc` prunes the commit. `gwr --force` removes the worktree and
+keeps the branch and its stashes.
 
 After the answer, and under `--yes` too, each target is assessed again. It is
 kept, and nothing of it is removed, when its branch, its commit, the head ref

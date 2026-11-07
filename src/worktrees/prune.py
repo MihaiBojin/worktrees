@@ -12,7 +12,7 @@ from typing import NamedTuple
 from . import render, sync
 from . import repo as R
 from .git import GitError, Refused, git
-from .verdicts import HEAD_BRANCH, MAIN_OR_MASTER, PROTECTED, Verdict
+from .verdicts import HEAD_BRANCH, MAIN_OR_MASTER, PROTECTED, Verdict, stashes_of
 
 
 @git("worktree prune", mutates=True)
@@ -59,14 +59,6 @@ def sha_of(ref: str) -> None:
     """The sha a ref names, for the line that puts it back."""
 
 
-# One call for the whole repository, because refs/stash is per-repository
-# rather than per-branch. The quotes survive shlex.split, so the format stays
-# one argv element.
-@git("stash list --format='%gd %gs'")
-def stash_list() -> None:
-    """Every stash entry: its selector, then the subject naming its branch."""
-
-
 def removable(verdicts: list[Verdict]) -> list[Verdict]:
     """The eligible rows, which is the whole of what gwp may touch.
 
@@ -105,20 +97,10 @@ def restore_sha(branch: str, repo: str | os.PathLike[str] | None = None) -> str:
     return text
 
 
-def stashes_on(branch: str, entries: list[str]) -> list[str]:
-    """The selectors of the stash entries made on this branch.
-
-    `git stash` writes `WIP on <branch>: ...` and `git stash push -m` writes
-    `On <branch>: ...`, so the branch is in the subject and nowhere else.
-    """
-    if not branch:
-        return []
-    found = []
-    for line in entries:
-        selector, _, subject = line.partition(" ")
-        if subject.startswith((f"On {branch}:", f"WIP on {branch}:")):
-            found.append(selector)
-    return found
+def stash_restore(stash: R.Stash) -> str:
+    """The command that puts a dropped stash back, while `git gc` has not
+    pruned its commit."""
+    return f"git stash store -m {shlex.quote(stash.subject)} {stash.sha}"
 
 
 def plan(
@@ -136,23 +118,16 @@ def plan(
     `git worktree remove` takes the whole directory, so --delete ignored-files
     decides consent and never decides what is deleted.
     """
-    entries = stash_list(repo=repo).lines
     for v in go:
         say(f"{render.branch(v.label)}  {render.err(v.path, render.DIM)}")
         sha = restore_sha(v.branch, repo=repo)
         if sha:
             restore = render.restore(v.branch, sha)
             say(f"  {render.err('restore with:', render.DIM)} {restore}")
-        # A stash survives the branch it was made on: refs/stash pins its own
-        # commits. What does not survive is the name in its subject, so say
-        # which entry is about to start pointing at nothing.
-        for selector in stashes_on(v.branch, entries):
+        for stash in v.stashes:
             say(
-                render.err(
-                    f"  {selector} was made on this branch and outlives it: "
-                    f"git stash branch <new> {selector}",
-                    render.DIM,
-                )
+                f"  {render.err('stash ' + stash.subject + ':', render.DIM)} "
+                f"{stash_restore(stash)}"
             )
         for path in R.ignored_paths(v.path):
             say(render.err(f"  deleting ignored, unrecoverable: {path}", render.YELLOW))
@@ -208,6 +183,7 @@ class Snapshot(NamedTuple):
     locked: bool
     dirty: bool
     ignored: tuple[str, ...]
+    stashes: tuple[str, ...]
 
 
 # What a second look compares, in order, and what it says when one differs.
@@ -219,6 +195,7 @@ CHANGES = (
     ("dirty", "its uncommitted changes changed"),
     ("locked", "its lock changed"),
     ("ignored", "its ignored files changed"),
+    ("stashes", "its branch's stashes changed"),
 )
 
 
@@ -240,6 +217,7 @@ def look(path: str, repo: str | os.PathLike[str] | None = None) -> Snapshot | No
         "locked" in found.flags,
         status.dirty,
         tuple(status.ignored),
+        tuple(s.sha for s in stashes_of(found.branch, found.sha, R.stashes())),
     )
 
 
@@ -247,9 +225,14 @@ def record(
     v: Verdict, head_ref: str, repo: str | os.PathLike[str] | None = None
 ) -> Snapshot | None:
     """The snapshot a removal is checked against, tied to the branch, the
-    commit and the head ref the verdict was formed from."""
+    commit, the head ref and the stashes the verdict was formed from."""
     now = look(v.path, repo=repo)
-    return now and now._replace(branch=v.branch, sha=v.sha, head_ref=head_ref)
+    return now and now._replace(
+        branch=v.branch,
+        sha=v.sha,
+        head_ref=head_ref,
+        stashes=tuple(s.sha for s in v.stashes),
+    )
 
 
 def changed(

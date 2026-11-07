@@ -333,6 +333,7 @@ def _assessment(
                 "why": v.why,
                 "ignored": v.ignored,
                 "sha": v.sha,
+                "stashes": [s.sha for s in v.stashes],
             }
             for v in _only(args, rows)
         ],

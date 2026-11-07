@@ -1005,49 +1005,6 @@ def test_explain_names_every_refusal_the_guard_holds(world) -> None:
         assert named in flat, named
 
 
-# --------------------------------------------------------------------------
-# a stash outlives the branch it names
-# --------------------------------------------------------------------------
-
-
-def test_a_removal_names_the_stash_made_on_the_branch(world) -> None:
-    """refs/stash pins its own commits, so the entry survives. Its subject
-    does not: it goes on naming a branch that is gone.
-    """
-    wt = world.worktree("wip")
-    world.commit("f.txt", "one\n", at=wt)
-    (wt / "f.txt").write_text("half-finished\n")
-    world.git("stash", "push", "--quiet", "-m", "half-finished", at=wt)
-
-    (world.repo / "f.txt").write_text("one\n")
-    world.git("add", "--", "f.txt")
-    world.git("commit", "--quiet", "-m", "squash of wip")
-
-    p = run(world, "gwp", "-y")
-    assert p.returncode == 0, p.stderr
-    assert "stash@{0} was made on this branch and outlives it" in p.stderr
-    assert "git stash branch <new> stash@{0}" in p.stderr
-    # And it did outlive it.
-    assert world.git("stash", "list")
-    assert "wip" not in world.git("branch", "--format=%(refname:short)").split()
-
-
-def test_a_stash_on_another_branch_is_not_named(world) -> None:
-    wt = world.worktree("wip")
-    world.commit("f.txt", "one\n", at=wt)
-    (world.repo / "other.txt").write_text("x\n")
-    world.git("add", "--", "other.txt")
-    world.git("stash", "push", "--quiet", "-m", "elsewhere")
-
-    (world.repo / "f.txt").write_text("one\n")
-    world.git("add", "--", "f.txt")
-    world.git("commit", "--quiet", "-m", "squash of wip")
-
-    p = run(world, "gwp", "-y")
-    assert p.returncode == 0, p.stderr
-    assert "was made on this branch" not in p.stderr
-
-
 def test_list_with_no_query_prompts_on_a_terminal(world) -> None:
     """One other worktree, and it still asks, because nothing said which.
 
@@ -1866,6 +1823,13 @@ CHANGES: dict[str, tuple[Callable[[Any, Path], object], str]] = {
     "ignored": (
         lambda world, wt: wt.joinpath(".env").write_text("S=1\n"),
         "its ignored files changed",
+    ),
+    "stash": (
+        lambda world, wt: (
+            wt.joinpath("README").write_text("half\n"),
+            world.git("stash", "push", "--quiet", "-m", "half", at=wt),
+        ),
+        "its branch's stashes changed",
     ),
 }
 
