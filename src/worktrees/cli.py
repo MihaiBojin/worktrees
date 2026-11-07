@@ -846,16 +846,17 @@ def run_list(args: argparse.Namespace) -> int:
     if not found:
         _err(render.fail("no worktree matches"))
         return 1
+
     # The main checkout is offered even to somebody standing in it: from a
     # subdirectory it is the way back to the top. Any other worktree you
-    # stand in is shown above the rest, marked and unnumbered.
-    offered = [w for w in found if w.main or not _same(w.path, here)]
+    # stand in is shown above the rest, marked and never highlighted.
+    def offerable(w: R.Worktree) -> bool:
+        return w.main or not _same(w.path, here)
+
+    offered = [w for w in found if offerable(w)]
     if not offered:
         _err(render.note(f"already in {render.branch(found[0].label)}"))
         return 0
-
-    if args.query:
-        _refuse_ambiguous(offered)
 
     # Which repository this is, above the list, so nobody has to run
     # `git remote -v` to find out. Only where the picker is drawn: --list and
@@ -865,13 +866,17 @@ def run_list(args: argparse.Namespace) -> int:
         for name, url in R.remote_urls():
             _err(f"{render.ref(name)}: {url}")
 
-    # A query that narrows to one has said which. No query has not, even
-    # when the repository holds exactly one other worktree.
+    # The picker holds every worktree and opens filtered by the query, so one
+    # esc widens it to all of them. A query that narrows to one has said
+    # which. No query has not, even when the repository holds exactly one
+    # other worktree.
+    everyone = [w for w in rows if offerable(w)]
     chosen = pick.choose(
-        offered,
+        everyone,
         outright=bool(args.query),
-        shown=[("*", w) for w in found if w not in offered],
-        here=next((w for w in offered if _same(w.path, here)), None),
+        shown=[("*", w) for w in rows if not offerable(w)],
+        here=next((w for w in everyone if _same(w.path, here)), None),
+        query=args.query or "",
     )
     if chosen is None:
         _err(render.note("nothing picked"))
@@ -1096,9 +1101,9 @@ def _guide() -> int:
         "standing in.\nA binary cannot do that, so each needs the shell function "
         "of the same name\nfrom the plugin; the rest need nothing but $PATH."
     )
-    print("gw list [QUERY] picks a destination in a terminal.")
+    print("gw list [QUERY] picks a destination in a terminal; typing filters.")
     print("Without a terminal, or with --json or --list, it prints metadata.")
-    print("gwp! skips confirmation; gwr! deletes ignored files.")
+    print("gwl is gw list; gwp! skips confirmation; gwr! deletes ignored files.")
     print("gwp!! deletes empty branches, ignored files and branch stashes.")
     text, same = plugin_state()
     print(o(text, "" if same else YELLOW))
@@ -1281,6 +1286,7 @@ _COMMANDS: dict[str, _Command] = {
         _add_list_flags,
         "list worktrees or pick a destination",
         usage="[QUERY]",
+        aliases=("l",),
         lands=True,
     ),
     "remove": _Command(
