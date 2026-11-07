@@ -44,7 +44,7 @@ LEGAL = ['a"b', "a'b", "$(id)", "a`id`b"]
 def test_a_branch_name_git_accepts_is_created_verbatim(world, name: str) -> None:
     import pathlib
 
-    started = new_branch.create(name, fetch=False)
+    started = new_branch.create(name)
     assert started.branch == name
     assert world.git("symbolic-ref", "--short", "HEAD") == name
     assert world.git("rev-parse", "--verify", f"refs/heads/{name}")
@@ -57,7 +57,7 @@ def test_a_branch_name_git_rejects_stops_at_check_ref_format(world, name) -> Non
     import pathlib
 
     with pytest.raises(new_branch.Refusal, match="not a valid branch name"):
-        new_branch.create(name, fetch=False)
+        new_branch.create(name)
     assert world.git("symbolic-ref", "--short", "HEAD") == "main"
     assert not pathlib.Path("/tmp/WORKTREES_PWNED").exists()
 

@@ -1,6 +1,6 @@
 # The four commands that change the caller's directory, and two shortcuts:
 # gwr!, which is gwr --delete-ignored, and gwp!, which is gwp
-# --force-refresh --delete-ignored --yes.
+# --yes.
 #
 # Everything else here is a console script and needs nothing: gws, gwp, gwbc
 # and gwrot answer the same from a prompt and from a script. A binary cannot

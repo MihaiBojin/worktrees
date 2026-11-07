@@ -2,8 +2,6 @@
 
 complete -c gwrot -f
 
-complete -c gwrot -l no-fetch -d 'work from what is already here'
-complete -c gwrot -s f -l force-refresh -d 'fetch even when the last fetch is under 10 minutes old'
 
 complete -c gwrot -l json -d 'the result as data'
 complete -c gwrot -s q -l quiet -d 'say nothing on success'

@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 
 from . import branches, progress, prune, render
-from .cli import _assessment_head, _err, _explain, _only, _Stop, add_status_flags
+from .cli import _assessment_head, _err, _explain, _json, _only, _Stop, add_status_flags
 from .git import GitError, Refused, options
 from .render import BOLD, DIM, YELLOW, Cell, table
 
@@ -20,17 +19,10 @@ def status_flags(p: argparse.ArgumentParser) -> None:
         help="exact local branch names; all when omitted",
     )
     _assessment_flags(p)
-    add_status_flags(p, "the same as --force-refresh")
+    add_status_flags(p)
 
 
 def _assessment_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--no-fetch", action="store_true", help="use the refs already here")
-    p.add_argument(
-        "--force-refresh",
-        action="store_true",
-        help="fetch even when the last fetch is under 10 minutes old",
-    )
-    p.add_argument("--no-forge", action="store_true", help="never ask GitHub or GitLab")
     p.add_argument("--json", action="store_true", help="verdicts and evidence as data")
     p.add_argument("-q", "--quiet", action="store_true", help="omit the summary")
     p.add_argument("-v", "--verbose", action="store_true", help="print every command")
@@ -68,18 +60,13 @@ def _prepare(
     if args.explain:
         _explain()
         return None
-    # A spinner and the question being asked, on a terminal: a branch git
-    # cannot settle costs a round trip to the forge, and --all may hold dozens.
+    # A terminal spinner reports the local branch checks.
     with progress.running(not args.quiet and not args.verbose):
         head, head_branch, remote = _assessment_head(args)
-        head_sha = prune.sha_of(head).out.strip()
-        if not head_sha:
-            raise GitError(f"cannot resolve {head}")
+        head_sha = prune.sha_of(head).out.strip() if head else ""
         progress.say("reading local branches")
         try:
-            rows = branches.assess(
-                args.names, head_sha, head_branch, remote, not args.no_forge
-            )
+            rows = branches.assess(args.names, head_sha, head_branch, remote, True)
         except ValueError as exc:
             raise _Stop(str(exc), 2) from exc
     return head, head_sha, head_branch, remote, rows
@@ -118,7 +105,7 @@ def _report(
 ) -> None:
     if args.json:
         print(
-            json.dumps(
+            _json(
                 {
                     "head": head,
                     "head_sha": head_sha,
@@ -243,6 +230,10 @@ def delete(args: argparse.Namespace) -> int:
     if prepared is None:
         return 0
     head, head_sha, head_branch, remote, rows = prepared
+    if not head_sha:
+        from . import repo as R
+
+        raise Refused(R.head().unresolved)
     if args.names or args.all or args.dry_run:
         go = [v for v in rows if v.verdict == "remove"]
     else:
@@ -281,9 +272,7 @@ def delete(args: argparse.Namespace) -> int:
                 f"{row.branch}: checking again, then deleting ({i} of {len(go)})"
             )
             try:
-                branches.delete(
-                    row, head, head_sha, head_branch, remote, not args.no_forge
-                )
+                branches.delete(row, head, head_sha, head_branch, remote, True)
             except (GitError, Refused, ValueError) as exc:
                 failures.append({"branch": row.branch, "why": str(exc)})
                 _err(render.fail(f"{render.branch(row.branch)} kept: {exc}"))

@@ -117,8 +117,6 @@ def next_name(
 
 
 def rotate(
-    fetch: bool,
-    warn: object = None,
     repo: str | os.PathLike[str] | None = None,
 ) -> Rotated | CaughtUp:
     """Start the next branch after this one, or catch the head branch up."""
@@ -130,24 +128,10 @@ def rotate(
         )
 
     remote = R.remote(repo=repo)
-    online = fetch
-    if fetch and remote and not R.fetch(remote, repo=repo):
-        online = False
-        if callable(warn):
-            warn(
-                f"{render.ref(remote)} could not be fetched; working from what is "
-                "already here"
-            )
-
-    base, warning = R.head_ref(remote, online=online, repo=repo)
-    if warning and callable(warn):
-        warn(warning)
-    if not base:
-        hint = remote or "origin"
-        raise Refusal(
-            "cannot tell which branch this repository branches from; record it "
-            f"with: git remote set-head {hint} --auto"
-        )
+    resolved = R.head(repo)
+    if not resolved.ref:
+        raise Refusal(resolved.unresolved)
+    base = R.symbolic_ref(resolved.ref, repo=repo).out.strip() or resolved.ref
 
     head_name = R.ref_name(base)
     if remote:

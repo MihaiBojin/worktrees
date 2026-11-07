@@ -1,9 +1,4 @@
-"""Start a branch off a head branch that was fetched a moment ago.
-
-The base is <remote>/<head> as it stands after the fetch, not the local copy
-of it, so the branch is already on top of what the server has and nothing has
-to be rebased afterwards.
-"""
+"""Start a branch from the locally resolved head ref without fetching."""
 
 from __future__ import annotations
 
@@ -53,11 +48,9 @@ class Refusal(Exception):
 
 def create(
     name: str,
-    fetch: bool,
-    warn: object = None,
     repo: str | os.PathLike[str] | None = None,
 ) -> Started:
-    """Fetch, then branch `name` off the head branch and check it out."""
+    """Branch `name` off the resolved head ref and check it out."""
     if not check_ref_format(name, repo=repo):
         raise Refusal(f"{render.branch(name)} is not a valid branch name")
     if R.ref_exists(f"refs/heads/{name}", repo=repo):
@@ -68,29 +61,10 @@ def create(
             f"git switch {shlex.quote(name)} checks it out"
         )
 
-    remote = R.remote(repo=repo)
-    online = fetch
-    if fetch and remote and not R.fetch(remote, repo=repo):
-        # An offline machine still gets a branch, off whatever it last saw,
-        # and the line at the end names the commit it got. It is also offline
-        # for the head-branch ladder, which would otherwise spend a second
-        # round trip proving the same thing.
-        online = False
-        if callable(warn):
-            warn(
-                f"{render.ref(remote)} could not be fetched; branching from what "
-                "is already here"
-            )
-
-    base, warning = R.head_ref(remote, online=online, repo=repo)
-    if warning and callable(warn):
-        warn(warning)
-    if not base:
-        hint = remote or "origin"
-        raise Refusal(
-            "cannot tell which branch this repository branches from; record it "
-            f"with: git remote set-head {hint} --auto"
-        )
+    resolved = R.head(repo)
+    if not resolved.ref:
+        raise Refusal(resolved.unresolved)
+    base = R.symbolic_ref(resolved.ref, repo=repo).out.strip() or resolved.ref
 
     sha = short_sha(base, repo=repo)
     switch_create(name, base, repo=repo)
