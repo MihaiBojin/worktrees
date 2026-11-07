@@ -1006,7 +1006,10 @@ def run_remove(args: argparse.Namespace) -> int:
             render.fail(
                 f"{render.branch(chosen.label)} cannot be removed: "
                 f"{verdicts.SUBMODULE}\n"
-                f"run git submodule deinit --all in {chosen.path} and retry"
+                f"run git submodule deinit --all in {chosen.path}\n"
+                f"then delete {R.modules_dir(repo=chosen.path).out.strip()} "
+                "once nothing in it is needed, since it holds the submodules' "
+                "own commits, and retry"
             )
         )
         return 1

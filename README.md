@@ -281,8 +281,8 @@ removes the checkout and keeps the branch. `gwbd main` refuses and names the
 rule, and so does `gwm` in a worktree on one of these.
 
 For a worktree the others are the one you are standing in, a lock,
-uncommitted changes or untracked files, an initialized submodule, and ignored
-files without `--delete ignored-files`. A `remove` row held back by one names the
+uncommitted changes or untracked files, an initialized submodule or a
+submodule store, and ignored files without `--delete ignored-files`. A `remove` row held back by one names the
 first that applies after the proof, as in `its tip is an ancestor of the head
 branch; it has uncommitted changes`. `gwbs` leaves out a branch checked out in
 a worktree, which appears only as its worktree here. Named, it reads `keep`,
@@ -504,9 +504,13 @@ At a terminal, and without `--yes`, `gwr` asks instead: it names every
 ignored path and removes the worktree on a `y`. `--yes` never answers that
 question, so a script still needs `--delete ignored-files`.
 
-A worktree with an initialized submodule is refused whatever flag is given,
-because `git worktree remove` refuses it too. The refusal says to run `git
-submodule deinit --all` in it and retry.
+A worktree with an initialized submodule, or with the submodule store git
+keeps for it under `git rev-parse --git-path modules`, is refused whatever
+flag is given, because `git worktree remove` refuses it too. The refusal
+names both steps: run `git submodule deinit --all` in the worktree, then
+delete the store, by its absolute path, once nothing in it is needed, since
+it holds the submodules' own commits. `deinit` alone leaves the store, and
+git still refuses.
 
 `--force` is not the answer to the ignored files. It deletes those files just the same,
 since `git worktree remove` takes the whole directory, and it keeps a branch
