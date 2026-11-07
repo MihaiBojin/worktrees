@@ -210,14 +210,18 @@ def plan(
     decides consent and never decides what is deleted.
 
     Under `keep_branch` the branch and its stashes stay, and the plan says
-    that instead of how to put them back.
+    that instead of how to put them back. A detached worktree has no branch
+    to put back, so the plan names its commit.
     """
     for v in go:
         say(f"{render.branch(v.label)}  {render.err(v.path, render.DIM)}")
-        if keep_branch and v.branch:
+        if not v.branch:
+            lead = render.err("detached at", render.DIM)
+            say(f"  {lead} {render.err(v.sha, render.YELLOW)}")
+        elif keep_branch:
             stashes = f" and its {len(v.stashes)} stash(es)" if v.stashes else ""
             say(f"  keeping branch {render.branch(v.branch)}{stashes}")
-        elif not keep_branch:
+        else:
             sha = restore_sha(v.branch, repo=repo)
             if sha:
                 restore = render.restore(v.branch, sha)

@@ -292,17 +292,69 @@ def test_a_tag_shadowing_the_head_branch_does_not_shadow_it(world) -> None:
     assert v["feature"].verdict != verdicts.REMOVE
 
 
-def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
-    """B7."""
-    path = world.parent / ".worktrees" / "detached" / "repo"
+def detached(world, name: str, base: str = "main") -> Path:
+    path = world.parent / ".worktrees" / name / "repo"
     path.parent.mkdir(parents=True)
-    world.git("worktree", "add", "--quiet", "--detach", str(path), "main")
-    v = verdicts.assess(R.worktrees(), "refs/heads/main", "main", frozenset())
-    assert len(v) == 1
-    assert v[0].branch == ""
-    assert v[0].label == "(detached)"
-    assert v[0].verdict == verdicts.REMOVE
-    assert v[0].why == "its commit is reached by a ref"
+    world.git("worktree", "add", "--quiet", "--detach", str(path), base)
+    return path
+
+
+def judged(world) -> verdicts.Verdict:
+    (row,) = verdicts.assess(R.worktrees(), "refs/heads/main", "main", frozenset())
+    return row
+
+
+def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
+    """B7. A detached worktree is judged against the head branch, and a
+    commit on its first-parent line holds nothing: it is `empty`."""
+    detached(world, "detached")
+    row = judged(world)
+    assert (row.branch, row.label) == ("", "(detached)")
+    assert (row.verdict, row.eligible) == (verdicts.EMPTY, False)
+    assert row.why == f"{verdicts.EMPTY_WHY}; {verdicts.NEEDS_EMPTY}"
+
+
+def test_a_stash_is_a_ref_that_reaches_a_detached_commit(world) -> None:
+    """The premise: `git for-each-ref --contains` counts refs/stash, so a
+    commit made on a detached HEAD and then stashed over reads as reached."""
+    wt = detached(world, "dstash")
+    sha = world.commit("work", at=wt)
+    wt.joinpath("work").write_text("more\n")
+    world.git("stash", "--quiet", at=wt)
+    assert world.git("for-each-ref", "--format=%(refname)", "--contains", sha) == (
+        "refs/stash"
+    )
+    assert world.git("stash", "list", "--format=%gs").startswith("WIP on (no branch):")
+
+
+def test_a_detached_commit_only_a_stash_reaches_is_kept(world) -> None:
+    wt = detached(world, "dstash")
+    world.commit("work", at=wt)
+    wt.joinpath("work").write_text("more\n")
+    world.git("stash", "--quiet", at=wt)
+    assert judged(world).verdict == verdicts.KEEP
+
+
+def test_another_remote_reaching_a_detached_commit_proves_nothing(world) -> None:
+    world.git("remote", "add", "origin", str(world.root / "origin.git"))
+    world.git("remote", "add", "up", str(world.root / "up.git"))
+    world.git("config", "checkout.defaultRemote", "origin")
+    wt = detached(world, "dup")
+    sha = world.commit("work", at=wt)
+    world.git("update-ref", "refs/remotes/up/x", sha)
+    assert world.git("for-each-ref", "--format=%(refname)", "--contains", sha) == (
+        "refs/remotes/up/x"
+    )
+    assert judged(world).verdict == verdicts.KEEP
+
+
+def test_a_detached_commit_the_head_branch_merged_is_remove(world) -> None:
+    world.finished_branch("done")
+    detached(world, "dmerged", "done")
+    world.git("branch", "-D", "done")
+    row = judged(world)
+    assert (row.verdict, row.eligible) == (verdicts.REMOVE, True)
+    assert row.why == "its tip is an ancestor of the head branch"
 
 
 # --------------------------------------------------------------------------

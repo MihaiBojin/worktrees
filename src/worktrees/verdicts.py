@@ -307,24 +307,16 @@ def assess(
         if wt.branch and wt.branch == head_branch and not keep_branch:
             return say(KEEP, HEAD_BRANCH)
 
-        if not wt.branch:
-            # Detached: finished when some ref already reaches the commit,
-            # which is the question `git worktree remove` asks of one.
-            if R.refs_containing(wt.sha).out.strip():
-                found = Proof(REMOVE, "its commit is reached by a ref")
-            else:
-                found = Proof(UNKNOWN, f"no ref reaches {wt.sha}")
-        else:
-            found = prove(
-                wt.sha,
-                wt.branch,
-                head,
-                head_branch,
-                evidence,
-                repository,
-                lambda question: progress.say(f"{wt.label}: {question}"),
-                firsts,
-            )
+        found = prove(
+            wt.sha,
+            wt.branch,
+            head,
+            head_branch,
+            evidence,
+            repository,
+            lambda question: progress.say(f"{wt.label}: {question}"),
+            firsts,
+        )
         row = say(found.verdict, found.why)
         row.stashes = stashes_of(wt.branch, wt.sha, entries)
         if found.verdict not in (REMOVE, EMPTY) and not keep_branch:

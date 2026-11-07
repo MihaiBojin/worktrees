@@ -1572,13 +1572,44 @@ def test_each_protection_keeps_the_verdict_and_clears_eligible(world) -> None:
     assert (rows["main"]["verdict"], rows["main"]["eligible"]) == ("keep", False)
 
 
-def test_a_detached_worktree_is_protected_the_same_way(world) -> None:
+def _detached(world, base: str = "main") -> Path:
     wt = world.parent / ".worktrees" / "loose" / world.repo.name
-    world.git("worktree", "add", "--quiet", "--detach", str(wt), "main")
-    wt.joinpath("wip").write_text("x")
+    world.git("worktree", "add", "--quiet", "--detach", str(wt), base)
+    return wt
+
+
+def _detached_finished(world) -> Path:
+    """A detached worktree on a commit the head branch merged."""
+    world.finished_branch("merged")
+    wt = _detached(world, "merged")
+    world.git("branch", "-D", "merged")
+    return wt
+
+
+def test_a_detached_worktree_is_protected_the_same_way(world) -> None:
+    _detached_finished(world).joinpath("wip").write_text("x")
     row = _rows(world)["(detached)"]
     assert (row["verdict"], row["eligible"]) == ("remove", False), row
-    assert row["why"] == "its commit is reached by a ref; it has uncommitted changes"
+    assert row["why"] == f"{PROOF}; it has uncommitted changes"
+
+
+def test_a_detached_worktree_on_the_main_line_needs_delete_empty(world) -> None:
+    wt = _detached(world)
+    row = _rows(world)["(detached)"]
+    assert (row["verdict"], row["eligible"]) == ("empty", False), row
+    assert run(world, "gwp", "--yes").returncode == 0
+    assert wt.exists()
+    p = run(world, "gwp", "--yes", "--delete", "empty")
+    assert p.returncode == 0, p.stderr
+    assert not wt.exists()
+
+
+def test_the_disclosure_names_a_detached_worktrees_commit(world) -> None:
+    wt = _detached_finished(world)
+    sha = world.git("rev-parse", "HEAD", at=wt)
+    p = run(world, "gwp", "--yes", "--json")
+    assert p.returncode == 0, p.stderr
+    assert f"  detached at {sha}" in p.stderr.splitlines()
 
 
 @pytest.mark.parametrize(
@@ -1742,8 +1773,7 @@ def test_an_initialized_submodule_clears_eligible(world) -> None:
     _with_submodule(world)
     attached = world.finished("lib-work")
     _init_submodule(world, attached)
-    loose = world.parent / ".worktrees" / "loose" / world.repo.name
-    world.git("worktree", "add", "--quiet", "--detach", str(loose), "main")
+    loose = _detached_finished(world)
     _init_submodule(world, loose)
     world.finished("untouched")
     # Judged without the network: the submodule's origin is gone.
@@ -1756,7 +1786,7 @@ def test_an_initialized_submodule_clears_eligible(world) -> None:
         False,
     )
     assert rows["lib-work"]["why"] == f"{PROOF}; {SUBMODULE}"
-    assert rows["(detached)"]["why"] == f"its commit is reached by a ref; {SUBMODULE}"
+    assert rows["(detached)"]["why"] == f"{PROOF}; {SUBMODULE}"
     assert not rows["(detached)"]["eligible"]
     # A submodule recorded but never initialized is no obstacle to git.
     assert rows["untouched"]["eligible"], rows["untouched"]
@@ -1894,19 +1924,17 @@ def test_a_change_after_the_question_removes_nothing(
 def test_a_target_no_longer_eligible_after_the_question_is_kept(
     world, monkeypatch, capsys
 ) -> None:
-    """The facts hold still while the verdict moves: the one ref reaching a
-    detached worktree's commit is deleted."""
-    world.git("branch", "tmp")
-    sha = world.commit("only-on-tmp", at=None)
-    world.git("update-ref", "refs/heads/tmp", sha)
-    world.git("reset", "--quiet", "--hard", "HEAD~1")
-    wt = world.parent / ".worktrees" / "loose" / world.repo.name
-    world.git("worktree", "add", "--quiet", "--detach", str(wt), "tmp")
-    _between(monkeypatch, lambda: world.git("update-ref", "-d", "refs/heads/tmp"))
+    """The recorded facts hold still while eligibility moves: a submodule
+    store appears in the worktree's git directory."""
+    wt = world.finished("done")
+    store = Path(
+        world.git("rev-parse", "--path-format=absolute", "--git-path", "modules", at=wt)
+    )
+    _between(monkeypatch, store.mkdir)
     code = cli.gwp(["--yes"])
     err = capsys.readouterr().err
     assert code == 1, err
-    assert f"kept: it is not eligible now: no ref reaches {sha}" in err
+    assert f"kept: it is not eligible now: {PROOF}; {SUBMODULE}" in err
     assert wt.exists()
 
 
@@ -1960,8 +1988,7 @@ def test_git_refusing_the_worktree_skips_its_branch(world, monkeypatch, capsys) 
 def test_a_detached_worktree_goes_without_a_ref_deletion(world, capsys) -> None:
     from worktrees.git import options
 
-    wt = world.parent / ".worktrees" / "loose" / world.repo.name
-    world.git("worktree", "add", "--quiet", "--detach", str(wt), "main")
+    wt = _detached_finished(world)
     code = cli.gwp(["--yes"])
     err = capsys.readouterr().err
     assert code == 0, err

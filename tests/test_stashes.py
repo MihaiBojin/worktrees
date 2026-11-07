@@ -74,8 +74,9 @@ def test_a_renamed_branch_leaves_its_stashes_behind(world) -> None:
 
 
 def test_a_stash_made_on_a_detached_head_belongs_to_no_branch(world) -> None:
+    world.finished_branch("merged")
     wt = world.parent / ".worktrees" / "loose" / world.repo.name
-    world.git("worktree", "add", "--quiet", "--detach", str(wt), "main")
+    world.git("worktree", "add", "--quiet", "--detach", str(wt), "merged")
     stash(world, wt, "detached")
     row = rows(world)["(detached)"]
     assert (row["eligible"], row["stashes"]) == (True, [])

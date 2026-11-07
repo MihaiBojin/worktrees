@@ -258,7 +258,7 @@ unmerged work" passes while it holds.
 | B4 | `git config git-worktree-plugin.headBranch origin/main` | gone. There is no such key | |
 | B5 | `headBranch` naming a ref that does not exist | gone with B4 | |
 | B6 | `origin/HEAD` unset, no remote-tracking refs, remote unreachable | held: only `gw sync` reaches the remote, and it stops with git's reason; every other command infers the head from the local `main` or `master` | `test_an_unreachable_remote_still_answers_status` |
-| B7 | detached-HEAD worktree | held: named, and judged on whether a ref reaches its commit | `test_a_detached_worktree_is_named_not_mistaken` |
+| B7 | detached-HEAD worktree | held: named, and judged against the head branch like a branch tip | `test_a_detached_worktree_is_named_not_mistaken` |
 
 B2 and B3 are why the head ref is a full ref.
 `git symbolic-ref --quiet --short` shortens to the shortest *unambiguous*

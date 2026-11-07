@@ -84,11 +84,6 @@ def ref_exists(ref: str) -> None:
     """Does this exact ref exist?"""
 
 
-@git("for-each-ref --count=1 --contains $sha")
-def refs_containing(sha: str) -> None:
-    """One ref reaching this commit, or nothing."""
-
-
 @git("cat-file -t $sha", ok=(0, 128))
 def object_type(sha: str) -> None:
     """What kind of object a sha is, or nothing when it is not here."""

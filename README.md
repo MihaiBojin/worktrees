@@ -274,7 +274,7 @@ word.
 
 | | means |
 | --- | --- |
-| `remove` | finished, and safe to remove. The reason says how it was proved: by a merged request the last `gw sync` recorded, by ancestry, by squash, by content, or by a ref reaching a detached commit |
+| `remove` | finished, and safe to remove. The reason says how it was proved: by a merged request the last `gw sync` recorded, by ancestry, by squash or by content |
 | `empty` | its tip is on the head branch's first-parent line, so it holds nothing the head branch lacks. That is a branch started at a main-line commit and never committed to, and a branch merged by fast-forward: git cannot tell the two apart. Removed only with `--delete empty` |
 | `keep` | the branch shares history with the head branch and holds work it lacks. The main checkout and the head branch are `keep` too, and are not judged |
 | `unknown` | it could not tell. A branch with no common history with the head branch, forge evidence that does not match this tip, or a git command that failed while judging it, which also makes the command exit 1 |
@@ -284,8 +284,10 @@ recorded, then `empty`, then ancestry, squash and content, and the first
 that answers wins. A branch merged through a merge commit is an ancestor of
 the head without being on its first-parent line, so it reads `remove`. The
 first-parent line is read once a run, and only the head ref's: a local
-`main` ahead of `origin/main` adds nothing to it. A detached worktree has no
-branch, and keeps its ref-reaches-the-commit proof.
+`main` ahead of `origin/main` adds nothing to it. A detached worktree is
+judged the same way from its commit, with no forge step since the forge
+knows branches: on the first-parent line it is `empty`, and a stash, a tag
+or another remote's branch reaching it proves nothing.
 
 A worktree's branch is judged by the proof `gwbs` uses for a loose branch,
 and a worktree and a branch at the same commit read the same verdict and the
@@ -371,7 +373,8 @@ At a terminal it prints the assessment first, the table, the counts and the
 notes, then removes exactly the eligible rows. One function returns that set
 for both the counts and the removal. What goes and what puts it back is printed before
 anything does, and neither `--quiet` nor `--yes` silences it. The sha in the
-restore line is full length, because that line is meant to be pasted.
+restore line is full length, because that line is meant to be pasted. A
+detached worktree has no branch to restore, so its line is `detached at SHA`.
 
 Each stash that belongs to the branch is named too, with the line that
 restores it, `git stash store -m 'On wip: half finished' SHA`, which works
