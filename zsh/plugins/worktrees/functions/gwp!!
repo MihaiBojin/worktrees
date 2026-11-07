@@ -1,4 +1,0 @@
-# gwp!!: gwp --yes that also deletes
-# empty branches, ignored files and branch stashes.
-# At an interactive prompt zsh reads !! as history, so type it gwp\!\!.
-gwp --delete all --yes "$@"

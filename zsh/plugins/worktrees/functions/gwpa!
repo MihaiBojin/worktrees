@@ -1,0 +1,2 @@
+# gwpa!: gwpa without the question.
+gwpa --yes "$@"

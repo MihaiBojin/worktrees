@@ -29,7 +29,8 @@ ADAPTERS = tuple(name for name in CD_COMMANDS if name != "gw")
 SHORTCUTS = {
     "gwr!": "gwr --delete ignored-files",
     "gwp!": "gwp --yes",
-    "gwp!!": "gwp --delete all --yes",
+    "gwpa": "gwp --delete all",
+    "gwpa!": "gwpa --yes",
 }
 
 
@@ -61,7 +62,7 @@ def test_a_shortcut_is_one_call_to_a_command(name: str) -> None:
     where the binary says. Anything more is logic, and logic belongs in the
     CLI."""
     call = SHORTCUTS[name]
-    assert call.split()[0] in scripts()
+    assert call.split()[0] in {*scripts(), *SHORTCUTS}
     assert name not in scripts()
     for path, line in (
         (ROOT / "functions" / f"{name}.fish", f"{call} $argv"),
@@ -232,7 +233,7 @@ def _run_zsh(bin_dir: Path, line: str) -> tuple[int, str]:
             "-f",
             "-c",
             f"fpath=({fns} $fpath); "
-            f"autoload -Uz gw gwa gwr 'gwr!' 'gwp!' 'gwp!!'; {line}",
+            f"autoload -Uz gw gwa gwr 'gwr!' 'gwp!' gwpa 'gwpa!'; {line}",
         ],
         capture_output=True,
         text=True,
@@ -264,30 +265,36 @@ def test_the_zsh_shortcut_lands_where_gwr_says_with_the_flag(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("name", ["gwp!", "gwp!!"])
+@pytest.mark.parametrize(
+    ("name", "fixed"),
+    [
+        ("gwp!", ["--yes"]),
+        ("gwpa", ["--delete", "all"]),
+        ("gwpa!", ["--delete", "all", "--yes"]),
+    ],
+)
 def test_a_gwp_shortcut_runs_gwp_with_its_flags_and_its_exit_code(
-    tmp_path, shell, name
+    tmp_path, shell, name, fixed
 ) -> None:
+    """gwpa! reaches gwp through the gwpa function, as gwr! reaches gwr."""
     seen = tmp_path / "argv"
     bin_dir = _fake(tmp_path, "gwp", f'#!/bin/sh\necho "$@" > "{seen}"\nexit 4\n')
     if shell == "fish":
+        sources = "; ".join(
+            f"source '{ROOT / 'functions' / f'{n}.fish'}'" for n in ("gwpa", name)
+        )
         _, out = _run_fish(
-            bin_dir,
-            f"source '{ROOT / 'functions' / f'{name}.fish'}'; "
-            f"{name} --only remove; echo code=$status",
+            bin_dir, f"{sources}; {name} --only remove; echo code=$status"
         )
     else:
-        # Not interactive, so zsh reads !! as two characters, as it does
-        # for a script; at a prompt it is history and is typed gwp\!\!.
         _, out = _run_zsh(bin_dir, f"{name} --only remove; echo code=$?")
     assert "code=4" in out, out
-    fixed = SHORTCUTS[name].split()[1:]
     assert seen.read_text().split() == [*fixed, "--only", "remove"]
 
 
-def test_gwp_bang_bang_says_what_it_deletes() -> None:
-    fish = (ROOT / "functions" / "gwp!!.fish").read_text()
-    zsh = (ROOT / "zsh/plugins/worktrees/functions/gwp!!").read_text()
+def test_gwpa_says_what_it_deletes() -> None:
+    fish = (ROOT / "functions" / "gwpa.fish").read_text()
+    zsh = (ROOT / "zsh/plugins/worktrees/functions/gwpa").read_text()
     for text in (fish, zsh):
         assert "empty branches, ignored files and branch stashes" in text
 
