@@ -5,8 +5,13 @@ Python 3.11 through 3.14, no runtime dependencies, `uv` for everything else.
 ```console
 uv sync --all-extras
 uv run --no-sync pytest tests
+uv run --no-sync pytest tests -m integration
 uv run --no-sync pre-commit run --all-files
 ```
+
+The first run skips the integration tests: real fish and zsh, partial
+clones and the stand-in forge, about a second each. The second runs only
+those. CI runs both.
 
 `uv sync --all-extras --locked` is what CI runs, so a stale `uv.lock` fails
 there rather than resolving something the lock never described.
@@ -111,8 +116,9 @@ and ref deletion without a full expected SHA are refused.
 
 A binary cannot `cd` its caller. Its shell adapter captures stdout, changes
 directory when it receives a destination, and prints data otherwise. A
-script calling the binary gets the destination path. `gwa`, `gwl`,
-`gwm`, `gwr` and `gw` have adapters, for fish under `functions/` and for zsh under
+terminal selection prints a destination path; a nonterminal list prints
+metadata. `gwa`, `gwr` and `gw` have adapters, for fish under
+`functions/` and for zsh under
 `zsh/plugins/worktrees/functions/`. `gwp`, `gwbs`, `gwbd`, `gwbc` and `gwrot` need
 none.
 
@@ -123,8 +129,9 @@ preserve trailing newlines through command substitution. Both remove only
 the final destination-record newline and require an absolute existing
 directory. Data is printed byte for byte and the binary's status is retained.
 
-`gw` distinguishes a single worktree name from subcommands using the CLI's
-completion output. Other invocations pass stdout and status through. `gwr`
+`gw` reads subcommands from the CLI's completion output. It changes directory
+for terminal `gw list` selections; metadata flags and
+nonterminal input pass stdout and status through. `gwr`
 can print a destination after checkout removal and still return failure for
 later cleanup; its adapter moves to that destination and preserves failure.
 

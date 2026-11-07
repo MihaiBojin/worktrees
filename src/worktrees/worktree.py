@@ -1,4 +1,4 @@
-"""Adding, moving and removing a checkout.
+"""Adding and removing a checkout.
 
 Each of these lands the caller somewhere, so each prints a destination on
 stdout and nothing else. A binary cannot cd its caller; the shim reads that
@@ -27,17 +27,6 @@ def worktree_add(name: str, dest: str, base: str) -> None:
 @git("worktree add -- $dest $name", mutates=True)
 def worktree_add_existing(dest: str, name: str) -> None:
     """A branch that already exists needs no -b, and -b would refuse."""
-
-
-@git("worktree move -- $old $new", mutates=True)
-def worktree_move(old: str, new: str) -> None:
-    """git updates its own bookkeeping, which a mv would leave behind."""
-
-
-@git("branch --move -- $old $new", mutates=True)
-def branch_move(old: str, new: str) -> None:
-    """--move, not --move --force: a rename onto a name that exists is a
-    collision to report rather than one to resolve."""
 
 
 class Landed:
@@ -124,58 +113,6 @@ def _first_absent(dest_parent: Path, main: str) -> Path | None:
     return made
 
 
-def move(
-    new: str,
-    repo: str | os.PathLike[str] | None = None,
-) -> Landed:
-    """Rename this worktree's branch and move the checkout to match.
-
-    Not a convenience. Renaming the directory you are standing in leaves the
-    shell with a stale $PWD and every later command failing, so the caller
-    has to be told where to go.
-    """
-    if not check_ref_format(new, repo=repo):
-        raise Refusal(f"{render.branch(new)} is not a valid branch name")
-
-    here = R.toplevel(repo=repo).value
-    if not here:
-        raise Refusal("not inside a git repository")
-    main = R.main_worktree(repo)
-    if Path(here).resolve() == Path(main).resolve():
-        raise Refusal(
-            "this is the main checkout, not a worktree; "
-            "git branch --move renames its branch"
-        )
-
-    resolved = R.head(repo)
-    if not resolved.ref:
-        raise Refusal(resolved.unresolved)
-
-    old = R.current_branch(repo=here).value
-    if not old:
-        raise Refusal("HEAD is detached here, so there is no branch to rename")
-    if old == new:
-        raise Refusal(f"this worktree is already on {render.branch(new)}")
-    if R.ref_exists(f"refs/heads/{new}", repo=repo):
-        raise Refusal(f"{render.branch(new)} is already a branch")
-
-    dest = layout.destination(new, main)
-    if dest.exists():
-        raise Refusal(f"{dest} already exists")
-
-    # The branch first: `worktree move` leaves the branch alone, and a failed
-    # move after a rename is recoverable where the reverse loses the name.
-    branch_move(old, new, repo=repo)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        worktree_move(here, str(dest), repo=repo)
-    except (GitError, Refused):
-        branch_move(new, old, repo=repo)
-        raise
-    _prune_empty_parents(Path(here).parent, main)
-    return Landed(str(dest), new, created=False)
-
-
 def remove(chosen: Verdict, say, repo=None) -> prune.Outcome:
     """Recheck the approved worktree before removing its checkout and ref."""
     outcome = prune.Outcome(
@@ -256,4 +193,4 @@ def removable(
     )
 
 
-__all__ = ["REMOVE", "Landed", "add", "move", "removable", "remove"]
+__all__ = ["REMOVE", "Landed", "add", "removable", "remove"]

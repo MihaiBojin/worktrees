@@ -1,10 +1,11 @@
 function gw --wraps gw --description 'cd to where gw lands you'
-    if test (count $argv) -ne 1; or string match -q -- '-*' "$argv[1]"
-        command gw $argv
-        return $status
+    set -l navigation 0
+    test "$argv[1]" = list; and set navigation 1
+    for arg in $argv
+        test "$arg" != --; or break
+        if contains -- "$arg" --json --list -l --help -h --complete --explain; set navigation 0; end
     end
-    set -l commands (command gw --complete | string replace -r '\t.*$' '')
-    if contains -- "$argv[1]" $commands
+    if not isatty stdin; or test $navigation -eq 0
         command gw $argv
         return $status
     end

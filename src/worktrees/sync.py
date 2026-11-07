@@ -26,7 +26,7 @@ def _empty() -> dict:
 
 
 def path(repo: str | os.PathLike[str] | None = None) -> Path | None:
-    common = R.common_dir(repo=repo).value
+    common = R.shared_dir(repo)
     return Path(common) / _CACHE if common else None
 
 
@@ -108,13 +108,28 @@ def notices(
                     "Run: gw sync"
                 )
     head = R.head(repo)
+    if head.source == "inferred" or not quiet:
+        lines.append(head_line(head))
+    return lines
+
+
+def head_line(head: R.Head) -> str:
+    """Which branch the assessment measures against, and where that came from."""
+    if head.ref is None:
+        if head.source == "inferred":
+            return "Head: unresolved (inferred; no main or master branch)"
+        # A deleted origin/HEAD, or a plain one at several branches, names none.
+        named = (
+            f"{render.branch(head.branch)}, which does not resolve"
+            if head.branch
+            else "unresolved"
+        )
+        return f"Head: {named} ({head.source}). Run: gw sync"
     if head.source == "inferred":
         other_name = render.branch("master" if head.branch == "main" else "main")
         other = f"; {other_name} also exists" if head.other else ""
-        lines.append(f"Head: {render.branch(head.branch)} (inferred{other})")
-    elif not quiet:
-        lines.append(f"Head: {render.branch(head.branch)} ({head.source})")
-    return lines
+        return f"Head: {render.branch(head.branch)} (inferred{other})"
+    return f"Head: {render.branch(head.branch)} ({head.source})"
 
 
 def _write(cached: dict, repo: str | os.PathLike[str] | None) -> None:

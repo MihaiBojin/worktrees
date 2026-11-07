@@ -50,9 +50,6 @@ gwa = "worktrees.cli:gwa"
 gwbc = "worktrees.cli:gwbc"
 gwbd = "worktrees.cli:gwbd"
 gwbs = "worktrees.cli:gwbs"
-gwh = "worktrees.cli:gwh"
-gwl = "worktrees.cli:gwl"
-gwm = "worktrees.cli:gwm"
 gwp = "worktrees.cli:gwp"
 gwr = "worktrees.cli:gwr"
 gwrot = "worktrees.cli:gwrot"
@@ -118,3 +115,5 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = ["-m", "not integration"]
+markers = ["integration: real shells, partial clones and the stand-in forge; run with -m integration"]

@@ -12,5 +12,9 @@ class GitError(RuntimeError):
     """git exited with a code the caller did not declare acceptable."""
 
 
+class MissingObjects(GitError):
+    """A partial clone lacks an object, and offline commands never fetch one."""
+
+
 class Refused(Exception):
     """The guard will not issue this command. No flag reaches past it."""

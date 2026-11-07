@@ -484,9 +484,9 @@ def test_never_synced_disclosure_and_confirmation_survive_output_flags(world, en
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     if entry == "gwbd":
         world.git("worktree", "remove", str(path))
-    args = [] if entry == "gwp" else ["topic"]
+    args = [] if entry == "gwp" else ["topic", "--json"]
     code, output = run_on_a_terminal_at(
-        world, world.repo, entry, *args, "--quiet", "--json", answer="n\n"
+        world, world.repo, entry, *args, "--quiet", answer="n\n"
     )
     assert code == 0, output
     assert "Never synced:" in output
@@ -565,6 +565,11 @@ def test_initialized_submodule_after_confirmation_is_preserved(world, monkeypatc
     world.git("commit", "-qm", "module", at=path)
     world.git("merge", "--no-ff", "-qm", "merge", "topic")
     world.git("submodule", "deinit", "--all", at=path)
+    shutil.rmtree(
+        world.git(
+            "rev-parse", "--path-format=absolute", "--git-path", "modules", at=path
+        )
+    )
 
     def initialize(*args, **kwargs):
         world.git(
@@ -641,7 +646,7 @@ def test_nested_current_worktree_is_protected(world):
     tip = world.commit("nested/tracked", at=path)
     world.git("merge", "--no-ff", "-qm", "merge", "topic")
     nested = path / "nested"
-    preview = run(world, "gwp", "--dry-run", "--delete", "all", "--json", at=nested)
+    preview = run(world, "gwp", "--delete", "all", "--json", at=nested)
     assert preview.returncode == 0, preview.stderr
     row = next(
         r for r in json.loads(preview.stdout)["verdicts"] if r["branch"] == "topic"
@@ -807,8 +812,6 @@ def test_stash_repair_uses_preceding_listed_subject(world, network, entry, pendi
     if entry == "gwbd":
         world.git("worktree", "remove", str(path))
     marker = world.root / "stash-race.json"
-    wrapper = network.bin / "git"
-    original = wrapper.read_text()
     injection = (
         "    if command[:2] == ['stash', 'drop']:\n"
         "        listing = [real_git, *prefix, 'stash', 'list', '--format=%H %gs']\n"
@@ -829,12 +832,7 @@ def test_stash_repair_uses_preceding_listed_subject(world, network, entry, pendi
         "        sys.stderr.write(actual.stderr)\n"
         "        sys.exit(actual.returncode)\n"
     )
-    wrapper.write_text(
-        original.replace(
-            "    if command[:1] == ['fetch']:\n",
-            injection + "    if command[:1] == ['fetch']:\n",
-        )
-    )
+    network.intercept(injection)
     proc = subprocess_cli(
         world,
         "topic",
@@ -891,8 +889,6 @@ def test_later_batch_target_is_rechecked(world, network, entry):
         world.git("worktree", "remove", str(first))
         world.git("worktree", "remove", str(second))
     marker = world.root / "batch-race.json"
-    wrapper = network.bin / "git"
-    original = wrapper.read_text()
     injection = (
         "    if command[:4] == ['update-ref', '--no-deref', '-d', "
         "'refs/heads/a-first']:\n"
@@ -908,12 +904,7 @@ def test_later_batch_target_is_rechecked(world, network, entry):
         "        sys.stderr.write(actual.stderr)\n"
         "        sys.exit(actual.returncode)\n"
     )
-    wrapper.write_text(
-        original.replace(
-            "    if command[:1] == ['fetch']:\n",
-            injection + "    if command[:1] == ['fetch']:\n",
-        )
-    )
+    network.intercept(injection)
     proc = subprocess_cli(
         world,
         *(["a-first", "b-second"] if entry == "gwbd" else []),
@@ -968,7 +959,7 @@ def test_removed_ignored_entry_invalidates_approval(world, entry):
             *(["topic"] if entry == "gwr" else []),
             "--delete",
             "all",
-            "--json",
+            *(["--json"] if entry == "gwr" else []),
         ],
         cwd=world.repo,
         env=env_for(world),
@@ -1000,8 +991,12 @@ def test_removed_ignored_entry_invalidates_approval(world, entry):
         os.close(parent)
     assert proc.returncode == 1, (disclosure + stderr).decode()
     assert "changed after assessment" in (disclosure + stderr).decode()
-    data = json.loads(stdout)
-    assert not data["removed"]
+    if entry == "gwr":
+        data = json.loads(stdout)
+        assert not data["removed"]
+    else:
+        assert b"VERDICT" in stdout and b"ELIGIBLE" in stdout
+        assert str(path).encode() in stdout
     assert path.exists()
     assert (path / "merged-topic").read_text() == "x"
     assert not (path / "old.secret").exists()

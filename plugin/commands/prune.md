@@ -3,10 +3,10 @@ name: prune
 description: Assess worktrees and loose branches, then remove the targets and categories the user approves
 argument-hint: "[NAMES]"
 allowed-tools:
-  - Bash(gw:*)
-  - Bash(gwp:*)
+  - Bash(gw sync)
+  - Bash(gw list --json)
+  - Bash(gwp --json)
   - Bash(gwbs:*)
-  - Bash(gwl:*)
   - Bash(command gwr:*)
   - Bash(command gwbd:*)
   - Bash(jq:*)

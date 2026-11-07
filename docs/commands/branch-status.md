@@ -2,7 +2,7 @@
 
 `gwbs` assesses local branches with no worktree. It changes nothing and uses
 local refs plus cached forge evidence. Run `gw sync` explicitly to refresh
-that evidence. A checked-out branch appears in `gwp --dry-run`, not here.
+that evidence. A checked-out branch appears in `gwp --json`, not here.
 
 ```console
 gwbs

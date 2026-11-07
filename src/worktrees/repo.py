@@ -136,6 +136,11 @@ def ref_exists(ref: str) -> None:
     """Does this exact ref exist?"""
 
 
+@git("for-each-ref --points-at=$ref --format=%(refname) refs/remotes/$remote/")
+def remote_refs_at(ref: str, remote: str) -> None:
+    """The remote-tracking refs at the commit this ref identifies."""
+
+
 @git("for-each-ref --count=1 --contains $sha")
 def refs_containing(sha: str) -> None:
     """One ref reaching this commit, or nothing."""
@@ -172,11 +177,17 @@ def common_dir() -> None:
 # a spec shows and a tuple hides. Without it a listing writes another
 # worktree's index and contends with a `git add` there.
 #
-# --ignored=traditional collapses an ignored directory into one entry, so
-# node_modules/ is one line rather than forty thousand. It is also a strict
+# --ignored=matching lists the path an ignore pattern names: a directory the
+# pattern matches is one entry, so node_modules/ is one line rather than forty
+# thousand, and sub/gen/ stays sub/gen/ where traditional mode widens it to
+# sub/. A directory no pattern names lists its ignored files. It is also a strict
 # superset of plain --porcelain, which is why there is one spec here and not
 # two: asking twice was 18 of this program's 35 calls over nine worktrees.
-@git("--no-optional-locks status --porcelain --ignored=traditional")
+# --untracked-files=normal overrides status.showUntrackedFiles=no, which hides
+# untracked files and makes git reject --ignored outright.
+@git(
+    "--no-optional-locks status --porcelain --untracked-files=normal --ignored=matching"
+)
 def status_lines() -> None:
     """Every change in a worktree, the gitignored paths included."""
 
@@ -347,8 +358,30 @@ def ref_name(ref: str) -> str:
     return ref.removeprefix("refs/remotes/").removeprefix("refs/heads/")
 
 
+# Answers that cannot change while one command runs, asked once per
+# repository and directory: an assessment otherwise asks for the default
+# remote fifteen times and the common directory nine.
+_asked: dict[tuple[str, str | None, str], str] = {}
+
+
+def _once(question: str, repo, answer) -> str:
+    key = (question, os.fspath(repo) if repo is not None else None, os.getcwd())
+    if key not in _asked:
+        _asked[key] = answer()
+    return _asked[key]
+
+
+def shared_dir(repo: str | os.PathLike[str] | None = None) -> str:
+    """The common directory, asked once."""
+    return _once("common", repo, lambda: common_dir(repo=repo).value)
+
+
 def remote(repo: str | os.PathLike[str] | None = None) -> str:
     """The configured default remote, or the sole remote when unset."""
+    return _once("remote", repo, lambda: _default_remote(repo))
+
+
+def _default_remote(repo: str | os.PathLike[str] | None) -> str:
     names = remotes(repo=repo).lines
     stated = config_get("checkout.defaultRemote", repo=repo).value
     if stated:
@@ -393,7 +426,13 @@ def head(repo: str | os.PathLike[str] | None = None) -> Head:
     cache = sync.read(repo)
     remote_head = f"refs/remotes/{remote_name}/HEAD"
     target = symbolic_ref(remote_head, repo=repo).value if remote_name else ""
-    if target or (remote_name and cache["lastSync"]["refs"]):
+    plain = bool(remote_name and not target and ref_exists(remote_head, repo=repo))
+    if plain:
+        # A plain ref names no branch; one branch at its commit is the name.
+        at = remote_refs_at(remote_head, remote_name, repo=repo).lines
+        named = [ref for ref in at if ref != remote_head]
+        target = named[0] if len(named) == 1 else ""
+    if target or plain or (remote_name and cache["lastSync"]["refs"]):
         source = "remote" if cache["lastSync"]["refs"] else "clone"
         valid = target.startswith(f"refs/remotes/{remote_name}/") and bool(
             ref_exists(target, repo=repo)

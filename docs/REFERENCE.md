@@ -1,8 +1,15 @@
 # Runtime contracts
 
-`gw` assesses worktrees without mutation. `gwp` removes eligible worktrees;
-`gwr` selects one. `gwbs` assesses loose local branches and `gwbd` deletes
-selected eligible refs. A checked-out branch appears only as a worktree.
+Bare `gw` and `gw --help` print the command guide, outside a repository too.
+`gw list` selects a destination on terminal input; nonterminal input prints
+matching worktree metadata. `--json` and `--list` always print metadata.
+`gw WORD` with a word that is not a command exits 2 and suggests
+`gw list WORD`. `gwp`
+assesses worktrees and asks before removal on a terminal. Nonterminal input,
+`--json` and `--list` assess without mutation; `--yes` approves removal in any
+mode. `--list` prints an uncoloured table. `--only` filters assessment rows and
+rejects `--yes`. `gwr` selects one. `gwbs` assesses loose local branches and
+`gwbd` deletes selected eligible refs. A checked-out branch appears only as a worktree.
 [The README](../README.md) covers invocation, permissions and migration.
 
 ## Head and evidence
@@ -11,6 +18,9 @@ The head ref comes from the selected remote's HEAD after successful sync,
 then the clone's remote HEAD, then local inference. Local inference chooses
 the only `main` or `master`, the newer committer date when both exist, and
 `main` on a tie. With neither, the inferred `main` does not resolve.
+A remote HEAD that is a plain ref rather than a symbolic one takes its
+branch name from the one remote-tracking branch at its commit, and does
+not resolve when several sit there.
 Unresolved head means unknown verdicts and no mutation. `gwa`, `gwbc` and
 `gwrot` also fail in that state.
 
@@ -40,7 +50,10 @@ permits removal.
 `main`, `master` and the assessed head branch cannot be deleted. The main
 checkout, locked worktrees, tracked changes, untracked files and initialized
 submodules block worktree deletion. The submodule refusal names
-`git submodule deinit --all`. Detached worktrees receive the same checks.
+`git submodule deinit --all`. A submodule store that `deinit` leaves in the
+worktree's git directory also blocks deletion, and the refusal names it. A
+locked worktree whose directory is missing is assessed from its record and
+kept. Detached worktrees receive the same checks.
 `gwp` also protects the current worktree.
 
 Ignored paths require `--delete ignored-files`; branch stashes require
@@ -51,7 +64,8 @@ branches and stashes for `gwbd`. `gwbs` rejects `--delete`; `gwbd` rejects
 mutation. `--yes` grants none of these permissions.
 
 `gwr --keep-branch` retains the branch and stashes and needs no completion
-proof for the checkout. It permits a checkout on a protected branch, while
+proof for the checkout. A detached checkout has no branch to keep its
+commits and still needs proof. It permits a checkout on a protected branch, while
 all other worktree protections remain. Only `--delete ignored-files` can be
 combined with it.
 
@@ -97,8 +111,12 @@ The shell functions move to it and preserve that status. JSON includes
 `path` and `outcome.destination`. The agent plugin never targets its current
 checkout.
 
-`gwp` may prune stale Git worktree bookkeeping. `gw` and `gwp --dry-run`
-never write refs, cache files or directories.
+Terminal `gwp` and `gwp --yes` clear stale Git worktree bookkeeping before
+assessment, whether or not removal is approved. `gw list` and pruning
+assessment modes never write refs, cache files or directories; they return
+before stale-record pruning, deletion disclosure and confirmation.
+Pruning JSON with `--yes` includes the assessment verdicts and the actual
+removed, failed and per-target outcomes in one object with head and sync state.
 
 ## Sync cache
 
@@ -130,9 +148,10 @@ by branch and source SHA; moved or new branches need sync for forge proof.
 A remote repository with no refs sync time prints a never-synced warning.
 The older non-null sync time is stale after 10 minutes, with exactly
 10 minutes still fresh. Human output prints age and suggests `gw sync`.
-Quiet suppresses the stale warning, but keeps the never-synced and inferred
-head notices. Sync itself, JSON output and repositories without remotes
-omit these warnings. JSON provides the state instead. Staleness never causes
+Quiet suppresses every warning, the never-synced and inferred head notices
+included; a removal's disclosure still repeats them. JSON output and
+repositories without remotes omit these warnings. `gw sync` and `gw version`
+print the head line, and a head that does not resolve is named in it. JSON provides the state instead. Staleness never causes
 a network call.
 
 Offline commands in partial clones need a Git release whose lazy-fetch guard covers patch
@@ -140,7 +159,9 @@ prefetch: 2.45.1 or newer, or maintenance series 2.39.4, 2.40.2, 2.41.1,
 2.42.2, 2.43.4 or 2.44.1 and later patches in each series. Lower reported
 vendor versions are refused even when a vendor may have backported the fix.
 Full clones do not have this version restriction. Missing local objects
-cannot trigger implicit network access from an offline command.
+cannot trigger implicit network access from an offline command: a proof that
+needs one gives `unknown`, and human output warns once, naming
+`git backfill`. Quiet and JSON omit the warning.
 
 ## JSON and streams
 
@@ -152,8 +173,11 @@ or `inferred`; `head.ref` is null when unresolved.
 Worktree and branch assessment put rows in `verdicts`. Both retain
 `verdict`, `eligible`, `proof`, `request`, `protections`, `stashes`, `branch`,
 `sha` and `why`. Worktree rows add exact `path` and an ignored-path count;
-branch rows add `paths`, `error` and shell-quoted `undo`.
-`gwl --json` puts navigation rows in `worktrees`, with `branch`, `path`,
+branch rows add `paths`, `error` and shell-quoted `undo`. `gwp --json` also
+carries `stale`, the paths of worktree records whose directories are gone, and
+`neighbours`, the count of worktrees under the shared root that belong to
+another repository.
+`gw list --json` puts navigation rows in `worktrees`, with `branch`, `path`,
 `main`, `here` and `flags`. Do not apply a top-level array filter.
 
 Removal JSON reports actual outcomes. `gwp` has `removed`, `failed` and
@@ -186,7 +210,7 @@ terminals only, and stays off under quiet or verbose output.
 The command registry owns functions, names, aliases, flags and directory
 behavior. Help and completions read it. Shell functions handle directory
 changes and fixed-flag shortcuts; they hold no assessment or deletion logic.
-The `gw` adapter reads subcommand candidates to distinguish navigation from
-command dispatch. Completion tests compare shell flags with real CLI help.
+The `gw` adapter navigates only for `gw list`; every other call passes
+stdout and status through. Completion tests compare shell flags with real CLI help.
 Plugin tests extract the actual skill jq filters and apply them to real CLI
 JSON, including exact paths and permission-blocked rows.

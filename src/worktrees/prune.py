@@ -295,7 +295,7 @@ def branch_protections(
 ) -> list[str]:
     """Branch rules that apply to loose refs and checked-out branches."""
     reasons: list[str] = []
-    if keep_branch:
+    if keep_branch and branch:
         return reasons
     if branch and branch in ("main", "master", head_branch):
         reasons.append("it is a protected branch")

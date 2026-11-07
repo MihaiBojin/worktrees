@@ -1,4 +1,4 @@
-"""gwa, gwl, gwm and gwr: the four that land you somewhere."""
+"""Navigation entry points and worktree operations."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from conftest import env_for
+from test_cli import run_on_a_terminal, run_on_a_terminal_at
 
 from worktrees import layout, pick
 from worktrees import worktree as W
@@ -116,7 +117,7 @@ def test_add_with_no_name_names_what_was_typed(world) -> None:
     assert p.stdout == ""
 
 
-@pytest.mark.parametrize("binary", ["gwa", "gwl", "gwm", "gwr"])
+@pytest.mark.parametrize("binary", ["gwa", "gwr"])
 def test_a_command_that_lands_prints_its_help_on_stderr(world, binary: str) -> None:
     """Its shell function captures stdout to find where to go."""
     p = run(world, binary, "--help")
@@ -127,26 +128,28 @@ def test_a_command_that_lands_prints_its_help_on_stderr(world, binary: str) -> N
 
 def test_a_command_that_stays_prints_its_help_on_stdout(world) -> None:
     p = run(world, "gw", "--help")
-    assert p.stdout.startswith("usage: gw ")
+    assert "COMMAND" in p.stdout and "gw list" in p.stdout
     assert p.stderr == ""
 
 
 # --------------------------------------------------------------------------
-# gwl
+# gw list
 # --------------------------------------------------------------------------
 
 
 def test_list_prints_the_selection_alone(world) -> None:
     world.worktree("fix-parser")
-    p = run(world, "gwl", "parse")
-    assert p.returncode == 0, p.stderr
-    assert p.stdout.strip() == str(world.parent / ".worktrees" / "fix-parser" / "repo")
+    code, out = run_on_a_terminal(world, "gw", "list", "parse", answer="")
+    assert code == 0, out
+    assert out.rstrip().endswith(
+        str(world.parent / ".worktrees" / "fix-parser" / "repo")
+    )
 
 
 def test_list_offers_the_main_checkout(world) -> None:
     """It is where a finished branch leaves you, so it is a destination."""
     world.worktree("one")
-    p = run(world, "gwl", "--json")
+    p = run(world, "gw", "list", "--json")
     payload = json.loads(p.stdout)["worktrees"]
     assert [w["branch"] for w in payload] == ["main", "one"]
     assert [w["main"] for w in payload] == [True, False]
@@ -155,46 +158,41 @@ def test_list_offers_the_main_checkout(world) -> None:
 def test_list_says_so_rather_than_landing_you_where_you_are(world) -> None:
     """The bug this replaced: one candidate, standing in it, no output at all."""
     wt = world.worktree("one")
-    p = run(world, "gwl", "one", at=wt)
-    assert p.returncode == 0, p.stderr
-    assert p.stdout == ""
-    assert "already in one" in p.stderr
+    code, out = run_on_a_terminal_at(world, wt, "gw", "list", "one", answer="")
+    assert code == 0, out
+    assert "already in one" in out
 
 
-def test_list_with_no_query_asks_even_for_one_other_worktree(world) -> None:
-    """No query is a request to be shown the options.
-
-    Being moved without being asked, because the repository happened to hold
-    one other worktree, is not that. A query that narrows to one has already
-    said which, and still takes it outright.
-    """
+def test_nonterminal_list_includes_main_and_one_other_worktree(world) -> None:
     world.worktree("one")
-    p = run(world, "gwl")
-    assert p.returncode == 3, p.stdout
-    assert "2 worktrees to choose from and this is not a terminal" in p.stderr
-    assert "--list or --json" in p.stderr
-    assert p.stdout == ""
+    p = run(world, "gw", "list")
+    assert p.returncode == 0, p.stderr
+    assert "WORKTREE" in p.stdout
+    assert str(world.repo) in p.stdout
+    assert "/one/repo" in p.stdout
 
 
 def test_list_offers_main_to_somebody_standing_in_it(world) -> None:
-    """From a subdirectory of the main checkout, `gwl main` is the way back."""
+    """From a subdirectory of the main checkout, `gw list main` is the way back."""
     world.worktree("one")
     (world.repo / "sub").mkdir()
-    p = run(world, "gwl", "main", at=world.repo / "sub")
-    assert p.returncode == 0, p.stderr
-    assert p.stdout.strip() == str(world.repo)
+    code, out = run_on_a_terminal_at(
+        world, world.repo / "sub", "gw", "list", "main", answer=""
+    )
+    assert code == 0, out
+    assert out.rstrip().endswith(str(world.repo))
 
 
 def test_list_with_a_query_still_takes_the_one_match_outright(world) -> None:
     world.worktree("one")
-    p = run(world, "gwl", "one")
-    assert p.returncode == 0, p.stderr
-    assert p.stdout.strip().endswith("/one/repo")
+    code, out = run_on_a_terminal(world, "gw", "list", "one", answer="")
+    assert code == 0, out
+    assert out.strip().endswith("/one/repo")
 
 
 def test_list_marks_the_one_you_stand_in(world) -> None:
     wt = world.worktree("one")
-    p = run(world, "gwl", "--list", at=wt)
+    p = run(world, "gw", "list", "--list", at=wt)
     assert p.returncode == 0, p.stderr
     head, *body = p.stdout.splitlines()
     assert head.split() == ["WORKTREE", "BRANCH", "PATH"]
@@ -205,32 +203,32 @@ def test_list_marks_the_one_you_stand_in(world) -> None:
 def test_the_main_checkout_says_so_without_saying_it_twice(world) -> None:
     world.git("branch", "--move", "main", "trunk")
     world.worktree("one", base="trunk")
-    p = run(world, "gwl", "--list")
+    p = run(world, "gw", "list", "--list")
     assert "trunk (main)" in p.stdout
 
 
-def test_list_in_a_repository_with_no_worktrees_says_so(world) -> None:
-    p = run(world, "gwl")
-    assert p.returncode == 1
-    assert "this is the only worktree" in p.stderr
+def test_nonterminal_list_includes_the_only_main_checkout(world) -> None:
+    p = run(world, "gw", "list")
+    assert p.returncode == 0, p.stderr
+    assert "WORKTREE" in p.stdout and str(world.repo) in p.stdout
 
 
-def test_list_refuses_to_prompt_without_a_terminal(world) -> None:
+def test_nonterminal_list_prints_every_worktree_without_prompting(world) -> None:
     """An agent or a pipe reaching a prompt would hang."""
     world.worktree("one")
     world.worktree("two")
-    p = run(world, "gwl")
-    assert p.returncode == 3
-    assert "not a terminal" in p.stderr
-    assert "--list" in p.stderr
+    p = run(world, "gw", "list")
+    assert p.returncode == 0, p.stderr
+    assert "WORKTREE" in p.stdout
+    assert "/one/repo" in p.stdout and "/two/repo" in p.stdout
 
 
 def test_one_match_takes_it_with_no_prompt(world) -> None:
     world.worktree("one")
     world.worktree("two")
-    p = run(world, "gwl", "two")
-    assert p.returncode == 0, p.stderr
-    assert p.stdout.strip().endswith("/two/repo")
+    code, out = run_on_a_terminal(world, "gw", "list", "two", answer="")
+    assert code == 0, out
+    assert out.strip().endswith("/two/repo")
 
 
 def test_the_picker_prefers_a_substring_to_a_subsequence() -> None:
@@ -292,44 +290,6 @@ def test_the_pick_redraws_in_place_only_where_the_cursor_moves(
     assert pick.choose(rows, keys=iter([pick.DOWN, pick.PICK])) == rows[1]
     assert ("\033[2A" in err.getvalue()) is redraws
     assert ("\033[" in err.getvalue()) is redraws
-
-
-# --------------------------------------------------------------------------
-# gwm
-# --------------------------------------------------------------------------
-
-
-def test_move_renames_the_branch_and_the_directory(world) -> None:
-    wt = world.worktree("fix-parser")
-    p = run(world, "gwm", "parser-v2", at=wt)
-    assert p.returncode == 0, p.stderr
-    dest = world.parent / ".worktrees" / "parser-v2" / "repo"
-    assert p.stdout.strip() == str(dest)
-    assert dest.is_dir()
-    assert not wt.exists()
-    assert world.git("rev-parse", "--verify", "refs/heads/parser-v2")
-
-
-def test_move_refuses_from_the_main_checkout(world) -> None:
-    p = run(world, "gwm", "other")
-    assert p.returncode == 1
-    assert "main checkout" in p.stderr
-    assert world.git("rev-parse", "--abbrev-ref", "HEAD") == "main"
-
-
-def test_move_refuses_a_name_already_taken(world) -> None:
-    wt = world.worktree("fix-parser")
-    world.git("branch", "taken", "main")
-    p = run(world, "gwm", "taken", at=wt)
-    assert p.returncode == 1
-    assert "already a branch" in p.stderr
-    assert world.git("rev-parse", "--verify", "refs/heads/fix-parser")
-
-
-def test_move_leaves_no_empty_directory_behind(world) -> None:
-    wt = world.worktree("feat/one")
-    run(world, "gwm", "two", at=wt)
-    assert not (world.parent / ".worktrees" / "feat").exists()
 
 
 # --------------------------------------------------------------------------

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -51,6 +52,7 @@ def _add_sync_flags(p: argparse.ArgumentParser) -> None:
 
 
 def run_sync(args: argparse.Namespace) -> int:
+    from . import repo as R
     from . import sync
     from .git import options
 
@@ -61,8 +63,10 @@ def run_sync(args: argparse.Namespace) -> int:
         _err(render.fail(message))
     if args.json:
         print(_json({}))
-    elif not code and not args.quiet:
-        print("Sync complete.")
+    elif not args.quiet:
+        if not code:
+            print("Sync complete.")
+        _err(render.note(sync.head_line(R.head())))
     return code
 
 
@@ -100,6 +104,26 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
         for v in rows
     ]
     return table([head, *body])
+
+
+def _verdict_data(rows: list[verdicts.Verdict]) -> list[dict]:
+    """Assessment fields shared by metadata and removal results."""
+    return [
+        {
+            "verdict": v.verdict,
+            "eligible": v.eligible,
+            "proof": v.proof,
+            "request": v.request,
+            "protections": v.protections,
+            "stashes": v.stashes,
+            "branch": v.branch,
+            "path": v.path,
+            "why": v.why,
+            "ignored": v.ignored,
+            "sha": v.sha,
+        }
+        for v in rows
+    ]
 
 
 def _counted(rows: list[verdicts.Verdict]) -> str:
@@ -143,6 +167,16 @@ def _offerable(path: str) -> bool:
 
 def _explain() -> int:
     """Every git command the program can issue."""
+    from . import (  # noqa: F401
+        branches,
+        merged,
+        new_branch,
+        prune,
+        repo,
+        rotate,
+        verdicts,
+        worktree,
+    )
     from .git import RULES, commands
 
     rows: list[Row] = [(Cell(""), Cell("COMMAND", BOLD), Cell("GIT", BOLD))]
@@ -188,7 +222,7 @@ def _add_delete_flags(p: argparse.ArgumentParser, *, branch: bool = False) -> No
         else ("empty", "ignored-files", "stashes", "all"),
         default=[],
         metavar="VALUE",
-        help="permit empty branches or stashes"
+        help="permit empty branches or stashes; all permits both; repeat to combine"
         if branch
         else "permit empty branches, ignored-files or stashes; "
         "all permits every category; repeat to combine",
@@ -197,7 +231,9 @@ def _add_delete_flags(p: argparse.ArgumentParser, *, branch: bool = False) -> No
 
 def _add_assess_flags(p: argparse.ArgumentParser) -> None:
     _add_delete_flags(p)
-    p.add_argument("--json", action="store_true", help="verdicts as data")
+    p.add_argument(
+        "--json", action="store_true", help="assess as JSON; --yes approves removal"
+    )
     p.add_argument("-q", "--quiet", action="store_true", help="verdicts only")
     p.add_argument(
         "-v", "--verbose", action="store_true", help="print every git command"
@@ -326,22 +362,7 @@ def run_preview(args: argparse.Namespace) -> int:
                     # pass --delete ignored-files wants the count, not a sentence
                     # that happens to contain it, and the sha is what the
                     # verdict was formed against.
-                    "verdicts": [
-                        {
-                            "verdict": v.verdict,
-                            "eligible": v.eligible,
-                            "proof": v.proof,
-                            "request": v.request,
-                            "protections": v.protections,
-                            "stashes": v.stashes,
-                            "branch": v.branch,
-                            "path": v.path,
-                            "why": v.why,
-                            "ignored": v.ignored,
-                            "sha": v.sha,
-                        }
-                        for v in _only(args, rows)
-                    ],
+                    "verdicts": _verdict_data(_only(args, rows)),
                 },
                 indent=2,
             )
@@ -362,7 +383,7 @@ def run_preview(args: argparse.Namespace) -> int:
     if stale:
         _warn(
             f"{len(stale)} stale record(s) for directories that are gone; "
-            "gwp clears them"
+            "approved pruning clears them"
         )
     if others:
         root = layout.worktrees_root(main)
@@ -375,7 +396,7 @@ def run_preview(args: argparse.Namespace) -> int:
         names = ", ".join(render.branch(v.label) for v in unknown)
         _warn(f"unclear, and gwp does not touch these: {names}")
     if go:
-        _err(render.note(f"gwp removes the {len(go)} marked removable"))
+        _err(render.note(f"gwp --yes removes the {len(go)} marked removable"))
     return 0
 
 
@@ -385,7 +406,7 @@ def run_preview(args: argparse.Namespace) -> int:
 
 
 def run_prune(args: argparse.Namespace) -> int:
-    """Preview the assessment or remove eligible worktrees after confirmation."""
+    """Assess worktrees and remove eligible targets after approval."""
 
     from . import prune, verdicts
     from .git import options
@@ -394,7 +415,11 @@ def run_prune(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    if args.dry_run:
+    if args.list:
+        render.out.on = False
+    if args.only or (
+        not args.yes and (args.json or args.list or not sys.stdin.isatty())
+    ):
         return run_preview(args)
 
     # git's own bookkeeping for worktrees whose directories somebody removed
@@ -414,7 +439,12 @@ def run_prune(args: argparse.Namespace) -> int:
         # The reason each one stayed, here, rather than the name of the
         # command that would have printed it.
         if args.json:
-            print(_json({"removed": [], "failed": 0}, indent=2))
+            print(
+                _json(
+                    {"verdicts": _verdict_data(rows), "removed": [], "failed": 0},
+                    indent=2,
+                )
+            )
         else:
             if not args.quiet:
                 print()
@@ -449,6 +479,7 @@ def run_prune(args: argparse.Namespace) -> int:
         print(
             _json(
                 {
+                    "verdicts": _verdict_data(rows),
                     "removed": removed,
                     "failed": failed,
                     "outcomes": [vars(o) for o in outcomes],
@@ -684,14 +715,6 @@ def _add_list_flags(p: argparse.ArgumentParser) -> None:
     _add_cd_flags(p)
 
 
-def _add_move_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "name", nargs="?", default="", metavar="NEW", help="the new branch name"
-    )
-    _add_cd_flags(p)
-    _add_cd_output_flags(p)
-
-
 def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "query", nargs="?", default="", metavar="PATH|QUERY", help="which one"
@@ -703,8 +726,7 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     )
     _add_delete_flags(p)
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
-    # Its own, not gwl's: assess skips the main checkout, so gwr can never act
-    # on it and offering it would complete to "no worktree matches".
+    # Removal candidates omit main, which Git cannot remove.
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
     _add_cd_flags(p)
     _add_cd_output_flags(p)
@@ -802,7 +824,7 @@ def run_list(args: argparse.Namespace) -> int:
         )
         return 0
 
-    if args.list:
+    if args.list or not sys.stdin.isatty():
         if not found:
             _err(render.fail("no worktree matches"))
             return 1
@@ -823,9 +845,6 @@ def run_list(args: argparse.Namespace) -> int:
 
     if not found:
         _err(render.fail("no worktree matches"))
-        return 1
-    if len(rows) < 2:
-        _err(render.fail("this is the only worktree; gwa NAME makes another"))
         return 1
     # The main checkout is offered even to somebody standing in it: from a
     # subdirectory it is the way back to the top. Any other worktree you
@@ -859,27 +878,6 @@ def run_list(args: argparse.Namespace) -> int:
         return 0
     print(chosen.path)
     return 0
-
-
-def run_move(args: argparse.Namespace) -> int:
-    from . import new_branch
-    from . import worktree as wt_mod
-    from .git import options
-
-    options.verbose = args.verbose
-    if args.explain:
-        return _explain()
-    if not args.name:
-        return _needs(args, "NEW")
-
-    try:
-        landed = wt_mod.move(args.name)
-    except new_branch.Refusal as exc:
-        _err(render.fail(str(exc)))
-        return 1
-    if not args.quiet and not args.json:
-        _err(render.note(f"renamed to {render.branch(landed.branch)}"))
-    return _landed(args, landed)
 
 
 def run_remove(args: argparse.Namespace) -> int:
@@ -1043,9 +1041,14 @@ def plugin_state() -> tuple[str, bool]:
 def run_version(args: argparse.Namespace) -> int:
     """The version of the installed distribution on stdout, which is what a
     script reads, and the shell plugin's on stderr."""
+    from . import repo as R
+    from . import sync
+
     print(__version__)
     text, same = plugin_state()
     _err(render.note(text) if same else render.warn(text))
+    if R.toplevel().value:
+        _err(render.note(sync.head_line(R.head())))
     return 0
 
 
@@ -1056,7 +1059,7 @@ def _listed(names: list[str]) -> str:
     return f"{', '.join(names[:-1])} and {names[-1]}"
 
 
-def run_help(args: argparse.Namespace) -> int:
+def _guide() -> int:
     """Every name this package installs, and what each one answers."""
     o = render.out
     print(
@@ -1070,14 +1073,14 @@ def run_help(args: argparse.Namespace) -> int:
     rows: list[Row] = [(Cell("COMMAND", BOLD), Cell("GW", BOLD), Cell("DOES", BOLD))]
     for name, c in command_rows():
         aliases = f" ({', '.join(c.aliases)})" if c.aliases else ""
+        usage = f" {c.usage}" if c.usage and not c.binary else ""
         rows.append(
             (
-                # A row installing no binary has nothing for this column:
-                # `gw version` is the only way to type it.
+                # Commands without a console script use only their gw spelling.
                 Cell.of((c.binary, BOLD + GREEN), (f" {c.usage}", DIM))
                 if c.binary and c.usage
                 else Cell(c.binary or "\u2014", BOLD + GREEN if c.binary else DIM),
-                Cell.of(("gw ", DIM), (name, BLUE), (aliases, DIM)),
+                Cell.of(("gw ", DIM), (name, BLUE), (usage, DIM), (aliases, DIM)),
                 Cell(c.about),
             )
         )
@@ -1087,13 +1090,14 @@ def run_help(args: argparse.Namespace) -> int:
     def names(binaries: list[str]) -> str:
         return _listed([o(b, BOLD + GREEN) for b in binaries])
 
-    lands = [c.binary for _, c in command_rows() if c.lands]
+    lands = ["gw", *(c.binary for _, c in command_rows() if c.lands and c.binary)]
     print(
         f"{names(lands)} change the directory you are "
         "standing in.\nA binary cannot do that, so each needs the shell function "
         "of the same name\nfrom the plugin; the rest need nothing but $PATH."
     )
-    print("gw NAME selects a worktree; subcommands take precedence.")
+    print("gw list [QUERY] picks a destination in a terminal.")
+    print("Without a terminal, or with --json or --list, it prints metadata.")
     print("gwp! skips confirmation; gwr! deletes ignored files.")
     print("gwp!! deletes empty branches, ignored files and branch stashes.")
     text, same = plugin_state()
@@ -1112,7 +1116,7 @@ def _complete_commands() -> int:
     """Every subcommand and shorthand, for the shell completions.
 
     Name and description, tab-separated, which is what fish reads directly
-    and what zsh splits for `_describe`. It comes from the same table `gwh`
+    and what zsh splits for `_describe`. It comes from the same table `gw --help`
     prints, so a command added there needs no edit in either shell file.
     """
     for name, c in _COMMANDS.items():
@@ -1130,10 +1134,16 @@ def _complete_commands() -> int:
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
     add_status_flags(p)
+    p.description = _PRUNE_HELP
     p.epilog = "gwp!! deletes empty branches, ignored files and branch stashes."
-    p.add_argument("--dry-run", action="store_true", help="report without deleting")
     p.add_argument(
-        "-y", "--yes", action="store_true", help="do not ask before removing"
+        "--list", action="store_true", help="assess without prompting; uncoloured table"
+    )
+    p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="approve removal, including with --json or --list",
     )
 
 
@@ -1269,19 +1279,8 @@ _COMMANDS: dict[str, _Command] = {
     "list": _Command(
         run_list,
         _add_list_flags,
-        "pick a worktree and land you in it",
-        "gwl",
+        "list worktrees or pick a destination",
         usage="[QUERY]",
-        aliases=("l", "ls"),
-        lands=True,
-    ),
-    "move": _Command(
-        run_move,
-        _add_move_flags,
-        "rename this branch and move it",
-        "gwm",
-        usage="NEW",
-        aliases=("m", "mv"),
         lands=True,
     ),
     "remove": _Command(
@@ -1299,13 +1298,6 @@ _COMMANDS: dict[str, _Command] = {
         "the next branch in a series",
         "gwrot",
         aliases=("rot",),
-    ),
-    "help": _Command(
-        run_help,
-        None,
-        "every command and alias, this list",
-        "gwh",
-        aliases=("h",),
     ),
     # Version is available through the tool's name without a separate binary.
     "version": _Command(
@@ -1348,7 +1340,12 @@ _CANONICAL = _canonical()
 # --------------------------------------------------------------------------
 
 
-_PRUNE_HELP = "Assess worktrees and remove eligible ones, or preview with --dry-run."
+_PRUNE_HELP = (
+    "Assess worktrees; terminal input asks before removing eligible ones. "
+    "Nonterminal input, --json and --list assess without removing; "
+    "--yes approves removal. "
+    "--only always assesses and cannot be combined with --yes."
+)
 _NEW_BRANCH_HELP = "Branch NAME off the head ref and check it out, without fetching."
 _ROTATE_HELP = (
     "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
@@ -1373,8 +1370,12 @@ class _Parser(argparse.ArgumentParser):
 
     def print_help(self, file=None) -> None:
         if file is None:
-            lands = {c.binary for c in _COMMANDS.values() if c.lands}
-            file = sys.stderr if self.prog in lands else sys.stdout
+            lands = {c.binary for c in _COMMANDS.values() if c.lands and c.binary}
+            file = (
+                sys.stderr
+                if self.prog in lands or self.prog.endswith(" list")
+                else sys.stdout
+            )
         # argparse decides colour by asking whether sys.stdout is a terminal,
         # whatever stream the help goes to, so it is asked about this one.
         saved, sys.stdout = sys.stdout, file
@@ -1436,20 +1437,6 @@ def gwa(argv: list[str] | None = None) -> int:
     return _dispatch(p, argv, run_add)
 
 
-def gwl(argv: list[str] | None = None) -> int:
-    """The same, for one that already exists."""
-    p = _parser("gwl", "Pick one of this repository's worktrees and print its path.")
-    _add_list_flags(p)
-    return _dispatch(p, argv, run_list)
-
-
-def gwm(argv: list[str] | None = None) -> int:
-    """Renaming the directory you stand in is why this one is not optional."""
-    p = _parser("gwm", "Rename this worktree's branch to NEW and move it to match.")
-    _add_move_flags(p)
-    return _dispatch(p, argv, run_move)
-
-
 def gwr(argv: list[str] | None = None) -> int:
     """Prints a path only when the caller was standing in what went."""
     p = _parser("gwr", "Remove a worktree whose branch is finished, and the branch.")
@@ -1464,38 +1451,9 @@ def gwrot(argv: list[str] | None = None) -> int:
     return _dispatch(p, argv, run_rotate)
 
 
-def gwh(argv: list[str] | None = None) -> int:
-    """One name that answers "what did this install?"."""
-    p = _parser("gwh", "List every command and shorthand worktrees installs.")
-    return _dispatch(p, argv, run_help)
-
-
 def gw(argv: list[str] | None = None) -> int:
     """The short name. Its own prog, so a usage error names what was typed."""
     return main(argv, prog="gw")
-
-
-def _unknown_command(prog: str, typed: str) -> int:
-    """A name no row answers to, and the nearest one that does.
-
-    argparse spells every command twice for this, once in a usage line and
-    once in the choices, so the name worth reading arrives last. The pool is
-    the same table `gwh` prints, plus `--help`, which people type as a
-    command.
-    """
-    # difflib costs 0.8 ms to import and only a mistyped command needs it,
-    # so the run that made the typo pays for it and no other run does.
-    import difflib
-
-    render.setup()  # reached before _dispatch, which does this for the rest
-    lines = [f"{prog}: there is no command {typed!r}"]
-    pool = [*_CANONICAL, "--help"]
-    near = difflib.get_close_matches(typed, pool, n=1)
-    if near:
-        lines.append(f"the closest is: {prog} {near[0]}")
-    lines.append(f"{prog} help lists every command")
-    _err(render.fail("\n".join(lines)))
-    return 2
 
 
 def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
@@ -1503,48 +1461,33 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     args_in = sys.argv[1:] if argv is None else argv
     if args_in and args_in[0] == "--complete":
         return _complete_commands()
-    if (
-        args_in
-        and args_in[0].startswith("-")
-        and args_in[0]
-        not in (
-            "-h",
-            "--help",
+    if args_in in ([], ["-h"], ["--help"]):
+        render.setup()
+        return _guide()
+    if args_in == ["--explain"]:
+        render.setup()
+        return _explain()
+    if args_in[0] not in _CANONICAL:
+        # A worktree is reached through `gw list`, so no name competes with a
+        # command or a shorthand.
+        render.setup()
+        word = shlex.quote(args_in[0])
+        _err(
+            render.fail(
+                f"{prog}: {word} is not a command\n"
+                f"Run: gw list {word} to pick a worktree, or gw --help"
+            )
         )
-    ):
-        args_in = ["prune", "--dry-run", *args_in]
-    if not args_in:
-        args_in = ["prune", "--dry-run"]
-    if args_in and not args_in[0].startswith("-") and args_in[0] not in _CANONICAL:
-        if len(args_in) == 1:
-            return gwl(args_in)
-        return _unknown_command(prog, args_in[0])
+        return 2
 
     p = _parser(prog, "Git worktree commands that refuse to lose work.")
     subs = p.add_subparsers(dest="command")
-    for name in _needed(args_in):
-        command = _COMMANDS[name]
-        sub = subs.add_parser(name, aliases=list(command.aliases), help=command.about)
-        if command.flags:
-            command.flags(sub)
+    name = _CANONICAL[args_in[0]]
+    command = _COMMANDS[name]
+    sub = subs.add_parser(name, aliases=list(command.aliases), help=command.about)
+    if command.flags:
+        command.flags(sub)
     return _dispatch(p, args_in, None)
-
-
-def _needed(args_in: list[str]) -> list[str]:
-    """Which subparsers this invocation has to have built.
-
-    One, normally. Building all eleven and their shorthands is 1.5 ms of a
-    47 ms run, and ten of them answer a question nobody asked.
-
-    Two invocations need the whole set. `gw --help` prints the list, and a
-    name is checked against `_CANONICAL` before this is reached, so anything
-    else reaching the else-branch is argparse's to report.
-    """
-    if not args_in:
-        return []  # `gw` on its own prints the help table and parses nothing
-    if args_in[0] in _CANONICAL:
-        return [_CANONICAL[args_in[0]]]
-    return list(_COMMANDS)
 
 
 def _dispatch(
@@ -1564,13 +1507,11 @@ def _dispatch(
         args.prog += f" {args.branch_command}"
     if run is None:
         if command is None:
-            return run_help(args)
+            return _guide()
         run = _COMMANDS[_CANONICAL[command]].run
     try:
         if getattr(args, "quiet", False) and getattr(args, "verbose", False):
             raise _Stop("--quiet and --verbose cannot be combined", 2)
-        if run is run_prune and args.dry_run and args.verbose:
-            raise _Stop("--verbose is not available in preview mode", 2)
         values = getattr(args, "delete", [])
         if getattr(args, "keep_branch", False) and any(
             value != "ignored-files" for value in values
@@ -1579,10 +1520,10 @@ def _dispatch(
         args.permissions = frozenset(
             ("empty", "ignored-files", "stashes") if "all" in values else values
         )
-        if run is run_prune and args.only and not args.dry_run:
-            raise _Stop("--only requires --dry-run", 2)
+        if run is run_prune and args.only and args.yes:
+            raise _Stop("--only cannot be combined with --yes", 2)
         if (
-            run not in (run_help, run_version, run_sync)
+            run not in (run_version, run_sync)
             and not getattr(args, "explain", False)
             and not getattr(args, "complete", False)
             and not (hasattr(args, "name") and not args.name)
@@ -1594,10 +1535,24 @@ def _dispatch(
 
             options.verbose = getattr(args, "verbose", False)
             R.require_offline_git()
-            if not getattr(args, "json", False) and R.toplevel().value:
-                for notice in sync.notices(getattr(args, "quiet", False)):
+            # -q hides every warning, the never-synced and inferred-head
+            # lines included; a removal's disclosure still repeats them.
+            quiet = getattr(args, "quiet", False)
+            if not getattr(args, "json", False) and not quiet and R.toplevel().value:
+                for notice in sync.notices():
                     _err(render.note(notice))
-        return run(args)
+        code = run(args)
+        merged = sys.modules.get("worktrees.merged")
+        quiet = getattr(args, "quiet", False) or getattr(args, "json", False)
+        if merged is not None and merged.lacking.is_set() and not quiet:
+            _err(
+                render.warn(
+                    "some verdicts are unknown: "
+                    f"{merged.LACKING}, and only gw sync uses the network\n"
+                    "git backfill fetches them"
+                )
+            )
+        return code
     except KeyboardInterrupt:
         _err("")
         return 130

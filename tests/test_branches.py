@@ -47,7 +47,7 @@ def test_reimported_content_is_removable_without_a_worktree_or_upstream(world):
     world.git("add", "feature")
     world.git("commit", "--amend", "--no-edit", "--quiet")
     assert world.git("cherry", "main", "feature").startswith("+")
-    old = cli(world, "prune", "--dry-run", "--json")
+    old = cli(world, "prune", "--json")
     assert "feature" not in {r["branch"] for r in json.loads(old.stdout)["verdicts"]}
     rows = status(world, "feature")["verdicts"]
     assert len(rows) == 1
@@ -74,6 +74,28 @@ def test_console_aliases_work(world, entry):
     p = cli(world, *args, entry=entry)
     assert p.returncode == 0, p.stderr
     assert json.loads(p.stdout)["verdicts"][0]["verdict"] == "remove"
+
+
+@pytest.mark.parametrize("where", ["current", "linked"])
+def test_a_named_checked_out_branch_is_never_deleted(world, where):
+    """Proved finished is not enough: the branch a checkout stands on stays."""
+    if where == "linked":
+        world.merged_worktree("done")
+    else:
+        world.merged_branch("done")
+        world.git("checkout", "-q", "done")
+    sha = world.git("rev-parse", "refs/heads/done")
+    p = cli(world, "done", "--yes", "--delete", "all", entry="gwbd")
+    assert p.returncode == 3, p.stderr
+    assert "checked out in a worktree" in p.stderr
+    assert world.git("rev-parse", "refs/heads/done") == sha
+
+
+def test_delete_help_names_every_permission_value(world):
+    p = cli(world, "-h", entry="gwbd")
+    assert p.returncode == 0, p.stderr
+    text = " ".join((p.stdout + p.stderr).split())
+    assert "empty branches or stashes; all permits both" in text
 
 
 def test_multiple_exact_names_do_not_select_a_prefix(world):

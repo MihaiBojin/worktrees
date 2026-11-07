@@ -21,7 +21,7 @@ def test_current_whitespace_root_is_protected_from_pruning(world, suffix):
     original = world.merged_worktree("topic")
     target = world.root / ("linked" + suffix)
     world.git("worktree", "move", str(original), str(target))
-    p = run(world, "gwp", "--dry-run", "--json", at=target)
+    p = run(world, "gwp", "--json", at=target)
     assert p.returncode == 0, p.stderr
     row = next(
         row for row in json.loads(p.stdout)["verdicts"] if row["branch"] == "topic"
@@ -90,7 +90,7 @@ def test_listing_marks_exact_current_root(world, suffix):
     original = world.worktree("topic")
     target = world.root / ("linked" + suffix)
     world.git("worktree", "move", str(original), str(target))
-    result = run(world, "gwl", "--json", at=target)
+    result = run(world, "gw", "list", "--json", at=target)
     assert result.returncode == 0, result.stderr
     row = next(
         row
@@ -99,19 +99,6 @@ def test_listing_marks_exact_current_root(world, suffix):
     )
     assert row["path"] == str(target)
     assert row["here"]
-
-
-@pytest.mark.parametrize("suffix", [" ", "\t", "\n", "\r\n"])
-def test_move_uses_exact_current_root(world, suffix):
-    original = world.worktree("topic")
-    target = world.root / ("linked" + suffix)
-    world.git("worktree", "move", str(original), str(target))
-    result = run(world, "gwm", "renamed", "--json", at=target)
-    assert result.returncode == 0, result.stderr
-    destination = world.root / ".worktrees" / "renamed" / "repo"
-    assert json.loads(result.stdout)["path"] == str(destination)
-    assert destination.exists() and not target.exists()
-    assert world.git("rev-parse", "renamed")
 
 
 @pytest.mark.parametrize("suffix", [" ", "\t", "\ninside ", "\r\ninside "])

@@ -7,7 +7,7 @@ Git worktree commands that refuse to lose work.
 
 ```console
 gw sync                 # refresh remote refs and forge evidence
-gw                      # assess without changing anything
+gw                      # choose a worktree, or print metadata without a terminal
 gwp                     # confirm and remove eligible worktrees
 gwr fix-parser          # remove one worktree and its finished branch
 ```
@@ -18,25 +18,24 @@ other repositories under the same worktree root are outside their scope.
 
 | Command | What it does |
 | --- | --- |
-| `gw [flags]` | assess, like `gwp --dry-run` |
-| `gw NAME` | enter a worktree, like `gwl NAME` |
+| `gw` | print every command and what it does |
+| `gw list [QUERY] [flags]` | list worktrees or choose a destination in a terminal |
 | `gw sync` | fetch the default remote and refresh forge evidence |
 | `gwp` | confirm and remove eligible worktrees |
 | `gwr [NAME\|PATH]` | remove one worktree and its finished branch |
 | `gwbs [NAME ...]` | assess local branches without worktrees |
 | `gwbd [NAME ...]` | confirm and delete eligible loose branches |
 | `gwa NAME [BASE]` | create or enter a worktree |
-| `gwl [QUERY]` | choose a worktree and enter it |
-| `gwm NEW` | rename this worktree's branch and move its checkout |
+| `gw list [QUERY]` | explicit form of the default listing |
 | `gwbc NAME` | start a branch from the assessed head ref |
 | `gwrot` | start the next branch in a series, or fast-forward the head branch |
-| `gwh` | show command names, aliases and shortcuts |
+| `gw --help` | show command names, aliases and shortcuts |
 | `gw version` | print the installed version |
 
 `gw prune`, `gw remove`, `gw branch status` and `gw branch delete` reach the
-same commands as their short binaries. `gwh` lists every spelling.
+same commands as their short binaries. `gw --help` lists every spelling.
 `worktrees` is the long name for `gw`. A subcommand takes precedence over a
-worktree name: use `gwl sync` to reach a worktree named `sync`.
+worktree name: use `gw list sync` to reach a worktree named `sync`.
 
 ## Install
 
@@ -62,7 +61,7 @@ for commands that change your directory and for completions.
 
 Install the plugin at the tag of the release `uv` installed. Without a tag
 both managers take `main`, which can be ahead of the last release, and the
-functions then call commands they were not tested against. `gwh` says which
+functions then call commands they were not tested against. `gw --help` says which
 release the plugin here came from, and whether it is the same one.
 
 To upgrade, move both: `uv tool upgrade git-worktrees` for the commands, then
@@ -147,20 +146,19 @@ checkout, so a new shell runs whatever the checkout holds.
 
 ### What the shell code does
 
-Each navigation function runs `command <name>` and `cd`s to what it printed, provided
-that is a directory. `--json` and `--list` print what was asked for on the
-same stream a destination arrives on, so the shim asks whether what it has is
-somewhere to go and stays put when it is not. `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot` and `gwh`
+Each navigation function runs `command <name>` and changes directory when
+stdout is an absolute existing destination. `gw` forwards metadata unchanged
+without a terminal and under `--json` or `--list`. `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`
 change no directory, so they ship as console scripts alone and answer the same
 from a prompt and from a script.
 
 Both plugins export `WORKTREES_PLUGIN_VERSION`, the release they came from,
-since the environment is all a binary sees of the shell that started it. `gwh`
+since the environment is all a binary sees of the shell that started it. `gw --help`
 and `gw version` compare it with their own and say whether the two match,
-which is older, and what to run: `gwh` in its text, `gw version` on stderr, so
+which is older, and what to run: `gw --help` in its text, `gw version` on stderr, so
 its stdout stays the version alone for a script to read.
 
-An excerpt of `gwh`'s release lines with matching CLI and shell releases:
+An excerpt of `gw --help`'s release lines with matching CLI and shell releases:
 
 ```console
 worktrees 0.7.0: git worktree commands that refuse to lose work
@@ -172,7 +170,7 @@ release that started exporting it, and nothing can tell those two apart. A
 bash started from fish or zsh inherits the variable without the functions.
 
 The completions hold no candidate of their own. `gw --complete` prints every
-subcommand and shorthand, `gwl --complete` prints every worktree, and both
+subcommand and shorthand, `gw list --complete` prints every worktree, and both
 shells narrow what those return, so the matching stays in one place and a
 command added to the table needs no edit in either shell.
 
@@ -187,15 +185,18 @@ separate.
 
 ## Assess and remove
 
-`gw` and `gwp --dry-run` print the same assessment. Neither writes refs,
-cache entries or directories. `--yes` and `-y` are accepted and ignored in
-these assessment forms. `gwp` asks before removing every eligible row;
+`gwp` prints the assessment and asks before removing eligible worktrees on a
+terminal. Nonterminal input, `--json` and `--list` print the assessment without
+writing refs, cache entries or directories. `--list` prints an uncoloured table.
+`--yes` and `-y` approve removal in any of those modes and grant no deletion
+category. `--only VERDICT` filters an assessment and cannot be combined with
+`--yes`. `--quiet` and `--verbose` work in every pruning mode, separately.
 `gwr` selects one exact worktree name or path. Several exact name matches
 open a picker on a terminal; without one, `gwr` refuses and lists the paths.
 A missing name fails. Use a quoted full path to identify a target exactly.
 
 ```console
-gwp --dry-run --json
+gwp --json
 gwr '/home/you/git/.worktrees/fix-parser/repo' --yes
 gwbs --json
 gwbd old-fix another-fix --yes
@@ -220,9 +221,12 @@ forge proof. Git cannot distinguish them. A verdict describes completion;
 
 The CLI never deletes `main`, `master` or the head branch. It never removes
 the main checkout, locked or dirty worktrees, worktrees with untracked files,
-or worktrees with initialized submodules. For a submodule refusal, run
-`git submodule deinit --all` inside the target and retry. `gwp` also protects
-the current worktree. Detached worktrees get the same checks.
+or worktrees with an initialized submodule or a submodule store. For a
+submodule refusal, run `git submodule deinit --all` inside the target, delete
+the store the refusal names once nothing in it is needed, and retry. A locked
+worktree whose directory is away keeps its record and stays until you unlock
+it, as `git worktree remove` requires. `gwp` also protects the current
+worktree. Detached worktrees get the same checks.
 
 ### Permissions
 
@@ -248,6 +252,8 @@ gwr old-checkout --keep-branch --delete ignored-files
 
 `--keep-branch` removes an otherwise unprotected checkout without completion
 proof and retains its branch and stashes, including a protected branch.
+A detached checkout has no branch to keep its commits, so it still needs
+proof.
 It grants no ignored-file permission. Only `--delete ignored-files` combines
 with it; `empty`, `stashes` and `all` are usage errors with `--keep-branch`.
 
@@ -339,26 +345,28 @@ maintenance release:
 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4 or 2.44.1 and later patches in those
 series. The CLI refuses lower reported versions even if a vendor backported
 the fix, because it cannot verify that patch. Ordinary full clones keep
-working on older Git versions.
+working on older Git versions. A proof that needs an object the clone lacks
+makes that branch `unknown`, with one warning that `git backfill` fetches it.
 
 ## Navigation and branches
 
-`gwl` offers the main checkout and this repository's linked worktrees.
-Substring matching comes first, then ordered-letter matching. An exact
-branch or path wins over a partial match. A query with one match selects it
-without a prompt; no query always asks. Arrow keys wrap, enter or a digit
-selects, and escape or Ctrl-D cancels. Ctrl-C exits 130 without a traceback.
-Without a terminal, use `gwl --list` or `gwl --json`.
+`gw` and `gw list` offer the main checkout and this repository's linked
+worktrees. Substring matching comes first, then ordered-letter matching. An
+exact branch or path wins over a partial match. In a terminal, a query with
+one match selects it without a prompt; no query asks. Arrow keys wrap, enter
+or a digit selects, and escape or Ctrl-D cancels. Ctrl-C exits 130.
+
+Without a terminal, the command prints a table of every matching worktree.
+`--list` prints that table in a terminal too; `--json` prints metadata in the
+`worktrees` array. Neither format selects a destination or changes directory.
 
 A current linked worktree is shown with `*` and cannot be selected. The main
 checkout remains a destination from inside it, so you can return from a
-subdirectory. `gw NAME` uses the same matching. The fish and zsh `gw`
-functions read the CLI's subcommand list and change directory only for a
-single name that is not a subcommand; other invocations preserve stdout and
-status.
+subdirectory. A worktree is selected through `gw list NAME`, so a worktree
+named `sync` or `p` never collides with a command. The fish and zsh adapters preserve stdout and status for metadata and
+change directory for terminal selections.
 
-`gwa NAME [BASE]` creates or enters a worktree. `gwm NEW` renames its branch
-and moves its checkout. `gwbc NAME` creates a branch from the assessed head
+`gwa NAME [BASE]` creates or enters a worktree. `gwbc NAME` creates a branch from the assessed head
 ref without setting that head as upstream. `gwrot` creates the next
 `NAME-YYYY-MM-DD_NNN` sibling from the head, stripping a previous rotation
 suffix. Names must be absent from local and cached remote refs. On the head
@@ -368,7 +376,7 @@ head refuses at exit 1.
 ## Output and JSON
 
 Results go to stdout; diagnostics and prompts go to stderr. JSON and
-`gwl --list` never contain colour. A pipe, nonempty `NO_COLOR`, or `TERM=dumb`
+`gw list --list` never contain colour. A pipe, nonempty `NO_COLOR`, or `TERM=dumb`
 disables colour on its stream. `NO_COLOR=` does not disable it.
 
 `-q` suppresses summaries, progress and stale warnings while keeping results,
@@ -380,8 +388,8 @@ both is a usage error.
 | Commands | `-q` | `-v` |
 | --- | --- | --- |
 | `gw sync`, `gwp`, `gwr`, `gwbd`, `gwa`, `gwbc`, `gwrot` | yes | yes |
-| `gw`, `gwp --dry-run`, `gwbs` | yes | no |
-| `gwl`, `gw NAME` | no | no |
+| `gwbs` | yes | no |
+| `gw list` | no | no |
 
 Other commands retain their own flags; use `--help`. Help, version and
 completion work without an assessment. `--only` filters assessment verdicts
@@ -400,23 +408,26 @@ Times are UTC RFC 3339 or null. A time does not mean every branch has forge
 evidence. Head source is `remote`, `clone` or `inferred`; unresolved `ref` is
 null. Worktree assessment has `verdicts`, with `verdict`, `eligible`,
 `protections`, `stashes`, exact `path`, `branch`, `sha` and proof fields.
-`gwl --json` puts its rows in `worktrees`.
+`gw list --json` puts its rows in `worktrees`.
 
 ```console
-gwp --dry-run --json | jq '.verdicts[] | select(.eligible)'
-gwl --json | jq -r '.worktrees[].path'
+gwp --json | jq '.verdicts[] | select(.eligible)'
+gw list --json | jq -r '.worktrees[].path'
 ```
 
 ## Migration
 
 | Removed interface | Current interface |
 | --- | --- |
-| `gws`, `gw status`, `gw s`, `gw st` | `gw` or `gwp --dry-run` |
+| `gws`, `gw status`, `gw s`, `gw st` | `gwp --json` |
+| `gwp --dry-run` | `gwp --json` or `gwp --list` |
 | `gwp --branch NAME` | `gwr NAME` or a quoted exact path |
 | `--delete-ignored` | `--delete ignored-files` |
 | `gwr --force`, `gwr -f` | `gwr --keep-branch` |
 | `--no-fetch`, `--no-forge`, `--force-refresh`, refresh `-f` | offline by default; run `gw sync` explicitly |
-| `gwl --json` array, `.[]` | object, `.worktrees[]` |
+| `gwl`, `gw l`, `gw ls`, `gw NAME` | `gw list`, `gw list NAME` |
+| `gwh`, `gw help`, `gw h` | `gw --help` or `gw -h` |
+| `gwl --json` array, `.[]` | `gw list --json` object, `.worktrees[]` |
 
 `empty` requires explicit permission. `main` and `master` always remain
 protected. Update scripts that assume a `remove` verdict alone permits

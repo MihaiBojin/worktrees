@@ -45,7 +45,6 @@ ROOT = Path(__file__).resolve().parents[1]
 # prints, and none touches git, so what they measure is starting.
 COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("gw version", ("gw", "version")),
-    ("gwh", ("gwh",)),
     ("gw --help", ("gw", "--help")),
 )
 

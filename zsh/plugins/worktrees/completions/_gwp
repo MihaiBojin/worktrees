@@ -2,18 +2,13 @@
 
 # Flags as `gwp --help` lists them.
 
-local -a verbose
-if [[ ${words[1]} != (gw|worktrees) ]] && (( ! ${words[(Ie)--dry-run]} )); then
-    verbose=('(-v --verbose)'{-v,--verbose}'[print every git command]')
-fi
-
 _arguments -s \
-    $verbose \
+    '(-v --verbose)'{-v,--verbose}'[print every git command]' \
     '*--delete[permit deletion categories]:value:(empty ignored-files stashes all)' \
-    '--dry-run[report without deleting]' \
-    '*--only[filter by verdict]:verdict:(remove empty keep unknown)' \
-    '(-y --yes)'{-y,--yes}'[do not ask before removing]' \
-    '--json[verdicts as data]' \
+    '--list[assess without prompting; uncoloured table]' \
+    '*--only[filter assessment; rejects --yes]:verdict:(remove empty keep unknown)' \
+    '(-y --yes)'{-y,--yes}'[approve removal, including with --json or --list]' \
+    '--json[assess as JSON; --yes approves removal]' \
     '(-q --quiet)'{-q,--quiet}'[verdicts only]' \
     '--explain[print every git command and exit]' \
     '(-h --help)'{-h,--help}'[show the help and exit]'

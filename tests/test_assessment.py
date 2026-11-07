@@ -11,8 +11,7 @@ from test_cli import run
 
 
 def rows(world, entry="gwp", *flags, at=None) -> list[dict]:
-    args = ("--dry-run",) if entry == "gwp" else ()
-    result = run(world, entry, *args, "--json", *flags, at=at)
+    result = run(world, entry, "--json", *flags, at=at)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)["verdicts"]
 
@@ -150,6 +149,56 @@ def test_initialized_submodule_blocks_finished_worktree(world, detached):
     assert (wt / "module" / "README").exists()
 
 
+def test_a_submodule_store_left_by_deinit_blocks_removal_until_deleted(world):
+    """`git worktree remove` refuses while the store exists, so gwp must too."""
+    module = world.root / "module"
+    world.git("init", "--quiet", "-b", "main", str(module))
+    world.commit("README", at=module)
+    wt = world.worktree("done")
+    world.git(
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "--quiet",
+        str(module),
+        "module",
+        at=wt,
+    )
+    world.git("commit", "--quiet", "-m", "module", at=wt)
+    world.git("merge", "--quiet", "--no-ff", "-m", "merge", "done")
+    world.git("submodule", "deinit", "--quiet", "--all", "--force", at=wt)
+    store = world.git(
+        "rev-parse", "--path-format=absolute", "--git-path", "modules", at=wt
+    )
+    row = next(r for r in rows(world) if r["path"] == str(wt))
+    assert not row["eligible"]
+    assert f"then delete {store}" in row["why"]
+    shutil.rmtree(store)
+    result = run(world, "gwp", "--yes")
+    assert result.returncode == 0, result.stderr
+    assert not wt.exists()
+
+
+def test_a_locked_worktree_whose_directory_is_away_is_kept_and_assessed(world):
+    away = world.worktree("away")
+    world.git("worktree", "lock", str(away))
+    away.rename(away.with_name("elsewhere"))
+    done = world.merged_worktree("done")
+    found = {r["branch"]: r for r in rows(world)}
+    assert found["away"]["verdict"] == "empty"
+    assert not found["away"]["eligible"]
+    assert "it is locked" in found["away"]["protections"]
+    assert "its directory is missing" in found["away"]["protections"]
+    assert found["done"]["eligible"]
+    result = run(world, "gwp", "--yes")
+    assert result.returncode == 0, result.stderr
+    assert not done.exists()
+    assert "branch refs/heads/away\nlocked" in world.git(
+        "worktree", "list", "--porcelain"
+    )
+
+
 @pytest.mark.parametrize("name", ["main", "master", "trunk"])
 def test_protected_branch_names_with_nonconventional_remote_head(world, name):
     world.git("branch", "master")
@@ -233,11 +282,10 @@ def snapshot(path: Path) -> dict[str, bytes]:
 @pytest.mark.parametrize(
     "entry,flags",
     [
-        ("gwp", ("--dry-run",)),
-        ("gwp", ("--dry-run", "--yes")),
-        ("gw", ()),
-        ("gw", ("--yes",)),
-        ("gw", ("-y",)),
+        ("gwp", ()),
+        ("gwp", ("--list",)),
+        ("gw", ("prune",)),
+        ("gw", ("prune", "--list")),
     ],
 )
 def test_preview_preserves_repository_files_refs_stashes_and_stale_records(
@@ -281,9 +329,6 @@ def test_empty_filter_preserves_ineligible_empty_rows(world):
 @pytest.mark.parametrize(
     "args",
     [
-        ("status", "--json"),
-        ("s", "--json"),
-        ("st", "--json"),
         ("prune", "done"),
         ("prune", "--branch", "done"),
     ],
@@ -296,11 +341,14 @@ def test_retired_status_and_prune_targets_are_usage_errors(world, args):
 
 
 @pytest.mark.parametrize("name", ["status", "s", "st"])
-def test_retired_status_names_select_exact_worktrees(world, name):
+def test_retired_status_names_are_usage_errors_that_point_at_list(world, name):
     target = world.worktree(name)
     result = run(world, "gw", name)
+    assert result.returncode == 2
+    assert f"gw list {name}" in result.stderr
+    result = run(world, "gw", "list", name)
     assert result.returncode == 0, result.stderr
-    assert result.stdout == str(target.resolve()) + "\n"
+    assert "WORKTREE" in result.stdout and str(target.resolve()) in result.stdout
     assert target.is_dir()
 
 
@@ -310,7 +358,7 @@ def test_first_parent_history_is_read_once_per_assessment(world):
 
     for name in ("one", "two", "three"):
         world.worktree(name)
-    assert cli.gwp(["--dry-run", "--json"]) == 0
+    assert cli.gwp(["--json"]) == 0
     calls = [argv for argv in options.log if "--first-parent" in argv]
     assert len(calls) == 1, calls
 
@@ -331,7 +379,7 @@ def test_validated_forge_precedes_fast_forward_empty(world, network):
     assert row["proof"] == "forge"
     wt = world.root / "feature"
     world.git("worktree", "add", "--quiet", str(wt), "feature")
-    preview = cli(world, "prune", "--dry-run", "--json", env=env)
+    preview = cli(world, "prune", "--json", env=env)
     assert preview.returncode == 0, preview.stderr
     attached = next(
         r for r in json.loads(preview.stdout)["verdicts"] if r["branch"] == "feature"
@@ -520,7 +568,7 @@ def test_invalid_merged_request_preserves_independent_proof(
     assert row["verdict"] == want
     wt = world.root / "feature"
     world.git("worktree", "add", "--quiet", str(wt), "feature")
-    preview = cli(world, "prune", "--dry-run", "--json", env=env)
+    preview = cli(world, "prune", "--json", env=env)
     assert preview.returncode == 0, preview.stderr
     attached = next(
         r for r in json.loads(preview.stdout)["verdicts"] if r["branch"] == "feature"
@@ -638,7 +686,7 @@ def test_mutating_prune_rejects_only_before_any_changes(world, entry, prefix):
     refs = world.git("show-ref")
     result = run(world, entry, *prefix, "--only", "empty", "--yes", "--json")
     assert result.returncode == 2, result.stderr
-    assert "--only" in result.stderr and "--dry-run" in result.stderr
+    assert "--only" in result.stderr and "--yes" in result.stderr
     assert done.exists()
     assert snapshot(world.repo) == before
     assert world.git("worktree", "list", "--porcelain") == records
@@ -685,3 +733,107 @@ def test_validated_forge_proof_precedes_unrelated_history(world, network):
     row = json.loads(result.stdout)["verdicts"][0]
     assert row["verdict"] == "remove"
     assert row["proof"] == "forge"
+
+
+@pytest.mark.parametrize("entry,prefix", [("gwp", ()), ("gw", ("prune",))])
+@pytest.mark.parametrize("mode", [(), ("--json",), ("--list",)])
+def test_prune_metadata_preserves_eligible_rows_and_stale_registration(
+    world, network, entry, prefix, mode
+):
+    from test_branches import cli as invoke
+
+    world.commit(".gitignore", "*.secret\n")
+    eligible = world.merged_worktree("eligible")
+    blocked = world.merged_worktree("blocked")
+    (blocked / "kept.secret").write_bytes(b"ignored\nbytes\x00")
+    (blocked / "README").write_text("pending")
+    world.git("stash", "push", "-qm", "pending", at=blocked)
+    gone = world.worktree("gone")
+    shutil.rmtree(gone)
+    cache = world.repo / ".git" / "git-worktrees-sync.json"
+    cache.write_text('{"sentinel": true}\n')
+    before = snapshot(world.repo)
+    worktrees_before = {str(p): snapshot(p) for p in (eligible, blocked)}
+    records = world.git("worktree", "list", "--porcelain")
+    refs = world.git("show-ref")
+    stashes = world.git("stash", "list", "--format=%H")
+    result = invoke(world, *prefix, *mode, entry=entry, env=network.env())
+    assert result.returncode == 0, result.stderr
+    assert snapshot(world.repo) == before
+    assert {str(p): snapshot(p) for p in (eligible, blocked)} == worktrees_before
+    assert world.git("worktree", "list", "--porcelain") == records
+    assert world.git("show-ref") == refs
+    assert world.git("stash", "list", "--format=%H") == stashes
+    assert network.network_calls() == []
+    assert not any(call[-2:] == ["worktree", "prune"] for call in network.calls())
+    assert "git branch eligible " not in result.stderr
+    assert "[y/N]" not in result.stderr
+    if "--json" in mode:
+        data = json.loads(result.stdout)
+        row = next(v for v in data["verdicts"] if v["branch"] == "eligible")
+        assert row["eligible"] and row["verdict"] == "remove"
+        assert str(gone) in data["stale"]
+        assert "head" in data and "lastSync" in data
+    else:
+        assert "VERDICT" in result.stdout and "ELIGIBLE" in result.stdout
+        assert str(eligible) in result.stdout and str(blocked) in result.stdout
+
+
+@pytest.mark.parametrize("mode", [(), ("--json",), ("--list",)])
+@pytest.mark.parametrize("permission", [False, True])
+def test_prune_yes_approves_metadata_modes_with_category_permissions(
+    world, mode, permission
+):
+    world.commit(".gitignore", "*.secret\n")
+    done = world.merged_worktree("done")
+    (done / "kept.secret").write_bytes(b"keep until approved\n")
+    tip = world.git("rev-parse", "done")
+    result = run(
+        world,
+        "gwp",
+        *mode,
+        "--yes",
+        *(["--delete", "ignored-files"] if permission else []),
+    )
+    assert result.returncode == 0, result.stderr
+    assert "[y/N]" not in result.stderr
+    if "--json" in mode:
+        data = json.loads(result.stdout)
+        row = next(v for v in data["verdicts"] if v["branch"] == "done")
+        assert row["verdict"] == "remove" and row["eligible"] == permission
+        assert data["removed"] == (["done"] if permission else [])
+        assert data["failed"] == 0
+        assert "head" in data and "lastSync" in data
+    else:
+        assert "VERDICT" in result.stdout
+    if permission:
+        assert not done.exists()
+        assert not world.git("branch", "--list", "done")
+        assert f"git branch done {tip}" in result.stderr
+        assert "ignored" in result.stderr
+    else:
+        assert (done / "kept.secret").read_bytes() == b"keep until approved\n"
+        assert world.git("rev-parse", "done") == tip
+
+
+def test_keep_branch_does_not_waive_proof_for_a_detached_worktree(world):
+    """No branch keeps a detached worktree's commits, so they need proof."""
+    wt = world.root / "detached"
+    world.git("worktree", "add", "--quiet", "--detach", str(wt))
+    tip = world.commit("detached work", at=wt)
+    result = run(world, "gwr", "--keep-branch", "--yes", str(wt))
+    assert result.returncode != 0
+    assert wt.exists()
+    assert world.git("rev-parse", "HEAD", at=wt) == tip
+
+
+def test_untracked_files_protect_under_show_untracked_files_no(world):
+    wt = world.merged_worktree("done")
+    (wt / "notes.txt").write_text("precious\n")
+    world.git("config", "status.showUntrackedFiles", "no")
+    row = next(r for r in rows(world) if r["branch"] == "done")
+    assert not row["eligible"]
+    assert "it has uncommitted changes or untracked files" in row["protections"]
+    result = run(world, "gwp", "--yes")
+    assert result.returncode == 0, result.stderr
+    assert (wt / "notes.txt").exists()

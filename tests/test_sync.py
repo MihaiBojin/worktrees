@@ -17,12 +17,13 @@ def origin(world, host="github.com", name="origin") -> None:
     world.git("update-ref", f"refs/remotes/{name}/main", "main")
 
 
-def listing(world, network, entry="gwl", at=None) -> dict:
+def listing(world, network, entry="gw", at=None) -> dict:
     proc = subprocess.run(
         [
             sys.executable,
             "-c",
             f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            *(["list"] if entry == "gw" else []),
             "--json",
         ],
         cwd=at or world.repo,
@@ -97,7 +98,7 @@ def test_json_envelope_preserves_worktrees(world, network):
     assert data["worktrees"][0]["path"] == str(world.repo)
 
 
-@pytest.mark.parametrize("entry", ["gwl", "gwbs"])
+@pytest.mark.parametrize("entry", ["gw", "gwbs"])
 @pytest.mark.parametrize(
     "case, expected",
     [
@@ -132,7 +133,7 @@ def test_head_inference_uses_local_committer_dates(
         assert all(row["verdict"] == "unknown" for row in data["verdicts"])
 
 
-@pytest.mark.parametrize("entry", ["gwl", "gwbs"])
+@pytest.mark.parametrize("entry", ["gw", "gwbs"])
 def test_clone_head_becomes_synced_remote_head(world, network, entry):
     origin(world)
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
@@ -301,14 +302,13 @@ def test_branch_creation_refuses_unresolved_inferred_head(world, network, entry,
 @pytest.mark.parametrize(
     "entry, args",
     [
-        ("gw", ["--json"]),
+        ("gw", ["prune", "--json"]),
         ("gwp", ["--yes", "--json"]),
         ("gwbs", ["--json"]),
         ("gwbc", ["new", "--json"]),
-        ("gwm", ["renamed", "--json"]),
         ("gwbd", ["--dry-run", "--json"]),
         ("gwa", ["new", "--json"]),
-        ("gwl", ["--json"]),
+        ("gw", ["--json"]),
         ("gwr", ["no-such-worktree", "--yes"]),
         ("gwrot", ["--json"]),
     ],
@@ -357,37 +357,39 @@ def test_stale_notice_boundary_and_units(
     cache_path(world).write_text(json.dumps(cached))
     stamp = datetime(2026, 1, 1, tzinfo=UTC).timestamp()
     monkeypatch.setattr(sync.time, "time", lambda: stamp + seconds)
-    assert C.gw([]) == 0
+    assert C.gw(["list"]) == 0
     error = capsys.readouterr().err
     if text:
         assert text in error and "gw sync" in error
         assert error.count("Last sync:") == 1
     else:
         assert "Last sync:" not in error
-    assert C.gw(["-q"]) == 0
+    assert C.gwp(["-q"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
-    assert C.gw(["--json"]) == 0
+    assert C.gw(["list", "--json"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("quiet", [False, True])
-def test_never_synced_and_inferred_notices_survive_quiet(world, network, quiet):
+def test_never_synced_and_inferred_notices_yield_only_to_quiet(world, network, quiet):
     origin(world)
-    proc = cli(world, *(["-q"] if quiet else []), entry="gw", env=network.env())
+    proc = cli(world, *(["-q"] if quiet else []), entry="gwp", env=network.env())
     assert proc.returncode == 0, proc.stderr
-    assert (
+    never = (
         "Never synced: verdicts use refs from the clone or last fetch "
-        "and no forge evidence. Run: gw sync" in proc.stderr
+        "and no forge evidence. Run: gw sync"
     )
-    assert "Head: main (inferred)" in proc.stderr
-    data = cli(world, "--json", entry="gw", env=network.env())
+    assert (never in proc.stderr) is not quiet
+    assert ("Head: main (inferred)" in proc.stderr) is not quiet
+    data = cli(world, "list", "--json", env=network.env())
     assert "Never synced:" not in data.stderr and "Head:" not in data.stderr
-    proc = cli(world, "sync", env=network.env())
-    assert "Never synced:" not in proc.stderr and "Head:" not in proc.stderr
+    proc = cli(world, "sync", *(["-q"] if quiet else []), env=network.env())
+    assert "Never synced:" not in proc.stderr
+    assert ("Head: main (remote)" in proc.stderr) is not quiet, proc.stderr
 
 
 def test_repository_without_remote_reports_only_inferred_head(world, network):
-    proc = cli(world, entry="gw", env=network.env())
+    proc = cli(world, "list", env=network.env())
     assert "Head: main (inferred)" in proc.stderr
     assert "Never synced:" not in proc.stderr and "Last sync:" not in proc.stderr
 
@@ -662,31 +664,6 @@ def test_remote_main_and_local_trunk_do_not_replace_head_inference(world, networ
     assert listing(world, network)["head"] == {"ref": None, "source": "inferred"}
 
 
-def test_move_refuses_unresolved_head_without_renaming(world, network):
-    linked = world.worktree("linked")
-    world.git("branch", "-m", "main", "feature")
-    before = world.git("worktree", "list", "--porcelain")
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import gwm; raise SystemExit(gwm())",
-            "renamed",
-            "--json",
-        ],
-        cwd=linked,
-        env=network.env(),
-        capture_output=True,
-        text=True,
-    )
-    assert proc.returncode != 0
-    assert "No main or master branch." in proc.stderr
-    assert world.git("worktree", "list", "--porcelain") == before
-    assert world.git("rev-parse", "refs/heads/linked")
-    assert linked.exists()
-    assert not (linked.parent.parent / "renamed" / world.repo.name).exists()
-
-
 def test_inferred_head_notice_paints_both_branch_names_on_stderr(world, network):
     import os
     import pty
@@ -697,8 +674,7 @@ def test_inferred_head_notice_paints_both_branch_names_on_stderr(world, network)
         [
             sys.executable,
             "-c",
-            "from worktrees.cli import gw; raise SystemExit(gw())",
-            "-q",
+            "from worktrees.cli import gwp; raise SystemExit(gwp())",
         ],
         cwd=world.repo,
         env=network.env(TERM="xterm"),
@@ -887,7 +863,6 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
     preview = cli(
         world,
         "--json",
-        *(["--dry-run"] if entry != "gwbd" else []),
         entry="gwp" if entry != "gwbd" else "gwbs",
         env=network.env(),
     )
@@ -945,7 +920,7 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
         ("gw", ["--complete"]),
         ("gw", ["branch", "--complete"]),
         ("gw", ["version"]),
-        ("gwl", ["--complete"]),
+        ("gw", ["list", "--complete"]),
         ("gwr", ["--complete"]),
         ("gwbs", ["--complete"]),
         ("gwbd", ["--complete"]),
@@ -990,7 +965,7 @@ def test_unresolved_head_marks_real_preview_rows_unknown(world, network, head_so
     world.git("branch", "-m", "main", "feature")
     refs = world.git("for-each-ref", "--format=%(refname) %(objectname)")
     records = world.git("worktree", "list", "--porcelain")
-    preview = cli(world, "--json", "--delete", "all", entry="gw", env=network.env())
+    preview = cli(world, "--json", "--delete", "all", entry="gwp", env=network.env())
     assert preview.returncode == 0, preview.stderr
     data = json.loads(preview.stdout)
     assert data["head"] == {"ref": None, "source": head_source}
@@ -1020,3 +995,25 @@ def test_unresolved_head_marks_real_preview_rows_unknown(world, network, head_so
         for call in network.calls()
         for argument in call[1:]
     )
+
+
+@pytest.mark.parametrize("state", ["missing", "deleted", "plain"])
+def test_the_head_line_names_an_unresolved_remote_head(world, network, state):
+    """A head line never reads `Head:  (remote)` with nothing in the gap."""
+    origin(world)
+    if state == "missing":
+        world.git(
+            "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/missing"
+        )
+        wanted = "Head: missing, which does not resolve (clone). Run: gw sync"
+    else:
+        assert cli(world, "sync", env=network.env()).returncode == 0
+        world.git("update-ref", "--no-deref", "-d", "refs/remotes/origin/HEAD")
+        if state == "plain":
+            # A plain ref at two branches names neither.
+            world.git("update-ref", "refs/remotes/origin/release", "main")
+            world.git("update-ref", "--no-deref", "refs/remotes/origin/HEAD", "main")
+        wanted = "Head: unresolved (remote). Run: gw sync"
+    proc = cli(world, entry="gwp", env=network.env())
+    assert proc.returncode == 0, proc.stderr
+    assert wanted in proc.stderr

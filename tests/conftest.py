@@ -164,6 +164,9 @@ def fresh_log() -> None:
     options.verbose = bool(os.environ.get("WT_VERBOSE"))
 
 
+END = "\x1eend-of-call\x1e"
+
+
 class Network:
     """Process wrappers that record calls and answer only network operations."""
 
@@ -171,32 +174,40 @@ class Network:
         self.world = world
         self.bin = world.root / "network-bin"
         self.bin.mkdir()
-        self.log = world.root / "network-calls.jsonl"
+        self.log = world.root / "network-calls.log"
         self.responses = world.root / "network-responses.json"
         self.responses.write_text("{}")
         real_git = shutil.which("git")
+        # git runs on every call a command makes, forty in one gwp, so its
+        # wrapper is sh: a Python one costs an interpreter start each time.
+        # A record is its argv NUL-terminated, then END, in one write.
+        record = f"printf '%s\\0' \"$tool\" \"$@\" '{END}' >> '{self.log}'"
+        (self.bin / "git").write_text(
+            "#!/bin/sh\n"
+            "tool=git\n"
+            f"{record}\n"
+            f"real='{real_git}'\n"
+            'if [ "$1" = -C ]; then dir=$2; shift 2; set -- -C "$dir" "$@"; '
+            "sub=$3; next=$4; remote=$5; else sub=$1; next=$2; remote=$3; fi\n"
+            'if [ "$sub" = fetch ]; then exit "${WT_FETCH_CODE:-0}"; fi\n'
+            'if [ "$sub" = remote ] && [ "$next" = set-head ]; then\n'
+            '    if [ -n "$WT_HEAD_CODE" ]; then exit "$WT_HEAD_CODE"; fi\n'
+            '    if [ "$1" = -C ]; then set -- -C "$2"; else set --; fi\n'
+            '    exec "$real" "$@" symbolic-ref "refs/remotes/$remote/HEAD" '
+            '"refs/remotes/$remote/main"\n'
+            "fi\n"
+            'exec "$real" "$@"\n'
+        )
         script = (
             f"#!{sys.executable}\n"
-            "import json, os, pathlib, subprocess, sys\n"
-            f"real_git = {real_git!r}\n"
+            "import json, os, pathlib, sys\n"
             f"log = pathlib.Path({str(self.log)!r})\n"
             f"responses = pathlib.Path({str(self.responses)!r})\n"
             "tool = pathlib.Path(sys.argv[0]).name\n"
             "args = sys.argv[1:]\n"
-            "with log.open('a') as stream:\n"
-            "    stream.write(json.dumps([tool, *args]) + '\\n')\n"
-            "if tool == 'git':\n"
-            "    prefix = args[:2] if args[:1] == ['-C'] else []\n"
-            "    command = args[len(prefix):]\n"
-            "    if command[:1] == ['fetch']:\n"
-            "        sys.exit(int(os.environ.get('WT_FETCH_CODE', '0')))\n"
-            "    if command[:2] == ['remote', 'set-head']:\n"
-            "        if os.environ.get('WT_HEAD_CODE'):\n"
-            "            sys.exit(int(os.environ['WT_HEAD_CODE']))\n"
-            "        remote = command[2]\n"
-            "        sys.exit(subprocess.call([real_git, *prefix, 'symbolic-ref', "
-            "f'refs/remotes/{remote}/HEAD', f'refs/remotes/{remote}/main']))\n"
-            "    os.execv(real_git, [real_git, *args])\n"
+            "with log.open('ab') as stream:\n"
+            "    stream.write(os.fsencode('\\0'.join([tool, *args, "
+            f"{END!r}]) + '\\0'))\n"
             "if os.environ.get('WT_FORGE_CODE'):\n"
             "    sys.exit(int(os.environ['WT_FORGE_CODE']))\n"
             "if args[:2] == ['auth', 'status']:\n"
@@ -216,8 +227,40 @@ class Network:
         )
         for name in ("git", "gh", "glab"):
             path = self.bin / name
-            path.write_text(script)
+            if name != "git":
+                path.write_text(script)
             path.chmod(0o755)
+
+    def intercept(self, code: str) -> None:
+        """Run `code` inside a Python git wrapper before the usual answers.
+
+        Slower than the sh one, so only a test that races git uses it. The
+        code is indented four spaces and sees real_git, prefix, args and
+        command.
+        """
+        real_git = shutil.which("git")
+        (self.bin / "git").write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, pathlib, subprocess, sys\n"
+            f"real_git = {real_git!r}\n"
+            "args = sys.argv[1:]\n"
+            f"with open({str(self.log)!r}, 'ab') as stream:\n"
+            "    stream.write(os.fsencode('\\0'.join(['git', *args, "
+            f"{END!r}]) + '\\0'))\n"
+            "prefix = args[:2] if args[:1] == ['-C'] else []\n"
+            "command = args[len(prefix):]\n"
+            "if True:\n"
+            f"{code}"
+            "if command[:1] == ['fetch']:\n"
+            "    sys.exit(int(os.environ.get('WT_FETCH_CODE', '0')))\n"
+            "if command[:2] == ['remote', 'set-head']:\n"
+            "    if os.environ.get('WT_HEAD_CODE'):\n"
+            "        sys.exit(int(os.environ['WT_HEAD_CODE']))\n"
+            "    remote = command[2]\n"
+            "    sys.exit(subprocess.call([real_git, *prefix, 'symbolic-ref', "
+            "f'refs/remotes/{remote}/HEAD', f'refs/remotes/{remote}/main']))\n"
+            "os.execv(real_git, [real_git, *args])\n"
+        )
 
     def env(self, **extra: str) -> dict[str, str]:
         env = env_for(self.world)
@@ -229,13 +272,17 @@ class Network:
         self.responses.write_text(json.dumps(responses))
 
     def calls(self) -> list[list[str]]:
-        import json
-
-        return (
-            [json.loads(line) for line in self.log.read_text().splitlines()]
-            if self.log.exists()
-            else []
-        )
+        if not self.log.exists():
+            return []
+        found: list[list[str]] = []
+        call: list[str] = []
+        for arg in os.fsdecode(self.log.read_bytes()).split("\0")[:-1]:
+            if arg == END:
+                found.append(call)
+                call = []
+            else:
+                call.append(arg)
+        return found
 
     def network_calls(self) -> list[list[str]]:
         found = []
@@ -255,3 +302,21 @@ class Network:
 @pytest.fixture
 def network(world):
     return Network(world)
+
+
+# Real shells, partial clones and the stand-in forge cost seconds a test.
+# `pytest tests` skips them; `pytest tests -m integration` runs them, and CI
+# runs both.
+INTEGRATION_MODULES = ("test_shims", "test_partial_clone")
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        fixtures = getattr(item, "fixturenames", ())
+        module = getattr(getattr(item, "module", None), "__name__", "")
+        if (
+            "network" in fixtures
+            or "forge_world" in fixtures
+            or module in INTEGRATION_MODULES
+        ):
+            item.add_marker(pytest.mark.integration)

@@ -26,7 +26,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Protocol
 
 from . import progress, render
-from .errors import GitError, Refused
+from .errors import GitError, MissingObjects, Refused
 
 Argv = tuple[str, ...]
 
@@ -421,7 +421,9 @@ def git(
                 # One colour for the whole command: painting the flags inside
                 # it and not the names reads as two kinds of thing.
                 command = render.command("git " + shlex.join(argv))
-                raise GitError(
+                # GIT_NO_LAZY_FETCH turns a partial clone's fetch into this.
+                lacking = "lazy fetching disabled" in stderr
+                raise (MissingObjects if lacking else GitError)(
                     f"{command} exited {proc.returncode}:\n"
                     f"{stderr.strip() or '(no output)'}"
                 )

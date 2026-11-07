@@ -117,7 +117,8 @@ def test_complete_lists_the_worktree_you_are_standing_in(world) -> None:
         [
             sys.executable,
             "-c",
-            "from worktrees.cli import gwl; raise SystemExit(gwl())",
+            "from worktrees.cli import gw; raise SystemExit(gw())",
+            "list",
             "--complete",
         ],
         cwd=str(here),
@@ -136,6 +137,7 @@ def _complete(entry: str, world, at=None) -> list[str]:
             sys.executable,
             "-c",
             f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            *(["list"] if entry == "gw" else []),
             "--complete",
         ],
         cwd=str(at or world.repo),
@@ -147,15 +149,15 @@ def _complete(entry: str, world, at=None) -> list[str]:
     return [line.split("\t")[0] for line in p.stdout.splitlines()]
 
 
-def test_gwl_offers_the_main_checkout_and_gwr_does_not(world) -> None:
+def test_list_offers_the_main_checkout_and_gwr_does_not(world) -> None:
     """assess skips the main checkout, so gwr can never act on it."""
     world.worktree("one")
-    offered_by_gwl = _complete("gwl", world)
+    offered_by_list = _complete("gw", world)
     offered_by_gwr = _complete("gwr", world)
 
-    assert any("(main)" in name or name == "main" for name in offered_by_gwl)
+    assert any("(main)" in name or name == "main" for name in offered_by_list)
     assert not [n for n in offered_by_gwr if "(main)" in n]
-    assert "one" in offered_by_gwl
+    assert "one" in offered_by_list
     assert offered_by_gwr == ["one"]
 
 
@@ -196,7 +198,7 @@ def _at(world, path: Path, branch: str) -> None:
     world.git("worktree", "add", "--quiet", "-b", branch, str(path), "main")
 
 
-@pytest.mark.parametrize("entry", ["gwl", "gwr"])
+@pytest.mark.parametrize("entry", ["gw", "gwr"])
 def test_a_path_holding_a_newline_is_not_offered(world, entry: str) -> None:
     """Both shells split records on the newline, so such a row arrives as
     two and its tail becomes a candidate of its own."""
@@ -208,6 +210,7 @@ def test_a_path_holding_a_newline_is_not_offered(world, entry: str) -> None:
             sys.executable,
             "-c",
             f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            *(["list"] if entry == "gw" else []),
             "--complete",
         ],
         cwd=str(world.repo),
@@ -226,7 +229,7 @@ def test_a_path_holding_a_newline_is_not_offered(world, entry: str) -> None:
 def test_a_path_holding_a_tab_is_still_offered(world) -> None:
     """A row is split at its first tab, so a later one is description."""
     _at(world, world.root / "ta\tbbed", "tabbed")
-    rows = _complete("gwl", world)
+    rows = _complete("gw", world)
     assert "tabbed" in rows
 
 
@@ -310,28 +313,37 @@ def _fish_complete(world: World, prefix: str) -> set[str]:
 
 
 COMMAND_COMPLETIONS = [
-    ("gw", "gwp", ()),
-    ("gw --json", "gwp", ()),
-    ("gwp --dry-run", "gwp", ()),
+    ("gw version", "gw", ("version",)),
+    ("gw v", "gw", ("version",)),
+    ("gwp --list", "gwp", ()),
     ("gw sync", "main", ("sync",)),
     ("gw prune", "gwp", ()),
     ("gw p", "gwp", ()),
     ("gw add", "gwa", ()),
     ("gw a", "gwa", ()),
-    ("gw list", "gwl", ()),
-    ("gw list sync", "gwl", ()),
-    ("gw ls", "gwl", ()),
+    ("gw list", "gw", ("list",)),
+    ("gw list sync", "gw", ("list",)),
     ("gw remove", "gwr", ()),
     ("gw rm", "gwr", ()),
-    ("gw move", "gwm", ()),
-    ("gw mv", "gwm", ()),
     ("gw rotate", "gwrot", ()),
     ("gw rot", "gwrot", ()),
     ("gw branch create", "gwbc", ()),
     ("gw branch status", "gwbs", ()),
     ("gw branch delete", "gwbd", ()),
-    ("gw prune --dry-run", "gwp", ()),
+    ("gw prune --list", "gwp", ()),
 ]
+
+
+@pytest.mark.parametrize("complete", ["fish", "zsh"])
+def test_bare_gw_completes_commands_and_never_worktrees(world, complete):
+    """A worktree is reached through `gw list`, so the first word is a command."""
+    world.worktree("topic")
+    run = _fish_complete if complete == "fish" else _zsh_complete
+    words = run(world, "gw ")
+    assert {"list", "sync", "prune"} <= words
+    assert "topic" not in words
+    if complete == "fish":
+        assert _fish_complete(world, "gw -") == {"-h", "--help"}
 
 
 @pytest.mark.parametrize("prefix,entry,args", COMMAND_COMPLETIONS)
@@ -339,8 +351,6 @@ def test_fish_dispatches_each_command_to_its_own_flags(world, prefix, entry, arg
     wanted = _parsed_flags(entry, *args) | set(
         re.findall(r"(?:^|\s)(-[a-z])(?:,|\s)", _help(entry, *args))
     )
-    if prefix in ("gw", "gw --json", "gwp --dry-run", "gw prune --dry-run"):
-        wanted -= {"--verbose", "-v"}
     offered = {
         word for word in _fish_complete(world, prefix + " -") if word.startswith("-")
     }
@@ -351,8 +361,6 @@ def test_fish_dispatches_each_command_to_its_own_flags(world, prefix, entry, arg
     "prefix,values",
     [
         ("gwp --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gw --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gw --only", {"remove", "empty", "keep", "unknown"}),
         ("gwr --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gwbd --delete", {"empty", "stashes", "all"}),
         ("gwp --only", {"remove", "empty", "keep", "unknown"}),
@@ -428,8 +436,6 @@ def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry, args
     wanted = _parsed_flags(entry, *args) | set(
         re.findall(r"(?:^|\s)(-[a-z])(?:,|\s)", _help(entry, *args))
     )
-    if prefix in ("gw", "gw --json", "gwp --dry-run", "gw prune --dry-run"):
-        wanted -= {"--verbose", "-v"}
     wanted -= set(prefix.split())
     offered = {
         word for word in _zsh_complete(world, prefix + " -") if word.startswith("-")
@@ -441,8 +447,6 @@ def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry, args
     "prefix,values",
     [
         ("gwp --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gw --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gw --only", {"remove", "empty", "keep", "unknown"}),
         ("gwr --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gwbd --delete", {"empty", "stashes", "all"}),
         ("gwp --only", {"remove", "empty", "keep", "unknown"}),
