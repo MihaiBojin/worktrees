@@ -18,6 +18,9 @@ The head ref comes from the selected remote's HEAD after successful sync,
 then the clone's remote HEAD, then local inference. Local inference chooses
 the only `main` or `master`, the newer committer date when both exist, and
 `main` on a tie. With neither, the inferred `main` does not resolve.
+A remote HEAD that is a plain ref rather than a symbolic one takes its
+branch name from the one remote-tracking branch at its commit, and does
+not resolve when several sit there.
 Unresolved head means unknown verdicts and no mutation. `gwa`, `gwbc` and
 `gwrot` also fail in that state.
 

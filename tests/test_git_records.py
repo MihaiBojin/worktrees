@@ -124,3 +124,34 @@ def test_rotate_reads_exact_current_branch(world, separator):
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["previous"] == name
     assert world.git("rev-parse", f"refs/heads/{name}") == tip
+
+
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085", "\u00a0"])
+def test_plain_remote_head_names_the_one_branch_at_its_commit(world, separator):
+    name = "trunk" + separator
+    tip = world.commit("new-head")
+    world.git("remote", "add", "origin", "https://example.invalid/repo")
+    world.git("update-ref", f"refs/remotes/origin/{name}", tip)
+    world.git("update-ref", "--no-deref", "refs/remotes/origin/HEAD", tip)
+    result = run(world, "gwbc", "next", "--json")
+    assert result.returncode == 0, result.stderr
+    assert world.git("rev-parse", "next") == tip
+    assert json.loads(result.stdout)["head"] == {
+        "ref": "refs/remotes/origin/HEAD",
+        "source": "clone",
+    }
+    listed = run(world, "gw", "list", "--list")
+    assert f"Head: {name} (clone)" in listed.stderr
+
+
+def test_plain_remote_head_at_two_branches_does_not_resolve(world):
+    tip = world.commit("new-head")
+    world.git("remote", "add", "origin", "https://example.invalid/repo")
+    for branch in ("trunk", "release"):
+        world.git("update-ref", f"refs/remotes/origin/{branch}", tip)
+    world.git("update-ref", "--no-deref", "refs/remotes/origin/HEAD", tip)
+    result = run(world, "gwbs", "--json")
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["head"]["ref"] is None
+    assert "Head: unresolved (clone). Run: gw sync" in run(world, "gwbs").stderr
+    assert run(world, "gwbc", "next").returncode != 0

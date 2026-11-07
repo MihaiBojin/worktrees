@@ -118,7 +118,7 @@ def head_line(head: R.Head) -> str:
     if head.ref is None:
         if head.source == "inferred":
             return "Head: unresolved (inferred; no main or master branch)"
-        # A deleted or non-symbolic origin/HEAD names no branch to show.
+        # A deleted origin/HEAD, or a plain one at several branches, names none.
         named = (
             f"{render.branch(head.branch)}, which does not resolve"
             if head.branch

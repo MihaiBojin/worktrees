@@ -1036,6 +1036,8 @@ def test_the_head_line_names_an_unresolved_remote_head(world, network, state):
         assert cli(world, "sync", env=network.env()).returncode == 0
         world.git("update-ref", "--no-deref", "-d", "refs/remotes/origin/HEAD")
         if state == "plain":
+            # A plain ref at two branches names neither.
+            world.git("update-ref", "refs/remotes/origin/release", "main")
             world.git("update-ref", "--no-deref", "refs/remotes/origin/HEAD", "main")
         wanted = "Head: unresolved (remote). Run: gw sync"
     proc = cli(world, entry="gwp", env=network.env())

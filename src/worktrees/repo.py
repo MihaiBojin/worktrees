@@ -136,6 +136,11 @@ def ref_exists(ref: str) -> None:
     """Does this exact ref exist?"""
 
 
+@git("for-each-ref --points-at=$ref --format=%(refname) refs/remotes/$remote/")
+def remote_refs_at(ref: str, remote: str) -> None:
+    """The remote-tracking refs at the commit this ref identifies."""
+
+
 @git("for-each-ref --count=1 --contains $sha")
 def refs_containing(sha: str) -> None:
     """One ref reaching this commit, or nothing."""
@@ -395,7 +400,13 @@ def head(repo: str | os.PathLike[str] | None = None) -> Head:
     cache = sync.read(repo)
     remote_head = f"refs/remotes/{remote_name}/HEAD"
     target = symbolic_ref(remote_head, repo=repo).value if remote_name else ""
-    if target or (remote_name and cache["lastSync"]["refs"]):
+    plain = bool(remote_name and not target and ref_exists(remote_head, repo=repo))
+    if plain:
+        # A plain ref names no branch; one branch at its commit is the name.
+        at = remote_refs_at(remote_head, remote_name, repo=repo).lines
+        named = [ref for ref in at if ref != remote_head]
+        target = named[0] if len(named) == 1 else ""
+    if target or plain or (remote_name and cache["lastSync"]["refs"]):
         source = "remote" if cache["lastSync"]["refs"] else "clone"
         valid = target.startswith(f"refs/remotes/{remote_name}/") and bool(
             ref_exists(target, repo=repo)
