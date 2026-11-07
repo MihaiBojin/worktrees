@@ -286,7 +286,8 @@ branch's name: no command deletes `main`, `master` or the head branch,
 whatever the flags, `--yes` included. That holds when the head is something
 else, so a finished `master` in a linked worktree reads `its tip is an
 ancestor of the head branch; it is main or master, which nothing deletes`,
-`gwp` leaves it, and `gwr --force` removes the checkout and keeps the branch.
+`gwp` leaves it, and `gwr --keep-branch` removes the checkout and keeps the
+branch.
 `gwbd main` refuses and names the rule, and so does `gwm` in a worktree on
 one of these.
 
@@ -338,8 +339,8 @@ restore line is full length, because that line is meant to be pasted.
 
 Each stash that belongs to the branch is named too, with the line that
 restores it, `git stash store -m 'On wip: half finished' SHA`, which works
-until `git gc` prunes the commit. `gwr --force` removes the worktree and
-keeps the branch and its stashes.
+until `git gc` prunes the commit. `gwr --keep-branch` removes the worktree
+and keeps the branch and its stashes.
 
 With `--delete stashes`, `gwp`, `gwr` and `gwbd` drop those stashes, and
 only once the branch ref is deleted: a branch that stays keeps them. The
@@ -523,11 +524,22 @@ function takes you there. Without a terminal it refuses at exit 3,
 whatever the flags, since nothing can answer the second question.
 
 `gwr` says why a worktree is not eligible, with the same verdict and reason
-`gwp` prints: `is not finished` for a branch with work left, and `is
-finished` for one a protection holds back. At a
-terminal it then asks whether to remove the checkout anyway, and keeps the
-branch: the worktree was in the way, the work was not. `--force` is the same
-answer without the question, and `--yes` on its own refuses.
+`gwp` prints: `is not finished` for a branch with work left, `is empty` for
+one with no commits of its own, and `is finished` for one a protection holds
+back. At a terminal it then asks whether to remove the checkout anyway, and
+keeps the branch: the worktree was in the way, the work was not.
+`--keep-branch` is the same answer without the question, and `--yes` on its
+own refuses.
+
+`--keep-branch` removes the worktree whatever its verdict and keeps the
+branch, a finished one, `main`, `master` or the head branch included, along
+with its stashes. The plan says `keeping branch NAME and its N stash(es)`
+rather than how to restore them. The worktree's own protections still hold:
+a lock, uncommitted or untracked files, a submodule, and ignored files
+without `--delete ignored-files`. That is the one `--delete` value it
+takes; `empty`, `stashes` and `all` concern the branch, so pairing any of
+them with it is a usage error at exit 2, in either order, before anything
+is judged.
 
 A finished branch whose worktree holds ignored files is refused too, and named
 as finished, because it is:
@@ -546,10 +558,10 @@ A worktree with an initialized submodule is refused whatever flag is given,
 because `git worktree remove` refuses it too. The refusal says to run `git
 submodule deinit --all` in it and retry.
 
-`--force` is not the answer to the ignored files. It deletes those files just the same,
-since `git worktree remove` takes the whole directory, and it keeps a branch
-whose work already landed. Every ignored path is named before anything is
-deleted, under `--delete ignored-files` and under `--force` alike.
+`--keep-branch` is not the answer to the ignored files: it grants no
+permission for them, since `git worktree remove` takes the whole directory,
+and it keeps a branch whose work already landed. Every ignored path is named
+before anything is deleted.
 
 `gwr!` is `gwr --delete ignored-files`, for when the ignored files are ones you meant
 to lose. It is a shell function in fish and zsh, not a console script, and it
@@ -751,7 +763,7 @@ takes all of them but `--json`. Beyond those:
 | | |
 | --- | --- |
 | `gwp` | `--delete VALUE`, `--only VERDICT`, `-l` and `-y` |
-| `gwr` | `-f`, `--delete VALUE`, `-y` |
+| `gwr` | `--keep-branch`, `--delete VALUE`, `-y` |
 | `gwbs` | `--only VERDICT` |
 | `gwbd` | `--all`, `--delete VALUE`, `--dry-run` and `-y` |
 | `gw`, `gw list` | `-l` |

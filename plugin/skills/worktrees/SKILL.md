@@ -129,8 +129,8 @@ and `gwr` refuses it at exit 3 without a terminal: say so, and that the user
 can remove it with `gwr` from their own shell.
 
 Never `git branch -D`, `git worktree remove`, `git update-ref -d` or `rm`.
-Never pass `--force`, whatever a refusal suggests: it removes a worktree that
-is not proved finished. Never run `gwp --yes`: it removes every eligible
+Never pass `--keep-branch`, whatever a refusal suggests: it removes a
+worktree that is not proved finished. Never run `gwp --yes`: it removes every eligible
 worktree, not the ones the user chose. Never pass `--delete all`, nor
 `--delete empty` for a row the user did not name. Never pass
 `--delete ignored-files` unless the user asked for it by name: it deletes the

@@ -16,7 +16,7 @@
 }
 
 _arguments -s \
-    '(-f --force)'{-f,--force}'[remove it even when unfinished]' \
+    '--keep-branch[remove the worktree, finished or not, and keep its branch and stashes]' \
     '*--delete[also delete this; nothing restores it]:value:(empty ignored-files stashes all)' \
     '(-y --yes)'{-y,--yes}'[do not ask]' \
     '--json[the result as data]' \

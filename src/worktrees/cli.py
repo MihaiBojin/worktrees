@@ -746,7 +746,9 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
         "query", nargs="?", default="", metavar="PATH|QUERY", help="which one"
     )
     p.add_argument(
-        "-f", "--force", action="store_true", help="remove it even when unfinished"
+        "--keep-branch",
+        action="store_true",
+        help="remove the worktree, finished or not, and keep its branch and stashes",
     )
     add_delete_flag(p, "also delete this; nothing restores it")
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
@@ -952,9 +954,20 @@ def run_remove(args: argparse.Namespace) -> int:
                 print(f"{w.label}\t{w.path}")
         return 0
 
+    if args.keep_branch and permitted(args) - {"ignored-files"}:
+        raise _Stop(
+            "--keep-branch keeps the branch and its stashes, so the only "
+            "--delete it takes is ignored-files",
+            2,
+        )
+
     head = _assessment_head(args)
     _require(head[0])
-    rows, _, ref, head_branch, records = _assess(args, head, judge=wt_mod.removable)
+    rows, _, ref, head_branch, records = _assess(
+        args,
+        head,
+        judge=lambda r, h, a: wt_mod.removable(r, h, a, keep_branch=args.keep_branch),
+    )
     # Exact and nothing looser: the closest match to a worktree already
     # removed is somebody else's.
     q = args.query
@@ -1012,7 +1025,7 @@ def run_remove(args: argparse.Namespace) -> int:
 
     if Path(chosen.path).is_dir() and R.has_submodule(chosen.path):
         # git refuses this whatever it is given, finished or not, so nothing
-        # here asks and --force does not try.
+        # here asks and --keep-branch does not try.
         _err(
             render.fail(
                 f"{render.branch(chosen.label)} cannot be removed: "
@@ -1023,10 +1036,24 @@ def run_remove(args: argparse.Namespace) -> int:
         return 1
 
     allowed = permitted(args)
+    keep_branch = args.keep_branch
+
+    def one(path: str) -> verdicts.Verdict | None:
+        """`path` assessed afresh, as this removal is asking about it."""
+        found = [w for w in R.worktrees() if w.path == path]
+        return next(
+            iter(
+                verdicts.assess(
+                    found, ref, head_branch, allowed, here="", keep_branch=keep_branch
+                )
+            ),
+            None,
+        )
+
     if (
         not chosen.eligible
         and chosen.ignored
-        and not args.force
+        and not keep_branch
         and not args.yes
         and sys.stdin.isatty()
     ):
@@ -1046,12 +1073,13 @@ def run_remove(args: argparse.Namespace) -> int:
             sha=chosen.sha,
             eligible=True,
         )
+        chosen.stashes = by_path[chosen.path].stashes
 
-    if not chosen.eligible and not args.force:
+    if not chosen.eligible and not keep_branch:
         # A finished branch held back by ignored files is not an unfinished
         # branch. Saying so would contradict the reason printed beside it,
-        # and --force is the wrong answer to it: it deletes those files just
-        # the same, and keeps a branch whose work already landed.
+        # and --keep-branch is the wrong answer to it: it keeps a branch
+        # whose work already landed, and the files need consent either way.
         state = {wt_mod.REMOVE: "is finished", verdicts.EMPTY: "is empty"}.get(
             chosen.verdict, "is not finished"
         )
@@ -1062,17 +1090,28 @@ def run_remove(args: argparse.Namespace) -> int:
         if args.yes or not sys.stdin.isatty():
             _err(
                 render.fail(
-                    f"{why}\npass --force to remove the worktree anyway; "
-                    "the branch is kept"
+                    f"{why}\npass --keep-branch to remove the worktree and keep "
+                    "the branch"
                 )
             )
             return 1
-        # Somebody at a terminal is asked instead, the way --force would have
-        # answered: the checkout goes and the branch stays.
-        _warn(f"{why}\nremoving the worktree keeps the branch")
+        # Somebody at a terminal is asked instead, which is --keep-branch
+        # with a question in front: the checkout goes and the branch stays.
+        keep_branch = True
+        chosen = one(chosen.path) or chosen
+        if chosen.eligible:
+            _warn(f"{why}\nremoving the worktree keeps the branch")
+
+    if not chosen.eligible:
+        _err(
+            render.fail(
+                f"{render.branch(chosen.label)} cannot be removed: {chosen.why}"
+            )
+        )
+        return 1
 
     was = prune.record(chosen, ref)
-    never = prune.plan([chosen], _err)
+    never = prune.plan([chosen], _err, keep_branch=keep_branch)
     if not args.yes and not prune.confirm(1, never=never):
         _err(render.note("nothing removed"))
         return 0
@@ -1084,15 +1123,10 @@ def run_remove(args: argparse.Namespace) -> int:
         _err(render.note("nothing removed"))
         return 0
 
-    def again(path: str) -> verdicts.Verdict | None:
-        found = [w for w in R.worktrees() if w.path == path]
-        return next(
-            iter(verdicts.assess(found, ref, head_branch, allowed, here="")), None
-        )
-
-    # --force keeps the branch: the worktree was in the way, the work was not.
+    # --keep-branch keeps the branch: the worktree was in the way, the work
+    # was not.
     destination, went, ok = wt_mod.remove(
-        chosen, was, again, _err, head[1], keep_branch=not chosen.eligible
+        chosen, was, one, _err, head[1], keep_branch=keep_branch
     )
     if args.json:
         print(

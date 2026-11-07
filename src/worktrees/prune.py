@@ -177,6 +177,7 @@ def plan(
     go: list[Verdict],
     say: Callable[[str], None],
     repo: str | os.PathLike[str] | None = None,
+    keep_branch: bool = False,
 ) -> bool:
     """Print what would go, and what puts it back, before anything does.
     Returns whether the repository was never synced, which the plan says
@@ -187,20 +188,24 @@ def plan(
     Every ignored path is named, whatever flag got the worktree this far:
     `git worktree remove` takes the whole directory, so --delete ignored-files
     decides consent and never decides what is deleted.
+
+    Under `keep_branch` the branch and its stashes stay, and the plan says
+    that instead of how to put them back.
     """
     for v in go:
         say(f"{render.branch(v.label)}  {render.err(v.path, render.DIM)}")
-        sha = restore_sha(v.branch, repo=repo)
-        if sha:
-            restore = render.restore(v.branch, sha)
-            say(f"  {render.err('restore with:', render.DIM)} {restore}")
-        # An eligible row with stashes goes with --delete stashes alone.
-        verb = "dropping stash" if v.eligible else "stash"
-        for stash in v.stashes:
-            say(
-                f"  {render.err(f'{verb} {stash.subject}, restore with:', render.DIM)} "
-                f"{stash_restore(stash)}"
-            )
+        if keep_branch and v.branch:
+            stashes = f" and its {len(v.stashes)} stash(es)" if v.stashes else ""
+            say(f"  keeping branch {render.branch(v.branch)}{stashes}")
+        elif not keep_branch:
+            sha = restore_sha(v.branch, repo=repo)
+            if sha:
+                restore = render.restore(v.branch, sha)
+                say(f"  {render.err('restore with:', render.DIM)} {restore}")
+            # An eligible row holds stashes only under --delete stashes.
+            for stash in v.stashes:
+                lead = f"dropping stash {stash.subject}, restore with:"
+                say(f"  {render.err(lead, render.DIM)} {stash_restore(stash)}")
         for path in R.ignored_paths(v.path):
             say(render.err(f"  deleting ignored, unrecoverable: {path}", render.YELLOW))
     never = sync.never()

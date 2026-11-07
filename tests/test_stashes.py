@@ -92,25 +92,16 @@ def test_a_loose_branch_with_stashes_is_kept_by_gwbd(world) -> None:
     assert world.git("branch", "--list", "wip")
 
 
-def test_gwr_force_keeps_the_branch_and_its_stashes_and_says_how_to_restore(
-    world,
-) -> None:
+def test_keep_branch_keeps_the_branch_and_its_stashes(world) -> None:
     wt = world.finished("wip")
     sha = stash(world, wt, "half finished")
-    p = run(world, "gwr", "wip", "--yes", "--force")
+    p = run(world, "gwr", "wip", "--yes", "--keep-branch")
     assert p.returncode == 0, p.stderr
-    restore = f"git stash store -m 'On wip: half finished' {sha}"
-    assert restore in p.stderr
+    assert "keeping branch wip and its 1 stash(es)" in p.stderr
+    assert "restore with" not in p.stderr
     assert not wt.exists()
     assert world.git("branch", "--list", "wip")
     assert world.git("rev-parse", "stash@{0}") == sha
-
-    # The line does what it says once the entry is gone.
-    world.git("stash", "drop", "--quiet")
-    subprocess.run(restore, shell=True, check=True, cwd=world.repo, env=env_for(world))
-    assert (
-        world.git("stash", "list", "--format=%H %gs") == f"{sha} On wip: half finished"
-    )
 
 
 def test_gwbd_refuses_a_branch_that_gained_a_stash_after_assessment(world) -> None:
@@ -150,7 +141,14 @@ def test_gwp_drops_the_branchs_stashes_after_its_branch(world, value) -> None:
     assert "dropped stash On wip: half" in p.stderr
     assert not wt.exists()
     assert stash_shas(world) == [other]
-    assert sha not in stash_shas(world)
+
+    # The line the plan printed puts the dropped entry back.
+    restore = f"git stash store -m 'On wip: half' {sha}"
+    assert restore in p.stderr
+    subprocess.run(restore, shell=True, check=True, cwd=world.repo, env=env_for(world))
+    assert world.git("stash", "list", "--format=%H %gs").splitlines()[0] == (
+        f"{sha} On wip: half"
+    )
 
 
 def test_gwr_drops_them_with_permission(world) -> None:

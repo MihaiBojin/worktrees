@@ -217,6 +217,7 @@ def removable(
     head: str,
     head_branch: str,
     permitted: frozenset[str],
+    keep_branch: bool = False,
 ) -> list[Verdict]:
     """Every worktree, judging the one you stand in like any other.
 
@@ -230,6 +231,7 @@ def removable(
         head_branch,
         permitted,
         here="",
+        keep_branch=keep_branch,
     )
 
 

@@ -380,7 +380,7 @@ def test_gwr_keeps_main_or_master(world, name) -> None:
     assert RULE in p.stderr
     assert path.exists()
 
-    p = run(world, "gwr", name, "--yes", "--force")
+    p = run(world, "gwr", name, "--yes", "--keep-branch")
     assert p.returncode == 0, p.stderr
     assert not path.exists()
     assert world.git("rev-parse", f"refs/heads/{name}") == sha

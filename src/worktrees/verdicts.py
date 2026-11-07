@@ -266,6 +266,7 @@ def assess(
     permitted: frozenset[str],
     here: str | None = None,
     include_main: bool = False,
+    keep_branch: bool = False,
 ) -> list[Verdict]:
     """Every worktree, judged, with `eligible` cleared by any protection
     `git worktree remove` or this program would refuse it for.
@@ -282,6 +283,10 @@ def assess(
     proposed. A listing leaving it out shows one row where `git worktree
     list` shows two, and reads as though something went missing. `gwr` takes
     the list as its candidates, so it asks for the list without it.
+
+    `keep_branch` asks whether the worktree alone may go, its branch and
+    stashes staying: every verdict is weighed, and only the protections of
+    the directory apply.
     """
     main = R.main_worktree()
     evidence = (sync.read() or {}).get("evidence", {})
@@ -299,7 +304,7 @@ def assess(
             return None
         if wt.path == main:
             return say(KEEP, MAIN_CHECKOUT) if include_main else None
-        if wt.branch and wt.branch == head_branch:
+        if wt.branch and wt.branch == head_branch and not keep_branch:
             return say(KEEP, HEAD_BRANCH)
 
         if not wt.branch:
@@ -322,12 +327,14 @@ def assess(
             )
         row = say(found.verdict, found.why)
         row.stashes = stashes_of(wt.branch, wt.sha, entries)
-        if found.verdict not in (REMOVE, EMPTY):
+        if found.verdict not in (REMOVE, EMPTY) and not keep_branch:
             return row
+        # What stays when the branch stays.
+        branch_kept = keep_branch or found.verdict not in (REMOVE, EMPTY)
 
         # The first protection that applies. The status is read last: a
         # locked worktree may be on a drive that is not mounted.
-        if wt.branch in PROTECTED:
+        if wt.branch in PROTECTED and not branch_kept:
             block = MAIN_OR_MASTER
         elif here and Path(wt.path).resolve() == Path(here).resolve():
             block = "you are standing in it"
@@ -343,9 +350,11 @@ def assess(
                 block = "it has uncommitted changes"
             elif R.has_submodule(wt.path):
                 block = SUBMODULE
-            elif row.stashes and "stashes" not in permitted:
+            elif row.stashes and "stashes" not in permitted and not branch_kept:
                 block = stashed(len(row.stashes))
-            elif found.verdict == EMPTY and "empty" not in permitted:
+            elif (
+                found.verdict == EMPTY and "empty" not in permitted and not branch_kept
+            ):
                 block = NEEDS_EMPTY
             elif ignored:
                 block = (

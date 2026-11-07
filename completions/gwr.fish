@@ -4,7 +4,7 @@
 complete -c gwr -f
 complete -c gwr -a '(command gwr --complete)'
 
-complete -c gwr -s f -l force -d 'remove it even when unfinished'
+complete -c gwr -l keep-branch -d 'remove the worktree, finished or not, and keep its branch and stashes'
 complete -c gwr -l delete -x -a 'empty ignored-files stashes all' -d 'also delete this; nothing restores it'
 complete -c gwr -s y -l yes -d 'do not ask'
 

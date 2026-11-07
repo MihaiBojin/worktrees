@@ -166,13 +166,13 @@ def test_gwp_reports_a_git_failure_and_removes_nothing_it_could_not_judge(world)
 
 
 def test_gwr_refuses_a_worktree_it_could_not_judge(world):
-    """--force removes an unfinished checkout, not one nothing could judge."""
+    """--keep-branch removes an unfinished checkout, not one nothing could judge."""
     wt = unmerged_worktree(world)
     p = cli(
         world,
         "feature",
         "--yes",
-        "--force",
+        "--keep-branch",
         entry="gwr",
         env=failing_git(world, "cherry"),
     )

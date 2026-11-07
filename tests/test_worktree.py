@@ -377,7 +377,7 @@ def test_remove_prints_nothing_when_you_were_not_standing_in_it(world) -> None:
     assert "done" not in world.git("branch", "--format=%(refname:short)").split()
 
 
-@pytest.mark.parametrize("flags", [("--yes",), ("--yes", "--force")])
+@pytest.mark.parametrize("flags", [("--yes",), ("--yes", "--keep-branch")])
 def test_remove_refuses_the_worktree_you_are_in_without_a_terminal(
     world, flags
 ) -> None:
@@ -410,7 +410,7 @@ def test_remove_refuses_an_unfinished_branch(world) -> None:
     p = run(world, "gwr", "busy", "--yes")
     assert p.returncode == 1
     assert "is not finished" in p.stderr
-    assert "--force" in p.stderr
+    assert "pass --keep-branch to remove the worktree and keep the branch" in p.stderr
     assert wt.exists()
 
 
@@ -429,7 +429,7 @@ def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     assert "is finished" in p.stderr
     assert "is not finished" not in p.stderr
     assert "--delete ignored-files" in p.stderr
-    assert "--force" not in p.stderr
+    assert "--keep-branch" not in p.stderr
     assert wt.exists()
 
     p = run(world, "gwr", "holds", "--yes", "--delete", "ignored-files")
@@ -438,8 +438,9 @@ def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     assert not wt.exists()
 
 
-def test_force_names_the_ignored_files_it_is_about_to_delete(world) -> None:
-    """`git worktree remove` takes them whatever flag got it here."""
+def test_keep_branch_grants_no_permission_for_ignored_files(world) -> None:
+    """`git worktree remove` takes them whatever flag got it here, so they
+    need --delete ignored-files, and the plan names each."""
     (world.repo / ".gitignore").write_text(".env\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
@@ -447,20 +448,65 @@ def test_force_names_the_ignored_files_it_is_about_to_delete(world) -> None:
     (wt / ".env").write_text("SECRET=1\n")
     world.commit("b.txt", "b\n", at=wt)
 
-    p = run(world, "gwr", "busy", "--yes", "--force")
+    p = run(world, "gwr", "busy", "--yes", "--keep-branch")
+    assert p.returncode == 1
+    assert "busy cannot be removed: " in p.stderr
+    assert "needs --delete ignored-files" in p.stderr
+    assert wt.exists()
+
+    p = run(world, "gwr", "busy", "--yes", "--keep-branch", "--delete", "ignored-files")
     assert p.returncode == 0, p.stderr
     assert "deleting ignored, unrecoverable: .env" in p.stderr
     assert not wt.exists()
-
-
-def test_force_removes_the_checkout_and_keeps_the_branch(world) -> None:
-    """The worktree was in the way. The work was not."""
-    wt = world.worktree("busy")
-    world.commit("b.txt", "b\n", at=wt)
-    p = run(world, "gwr", "busy", "--yes", "--force")
-    assert p.returncode == 0, p.stderr
-    assert not wt.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/busy")
+
+
+@pytest.mark.parametrize("make", ["unfinished", "finished", "empty", "main"])
+def test_keep_branch_removes_the_checkout_and_keeps_the_branch(world, make) -> None:
+    """The worktree was in the way. The work was not."""
+    if make == "main":
+        world.git("branch", "--move", "main", "trunk")
+        wt = world.worktree("main", base="trunk")
+    elif make == "finished":
+        wt = world.finished(make)
+    else:
+        wt = world.worktree(make)
+        if make == "unfinished":
+            world.commit("b.txt", "b\n", at=wt)
+    sha = world.git("rev-parse", f"refs/heads/{make}")
+    p = run(world, "gwr", make, "--yes", "--keep-branch")
+    assert p.returncode == 0, p.stderr
+    assert f"keeping branch {make}" in p.stderr
+    assert not wt.exists()
+    assert world.git("rev-parse", "--verify", f"refs/heads/{make}") == sha
+
+
+def test_keep_branch_still_refuses_a_protected_worktree(world) -> None:
+    wt = world.worktree("busy")
+    wt.joinpath("wip").write_text("x")
+    p = run(world, "gwr", "busy", "--yes", "--keep-branch")
+    assert p.returncode == 1
+    assert "busy cannot be removed: " in p.stderr
+    assert "it has uncommitted changes" in p.stderr
+    assert wt.exists()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("--keep-branch", "--delete", "empty"),
+        ("--delete", "stashes", "--keep-branch"),
+        ("--keep-branch", "--delete", "ignored-files", "--delete", "all"),
+        ("--delete=all", "--keep-branch"),
+    ],
+)
+def test_keep_branch_takes_only_ignored_files(world, argv) -> None:
+    wt = world.worktree("fresh")
+    p = run(world, "gwr", "fresh", "--yes", *argv)
+    assert p.returncode == 2, p.stderr
+    assert "the only --delete it takes is ignored-files" in p.stderr
+    assert "Head:" not in p.stderr, "refused before anything was judged"
+    assert wt.exists()
 
 
 def test_remove_prints_the_restore_line_once(world) -> None:

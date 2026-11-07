@@ -1392,18 +1392,20 @@ def test_only_takes_no_verdict_that_does_not_exist(world) -> None:
     assert "invalid choice" in p.stderr
 
 
-@pytest.mark.parametrize("entry", ["gwp", "gwbd"])
+@pytest.mark.parametrize("entry", ["gwp", "gwbd", "gwr"])
 def test_the_commands_that_remove_take_no_f(entry) -> None:
     """On them -f would read as forcing a removal."""
     import argparse
 
     p = argparse.ArgumentParser()
-    if entry == "gwp":
-        cli._add_prune_flags(p)
-    else:
-        cli._add_branch_delete_flags(p)
-    with pytest.raises(SystemExit):
-        p.parse_args(["-f"])
+    {
+        "gwp": cli._add_prune_flags,
+        "gwbd": cli._add_branch_delete_flags,
+        "gwr": cli._add_remove_flags,
+    }[entry](p)
+    for flag in ("-f", "--force"):
+        with pytest.raises(SystemExit):
+            p.parse_args([flag])
 
 
 def test_list_orders_worktrees_by_when_they_were_made(world) -> None:
@@ -1762,7 +1764,7 @@ def test_a_deinitialized_submodule_still_clears_eligible(world) -> None:
     assert (row["eligible"], row["why"]) == (False, f"{PROOF}; {SUBMODULE}")
 
 
-@pytest.mark.parametrize("flags", [(), ("--force",), ("--force", "--yes")])
+@pytest.mark.parametrize("flags", [(), ("--keep-branch",), ("--keep-branch", "--yes")])
 def test_remove_refuses_a_worktree_with_an_initialized_submodule(world, flags) -> None:
     _with_submodule(world)
     wt = world.worktree("lib-work")
