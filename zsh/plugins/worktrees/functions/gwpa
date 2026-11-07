@@ -1,0 +1,3 @@
+# gwpa: gwp that also deletes
+# empty branches, ignored files and branch stashes. It still asks.
+gwp --delete all "$@"

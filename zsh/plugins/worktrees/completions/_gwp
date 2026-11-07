@@ -1,4 +1,4 @@
-#compdef gwp gwp! gwp!!
+#compdef gwp gwp! gwpa gwpa!
 
 # Flags as `gwp --help` lists them.
 
