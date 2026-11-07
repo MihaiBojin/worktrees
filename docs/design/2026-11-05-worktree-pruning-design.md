@@ -316,9 +316,13 @@ remain usable without repository assessment. Head and sync notices never enter J
 Defined in fish and zsh:
 
 - `gwp!` runs `gwp --yes "$@"`.
-- `gwp!!` runs `gwp --delete all --yes "$@"`, which deletes `empty` branches, ignored files and branch
-  stashes. Its help says so.
+- `gwpa` runs `gwp --delete all "$@"`, which also deletes `empty` branches, ignored files and branch
+  stashes. Its help says so. It still asks at a terminal.
+- `gwpa!` runs `gwpa --yes "$@"`.
 - `gwr!` runs `gwr --delete ignored-files "$@"`.
+
+A `!` at the end of a word is not history expansion in zsh or bash, so each of these is typed as it
+is written. No binary carries any of these names.
 
 ## 18. Agent plugin
 
