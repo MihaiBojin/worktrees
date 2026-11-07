@@ -227,12 +227,13 @@ def test_catching_up_never_rebases(world) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_the_binary_reports_where_it_was_and_where_it_is(world) -> None:
+@pytest.mark.parametrize("flags", [(), ("-q",), ("--quiet",)])
+def test_the_binary_reports_where_it_was_and_where_it_is(world, flags) -> None:
     with_work(world)
     was = world.git("rev-parse", "--short", "refs/heads/fix-parser")
     now = world.git("rev-parse", "--short", "refs/heads/main")
 
-    p = gwrot(world)
+    p = gwrot(world, *flags)
     assert p.returncode == 0, p.stderr
     first, second = p.stdout.splitlines()
     assert first.split()[:3] == ["was", "fix-parser", was]
@@ -241,7 +242,8 @@ def test_the_binary_reports_where_it_was_and_where_it_is(world) -> None:
     assert second.endswith("new, from main")
 
 
-def test_a_caught_up_head_branch_reports_both_commits(world) -> None:
+@pytest.mark.parametrize("flags", [(), ("-q",), ("--quiet",)])
+def test_a_caught_up_head_branch_reports_both_commits(world, flags) -> None:
     with_remote(world)
     before = world.git("rev-parse", "--short", "HEAD")
     world.git("switch", "--quiet", "--create", "ahead", "main")
@@ -249,7 +251,7 @@ def test_a_caught_up_head_branch_reports_both_commits(world) -> None:
     world.git("switch", "--quiet", "main")
     after = world.git("rev-parse", "--short", "refs/remotes/origin/main")
 
-    p = gwrot(world)
+    p = gwrot(world, *flags)
     assert p.returncode == 0, p.stderr
     first, second = p.stdout.splitlines()
     assert first.split() == ["was", "main", before]

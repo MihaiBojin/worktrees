@@ -417,7 +417,7 @@ def test_explain_lists_every_command_and_runs_none(world) -> None:
 
 def test_verbose_prints_the_argv(world) -> None:
     world.merged_worktree("done")
-    p = run(world, "gw", "--verbose")
+    p = run(world, "gwp", "--verbose", "--yes")
     assert p.returncode == 0, p.stderr
     # The canary: a run that never reached git would print nothing here, and an
     # empty stream is indistinguishable from a refusal that worked.
@@ -426,11 +426,17 @@ def test_verbose_prints_the_argv(world) -> None:
     assert "--is-ancestor" in p.stderr
 
 
-def test_status_never_issues_a_mutating_command(world) -> None:
+def test_status_never_issues_a_mutating_command(world, network) -> None:
     """A report issues only read-only Git commands."""
     world.merged_worktree("done")
-    p = run(world, "gw", "--verbose")
-    _assert_read_only_trace(p.stderr)
+    from test_branches import cli as invoke
+
+    p = invoke(world, entry="gw", env=network.env())
+    assert p.returncode == 0, p.stderr
+    trace = "\n".join(
+        "+ " + shlex.join(call) for call in network.calls() if call[0] == "git"
+    )
+    _assert_read_only_trace(trace)
 
 
 def _assert_read_only_trace(stderr: str) -> None:
@@ -609,17 +615,10 @@ def test_top_level_help_is_available_without_assessment(world) -> None:
 
 
 @pytest.mark.parametrize("flag", ["--json", "-q", "-v", "--explain"])
-def test_help_promises_no_flag_the_program_refuses(world, flag: str) -> None:
-    """gwh declares no flags, so the footer has to carve it out by name. The
-    footer derives that from the table rather than asserting it in prose."""
+def test_help_command_rejects_output_flags(world, flag: str) -> None:
     p = run(world, "gwh", flag)
     assert p.returncode == 2
     assert "unrecognized arguments" in p.stderr
-
-    listed = run(world, "gwh")
-    assert "work on every command but gwh" in listed.stdout
-    # and the flags it does claim are taken by a command that has a row
-    assert run(world, "gw", flag).returncode == 0
 
 
 def test_help_stays_inside_eighty_columns(world) -> None:
@@ -1175,3 +1174,206 @@ def test_help_is_coloured_on_a_terminal_when_stdout_is_captured(world, args) -> 
     assert stdout == b""
     # argparse paints its heading, which only reaches a stream it sees as a tty.
     assert "\x1b[1;34musage: " in b"".join(chunks).decode()
+
+
+@pytest.mark.parametrize("flag", ["-v", "--verbose"])
+@pytest.mark.parametrize(
+    "entry, args",
+    [
+        ("gw", ()),
+        ("gw", ("prune", "--dry-run")),
+        ("gw", ("p", "--dry-run")),
+        ("gwp", ("--dry-run",)),
+        ("gwbs", ()),
+        ("gw", ("branch", "status")),
+        ("gwl", ("main",)),
+        ("gw", ("list", "main")),
+        ("gw", ("l", "main")),
+        ("gw", ("ls", "main")),
+    ],
+)
+def test_verbose_refusal_precedes_repository_preflight(
+    world, network, entry, args, flag
+):
+    from test_branches import cli as invoke
+
+    world.git("config", "remote.origin.promisor", "true")
+    p = invoke(world, *args, flag, entry=entry, env=network.env())
+    assert p.returncode == 2, p.stderr
+    assert not p.stdout
+    assert "verbose" in p.stderr or "-v" in p.stderr
+    assert not network.calls()
+
+
+@pytest.mark.parametrize("flag", ["-q", "--quiet"])
+@pytest.mark.parametrize("args", [(), ("main",), ("--list",), ("--json",)])
+def test_list_rejects_quiet_before_repository_preflight(world, network, flag, args):
+    from test_branches import cli as invoke
+
+    p = invoke(world, *args, flag, entry="gwl", env=network.env())
+    assert p.returncode == 2, p.stderr
+    assert not network.calls()
+
+
+@pytest.mark.parametrize("flags", [("-q", "-v"), ("--verbose", "--quiet")])
+@pytest.mark.parametrize(
+    "entry, args",
+    [
+        ("gw", ("sync",)),
+        ("gwp", ("--yes",)),
+        ("gwr", ("topic", "--yes")),
+        ("gwbd", ("topic", "--yes")),
+        ("gwa", ("new",)),
+        ("gwbc", ("new",)),
+        ("gwrot", ()),
+        ("gw", ("branch", "delete", "topic", "--yes")),
+        ("gw", ("branch", "create", "new")),
+        ("gw", ("p", "--yes")),
+        ("gw", ("a", "new")),
+        ("gw", ("rm", "topic", "--yes")),
+        ("gw", ("rot",)),
+    ],
+)
+def test_output_flags_conflict_before_repository_preflight(
+    world, network, entry, args, flags
+):
+    from test_branches import cli as invoke
+
+    path = world.merged_worktree("topic")
+    tip = world.git("rev-parse", "topic")
+    world.git("config", "remote.origin.promisor", "true")
+    p = invoke(world, *args, *flags, entry=entry, env=network.env())
+    assert p.returncode == 2, p.stderr
+    assert "quiet" in p.stderr and "verbose" in p.stderr
+    assert not p.stdout
+    assert not network.calls()
+    assert path.exists()
+    assert world.git("rev-parse", "topic") == tip
+
+
+@pytest.mark.parametrize("flag", ["-v", "--verbose"])
+def test_sync_verbose_traces_git_and_forge_to_stderr_with_json(world, network, flag):
+    from test_branches import cli as invoke
+    from test_sync import origin
+
+    origin(world)
+    world.worktree("topic")
+    p = invoke(world, "sync", "--json", flag, env=network.env())
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["lastSync"]["refs"]
+    assert "+ git fetch" in p.stderr
+    assert "+ gh auth status" in p.stderr
+    assert "+ gh pr list" in p.stderr
+    assert any(call[:2] == ["git", "fetch"] for call in network.calls())
+    assert any(call[:3] == ["gh", "pr", "list"] for call in network.calls())
+
+
+@pytest.mark.parametrize("flag", ["-q", "--quiet", "-v", "--verbose"])
+@pytest.mark.parametrize("entry", ["gwa", "gwr", "gwbd", "gwbc", "gwrot", "gwp", "gwm"])
+def test_mutating_commands_accept_each_output_flag_without_assessment(
+    world, network, entry, flag
+):
+    from test_branches import cli as invoke
+
+    p = invoke(world, flag, "--explain", entry=entry, env=network.env())
+    assert p.returncode == 0, p.stderr
+    assert "git worktree list" in p.stdout
+    assert not network.calls()
+
+
+@pytest.mark.parametrize("flag", ["-q", "--quiet"])
+@pytest.mark.parametrize(
+    "entry, args", [("gw", ()), ("gwp", ("--dry-run",)), ("gwbs", ())]
+)
+def test_quiet_keeps_verdicts_and_head_notice_without_summary(world, entry, args, flag):
+    path = world.merged_worktree("topic")
+    if entry == "gwbs":
+        world.git("worktree", "remove", str(path))
+    p = run(world, entry, *args, flag)
+    assert p.returncode == 0, p.stderr
+    assert "topic" in p.stdout and "remove" in p.stdout
+    assert not re.search(r"\d+ eligible", p.stdout)
+    assert "Head: main (inferred)" in p.stderr
+
+
+@pytest.mark.parametrize("flag", ["-q", "--quiet"])
+def test_quiet_keeps_destination_and_errors(world, flag):
+    p = run(world, "gwa", "topic", flag)
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.strip() == str(world.parent / ".worktrees" / "topic" / "repo")
+    assert "Head: main (inferred)" in p.stderr
+    assert "on a new branch" not in p.stderr
+    failure = run(world, "gwr", "missing", flag)
+    assert failure.returncode != 0
+    assert "no worktree matches" in failure.stderr
+
+
+@pytest.mark.parametrize("flag", ["-q", "--quiet"])
+def test_quiet_sync_suppresses_success_summary(world, network, flag):
+    from test_branches import cli as invoke
+
+    p = invoke(world, "sync", flag, env=network.env())
+    assert p.returncode == 0, p.stderr
+    assert not p.stdout
+
+
+@pytest.mark.parametrize("flag", ["-q", "--quiet"])
+def test_quiet_omits_stale_age_warning(world, network, flag):
+    from test_branches import cli as invoke
+    from test_sync import cache_path, origin
+
+    origin(world)
+    assert invoke(world, "sync", env=network.env()).returncode == 0
+    cached = json.loads(cache_path(world).read_text())
+    cached["lastSync"] = {
+        "refs": "2020-01-01T00:00:00Z",
+        "forge": "2020-01-01T00:00:00Z",
+    }
+    cache_path(world).write_text(json.dumps(cached))
+    normal = invoke(world, env=network.env())
+    quiet = invoke(world, flag, env=network.env())
+    assert normal.returncode == quiet.returncode == 0
+    assert "Last sync:" in normal.stderr
+    assert "Last sync:" not in quiet.stderr
+    assert "BRANCH" in quiet.stdout
+
+
+@pytest.mark.parametrize("flag", ["-q", "--quiet"])
+def test_quiet_omits_progress_on_stderr_terminal(world, flag):
+    outputs = []
+    for args in ([], [flag]):
+        parent, child = pty.openpty()
+        try:
+            p = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "from worktrees.cli import gw; raise SystemExit(gw())",
+                    *args,
+                ],
+                cwd=world.repo,
+                env={**env_for(world), "TERM": "xterm"},
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=child,
+            )
+            os.close(child)
+            child = -1
+            output = bytearray()
+            while True:
+                try:
+                    chunk = os.read(parent, 65536)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                output.extend(chunk)
+            assert p.wait() == 0
+            outputs.append(bytes(output))
+        finally:
+            if child >= 0:
+                os.close(child)
+            os.close(parent)
+    assert b"\r\x1b[2K" in outputs[0]
+    assert b"\r\x1b[2K" not in outputs[1]
+    assert b"Head:" in outputs[1]

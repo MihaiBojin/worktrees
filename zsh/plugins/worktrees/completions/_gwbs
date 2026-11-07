@@ -11,7 +11,6 @@ _arguments -s \
     '*--only[show only rows with this verdict]:verdict:(remove keep unknown)' \
     '--json[verdicts and evidence as data]' \
     '(-q --quiet)'{-q,--quiet}'[omit the summary]' \
-    '(-v --verbose)'{-v,--verbose}'[print every command]' \
     '--explain[print every git command and exit]' \
     '(-h --help)'{-h,--help}'[show the help and exit]' \
     '*:branch:{_describe -t branches branch descriptions names}'
