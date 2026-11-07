@@ -149,14 +149,34 @@ def drop_stashes(stashes: list[R.Stash], say: Callable[[str], None]) -> bool:
             say(render.note(f"stash {stash.subject} is already gone"))
             continue
         selector = now[stash.sha][0]
-        out = stash_drop(selector).out.strip()
+        try:
+            out = stash_drop(selector).out.strip()
+        except (GitError, Refused) as exc:
+            # The list changed so that the index names nothing now.
+            why = " ".join(str(exc).splitlines())
+            say(render.fail(f"stash {stash.subject} not dropped: {why}"))
+            clean = False
+            continue
         dropped = out.rpartition("(")[2].rstrip(")")
         if dropped == stash.sha:
             say(render.note(f"dropped stash {stash.subject}"))
             continue
         # Somebody changed the list in between: put that entry back.
         subject = now[dropped][1] if dropped in now else subject_of(dropped).out.strip()
-        stash_store(subject, dropped)
+        try:
+            stash_store(subject, dropped)
+        except (GitError, Refused) as exc:
+            why = " ".join(str(exc).splitlines())
+            again = stash_restore(R.Stash(dropped, subject, ""))
+            say(
+                render.fail(
+                    f"stash {stash.subject} not dropped, and {dropped}, dropped "
+                    f"in its place, could not be put back: {why}\n"
+                    f"restore it with: {again}"
+                )
+            )
+            clean = False
+            continue
         say(
             render.fail(
                 f"stash {stash.subject} not dropped: the stash list changed, "
