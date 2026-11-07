@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from test_branch_forge import evidence
 from test_branches import cli
-from test_sync import cache_path, origin
+from test_sync import cache_path, first_parent_proof, origin
 
 from worktrees import forge
 
@@ -133,3 +133,67 @@ def test_forge_query_keeps_authentication_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "kept")
     assert forge.query(["gh", "query"]) == []
     assert seen.read_text() == "kept"
+
+
+@pytest.mark.parametrize("local_proof", [False, True])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        (None, []),
+        (None, "request"),
+        ("missing", "source_repository"),
+        ("extra", True),
+        ("number", True),
+        ("number", "17"),
+        ("number", 0),
+        ("source_verified", "true"),
+        ("source_sha", 17),
+        ("merged_at", True),
+        ("merge_sha", "short"),
+        ("merge_sha", "g" * 40),
+        ("merge_sha", "a" * 39),
+        ("merge_sha", "a" * 41),
+        ("merge_sha", "A" * 40),
+        ("merge_sha", "a" * 40 + "\n"),
+    ],
+)
+def test_malformed_cached_request_cannot_authorize_deletion(
+    world, network, local_proof, field, value
+):
+    if local_proof:
+        first_parent_proof(world, network, "github")
+        wt = world.root / "feature"
+        world.git("worktree", "add", "--quiet", str(wt), "feature")
+    else:
+        wt = synced_worktree(world, network)
+    tip = world.git("rev-parse", "feature")
+    cached = json.loads(cache_path(world).read_text())
+    request = cached["branches"]["feature"]["request"]
+    if field is None:
+        cached["branches"]["feature"]["request"] = value
+    elif field == "missing":
+        request.pop(value)
+    else:
+        request[field] = value
+    cache_path(world).write_text(json.dumps(cached))
+    before = network.network_calls()
+    want = "empty" if local_proof else "unknown" if field == "merge_sha" else "keep"
+    row = worktree_status(world, network)
+    assert row["verdict"] == want, row
+    assert row["proof"] != "forge", row
+    assert not row["eligible"]
+    denied = cli(world, str(wt), "--yes", "--json", entry="gwr", env=network.env())
+    assert denied.returncode != 0, denied.stderr
+    assert wt.exists()
+    assert world.git("rev-parse", "feature") == tip
+    world.git("worktree", "remove", str(wt))
+    loose = cli(world, "feature", "--json", entry="gwbs", env=network.env())
+    assert loose.returncode == 0, loose.stderr
+    row = json.loads(loose.stdout)["verdicts"][0]
+    assert row["verdict"] == want, row
+    assert row["proof"] != "forge", row
+    denied = cli(world, "feature", "--yes", "--json", entry="gwbd", env=network.env())
+    assert denied.returncode != 0, denied.stderr
+    assert json.loads(denied.stdout)["removed"] == []
+    assert world.git("rev-parse", "feature") == tip
+    assert network.network_calls() == before

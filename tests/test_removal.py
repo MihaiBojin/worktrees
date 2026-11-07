@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import json
 import os
+import pty
+import re
+import select
 import shlex
 import shutil
+import subprocess
 import sys
+import time
 
 import pytest
 from conftest import env_for
+from test_branches import cli as subprocess_cli
 from test_cli import run, run_on_a_terminal_at
 
 from worktrees import cli, prune
@@ -290,6 +296,11 @@ def test_stash_drop_repairs_a_real_concurrent_insertion(world, entry, suffix):
     assert "not dropped" in p.stderr
     subject = shlex.quote("On topic: target 'quoted'")
     assert f"git stash store -m {subject} {target}" in p.stderr
+    result = json.loads(p.stdout)
+    outcome = result["outcome"] if entry == "gwr" else result["outcomes"][0]
+    assert outcome["retained"] == [target]
+    assert outcome["skipped"] == []
+    assert f"stash {target}: retained" in p.stderr
 
 
 @pytest.mark.parametrize("entry", ["gwr", "gwbd"])
@@ -622,3 +633,376 @@ def test_real_git_refusal_preserves_later_cleanup(world, monkeypatch, capsys, st
     assert world.git("rev-parse", "topic")
     assert world.git("rev-parse", "refs/stash") == sha
     assert path.exists() == (step == "checkout")
+
+
+def test_nested_current_worktree_is_protected(world):
+    path = world.worktree("topic")
+    (path / "nested").mkdir()
+    tip = world.commit("nested/tracked", at=path)
+    world.git("merge", "--no-ff", "-qm", "merge", "topic")
+    nested = path / "nested"
+    preview = run(world, "gwp", "--dry-run", "--delete", "all", "--json", at=nested)
+    assert preview.returncode == 0, preview.stderr
+    row = next(
+        r for r in json.loads(preview.stdout)["verdicts"] if r["branch"] == "topic"
+    )
+    assert row["verdict"] == "remove"
+    assert not row["eligible"]
+    assert "you are standing in it" in row["protections"]
+    result = run(world, "gwp", "--delete", "all", "--yes", "--json", at=nested)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["removed"] == []
+    assert (nested / "tracked").read_text() == "x"
+    assert world.git("rev-parse", "topic") == tip
+
+
+@pytest.mark.parametrize("keep_branch", [False, True])
+def test_nested_current_removal_requires_terminal(world, keep_branch):
+    path = world.worktree("topic")
+    (path / "nested").mkdir()
+    tip = world.commit("nested/tracked", at=path)
+    world.git("merge", "--no-ff", "-qm", "merge", "topic")
+    flags = ["--keep-branch"] if keep_branch else []
+    refused = run(world, "gwr", str(path), "--yes", *flags, at=path / "nested")
+    assert refused.returncode != 0, refused.stderr
+    assert "terminal" in refused.stderr
+    assert refused.stdout == ""
+    assert (path / "nested" / "tracked").exists()
+    assert world.git("rev-parse", "topic") == tip
+    code, output = run_on_a_terminal_at(
+        world, path / "nested", "gwr", str(path), "--yes", *flags, answer="y\n"
+    )
+    assert code == 0, output
+    assert str(path) in output
+    assert output.rstrip().endswith(str(world.repo))
+    assert not path.exists()
+    refs = world.git("branch", "--format=%(refname:short)").splitlines()
+    assert ("topic" in refs) is keep_branch
+
+
+@pytest.mark.parametrize("entry", ["gwp", "gwr", "keep-branch", "gwbd", "foreign"])
+def test_cleanup_preserves_neighbor_repository(world, entry):
+    own = world.merged_worktree("done")
+    neighbor = world.sibling("neighbor", "done")
+    world.commit(".gitignore", "*.secret\n", at=neighbor)
+    world.commit("private-branch", at=neighbor)
+    (neighbor / "README").write_text("neighbor 'quoted'; $(data)")
+    world.git("stash", "push", "-qm", "neighbor 'quoted'; $(data)", at=neighbor)
+    other_stash = world.git("rev-parse", "refs/stash", at=neighbor)
+    (neighbor / "private.secret").write_bytes(b"neighbor ignored\n")
+
+    def neighbor_state() -> tuple[str, str, str, bytes, bytes]:
+        return (
+            world.git("worktree", "list", "--porcelain", at=neighbor),
+            world.git("for-each-ref", "--format=%(refname) %(objectname)", at=neighbor),
+            world.git("stash", "list", "--format=%H %gs", at=neighbor),
+            (neighbor / "private.secret").read_bytes(),
+            (neighbor / "private-branch").read_bytes(),
+        )
+
+    before = neighbor_state()
+    args: tuple[str, ...]
+    if entry == "gwbd":
+        world.git("worktree", "remove", str(own))
+        args = ("gwbd", "done", "--delete", "all", "--yes")
+    elif entry == "gwp":
+        args = ("gwp", "--delete", "all", "--yes")
+    elif entry == "keep-branch":
+        args = ("gwr", str(own), "--keep-branch", "--yes")
+    elif entry == "foreign":
+        args = ("gwr", str(neighbor), "--delete", "all", "--yes")
+    else:
+        args = ("gwr", str(own), "--delete", "all", "--yes")
+    proc = run(world, *args)
+    assert (proc.returncode != 0) is (entry == "foreign"), proc.stderr
+    assert own.exists() is (entry == "foreign")
+    assert neighbor.exists()
+    assert neighbor_state() == before
+    assert world.git("rev-parse", "refs/stash", at=neighbor) == other_stash
+    refs = world.git("branch", "--format=%(refname:short)").splitlines()
+    assert ("done" in refs) is (entry in ("keep-branch", "foreign"))
+
+
+@pytest.mark.parametrize("mode", ["all", "selector", "prune"])
+def test_batch_modes_keep_protected_refs(world, mode):
+    control = world.merged_worktree("eligible")
+    world.git("branch", "master")
+    world.git("branch", "trunk")
+    world.git("checkout", "-qb", "holding")
+    world.git("remote", "add", "origin", "https://example.invalid/repo")
+    world.git("update-ref", "refs/remotes/origin/trunk", "trunk")
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+    tips = {name: world.git("rev-parse", name) for name in ("main", "master", "trunk")}
+    protected = []
+    if mode == "prune":
+        for name in tips:
+            path = world.root / ("protected-" + name)
+            world.git("worktree", "add", "--quiet", str(path), name)
+            protected.append(path)
+        proc = run(world, "gwp", "--delete", "all", "--yes")
+        assert proc.returncode == 0, proc.stderr
+    else:
+        world.git("worktree", "remove", str(control))
+        if mode == "all":
+            proc = run(world, "gwbd", "--all", "--delete", "all", "--yes")
+            assert proc.returncode == 0, proc.stderr
+        else:
+            code, output = run_on_a_terminal_at(
+                world, world.repo, "gwbd", "--delete", "all", answer="1\ny\n"
+            )
+            assert code == 0, output
+            for name in tips:
+                assert not re.search(rf"^\s*\d+\s+\w+\s+{name}\s", output, re.M), output
+                assert re.search(rf"^\s*-\s+\w+\s+{name}\s", output, re.M), output
+    assert not control.exists()
+    assert (
+        "eligible" not in world.git("branch", "--format=%(refname:short)").splitlines()
+    )
+    assert all(path.exists() for path in protected)
+    assert {name: world.git("rev-parse", name) for name in tips} == tips
+    assert world.repo.exists()
+
+
+@pytest.mark.parametrize(
+    "entry,flag",
+    [
+        ("gwr", "--force"),
+        ("gwr", "-f"),
+        ("gwr", "--delete-ignored"),
+        ("gwp", "--delete-ignored"),
+    ],
+)
+def test_retired_removal_flags_refuse_before_preflight(world, network, entry, flag):
+    world.commit(".gitignore", "*.secret\n")
+    path = world.merged_worktree("topic")
+    saved = stash(world, path)
+    (path / "private.secret").write_bytes(b"preserve ignored\n")
+    tip = world.git("rev-parse", "topic")
+    before = world.git("worktree", "list", "--porcelain")
+    proc = subprocess_cli(
+        world,
+        *(["topic"] if entry == "gwr" else []),
+        flag,
+        "--yes",
+        entry=entry,
+        env=network.env(),
+    )
+    assert proc.returncode == 2, proc.stderr
+    assert proc.stdout == ""
+    assert not network.calls()
+    assert world.git("worktree", "list", "--porcelain") == before
+    assert world.git("rev-parse", "topic") == tip
+    assert world.git("rev-parse", "refs/stash") == saved
+    assert (path / "private.secret").read_bytes() == b"preserve ignored\n"
+
+
+@pytest.mark.parametrize("entry", ["gwr", "gwbd"])
+@pytest.mark.parametrize("pending", [False, True])
+def test_stash_repair_uses_preceding_listed_subject(world, network, entry, pending):
+    path = world.merged_worktree("topic")
+    subject = "older 'quoted'; $(data)"
+    older = stash(world, world.repo, subject)
+    target = stash(world, path, "target")
+    pending_sha = stash(world, path, "pending") if pending else None
+    if entry == "gwbd":
+        world.git("worktree", "remove", str(path))
+    marker = world.root / "stash-race.json"
+    wrapper = network.bin / "git"
+    original = wrapper.read_text()
+    injection = (
+        "    if command[:2] == ['stash', 'drop']:\n"
+        "        listing = [real_git, *prefix, 'stash', 'list', '--format=%H %gs']\n"
+        "        before = subprocess.check_output(listing, text=True)\n"
+        "        subprocess.run([real_git, *args], check=True, capture_output=True)\n"
+        "        remaining = subprocess.check_output(listing, text=True)\n"
+        "        actual = subprocess.run([real_git, *args], "
+        "capture_output=True, text=True)\n"
+        "        pending_drop = ''\n"
+        f"        if {pending!r}:\n"
+        "            pending_drop = subprocess.check_output([real_git, *prefix, "
+        "'stash', 'drop', 'stash@{0}'], text=True)\n"
+        f"        marker = pathlib.Path({str(marker)!r})\n"
+        "        marker.write_text(json.dumps({'before': before, "
+        "'remaining': remaining, 'actual': actual.stdout, "
+        "'pending_drop': pending_drop}))\n"
+        "        sys.stdout.write(actual.stdout)\n"
+        "        sys.stderr.write(actual.stderr)\n"
+        "        sys.exit(actual.returncode)\n"
+    )
+    wrapper.write_text(
+        original.replace(
+            "    if command[:1] == ['fetch']:\n",
+            injection + "    if command[:1] == ['fetch']:\n",
+        )
+    )
+    proc = subprocess_cli(
+        world,
+        "topic",
+        "--delete",
+        "stashes",
+        "--yes",
+        "--json",
+        entry=entry,
+        env=network.env(),
+    )
+    assert proc.returncode == 1, proc.stderr
+    assert marker.exists()
+    race = json.loads(marker.read_text())
+    assert target in race["before"] and older in race["before"]
+    expected_remaining = f"{older} On main: {subject}\n"
+    if pending_sha:
+        expected_remaining = f"{pending_sha} On topic: pending\n" + expected_remaining
+        assert f"({pending_sha})" in race["pending_drop"]
+    assert race["remaining"] == expected_remaining
+    assert f"({older})" in race["actual"]
+    assert (
+        world.git("stash", "list", "--format=%H %gs") == f"{older} On main: {subject}"
+    )
+    assert "not dropped" in proc.stderr
+    assert f"restored {older}" in proc.stderr
+    assert (
+        f"git stash store -m {shlex.quote('On topic: target')} {target}" in proc.stderr
+    )
+    outcome = (
+        json.loads(proc.stdout)["outcome"]
+        if entry == "gwr"
+        else json.loads(proc.stdout)["outcomes"][0]
+    )
+    assert outcome["branch_removed"]
+    assert outcome["dropped"] == []
+    assert outcome["retained"] == []
+    absent = sorted([target, *([pending_sha] if pending_sha else [])])
+    assert outcome["skipped"] == absent
+    for sha in absent:
+        assert f"stash {sha}: already absent" in proc.stderr
+        assert f"stash {sha}: retained" not in proc.stderr
+    assert not any(
+        call[-4:] == ["log", "-1", "--format=%s", older] for call in network.calls()
+    )
+
+
+@pytest.mark.parametrize("entry", ["gwp", "gwbd"])
+def test_later_batch_target_is_rechecked(world, network, entry):
+    first = world.merged_worktree("a-first")
+    second = world.merged_worktree("b-second")
+    second_tip = world.git("rev-parse", "b-second")
+    saved = stash(world, second, "second retained")
+    if entry == "gwbd":
+        world.git("worktree", "remove", str(first))
+        world.git("worktree", "remove", str(second))
+    marker = world.root / "batch-race.json"
+    wrapper = network.bin / "git"
+    original = wrapper.read_text()
+    injection = (
+        "    if command[:4] == ['update-ref', '--no-deref', '-d', "
+        "'refs/heads/a-first']:\n"
+        "        actual = subprocess.run([real_git, *args], "
+        "capture_output=True, text=True)\n"
+        "        if actual.returncode == 0:\n"
+        f"            repo = {str(world.repo)!r}\n"
+        "            subprocess.run([real_git, '-C', repo, 'update-ref', "
+        "'refs/heads/b-second', 'main'], check=True)\n"
+        f"            marker = pathlib.Path({str(marker)!r})\n"
+        "            marker.write_text(json.dumps({'first_deleted': True}))\n"
+        "        sys.stdout.write(actual.stdout)\n"
+        "        sys.stderr.write(actual.stderr)\n"
+        "        sys.exit(actual.returncode)\n"
+    )
+    wrapper.write_text(
+        original.replace(
+            "    if command[:1] == ['fetch']:\n",
+            injection + "    if command[:1] == ['fetch']:\n",
+        )
+    )
+    proc = subprocess_cli(
+        world,
+        *(["a-first", "b-second"] if entry == "gwbd" else []),
+        "--delete",
+        "all",
+        "--yes",
+        "--json",
+        entry=entry,
+        env=network.env(),
+    )
+    assert proc.returncode == 1, proc.stderr
+    assert marker.exists()
+    assert json.loads(marker.read_text()) == {"first_deleted": True}
+    assert not first.exists()
+    assert world.git("rev-parse", "b-second") == world.git("rev-parse", "main")
+    assert world.git("rev-parse", "b-second") != second_tip
+    assert world.git("stash", "list", "--format=%H") == saved
+    assert (
+        "a-first" not in world.git("branch", "--format=%(refname:short)").splitlines()
+    )
+    data = json.loads(proc.stdout)
+    assert data["removed"] == ["a-first"]
+    assert "b-second" in proc.stderr
+    if entry == "gwp":
+        assert second.exists()
+        assert (second / "merged-b-second").read_text() == "x"
+        assert data["outcomes"][0]["worktree_removed"]
+        assert data["outcomes"][0]["branch_removed"]
+        assert not data["outcomes"][1]["worktree_removed"]
+        assert not data["outcomes"][1]["branch_removed"]
+    else:
+        assert data["failed"][0]["branch"] == "b-second"
+        assert data["outcomes"][0]["branch_removed"]
+    assert not any(
+        call[-5:-1] == ["update-ref", "--no-deref", "-d", "refs/heads/b-second"]
+        for call in network.calls()
+    )
+
+
+@pytest.mark.parametrize("entry", ["gwr", "gwp"])
+def test_removed_ignored_entry_invalidates_approval(world, entry):
+    world.commit(".gitignore", "*.secret\n")
+    path = world.merged_worktree("topic")
+    (path / "old.secret").write_text("old")
+    tip = world.git("rev-parse", "topic")
+    parent, child = pty.openpty()
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
+            *(["topic"] if entry == "gwr" else []),
+            "--delete",
+            "all",
+            "--json",
+        ],
+        cwd=world.repo,
+        env=env_for(world),
+        stdin=child,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    os.close(child)
+    assert proc.stderr is not None
+    disclosure = b""
+    try:
+        deadline = time.monotonic() + 30
+        while b"[y/N]" not in disclosure and time.monotonic() < deadline:
+            ready, _, _ = select.select([proc.stderr], [], [], 1)
+            if ready:
+                chunk = os.read(proc.stderr.fileno(), 65536)
+                if not chunk:
+                    break
+                disclosure += chunk
+        assert b"[y/N]" in disclosure, disclosure.decode()
+        assert b"old.secret" in disclosure
+        (path / "old.secret").unlink()
+        os.write(parent, b"y\n")
+        stdout, stderr = proc.communicate(timeout=30)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        os.close(parent)
+    assert proc.returncode == 1, (disclosure + stderr).decode()
+    assert "changed after assessment" in (disclosure + stderr).decode()
+    data = json.loads(stdout)
+    assert not data["removed"]
+    assert path.exists()
+    assert (path / "merged-topic").read_text() == "x"
+    assert not (path / "old.secret").exists()
+    assert world.git("rev-parse", "topic") == tip

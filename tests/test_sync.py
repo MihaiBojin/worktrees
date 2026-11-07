@@ -38,6 +38,57 @@ def cache_path(world) -> Path:
     return world.repo / ".git" / "git-worktrees-sync.json"
 
 
+def first_parent_proof(
+    world, network, provider, names=("feature",), *, fork=False
+) -> dict:
+    from test_branch_forge import evidence
+
+    for name in names:
+        local_branch(world, name, path=name)
+        world.git("merge", "--quiet", "--ff-only", name)
+    origin(world, provider + ".com")
+    responses: dict = {}
+    api = {
+        "projects/7": {
+            "id": 7,
+            "path_with_namespace": "owner/repo",
+            "web_url": "https://gitlab.com/owner/repo",
+        }
+    }
+    for name in names:
+        row = evidence(world, provider)
+        if provider == "github":
+            row.update(headRefName=name, headRefOid=world.git("rev-parse", name))
+            if fork:
+                row.update(
+                    isCrossRepository=True,
+                    headRepository={"nameWithOwner": "fork/repo"},
+                )
+                api["repos/fork/repo"] = {
+                    "full_name": "fork/repo",
+                    "html_url": "https://github.com/fork/repo",
+                }
+        else:
+            row.update(source_branch=name, sha=world.git("rev-parse", name))
+            if fork:
+                row["source_project_id"] = 8
+                api["projects/8"] = {
+                    "id": 8,
+                    "path_with_namespace": "fork/repo",
+                    "web_url": "https://gitlab.com/fork/repo",
+                }
+        responses[name] = [row]
+    responses["$api"] = api
+    network.answer(responses)
+    proc = cli(world, "sync", env=network.env())
+    assert proc.returncode == 0, proc.stderr
+    rows = {r["branch"]: r for r in listing(world, network, "gwbs")["verdicts"]}
+    for name in names:
+        assert rows[name]["verdict"] == "remove", rows[name]
+        assert rows[name]["proof"] == "forge", rows[name]
+    return responses
+
+
 def test_json_envelope_preserves_worktrees(world, network):
     data = listing(world, network)
     assert isinstance(data, dict)
@@ -287,18 +338,21 @@ def test_network_flags_are_usage_errors(world, network, entry, flag):
     "seconds, text",
     [(600, None), (601, "10 minutes"), (7200, "2 hours"), (172800, "2 days")],
 )
+@pytest.mark.parametrize("components", ["equal", "older-forge", "refs-only"])
 def test_stale_notice_boundary_and_units(
-    world, network, monkeypatch, capsys, seconds, text
+    world, network, monkeypatch, capsys, seconds, text, components
 ):
     from worktrees import cli as C
     from worktrees import sync
 
-    origin(world)
+    origin(world, "code.example.net" if components == "refs-only" else "github.com")
     assert cli(world, "sync", env=network.env()).returncode == 0
     cached = json.loads(cache_path(world).read_text())
     cached["lastSync"] = {
-        "refs": "2026-01-01T00:00:00Z",
-        "forge": "2026-01-01T00:00:00Z",
+        "refs": "2026-01-01T00:05:00Z"
+        if components == "older-forge"
+        else "2026-01-01T00:00:00Z",
+        "forge": None if components == "refs-only" else "2026-01-01T00:00:00Z",
     }
     cache_path(world).write_text(json.dumps(cached))
     stamp = datetime(2026, 1, 1, tzinfo=UTC).timestamp()
@@ -307,6 +361,7 @@ def test_stale_notice_boundary_and_units(
     error = capsys.readouterr().err
     if text:
         assert text in error and "gw sync" in error
+        assert error.count("Last sync:") == 1
     else:
         assert "Last sync:" not in error
     assert C.gw(["-q"]) == 0
@@ -339,15 +394,19 @@ def test_repository_without_remote_reports_only_inferred_head(world, network):
 
 @pytest.mark.parametrize("provider", ["github", "gitlab"])
 @pytest.mark.parametrize("identity", ["verified", "missing", "mismatch"])
+@pytest.mark.parametrize("enterprise", [False, True])
 def test_fork_proof_requires_authoritative_source_identity(
-    world, network, provider, identity
+    world, network, provider, identity, enterprise
 ):
     from test_branch_forge import evidence
 
     local_branch(world)
     world.commit("feature", "later edits\n")
-    origin(world, provider + ".com")
+    host = provider + (".example.com" if enterprise else ".com")
+    origin(world, host)
     row = evidence(world, provider)
+    url_field = "url" if provider == "github" else "web_url"
+    row[url_field] = row[url_field].replace(provider + ".com", host)
     api: dict[str, dict] = {}
     if provider == "github":
         row["isCrossRepository"] = True
@@ -355,12 +414,12 @@ def test_fork_proof_requires_authoritative_source_identity(
         endpoint = "repos/fork/repo"
         answer: dict = {
             "full_name": "fork/repo" if identity == "verified" else "other/repo",
-            "html_url": "https://github.com/fork/repo",
+            "html_url": f"https://{host}/fork/repo",
         }
     else:
         row["source_project_id"] = 8
         endpoint = "projects/8"
-        source_host = "gitlab.com" if identity == "verified" else "other.example"
+        source_host = host if identity == "verified" else "other.example"
         answer = {
             "id": 8,
             "path_with_namespace": "fork/repo",
@@ -369,7 +428,7 @@ def test_fork_proof_requires_authoritative_source_identity(
         api["projects/7"] = {
             "id": 7,
             "path_with_namespace": "owner/repo",
-            "web_url": "https://gitlab.com/owner/repo",
+            "web_url": f"https://{host}/owner/repo",
         }
     if identity != "missing":
         api[endpoint] = answer
@@ -380,11 +439,86 @@ def test_fork_proof_requires_authoritative_source_identity(
     feature = next(row for row in data["verdicts"] if row["branch"] == "feature")
     assert (feature["verdict"] == "remove") is (identity == "verified"), feature
     if identity == "verified":
-        assert feature["request"]["source_repository"] == f"{provider}.com/fork/repo"
-        assert feature["request"]["repository"] == f"{provider}.com/owner/repo"
+        assert feature["request"]["source_repository"] == f"{host}/fork/repo"
+        assert feature["request"]["repository"] == f"{host}/owner/repo"
+    else:
+        tip = world.git("rev-parse", "feature")
+        denied = cli(world, "feature", "--yes", entry="gwbd", env=network.env())
+        assert denied.returncode != 0, denied.stderr
+        assert world.git("rev-parse", "feature") == tip
+    tool = "gh" if provider == "github" else "glab"
+    calls = network.network_calls()
+    assert [tool, "auth", "status", "--hostname", host] in calls
+    queries = [
+        call
+        for call in calls
+        if call[:3] == [tool, "pr" if provider == "github" else "mr", "list"]
+    ]
+    assert queries
+    assert all(
+        call[call.index("--repo") + 1]
+        == (
+            f"{host}/owner/repo"
+            if provider == "github"
+            else f"https://{host}/owner/repo"
+        )
+        for call in queries
+    )
+    assert [tool, "api", endpoint, "--hostname", host] in calls
+    if provider == "gitlab":
+        assert [tool, "api", "projects/7", "--hostname", host] in calls
     assert not any(
         "branches" in arg for call in network.network_calls() for arg in call
     )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("id", 9),
+        ("id", True),
+        ("web_url", "https://gitlab.com/other/repo"),
+        ("path_with_namespace", "other/repo"),
+        ("path_with_namespace", None),
+        ("web_url", None),
+    ],
+)
+def test_gitlab_source_lookup_must_agree_with_identity(world, network, field, value):
+    from test_branch_forge import evidence
+
+    tip = local_branch(world)
+    world.commit("feature", "later edits\n")
+    origin(world, "gitlab.com")
+    source = {
+        "id": 8,
+        "path_with_namespace": "fork/repo",
+        "web_url": "https://gitlab.com/fork/repo",
+        field: value,
+    }
+    network.answer(
+        {
+            "feature": [evidence(world, "gitlab", source_project_id=8)],
+            "$api": {
+                "projects/7": {
+                    "id": 7,
+                    "path_with_namespace": "owner/repo",
+                    "web_url": "https://gitlab.com/owner/repo",
+                },
+                "projects/8": source,
+            },
+        }
+    )
+    proc = cli(world, "sync", env=network.env())
+    assert proc.returncode == 0, proc.stderr
+    row = next(
+        r
+        for r in listing(world, network, "gwbs")["verdicts"]
+        if r["branch"] == "feature"
+    )
+    assert row["verdict"] == "keep", row
+    denied = cli(world, "feature", "--yes", entry="gwbd", env=network.env())
+    assert denied.returncode == 3, denied.stderr
+    assert world.git("rev-parse", "feature") == tip
 
 
 @pytest.mark.parametrize(
@@ -615,3 +749,274 @@ def test_network_wrapper_intercepts_git_repository_prefix(world, network, operat
             world.git("symbolic-ref", "refs/remotes/origin/HEAD")
             == "refs/remotes/origin/main"
         )
+
+
+@pytest.mark.parametrize("provider", ["github", "gitlab"])
+def test_new_branch_does_not_inherit_cached_request(world, network, provider):
+    first_parent_proof(world, network, provider)
+    world.git("branch", "new-name", "feature")
+    before = network.network_calls()
+    rows = {r["branch"]: r for r in listing(world, network, "gwbs")["verdicts"]}
+    assert rows["feature"]["verdict"] == "remove"
+    assert rows["feature"]["proof"] == "forge"
+    assert rows["new-name"]["verdict"] == "empty"
+    assert rows["new-name"]["request"] is None
+    assert "new-name" not in json.loads(cache_path(world).read_text())["branches"]
+    assert network.network_calls() == before
+
+
+@pytest.mark.parametrize("provider", ["github", "gitlab"])
+@pytest.mark.parametrize("failure", ["fetch", "missing", "auth"])
+def test_sync_failure_retains_positive_cached_proof(world, network, provider, failure):
+    first_parent_proof(world, network, provider)
+    cached = json.loads(cache_path(world).read_text())
+    cached["lastSync"] = {
+        "refs": "2020-01-01T00:00:00Z",
+        "forge": "2020-01-02T00:00:00Z",
+    }
+    cache_path(world).write_text(json.dumps(cached))
+    old_bytes = cache_path(world).read_bytes()
+    before = len(network.network_calls())
+    env = network.env()
+    if failure == "fetch":
+        env["WT_FETCH_CODE"] = "128"
+    elif failure == "auth":
+        env["WT_AUTH_CODE"] = "1"
+    else:
+        (network.bin / ("gh" if provider == "github" else "glab")).unlink()
+        env["PATH"] = str(network.bin)
+    proc = cli(world, "sync", env=env)
+    assert proc.returncode == 1, proc.stderr
+    now = json.loads(cache_path(world).read_text())
+    if failure == "fetch":
+        assert cache_path(world).read_bytes() == old_bytes
+        assert network.network_calls()[before:] == [
+            ["git", "fetch", "--prune", "origin"]
+        ]
+    else:
+        assert now["lastSync"]["refs"] != cached["lastSync"]["refs"]
+        assert now["lastSync"]["forge"] == cached["lastSync"]["forge"]
+        assert now["branches"]["feature"] == cached["branches"]["feature"]
+    before_assessment = network.network_calls()
+    row = next(
+        r
+        for r in listing(world, network, "gwbs")["verdicts"]
+        if r["branch"] == "feature"
+    )
+    assert row["verdict"] == "remove", row
+    assert row["proof"] == "forge", row
+    assert network.network_calls() == before_assessment
+
+
+@pytest.mark.parametrize("provider", ["github", "gitlab"])
+@pytest.mark.parametrize("total", [False, True])
+def test_failed_queries_invalidate_positive_proof(world, network, provider, total):
+    responses = first_parent_proof(world, network, provider, ("feature", "second"))
+    cached = json.loads(cache_path(world).read_text())
+    cached["lastSync"] = {
+        "refs": "2020-01-01T00:00:00Z",
+        "forge": "2020-01-02T00:00:00Z",
+    }
+    cache_path(world).write_text(json.dumps(cached))
+    responses["feature"] = 1
+    if total:
+        responses.update(second=1, main=1)
+    network.answer(responses)
+    proc = cli(world, "sync", env=network.env())
+    assert proc.returncode == 1, proc.stderr
+    now = json.loads(cache_path(world).read_text())
+    assert now["lastSync"]["refs"] != cached["lastSync"]["refs"]
+    assert now["lastSync"]["forge"] == cached["lastSync"]["forge"]
+    assert "feature" not in now["branches"]
+    if total:
+        assert now["branches"] == {}
+    else:
+        assert now["branches"]["second"]["request"] is not None
+    before = network.network_calls()
+    rows = {r["branch"]: r for r in listing(world, network, "gwbs")["verdicts"]}
+    assert rows["feature"]["verdict"] == "empty", rows["feature"]
+    assert rows["feature"]["request"] is None
+    assert rows["second"]["verdict"] == ("empty" if total else "remove")
+    assert network.network_calls() == before
+
+
+@pytest.mark.parametrize("provider", ["github", "gitlab"])
+def test_failed_fork_lookup_invalidates_previous_proof(world, network, provider):
+    responses = first_parent_proof(world, network, provider, fork=True)
+    cached = json.loads(cache_path(world).read_text())
+    cached["lastSync"] = {
+        "refs": "2020-01-01T00:00:00Z",
+        "forge": "2020-01-02T00:00:00Z",
+    }
+    cache_path(world).write_text(json.dumps(cached))
+    endpoint = "repos/fork/repo" if provider == "github" else "projects/8"
+    del responses["$api"][endpoint]
+    network.answer(responses)
+    proc = cli(world, "sync", env=network.env())
+    assert proc.returncode == 1, proc.stderr
+    now = json.loads(cache_path(world).read_text())
+    assert now["lastSync"]["refs"] != cached["lastSync"]["refs"]
+    assert now["lastSync"]["forge"] == cached["lastSync"]["forge"]
+    assert "feature" not in now["branches"]
+    before = network.network_calls()
+    row = next(
+        r
+        for r in listing(world, network, "gwbs")["verdicts"]
+        if r["branch"] == "feature"
+    )
+    assert row["verdict"] == "empty", row
+    assert row["request"] is None
+    assert network.network_calls() == before
+
+
+@pytest.mark.parametrize("provider", ["github", "gitlab"])
+@pytest.mark.parametrize("entry", ["gwp", "gwr", "gwbd"])
+def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
+    seed = world.merged_branch("seed")
+    world.git("remote", "add", "unselected", "git@github.com:unselected/repo.git")
+    world.git("config", "checkout.defaultRemote", "origin")
+    first_parent_proof(world, network, provider, fork=True)
+    world.git("branch", "local", seed)
+    paths = {}
+    if entry != "gwbd":
+        for name in ("feature", "local"):
+            paths[name] = world.root / name
+            world.git("worktree", "add", "--quiet", str(paths[name]), name)
+    before = network.network_calls()
+    call_count = len(network.calls())
+    preview = cli(
+        world,
+        "--json",
+        *(["--dry-run"] if entry != "gwbd" else []),
+        entry="gwp" if entry != "gwbd" else "gwbs",
+        env=network.env(),
+    )
+    assert preview.returncode == 0, preview.stderr
+    rows = {r["branch"]: r for r in json.loads(preview.stdout)["verdicts"]}
+    assert rows["feature"]["proof"] == "forge"
+    assert rows["local"]["verdict"] == "remove"
+    assert rows["local"]["proof"] == "ancestry"
+    assert "local" not in json.loads(cache_path(world).read_text())["branches"]
+    selections = (
+        [("feature", "local")]
+        if entry == "gwbd"
+        else [("feature",), ("local",)]
+        if entry == "gwr"
+        else [()]
+    )
+    for selection in selections:
+        proc = cli(world, *selection, "--yes", "--json", entry=entry, env=network.env())
+        assert proc.returncode == 0, proc.stderr
+        data = json.loads(proc.stdout)
+        if entry == "gwr":
+            assert data["outcome"]["worktree_removed"]
+            assert data["outcome"]["branch_removed"]
+        else:
+            assert data["removed"]
+    remaining = world.git("branch", "--format=%(refname:short)").splitlines()
+    assert "feature" not in remaining and "local" not in remaining
+    assert all(not path.exists() for path in paths.values())
+    actual_calls = network.calls()[call_count:]
+    for name in ("feature", "local"):
+        assert any(
+            call[-5:]
+            == [
+                "update-ref",
+                "--no-deref",
+                "-d",
+                f"refs/heads/{name}",
+                rows[name]["sha"],
+            ]
+            for call in actual_calls
+        )
+    if paths:
+        for path in paths.values():
+            assert any(
+                call[-4:] == ["worktree", "remove", "--", str(path)]
+                for call in actual_calls
+            )
+    assert network.network_calls() == before
+    assert not any("unselected" in argument for call in before for argument in call)
+
+
+@pytest.mark.parametrize(
+    "entry,args",
+    [
+        ("gw", ["--complete"]),
+        ("gw", ["branch", "--complete"]),
+        ("gw", ["version"]),
+        ("gwl", ["--complete"]),
+        ("gwr", ["--complete"]),
+        ("gwbs", ["--complete"]),
+        ("gwbd", ["--complete"]),
+    ],
+)
+def test_metadata_commands_remain_offline(world, network, entry, args):
+    origin(world)
+    world.merged_worktree("candidate")
+    world.merged_branch("loose")
+    proc = cli(world, *args, entry=entry, env=network.env())
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout
+    assert not network.network_calls()
+
+
+def test_every_command_help_remains_offline(world, network):
+    from worktrees.cli import command_rows
+
+    origin(world)
+    for name, command in command_rows():
+        proc = cli(world, *name.split(), "--help", env=network.env())
+        assert proc.returncode == 0, (name, proc.stderr)
+        assert "usage:" in proc.stdout + proc.stderr
+        if command.binary:
+            proc = cli(world, "--help", entry=command.binary, env=network.env())
+            assert proc.returncode == 0, (command.binary, proc.stderr)
+            assert "usage:" in proc.stdout + proc.stderr
+    assert not network.network_calls()
+
+
+@pytest.mark.parametrize("head_source", ["inferred", "clone"])
+def test_unresolved_head_marks_real_preview_rows_unknown(world, network, head_source):
+    attached = world.worktree("linked")
+    detached = world.worktree("detached")
+    world.git("checkout", "--detach", at=detached)
+    world.git("branch", "loose")
+    if head_source == "clone":
+        origin(world)
+        world.git(
+            "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/missing"
+        )
+    world.git("branch", "-m", "main", "feature")
+    refs = world.git("for-each-ref", "--format=%(refname) %(objectname)")
+    records = world.git("worktree", "list", "--porcelain")
+    preview = cli(world, "--json", "--delete", "all", entry="gw", env=network.env())
+    assert preview.returncode == 0, preview.stderr
+    data = json.loads(preview.stdout)
+    assert data["head"] == {"ref": None, "source": head_source}
+    assert {r["path"] for r in data["verdicts"]} == {
+        str(world.repo),
+        str(attached),
+        str(detached),
+    }
+    assert all(
+        r["verdict"] == "unknown" and not r["eligible"] for r in data["verdicts"]
+    )
+    loose = listing(world, network, "gwbs")
+    assert {r["branch"] for r in loose["verdicts"]} == {"loose", "detached"}
+    assert all(
+        r["verdict"] == "unknown" and not r["eligible"] for r in loose["verdicts"]
+    )
+    assert world.git("for-each-ref", "--format=%(refname) %(objectname)") == refs
+    assert world.git("worktree", "list", "--porcelain") == records
+    assert all(
+        (path / "README").read_text() == "x"
+        for path in (world.repo, attached, detached)
+    )
+    assert not cache_path(world).exists()
+    assert not network.network_calls()
+    assert not any(
+        argument in ("update-ref", "remove", "prune")
+        for call in network.calls()
+        for argument in call[1:]
+    )

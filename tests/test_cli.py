@@ -340,7 +340,9 @@ def test_prune_deletes_the_branch_and_the_empty_parents(world) -> None:
     assert not wt.exists()
     assert "done" not in world.git("branch", "--format=%(refname:short)").split()
     assert not (world.parent / ".worktrees" / "done").exists()
-    assert p.stdout.strip() == "removed 1 worktree(s): done"
+    assert p.stdout.splitlines()[-1] == "removed 1 worktree(s): done"
+    assert p.stdout.count("VERDICT") == 1
+    assert str(world.repo) in p.stdout and str(wt) in p.stdout
 
 
 def test_a_squash_merged_branch_goes_with_its_checkout(world) -> None:
@@ -798,9 +800,9 @@ def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
 
 
 @pytest.mark.parametrize(
-    "entry,args,prompt",
+    "entry,args,prompt,table",
     [
-        (entry, (*prefix, *flags), prompt)
+        (entry, (*prefix, *flags), prompt, command == "prune")
         for command, flags, prompt in (
             ("list", (), "which? [up/down and enter, 1-3, or esc to cancel] "),
             (
@@ -825,7 +827,7 @@ def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
         )
     ],
 )
-def test_ctrl_c_at_every_prompt(world, entry, args, prompt) -> None:
+def test_ctrl_c_at_every_prompt(world, entry, args, prompt, table) -> None:
     """SIGINT cancels selection and confirmation without changing any worktree."""
     paths = [world.merged_worktree(name) for name in ("one", "two")]
     before = world.git("worktree", "list", "--porcelain")
@@ -870,7 +872,12 @@ def test_ctrl_c_at_every_prompt(world, entry, args, prompt) -> None:
     assert "Traceback" not in stderr, stderr
     assert "KeyboardInterrupt" not in stderr, stderr
     assert proc.returncode == 130, stderr
-    assert out == b""
+    if table:
+        assert out.count(b"VERDICT") == 1
+        assert b"ELIGIBLE" in out
+        assert all(str(path).encode() in out for path in (world.repo, *paths))
+    else:
+        assert out == b""
     assert stderr.endswith(prompt + "\n"), stderr
     assert world.git("worktree", "list", "--porcelain") == before
     assert world.git("show-ref") == refs
@@ -1377,3 +1384,73 @@ def test_quiet_omits_progress_on_stderr_terminal(world, flag):
     assert b"\r\x1b[2K" in outputs[0]
     assert b"\r\x1b[2K" not in outputs[1]
     assert b"Head:" in outputs[1]
+
+
+@pytest.mark.parametrize("quiet", [False, True])
+def test_prune_shows_full_assessment_before_confirmation(world, quiet):
+    finished = world.merged_worktree("finished")
+    empty = world.worktree("empty")
+    refs = world.git("for-each-ref", "--format=%(refname) %(objectname)")
+    parent, child = pty.openpty()
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gwp; raise SystemExit(gwp())",
+            *(["--quiet"] if quiet else []),
+        ],
+        cwd=world.repo,
+        env=env_for(world),
+        stdin=child,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    os.close(child)
+    assert proc.stdout is not None and proc.stderr is not None
+    disclosure = b""
+    try:
+        deadline = time.monotonic() + 30
+        while b"[y/N]" not in disclosure and time.monotonic() < deadline:
+            ready, _, _ = select.select([proc.stderr], [], [], 1)
+            if ready:
+                chunk = os.read(proc.stderr.fileno(), 65536)
+                if not chunk:
+                    break
+                disclosure += chunk
+        assert b"[y/N]" in disclosure, disclosure.decode()
+        assert str(finished).encode() in disclosure
+        assert b"git branch finished " in disclosure
+        ready, _, _ = select.select([proc.stdout], [], [], 5)
+        assert ready, "the assessment table must be visible before answering"
+        table = os.read(proc.stdout.fileno(), 65536)
+        assert b"VERDICT" in table and b"ELIGIBLE" in table
+        for path in (world.repo, finished, empty):
+            assert str(path).encode() in table, table.decode()
+        assert b"remove" in table and b"empty" in table
+        os.write(parent, b"n\n")
+        stdout, stderr = proc.communicate(timeout=30)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        os.close(parent)
+    assert proc.returncode == 0, (disclosure + stderr).decode()
+    assert (table + stdout).count(b"VERDICT") == 1
+    assert world.git("for-each-ref", "--format=%(refname) %(objectname)") == refs
+    assert finished.exists() and empty.exists() and world.repo.exists()
+
+
+@pytest.mark.parametrize("quiet", [False, True])
+def test_prune_json_success_is_one_result_object(world, quiet):
+    finished = world.merged_worktree("finished")
+    empty = world.worktree("empty")
+    proc = run(world, "gwp", "--yes", "--json", *(["--quiet"] if quiet else []))
+    assert proc.returncode == 0, proc.stderr
+    result = json.loads(proc.stdout)
+    assert isinstance(result, dict)
+    assert result["removed"] == ["finished"]
+    assert "head" in result and "lastSync" in result
+    assert "VERDICT" not in proc.stdout
+    assert str(finished) in proc.stderr and "git branch finished " in proc.stderr
+    assert not finished.exists()
+    assert empty.exists() and world.repo.exists()

@@ -186,6 +186,10 @@ def drop_stashes(snapshot: Snapshot, outcome: Outcome, repo=None) -> None:
             if subject is None:
                 subject = stash_subject(actual, repo=repo).value
             stash_store(subject, actual, repo=repo)
+            current = {line.split(" ", 2)[1] for line in stash_list(repo=repo).lines}
+            absent = set(outcome.retained) - current
+            outcome.skipped.extend(sorted(absent))
+            outcome.retained = [item for item in outcome.retained if item in current]
             raise Refused(
                 f"stash {sha} not dropped: concurrent stash change; restored {actual}"
             )
