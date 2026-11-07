@@ -124,3 +124,12 @@ def test_empty_has_its_own_colour(world) -> None:
     assert code == 0, out
     line = next(ln for ln in out.splitlines() if "fresh" in ln)
     assert "\x1b[36mempty" in line
+
+
+def test_a_held_back_empty_row_is_dimmed_on_a_terminal(world) -> None:
+    world.worktree("fresh")
+    code, out = run_with_a_terminal_on_stdout(world, "gwp")
+    assert code == 0, out
+    line = next(ln for ln in out.splitlines() if "fresh" in ln)
+    assert "\x1b[36mempty" in line, "the verdict keeps its colour"
+    assert "\x1b[2m" + f"{EMPTY_WHY}; {NEEDS}" in line

@@ -325,18 +325,27 @@ def trunk_head(world) -> None:
     assert p.returncode == 0, p.stderr
 
 
+@pytest.mark.parametrize("verdict", ["empty", "remove"])
 @pytest.mark.parametrize("name", ["main", "master"])
-def test_a_finished_main_or_master_worktree_is_not_eligible(world, name) -> None:
+def test_a_finished_main_or_master_worktree_is_not_eligible(
+    world, name, verdict
+) -> None:
     from test_cli import run
 
     trunk_head(world)
-    path = world.worktree(name, base="trunk")
+    if verdict == "empty":
+        # At trunk's tip.
+        path = world.worktree(name, base="trunk")
+    else:
+        # Merged into trunk with a merge commit, and pushed.
+        path = world.finished(name)
+        world.git("push", "--quiet", "origin", "trunk")
     sha = world.git("rev-parse", f"refs/heads/{name}")
 
-    # At trunk's tip, so `empty`; no permission makes it eligible.
+    # No permission makes it eligible.
     p = run(world, "gwp", "--json", "--delete", "all")
     row = next(v for v in json.loads(p.stdout)["verdicts"] if v["branch"] == name)
-    assert row["verdict"] == "empty"
+    assert row["verdict"] == verdict
     assert row["eligible"] is False
     assert row["why"].endswith(f"; {RULE}")
 
