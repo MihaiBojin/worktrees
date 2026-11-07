@@ -166,7 +166,7 @@ def permitted(
 
 
 def _add_assess_flags(p: argparse.ArgumentParser) -> None:
-    add_delete_flag(p, "count a worktree as eligible though this goes with it")
+    add_delete_flag(p, "make a worktree eligible though VALUE goes with it")
     p.add_argument("--json", action="store_true", help="verdicts as data")
     p.add_argument("-q", "--quiet", action="store_true", help="verdicts only")
     p.add_argument(
@@ -410,6 +410,8 @@ def run_prune(args: argparse.Namespace) -> int:
         _err(render.fail(head[0].problem()))
 
     rows, stale, ref, head_branch, records = _assess(args, head)
+    # The head commit the verdicts were formed against, for the recheck.
+    head_sha = prune.sha_of(ref).out.strip() if head[0].resolves else ""
     go = prune.removable(rows)
     errors = int(not head[0].resolves or any(v.error for v in rows))
     result = _assessment(args, rows, stale, records) if args.json else {}
@@ -431,7 +433,7 @@ def run_prune(args: argparse.Namespace) -> int:
         return errors
 
     # Each target as it was judged, for the look after the question.
-    recorded = {v.path: prune.record(v, ref) for v in go}
+    recorded = {v.path: prune.record(v, ref, head_sha) for v in go}
     # What goes, and what puts it back, before anything does. On stderr with
     # the rest of the diagnostics, so stdout carries the result alone;
     # --quiet and --yes do not silence it.
@@ -450,7 +452,7 @@ def run_prune(args: argparse.Namespace) -> int:
     if args.json:
         result |= {"removed": [v.label for v in removed], "failed": failed}
         print(json.dumps(result, indent=2))
-    elif args.list:
+    elif args.list and removed:
         names = ", ".join(render.branch(v.label) for v in removed)
         _err(render.note(f"removed {len(removed)} worktree(s): {names}"))
     elif removed:
@@ -747,7 +749,7 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "-f", "--force", action="store_true", help="remove it even when unfinished"
     )
-    add_delete_flag(p, "also delete this; nothing restores it")
+    add_delete_flag(p, "also delete VALUE; nothing restores it")
     p.add_argument("-y", "--yes", action="store_true", help="do not ask")
     # Its own, not gw list's: assess skips the main checkout, so gwr can never act
     # on it and offering it would complete to "no worktree matches".
@@ -954,6 +956,7 @@ def run_remove(args: argparse.Namespace) -> int:
     head = _assessment_head(args)
     _require(head[0])
     rows, _, ref, head_branch, records = _assess(args, head, judge=wt_mod.removable)
+    head_sha = prune.sha_of(ref).out.strip() if head[0].resolves else ""
     # Exact and nothing looser: the closest match to a worktree already
     # removed is somebody else's.
     q = args.query
@@ -1016,7 +1019,10 @@ def run_remove(args: argparse.Namespace) -> int:
             render.fail(
                 f"{render.branch(chosen.label)} cannot be removed: "
                 f"{verdicts.SUBMODULE}\n"
-                f"run git submodule deinit --all in {chosen.path} and retry"
+                f"run git submodule deinit --all in {chosen.path}\n"
+                f"then delete {R.modules_dir(repo=chosen.path).out.strip()} "
+                "once nothing in it is needed, since it holds the submodules' "
+                "own commits, and retry"
             )
         )
         return 1
@@ -1070,7 +1076,7 @@ def run_remove(args: argparse.Namespace) -> int:
         # answered: the checkout goes and the branch stays.
         _warn(f"{why}\nremoving the worktree keeps the branch")
 
-    was = prune.record(chosen, ref)
+    was = prune.record(chosen, ref, head_sha)
     never = prune.plan([chosen], _err)
     if not args.yes and not prune.confirm(1, never=never):
         _err(render.note("nothing removed"))

@@ -244,12 +244,17 @@ def look(path: str, repo: str | os.PathLike[str] | None = None) -> Snapshot | No
 
 
 def record(
-    v: Verdict, head_ref: str, repo: str | os.PathLike[str] | None = None
+    v: Verdict,
+    head_ref: str,
+    head_sha: str,
+    repo: str | os.PathLike[str] | None = None,
 ) -> Snapshot | None:
     """The snapshot a removal is checked against, tied to the branch, the
-    commit and the head ref the verdict was formed from."""
+    commit, the head ref and the head commit the verdict was formed from."""
     now = look(v.path, repo=repo)
-    return now and now._replace(branch=v.branch, sha=v.sha, head_ref=head_ref)
+    return now and now._replace(
+        branch=v.branch, sha=v.sha, head_ref=head_ref, head_sha=head_sha
+    )
 
 
 def changed(

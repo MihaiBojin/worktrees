@@ -67,7 +67,7 @@ gwp --json | jq -c '{
   gitignored files.
 - `kept` and `unknown` count the rest. `kept` includes finished rows that a
   protection holds back, such as uncommitted changes, a lock or an
-  initialized submodule. The main checkout is always among the kept
+  initialized submodule or its store. The main checkout is always among the kept
   worktrees, and `main` and `master` are never eligible.
 
 `gwbs` leaves out every branch checked out in a worktree. Those appear only
