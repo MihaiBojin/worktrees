@@ -205,9 +205,10 @@ What the output means:
   the stash list changed under it; the stash is still there. A path that
   matches no worktree, such as one already removed, prints `no worktree
   matches` and exits 1 with nothing removed.
-- `gwbd` prints its plan and the `git stash store` line for each stash it
-  will drop, then `each comes back with:` and one `git branch NAME SHA` per
-  branch, then `deleted N branch: ...`. A branch it refuses prints `NAME
+- `gwbd` prints its plan, `NAME: restore with: git branch NAME SHA` for
+  each branch and the `git stash store` line for each stash it will drop.
+  After deleting it prints `each comes back with:` and one
+  `git branch NAME SHA` per branch that went, then `deleted N branch: ...`. A branch it refuses prints `NAME
   kept: REASON` and the command exits 3; the others are still deleted.
 
 ## 6. Report

@@ -270,7 +270,7 @@ def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
     `_envelope`."""
     from datetime import UTC, datetime
 
-    from . import sync
+    from . import prune, sync
 
     def show(head: R.Head) -> None:
         args.found_head = head
@@ -285,8 +285,7 @@ def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
                 _warn(stale)
         if not head.resolves or (args.quiet and head.source != "inferred"):
             return
-        detail = f"; {head.also} also exists" if head.also else ""
-        _err(render.note(f"Head: {render.ref(head.name)} ({head.source}{detail})"))
+        _err(prune.head_line(head))
 
     return show
 
@@ -456,7 +455,7 @@ def run_prune(args: argparse.Namespace) -> int:
     # What goes, and what puts it back, before anything does. On stderr with
     # the rest of the diagnostics, so stdout carries the result alone;
     # --quiet and --yes do not silence it.
-    never = prune.plan(go, _err)
+    never = prune.plan(go, _err, head[0])
     if not args.yes and not prune.confirm(len(go), never=never):
         _err(render.note("nothing removed"))
         return errors
@@ -1128,7 +1127,7 @@ def run_remove(args: argparse.Namespace) -> int:
         return 1
 
     was = prune.record(chosen, ref, head_sha)
-    never = prune.plan([chosen], _err, keep_branch=keep_branch)
+    never = prune.plan([chosen], _err, head[0], keep_branch=keep_branch)
     if not args.yes and not prune.confirm(1, never=never):
         _err(render.note("nothing removed"))
         return 0

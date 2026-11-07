@@ -296,3 +296,30 @@ def test_json_has_no_head_line(world, argv) -> None:
     world.worktree("feature")
     p = run(world, *argv, "--json")
     assert "Head:" not in p.stderr
+
+
+@pytest.mark.parametrize(
+    "argv", [("gwp", "--yes"), ("gwr", "done", "--yes"), ("gwbd", "done", "--yes")]
+)
+@pytest.mark.parametrize("json_flag", [(), ("--json",)])
+def test_the_disclosure_repeats_an_inferred_head(world, argv, json_flag) -> None:
+    """On stderr, before the question, and under --json too, where the head
+    line itself is not printed."""
+    if argv[0] == "gwbd":
+        world.finished_branch("done")
+    else:
+        world.finished("done")
+    p = run(world, *argv, *json_flag)
+    assert p.returncode == 0, p.stderr
+    lines = p.stderr.splitlines()
+    assert lines.count("Head: main (inferred)") == (1 if json_flag else 2), p.stderr
+    assert "Head:" not in p.stdout
+
+
+def test_the_disclosure_leaves_out_a_head_that_was_not_inferred(world) -> None:
+    world.finished("done")
+    bare(world)
+    assert sync(world).returncode == 0
+    p = run(world, "gwp", "--yes", "--json")
+    assert p.returncode == 0, p.stderr
+    assert "Head:" not in p.stderr

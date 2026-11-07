@@ -283,6 +283,8 @@ def delete(args: argparse.Namespace) -> int:
         _err(render.note(f"deleting {_branches(len(go))}:"))
         _err(_plan(go))
         for row in go:
+            restore = render.restore(row.branch, row.sha)
+            _err(f"  {render.branch(row.branch)}: restore with: {restore}")
             for stash in row.stashes:
                 _err(
                     f"  {render.branch(row.branch)}: dropping stash "
@@ -290,6 +292,8 @@ def delete(args: argparse.Namespace) -> int:
                 )
         if never:
             _err(render.warn(sync.NEVER))
+        if found.source == "inferred":
+            _err(prune.head_line(found))
     if go and not args.yes:
         if not sys.stdin.isatty():
             raise Refused("not a terminal; pass --yes to confirm deletion")

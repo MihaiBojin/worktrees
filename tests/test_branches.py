@@ -329,6 +329,20 @@ def test_content_proof_accepts_matching_deletions_and_unusual_paths(world):
     assert status(world, "feature")["verdicts"][0]["proof"] == "content"
 
 
+@pytest.mark.parametrize("name", ["done", "a'b"])
+def test_delete_prints_the_restore_command_before_it_asks(world, name):
+    from test_cli import run_on_a_terminal
+
+    world.finished_branch(name)
+    sha = world.git("rev-parse", f"refs/heads/{name}")
+    code, out = run_on_a_terminal(world, "gwbd", name, answer="n\n")
+    assert code == 0, out
+    restore = f"git branch {shlex.quote(name)} {sha}"
+    assert restore in out
+    assert out.index(restore) < out.index("delete 1 branch?")
+    assert world.git("rev-parse", f"refs/heads/{name}") == sha
+
+
 @pytest.mark.parametrize("answer", ["1\ny\n", "1 2\ny\n", "\n", "1\nn\n", "9\n"])
 def test_selector_requires_a_selection_then_confirmation(world, answer):
     from test_cli import run_on_a_terminal

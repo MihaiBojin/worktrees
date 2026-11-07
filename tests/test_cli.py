@@ -1938,6 +1938,23 @@ def test_a_target_no_longer_eligible_after_the_question_is_kept(
     assert wt.exists()
 
 
+def test_a_gwp_that_removes_nothing_leaves_a_stale_record(
+    world, monkeypatch, capsys
+) -> None:
+    """Every target refused after the question: `git worktree prune` does
+    not run, so the record for a directory deleted by hand stays."""
+    import shutil
+
+    wt = world.finished("done")
+    shutil.rmtree(world.worktree("gone"))
+    _between(monkeypatch, lambda: wt.joinpath("new").write_text("x"))
+    code = cli.gwp(["--yes"])
+    err = capsys.readouterr().err
+    assert code == 1, err
+    assert "nothing removed" in err
+    assert "prunable" in world.git("worktree", "list", "--porcelain")
+
+
 def test_each_outcome_is_reported_on_its_own(world, capsys) -> None:
     wt = world.finished("done")
     code = cli.gwp(["--yes"])

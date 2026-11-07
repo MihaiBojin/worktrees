@@ -193,9 +193,16 @@ def stash_restore(stash: R.Stash) -> str:
     return f"git stash store -m {shlex.quote(stash.subject)} {stash.sha}"
 
 
+def head_line(head: R.Head) -> str:
+    """`Head: main (inferred; master also exists)`, on stderr."""
+    detail = f"; {head.also} also exists" if head.also else ""
+    return render.note(f"Head: {render.ref(head.name)} ({head.source}{detail})")
+
+
 def plan(
     go: list[Verdict],
     say: Callable[[str], None],
+    head: R.Head,
     repo: str | os.PathLike[str] | None = None,
     keep_branch: bool = False,
 ) -> bool:
@@ -204,6 +211,9 @@ def plan(
     last and the question asks about.
 
     --quiet and --yes do not silence this.
+
+    An inferred head is a guess the verdicts rest on, so the plan repeats
+    its line, under --json too.
 
     Every ignored path is named, whatever flag got the worktree this far:
     `git worktree remove` takes the whole directory, so --delete ignored-files
@@ -235,6 +245,8 @@ def plan(
     never = sync.never()
     if never:
         say(render.warn(sync.NEVER))
+    if head.source == "inferred":
+        say(head_line(head))
     return never
 
 
@@ -424,7 +436,8 @@ def sweep(
         if went:
             removed.append(v)
         failed += not ok
-    worktree_prune(repo=repo)
+    if removed:
+        worktree_prune(repo=repo)
     return removed, failed
 
 

@@ -37,11 +37,16 @@ a verdict.
 nothing deletes`, and `--all` passes over them. The step that deletes a ref
 refuses these names too, whatever the assessment said. Without a terminal, supply names or `--all`, and `--yes` to delete.
 `--dry-run` needs neither a terminal nor confirmation. The plan prints on
-stderr before the question, under `--json` and `--yes` too.
+stderr before the question, under `--json` and `--yes` too. For each branch
+it prints `NAME: restore with: git branch NAME SHA`, with the full SHA and
+the name shell-quoted, then each stash it will drop with the line that
+restores it. After deleting, `each comes back with:` repeats the restore
+line for the branches that actually went.
 
 In a repository whose default remote has no [`gw sync`](../../README.md#gw-sync)
 record, the plan ends with the never-synced line and the question is
-`Never synced. Delete anyway? [y/N]`.
+`Never synced. Delete anyway? [y/N]`. When the head branch was inferred, the
+plan ends with the `Head:` line too.
 
 When the head branch does not resolve, the command refuses at exit 1 and
 deletes nothing. Otherwise it checks the head SHA and assesses the selected branch again after

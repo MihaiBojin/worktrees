@@ -878,7 +878,9 @@ Head: main (inferred; master also exists)
 ```
 
 `--json` leaves the line out and carries `head` instead. `-q` leaves it out
-too, unless the head branch was inferred.
+too, unless the head branch was inferred. An inferred head is a guess every
+verdict rests on, so the disclosure before `gwp`, `gwr` or `gwbd` removes
+anything prints its line again, on stderr, under `--json` too.
 
 When the head branch does not resolve, the command prints why instead of the
 `Head:` line: `No main or master branch.` when the head branch was inferred,
