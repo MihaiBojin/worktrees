@@ -3,20 +3,13 @@ name: prune
 description: Remove the worktrees and branches the worktrees CLI proves finished, after asking
 argument-hint: "[NAME ...]"
 allowed-tools:
-  - Bash(gwbs:*)
-  - Bash(gwp --json:*)
-  - Bash(gwr:*)
-  - Bash(gwbd:*)
+  - Bash(gwbs --json)
+  - Bash(gwp --json)
+  - Bash(jq:*)
+  - Bash(git remote)
+  - Bash(gw sync:*)
   - Bash(command gwr:*)
   - Bash(command gwbd:*)
-  - Bash(gw sync:*)
-  - Bash(git remote:*)
-  - Bash(jq:*)
-  - Bash(git status:*)
-  - Bash(git worktree list:*)
-  - Bash(git rev-parse:*)
-  - Bash(git log:*)
-  - Read
   - AskUserQuestion
 ---
 

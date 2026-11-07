@@ -156,7 +156,9 @@ going quiet in a completion nobody is watching.
 
 `plugin/` is an agent plugin, installed from a release tag through the
 `release-tools` marketplace. Its skill pipes `gwbs --json` and `gwp --json`
-each through a jq filter and removes only with `gwr` and `gwbd`, so the JSON
+each through a jq filter, runs `git remote` to tell a repository with no
+remote from one never synced, runs `gw sync` only when the user says yes,
+and removes only with `gwr` and `gwbd`, so the JSON
 fields those filters name are an interface. `tests/test_plugin.py` runs both
 filters, read out of `SKILL.md`, against the commands' output: a renamed or
 dropped field fails there. They are two plain pipelines with no jq

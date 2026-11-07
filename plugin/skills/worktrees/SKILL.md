@@ -34,7 +34,7 @@ gwbs --json | jq -c '{
   empty: [.verdicts[] | select(.why | endswith("needs --delete empty"))
     | {branch, undo}],
   stashed: [.verdicts[] | select(.why | endswith("need --delete stashes"))
-    | {branch, undo, stashes}],
+    | {branch, undo, verdict, stashes}],
   kept: [.verdicts[] | select((.eligible | not) and .verdict != "unknown"
     and (.why | endswith("needs --delete empty") | not)
     and (.why | endswith("need --delete stashes") | not))] | length,
@@ -56,7 +56,7 @@ gwp --json | jq -c '{
   empty: [.verdicts[] | select(.why | endswith("needs --delete empty"))
     | {branch, path, why}],
   stashed: [.verdicts[] | select(.why | endswith("need --delete stashes"))
-    | {branch, path, why, stashes}],
+    | {branch, path, verdict, why, stashes}],
   kept: [.verdicts[] | select((.eligible | not) and .verdict != "unknown"
     and (.why | endswith("needs --delete empty") | not)
     and (.why | endswith("need --delete stashes") | not))] | length,
@@ -84,7 +84,8 @@ gwp --json | jq -c '{
   what a fast-forward merge leaves.
 - `stashed`, in both, lists finished branches and worktrees held back by
   stashes on the branch, with the stashes' shas. `--delete stashes` lets
-  the CLI remove them and drop those stashes.
+  the CLI remove them and drop those stashes. A row whose `verdict` is
+  `empty` also needs `--delete empty`.
 - `ignored` names finished worktrees held back only because they hold
   gitignored files.
 - `kept` and `unknown` count the rest. `kept` includes finished and `empty`
@@ -169,10 +170,13 @@ change directory.
   removes the worktree and its branch. Add `--delete empty` for a row from
   `empty`, `--delete stashes` for a row from `stashed`, and `--delete
   ignored-files` for a row from `ignored`, each only when the user approved
-  that row.
+  that row. A `stashed` row whose `verdict` is `empty` takes both `--delete
+  empty --delete stashes`, and only when the user approved both lists for
+  it; otherwise leave it alone.
 - The chosen branches, in one call: `command gwbd 'NAME' 'NAME' ... --yes
   2>&1`. Approved `empty` branches and approved `stashed` branches each go
-  in a call of their own, with `--delete empty` or `--delete stashes`.
+  in a call of their own, with `--delete empty` or `--delete stashes`, and
+  an `empty` branch in `stashed` with both, under the same rule.
 
 The skill cannot remove the worktree it runs in. `gwp` never proposes it,
 and `gwr` refuses it at exit 3 without a terminal: say so, and that the user

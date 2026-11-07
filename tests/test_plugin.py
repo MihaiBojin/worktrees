@@ -224,5 +224,36 @@ def test_the_skill_never_syncs_unasked_and_removes_through_the_binaries() -> Non
     assert "`command gwr 'PATH' --yes 2>&1`" in text
     assert "`command gwbd 'NAME' 'NAME' ... --yes" in text
     tools = (PLUGIN / "commands" / "prune.md").read_text()
-    for tool in ("Bash(gw sync:*)", "Bash(git remote:*)", "Bash(command gwr:*)"):
-        assert tool in tools, tool
+    listed = re.search(r"^allowed-tools:\n((?:  - .*\n)+)", tools, re.M)
+    assert listed, "no allowed-tools"
+    assert [line[4:] for line in listed.group(1).splitlines()] == [
+        "Bash(gwbs --json)",
+        "Bash(gwp --json)",
+        "Bash(jq:*)",
+        "Bash(git remote)",
+        "Bash(gw sync:*)",
+        "Bash(command gwr:*)",
+        "Bash(command gwbd:*)",
+        "AskUserQuestion",
+    ]
+
+
+def test_an_empty_row_with_stashes_needs_both_permissions(world) -> None:
+    wt = world.worktree("fresh")
+    sha = _stash(world, wt, "half")
+    out = _jq(_filter("gwp"), _json(world, "gwp"))
+    [row] = out["stashed"]
+    assert (row["branch"], row["verdict"], row["stashes"]) == ("fresh", "empty", [sha])
+    assert out["empty"] == []
+    prose = " ".join(SKILL.read_text().split())
+    assert "takes both `--delete empty --delete stashes`" in prose
+
+    proc = _run(world, "gwr", row["path"], "--delete", "stashes", "--yes")
+    assert proc.returncode == 1
+    assert wt.exists()
+    proc = _run(
+        world, "gwr", row["path"], "--delete", "empty", "--delete", "stashes", "--yes"
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert not wt.exists()
+    assert world.git("stash", "list") == ""
