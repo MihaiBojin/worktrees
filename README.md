@@ -308,10 +308,9 @@ belongs to none. `--json` lists each row's stashes by sha.
 `--delete VALUE` is the permission to delete something a verdict alone does
 not cover. `gwp` and `gwr` take `empty`, `ignored-files`, `stashes` and
 `all`, and `gwbd` takes `empty`, `stashes` and `all`; `all` grants every
-value the command takes.
-It repeats, and the values add up. An unknown value, or one the command does
-not take, is a usage error at exit 2 before anything is judged, and `gwbs`
-takes no `--delete`. `--yes` skips the question and grants nothing.
+value the command takes. It repeats, and the values add up. An unknown
+value, or one the command does not take, is a usage error at exit 2 before
+anything is judged, and `gwbs` takes no `--delete`. `--yes` skips the question and grants nothing.
 
 ### Removing
 
