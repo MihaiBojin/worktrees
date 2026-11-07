@@ -1,7 +1,7 @@
 function gw --wraps gw --description 'cd to where gw list, add and remove land you'
     set -l lands 0
     switch "$argv[1]"
-        case list
+        case list l
             isatty stdin; and set lands 1
         case add a remove rm
             set lands 1

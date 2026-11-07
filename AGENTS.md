@@ -13,6 +13,9 @@ uv run --no-sync pytest tests -m integration
 uv run --no-sync pre-commit run --all-files
 ```
 
+pytest runs one pytest-xdist worker per core. Add `-n0` to run in one process,
+which `-x` and `--pdb` need.
+
 `pre-commit run --all-files` reads `git ls-files`, so a file that is new and
 unstaged is invisible to it. Stage before running the hooks, or install them
 and let the commit do it.
@@ -30,9 +33,9 @@ from `functions/`. So a command that exists as both runs different code from a
 prompt and from a script unless the function is a pure adapter.
 
 `gw` is the one name that is both. Its function calls `command gw`, changes
-directory when `gw add`, `gw remove` or a terminal `gw list` prints a
-destination, and prints data otherwise. Metadata flags and nonterminal input
-print data. `gw remove` can return a destination after checkout removal and
+directory when `gw add`, `gw remove` or a terminal `gw list` or `gw l`
+prints a destination, and prints data otherwise. Metadata flags and
+nonterminal input print data. `gw remove` can return a destination after checkout removal and
 failure for later cleanup; the function changes directory and preserves the
 failure status. Every other subcommand passes straight through. The words
 that land are the rows with `lands` set, and `tests/test_shims.py` holds both
@@ -69,9 +72,9 @@ failed.
 
 A shortcut is one call to the `gw` function with fixed words, by its plain
 name so a shortcut to a command that lands still lands: `gwa` calls `gw add`,
-`gwr!` calls `gw remove --delete ignored-files`, and `gwpa!` calls
-`gw prune --delete all --yes`. No shortcut has a console script. The
-`shortcuts` field of a row in `cli.py` lists that command's; `gw --help`
+`gwl` calls `gw list`, `gwr!` calls `gw remove --delete ignored-files`, and
+`gwpa!` calls `gw prune --delete all --yes`. No shortcut has a console script.
+The `shortcuts` field of a row in `cli.py` lists that command's; `gw --help`
 prints them under it, and `tests/test_shims.py` holds every function file in
 both shells to that table. fish completes a shortcut through its `--wraps`,
 zsh through the shortcut's line in `_gw`. A shortcut's `!` is its last
@@ -162,32 +165,47 @@ what each row shows, reading the answer back: all of it in the CLI. No shell
 file holds a candidate, a format string or a rank, and nothing spawns an
 external picker.
 
-The set is small. Across the repositories this was written for, the largest
-number of linked worktrees in one is four. A fuzzy finder is the wrong
-instrument at that size, and a list moved through with the arrow keys reads
-faster:
+Typing filters the list with the matching `gw list QUERY` uses, so a
+repository with forty worktrees narrows to one in a few keys:
 
 ```
-  #  WORKTREE    BRANCH      PATH
-> 1  repo        main        /home/you/git/repo
-  2  fix-parser  fix-parser  /home/you/git/.worktrees/fix-parser/repo
-  3  add-tests   add-tests   /home/you/git/.worktrees/add-tests/repo
-which? [up/down and enter, 1-3, or esc to cancel]
+   WORKTREE    BRANCH      PATH
+>  repo        main        /home/you/git/repo
+   fix-parser  fix-parser  /home/you/git/.worktrees/fix-parser/repo
+   add-tests   add-tests   /home/you/git/.worktrees/add-tests/repo
+which? [type to filter, up/down and enter, esc to cancel]
 ```
 
-Up and down move the highlight and wrap, enter takes it, a digit takes that
-row outright, and esc or ctrl-d cancels. The terminal goes into cbreak mode
+Every printable key goes into the filter, digits included, because names
+carry them: `release-0.6.2`, and every branch `gw rotate` names. Rows carry no
+numbers for the same reason. Backspace takes a letter back, up and down move
+the highlight and wrap, and enter takes it. Esc clears the filter; on an
+empty filter it cancels, as ctrl-d does, and the hint names which of the two
+it does now. `gw list QUERY` opens the list filtered by its query, so one esc
+widens it to every worktree.
+
+An arrow is `ESC [ A` or, in application mode, `ESC O A`. Any other `ESC [`
+sequence is read to its final byte and dropped, so the `~` that ends the
+delete key is never typed into the filter. A byte after an esc that starts
+no sequence is a key of its own, so two escapes written together are two.
+
+The terminal goes into cbreak mode
 through the stdlib's `termios`, so ctrl-c still raises `KeyboardInterrupt`.
 Both switches use `TCSANOW`: `TCSAFLUSH` discards keys typed before the list
 appears, and `TCSADRAIN` blocks on an echo queue nothing reads, which is how
 the pty tests hang.
 
 The list is redrawn in place when stderr is a terminal that can move its
-cursor. On `TERM=dumb`, or a stderr that is not a terminal, it is printed
-once and each move prints the row it lands on, so nothing writes a cursor
-code where it would show up as text.
+cursor: the cursor climbs over the frame drawn last and erases everything
+under it, since the filter makes the list longer or shorter. The climb counts
+lines, so the frame fits the screen: each row is cut to the terminal's width,
+and the rows shown are a window as tall as the screen that follows the
+highlight. On `TERM=dumb`,
+or a stderr that is not a terminal, the list is printed once, each move
+prints the row it lands on, and each change to the filter prints the rows it
+leaves, so nothing writes a cursor code where it would show up as text.
 
-A query that is exactly one worktree's branch or path is that worktree
+A query that is exactly one worktree's name, branch or path is that worktree
 alone. `gw list one` beside `one-more` is not a question, and neither is
 `gw remove "$(gw list two --json | jq -r '.worktrees[0].path')"`.
 `gw remove NAME` uses exact names, with an exact path resolving one worktree; several name matches need a picker or a nonterminal refusal.
@@ -196,8 +214,11 @@ Dropping `fzf` is less code, not more. It removes the spawn and the fallback
 branch a machine without `fzf` would otherwise need.
 
 Matching is substring first, then subsequence, which is the one idea worth
-taking from `fzf`: the query's letters appearing in order, ranked by how
-tightly they cluster. About twenty lines, `difflib` not required.
+taking from `fzf`: the query's letters appearing in order. Substring looks at
+the branch and the path, which holds the worktree's name. Subsequence looks
+at the branch and the name, never the whole path, where `.worktrees` hands a
+`t`, a `w` and an `o` to any query. About twenty lines, `difflib` not
+required.
 
 ```
 'parse'  -> ['fix-parser']
@@ -220,16 +241,16 @@ Three more about what is in the list at all:
   only answer that is always right. `main` finds it whatever branch it stands
   on, because its label carries the word, once.
 - In `gw list`, a linked worktree you are standing in is shown and never
-  offered. It carries a `*` rather than a number and the highlight skips it,
+  offered. It carries a `*` in the first column and the highlight skips it,
   because picking it is the one answer that takes you nowhere. Leaving it
   out of the list entirely is worse: the list then shows fewer rows than
   `git worktree list` does, and reads as though something went missing
   rather than as where you already are. The main checkout is offered even
   from inside it, with a `*` after its name, since from a subdirectory it is
   the way back to the top.
-- In `gw remove`, the main checkout is shown dimmed and unnumbered, because `git
-  worktree remove` refuses it whatever flag it is given, and the highlight
-  starts on the worktree you are standing in. `gw prune` keeps the main
+- In `gw remove`, the main checkout is shown dimmed and never highlighted,
+  because `git worktree remove` refuses it whatever flag it is given, and
+  the highlight starts on the worktree you are standing in. `gw prune` keeps the main
   checkout in its list for the same reason, and never proposes it.
 
 `--json` and `--list` answer the same question without any of this, and an
@@ -249,8 +270,8 @@ its command, and the shell plugin's release line, and nothing else;
 word that is not a command is a usage error at exit 2 that suggests
 `gw list WORD`, so a worktree name never competes with a shorthand. `gw list
 [QUERY]` uses the picker on terminal input; without a terminal, or with
-`--json` or `--list`, it prints matching metadata. `gwl`, `gwh`, list
-aliases and the help subcommand are absent.
+`--json` or `--list`, it prints matching metadata. `gw l` is `gw list`, and
+`gwl` is its shortcut. `gwh`, `gw ls` and the help subcommand are absent.
 
 A tool's version is asked through the tool's name, so `gw version` and `gw v` are the two spellings and no parser
 carries a `--version` flag.
@@ -261,7 +282,7 @@ name that runs a different one.
 
 A shorthand is for typing, so it is short and it is not clever: the first
 letters of the word, or the two-letter name the same job has in git and in a
-shell. `rm` and `mv` mean what they mean everywhere else.
+shell. `rm` means what it means everywhere else.
 
 ## Colour is a property of the stream, not of the program
 
@@ -439,7 +460,13 @@ paths and stash identities. Recheck after confirmation precedes plain
 worktree removal, full-SHA ref deletion and approved stash drops. Ignored
 paths are what an ignore pattern names, so a matched directory is one entry;
 the snapshot is a path listing, not a recursive content fingerprint, and a
-file created inside a listed directory after assessment goes with it. Stash drops verify SHA and repair a
+file created inside a listed directory after assessment goes with it. The
+disclosure, the protection's count and the JSON `ignored` field cut each
+listed path to its first component below the `.gitignore` whose pattern
+matched it, found with `git check-ignore -v`, and the disclosure quotes a
+path holding a character that would not print, as `git status` does. A pattern from
+`.git/info/exclude` or `core.excludesFile` counts from the top level, so
+`build/out/a.log` reads as `build/`. Stash drops verify SHA and repair a
 concurrent wrong-entry drop using the exact subject. Restoration remains
 possible until Git garbage collection prunes the unreachable stash commit.
 Report checkout, branch and stash outcomes separately after partial failure.

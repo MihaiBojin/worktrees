@@ -1,6 +1,6 @@
 local lands=0 arg
 case $1 in
-    list) [[ -t 0 ]] && lands=1 ;;
+    list|l) [[ -t 0 ]] && lands=1 ;;
     add|a|remove|rm) lands=1 ;;
 esac
 for arg in "$@"; do

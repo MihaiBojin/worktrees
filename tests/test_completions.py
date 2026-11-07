@@ -311,6 +311,7 @@ COMMAND_COMPLETIONS = [
     ("gw a", "gw add"),
     ("gw list", "gw list"),
     ("gw list sync", "gw list"),
+    ("gw l", "gw list"),
     ("gw remove", "gw remove"),
     ("gw rm", "gw remove"),
     ("gw rotate", "gw rotate"),
@@ -458,6 +459,8 @@ def test_zsh_offers_the_complete_option_value_set(world, prefix, values):
 # names, all from the CLI's own --complete.
 CANDIDATES = [
     ("gw list ", {"main", "one"}),
+    ("gw l ", {"main", "one"}),
+    ("gwl ", {"main", "one"}),
     ("gw remove ", {"one"}),
     ("gwr ", {"one"}),
     ("gwr! ", {"one"}),

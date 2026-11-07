@@ -180,7 +180,11 @@ def test_unsafe_git_partial_clone_refuses_before_object_commands(world, version)
 )
 def test_patched_git_partial_clone_policy_accepts_supported_releases(world, version):
     partial = partial_clone(world)
-    partial.git("fetch", "--no-filter", "--refetch", "origin")
+    # Without maintenance.auto=false the fetch leaves `git maintenance run
+    # --auto` running detached, and its lock file lands in the snapshot.
+    partial.git(
+        "-c", "maintenance.auto=false", "fetch", "--no-filter", "--refetch", "origin"
+    )
     stub = git_version_stub(world, version)
     env = env_for(partial)
     trace = world.root / "patched-trace.jsonl"

@@ -350,21 +350,33 @@ def test_a_real_terminal_is_not_required(tmp_path) -> None:
     target.mkdir()
     bin_dir = _printing(tmp_path, target)
 
-    pid, fd = pty.fork()
-    if pid == 0:  # pragma: no cover
-        os.environ["PATH"] = f"{bin_dir}:{os.environ['PATH']}"
-        os.environ["TERM"] = "dumb"
-        os.execv(fish, [fish, "--no-config", "-c", f"{_setup('fish')}; gwa x; pwd"])
+    # Popen rather than pty.fork: a pytest-xdist worker runs threads, and a
+    # fork that goes on to run Python can deadlock on a lock one of them held.
+    parent, child = pty.openpty()
+    proc = subprocess.Popen(
+        [
+            fish,
+            "--no-config",
+            "-c",
+            f"{_setup('fish')}; gwa x; pwd",
+        ],
+        stdin=child,
+        stdout=child,
+        stderr=child,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "TERM": "dumb"},
+    )
+    os.close(child)
     out = b""
     while True:
         try:
-            chunk = os.read(fd, 65536)
+            chunk = os.read(parent, 65536)
         except OSError:
             break
         if not chunk:
             break
         out += chunk
-    os.waitpid(pid, 0)
+    proc.wait()
+    os.close(parent)
     assert str(target.resolve()) in out.decode(errors="replace")
 
 
@@ -610,7 +622,7 @@ def test_ambiguous_gw_navigation_uses_the_list_picker(world, shell):
         ["gw", "list", "fix"],
         world.repo,
         env_for(world),
-        answer=b"2",
+        answer=b"-two\r",
     )
     assert process.returncode == 0, process.stderr
     assert process.stdout == b""

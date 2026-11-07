@@ -123,6 +123,7 @@ def _verdict_data(rows: list[verdicts.Verdict]) -> list[dict]:
             "path": v.path,
             "why": v.why,
             "ignored": v.ignored,
+            "ignoredPaths": list(v.ignored_paths),
             "sha": v.sha,
         }
         for v in rows
@@ -360,11 +361,11 @@ def run_preview(args: argparse.Namespace) -> int:
                     # them; a caller counting directories needs to know
                     # they are not all this repository's.
                     "neighbours": others,
-                    # `ignored` and `sha` are fields rather than facts to
-                    # parse back out of `why`. A caller deciding whether to
-                    # pass --delete ignored-files wants the count, not a sentence
-                    # that happens to contain it, and the sha is what the
-                    # verdict was formed against.
+                    # `ignored`, `ignoredPaths` and `sha` are fields rather
+                    # than facts to parse back out of `why`. A caller deciding
+                    # whether to pass --delete ignored-files wants the count
+                    # and the paths, not a sentence that happens to contain
+                    # them, and the sha is what the verdict was formed against.
                     "verdicts": _verdict_data(_only(args, rows)),
                 },
                 indent=2,
@@ -847,16 +848,17 @@ def run_list(args: argparse.Namespace) -> int:
     if not found:
         _err(render.fail("no worktree matches"))
         return 1
+
     # The main checkout is offered even to somebody standing in it: from a
     # subdirectory it is the way back to the top. Any other worktree you
-    # stand in is shown above the rest, marked and unnumbered.
-    offered = [w for w in found if w.main or not _same(w.path, here)]
+    # stand in is shown above the rest, marked and never highlighted.
+    def offerable(w: R.Worktree) -> bool:
+        return w.main or not _same(w.path, here)
+
+    offered = [w for w in found if offerable(w)]
     if not offered:
         _err(render.note(f"already in {render.branch(found[0].label)}"))
         return 0
-
-    if args.query:
-        _refuse_ambiguous(offered)
 
     # Which repository this is, above the list, so nobody has to run
     # `git remote -v` to find out. Only where the picker is drawn: --list and
@@ -866,13 +868,17 @@ def run_list(args: argparse.Namespace) -> int:
         for name, url in R.remote_urls():
             _err(f"{render.ref(name)}: {url}")
 
-    # A query that narrows to one has said which. No query has not, even
-    # when the repository holds exactly one other worktree.
+    # The picker holds every worktree and opens filtered by the query, so one
+    # esc widens it to all of them. A query that narrows to one has said
+    # which. No query has not, even when the repository holds exactly one
+    # other worktree.
+    everyone = [w for w in rows if offerable(w)]
     chosen = pick.choose(
-        offered,
+        everyone,
         outright=bool(args.query),
-        shown=[("*", w) for w in found if w not in offered],
-        here=next((w for w in offered if _same(w.path, here)), None),
+        shown=[("*", w) for w in rows if not offerable(w)],
+        here=next((w for w in everyone if _same(w.path, here)), None),
+        query=args.query or "",
     )
     if chosen is None:
         _err(render.note("nothing picked"))
@@ -1286,6 +1292,8 @@ _COMMANDS: dict[str, _Command] = {
         _add_list_flags,
         "list worktrees or pick a destination",
         usage="[QUERY]",
+        aliases=("l",),
+        shortcuts={"gwl": ""},
         lands=True,
     ),
     "remove": _Command(

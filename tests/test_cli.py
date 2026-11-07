@@ -384,7 +384,8 @@ def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
         "nothing to remove; 0 remove, 2 empty, 0 keep, 0 unknown; 0 eligible"
         in p.stdout
     )
-    assert "gw" not in p.stdout
+    # The temporary root can hold the letters, as pytest-xdist's popen-gw0 does.
+    assert "gw" not in p.stdout.replace(str(world.root), "")
 
 
 def test_version_is_a_command_and_not_a_flag(world) -> None:
@@ -770,9 +771,9 @@ def test_list_with_no_query_prompts_on_a_terminal(world) -> None:
     options, and one option is still an option rather than a destination.
     """
     world.worktree("one")
-    code, out = run_on_a_terminal(world, "gw", "list", answer="1\n")
+    code, out = run_on_a_terminal(world, "gw", "list", answer="\r")
     assert code == 0, out
-    assert "which? [up/down and enter, 1-2, or esc to cancel]" in out
+    assert "which? [type to filter, up/down and enter, esc to cancel]" in out
     assert "one" in out
 
 
@@ -796,11 +797,11 @@ def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
     [
         (entry, (*prefix, *flags), prompt, command == "prune")
         for command, flags, prompt in (
-            ("list", (), "which? [up/down and enter, 1-3, or esc to cancel] "),
+            ("list", (), "which? [type to filter, up/down and enter, esc to cancel] "),
             (
                 "remove",
                 (),
-                "which? [up/down and enter, 1-2, or esc to cancel] ",
+                "which? [type to filter, up/down and enter, esc to cancel] ",
             ),
             (
                 "remove",
@@ -904,10 +905,10 @@ def test_list_shows_the_worktree_you_are_standing_in_unnumbered(world) -> None:
     wt = world.worktree("cleanup")
     code, out = run_on_a_terminal_at(world, wt, "gw", "list", answer="\x1b")
     assert code == 0, out
-    assert re.search(r"^\s+#\s+WORKTREE\s+BRANCH\s+PATH$", out, re.M), out
-    assert re.search(r"^  \*\s+cleanup\s+cleanup\s", out, re.M), out
-    assert re.search(r"^> 1\s+repo\s+main\s", out, re.M), out
-    assert "which? [up/down and enter, 1-1, or esc to cancel]" in out
+    assert re.search(r"^\s+WORKTREE\s+BRANCH\s+PATH$", out, re.M), out
+    assert re.search(r"^\*\s+cleanup\s+cleanup\s", out, re.M), out
+    assert re.search(r"^>\s+repo\s+main\s", out, re.M), out
+    assert "which? [type to filter, up/down and enter, esc to cancel]" in out
 
 
 def test_remove_starts_on_the_worktree_you_stand_in_and_lists_main_unnumbered(
@@ -917,9 +918,9 @@ def test_remove_starts_on_the_worktree_you_stand_in_and_lists_main_unnumbered(
     two = world.worktree("two")
     code, out = run_on_a_terminal_at(world, two, "gw remove", answer="\x1b")
     assert code == 0, out
-    assert "  1  one" in out
-    assert "> 2  two" in out
-    assert re.search(r"^ {5}repo\s+main\s", out, re.M), out
+    assert re.search(r"^ {3}one\s+one\s", out, re.M), out
+    assert re.search(r"^>  two\s+two\s", out, re.M), out
+    assert re.search(r"^ {3}repo\s+main\s", out, re.M), out
     assert "nothing picked" in out
 
 
@@ -968,8 +969,21 @@ def test_list_marks_main_when_you_stand_in_it(world) -> None:
     world.worktree("one")
     code, out = run_on_a_terminal(world, "gw", "list", answer="\x1b")
     assert code == 0, out
-    assert re.search(r"^> 1\s+repo\s+main \*\s", out, re.M), out
-    assert re.search(r"^  2\s+one\s+one\s", out, re.M), out
+    assert re.search(r"^>\s+repo\s+main \*\s", out, re.M), out
+    assert re.search(r"^ {3}one\s+one\s", out, re.M), out
+
+
+def test_esc_widens_a_query_to_every_worktree_and_a_second_cancels(world) -> None:
+    """The query is the filter the list opens with, so main, which `one`
+    does not match, comes back on the first esc still marked as here."""
+    world.worktree("one-a")
+    world.worktree("one-b")
+    code, out = run_on_a_terminal(world, "gw", "list", "one", answer="\x1b\x1b")
+    assert code == 0, out
+    first, widened = out.split("esc to clear] one", 1)
+    assert not re.search(r"^.\s+repo\s+main", first, re.M), out
+    assert re.search(r"^>\s+repo\s+main \*\s", widened, re.M), out
+    assert "nothing picked" in widened
 
 
 def test_remove_rejects_a_partial_name_without_opening_the_picker(world) -> None:

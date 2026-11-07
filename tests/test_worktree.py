@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import re
 import subprocess
 import sys
+import termios
 import time
+import tty
 from pathlib import Path
 
 import pytest
@@ -245,8 +249,77 @@ def test_the_pick_moves_with_the_arrows_and_cancels_on_esc() -> None:
     assert pick.choose(rows, keys=iter([pick.PICK])) == rows[0]
     assert pick.choose(rows, keys=iter([pick.DOWN, pick.PICK])) == rows[1]
     assert pick.choose(rows, keys=iter([pick.UP, pick.PICK])) == rows[1]
-    assert pick.choose(rows, keys=iter(["2"])) == rows[1]
     assert pick.choose(rows, keys=iter([pick.PICK]), at=rows[1]) == rows[1]
+
+
+def test_typing_filters_and_esc_clears_before_it_cancels() -> None:
+    """Digits are typed like any letter: names carry them, and a key that
+    picked a row would jump while somebody spells `release-0.6.2`."""
+    rows = [
+        Worktree("/w/main", "a", "main", frozenset(), main=True),
+        Worktree("/w/.worktrees/rel-062/repo", "a", "release-0.6.2", frozenset()),
+        Worktree("/w/.worktrees/fix-parser/repo", "a", "fix-parser", frozenset()),
+    ]
+    assert pick.choose(rows, keys=iter([*"06", pick.PICK])) == rows[1]
+    assert pick.choose(rows, keys=iter([*"fxp", pick.PICK])) == rows[2]
+    # The worktree's own name is searched as well as its branch.
+    assert pick.choose(rows, keys=iter([*"rl62", pick.PICK])) == rows[1]
+    assert pick.choose(rows, keys=iter([*"fix", pick.ESC, pick.PICK])) == rows[0]
+    assert pick.choose(rows, keys=iter([*"fix", pick.ESC, pick.ESC])) is None
+    assert (
+        pick.choose(rows, keys=iter(["x", pick.ERASE, pick.DOWN, pick.PICK]))
+        == (rows[1])
+    )
+    # Nothing matches: enter and the arrows have nothing to act on.
+    keys = iter([*"zz", pick.PICK, pick.DOWN, pick.ERASE, pick.ERASE, pick.PICK])
+    assert pick.choose(rows, keys=keys) == rows[0]
+    assert pick.choose(rows, keys=iter([*"zz", pick.CANCEL])) is None
+
+
+def test_the_list_opens_on_its_query_and_esc_widens_it() -> None:
+    rows = [
+        Worktree("/w/main", "a", "main", frozenset(), main=True),
+        Worktree("/w/fix-one", "a", "fix-one", frozenset()),
+        Worktree("/w/fix-two", "a", "fix-two", frozenset()),
+    ]
+    assert pick.choose(rows, keys=iter([pick.PICK]), query="fix") == rows[1]
+    assert pick.choose(rows, keys=iter([pick.ESC, pick.PICK]), query="fix") == rows[0]
+    assert pick.choose(rows, keys=iter([]), query="fix-two") == rows[2]
+
+
+def test_shown_rows_are_filtered_and_never_picked() -> None:
+    rows = [
+        Worktree("/w/one", "a", "one", frozenset()),
+        Worktree("/w/two", "a", "two", frozenset()),
+    ]
+    here = Worktree("/w/here", "a", "here", frozenset())
+    keys = iter([*"here", pick.PICK, pick.ESC, pick.PICK])
+    assert pick.choose(rows, keys=keys, shown=[("*", here)]) == rows[0]
+
+
+def test_keys_names_escape_sequences_and_types_the_rest() -> None:
+    """Two escapes written together are two, and the `~` that ends the
+    delete key is not typed into the filter."""
+    parent, child = os.openpty()
+    tty.setcbreak(child, termios.TCSANOW)
+    try:
+        os.write(parent, b"a1\x1b[B\x1bOA\x1b[3~\x7f\x1b\x1b\r\x04")
+        keys = pick._keys(child)
+        got = [next(keys) for _ in range(9)]
+    finally:
+        os.close(parent)
+        os.close(child)
+    assert got == [
+        "a",
+        "1",
+        pick.DOWN,
+        pick.UP,
+        pick.ERASE,
+        pick.ESC,
+        pick.ESC,
+        pick.PICK,
+        pick.CANCEL,
+    ]
 
 
 def test_a_worktree_is_named_by_its_directory_under_the_root() -> None:
@@ -283,8 +356,29 @@ def test_the_pick_redraws_in_place_only_where_the_cursor_moves(
     monkeypatch.setattr(sys, "stderr", err)
     monkeypatch.setenv("TERM", term)
     assert pick.choose(rows, keys=iter([pick.DOWN, pick.PICK])) == rows[1]
-    assert ("\033[2A" in err.getvalue()) is redraws
+    # The header and both rows.
+    assert ("\033[3A" in err.getvalue()) is redraws
     assert ("\033[" in err.getvalue()) is redraws
+
+
+def test_a_redrawn_list_fits_the_screen_and_follows_the_highlight(
+    monkeypatch,
+) -> None:
+    """A row that wraps, or a frame taller than the screen, takes more lines
+    than the climb counts, and every redraw after it lands crooked."""
+    rows = [Worktree(f"/w/{n}", "a", n, frozenset()) for n in ("a", "b", "c", "d")]
+    err = _Tty()
+    err.fileno = lambda: 2  # type: ignore[method-assign]
+    monkeypatch.setattr(sys, "stderr", err)
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setattr(os, "get_terminal_size", lambda fd: os.terminal_size((12, 4)))
+    assert pick.choose(rows, keys=iter([pick.UP, pick.PICK])) == rows[3]
+    last = re.sub(r"\033\[[0-9;]*m", "", err.getvalue().rsplit("\033[J", 1)[1])
+    frame = last.split("\n")[:-2]
+    assert len(frame) == 3, last
+    assert all(len(text) <= 11 for text in frame), frame
+    assert [text[3:].split()[0] for text in frame[1:]] == ["c", "d"], frame
+    assert frame[2].startswith(">"), frame
 
 
 # --------------------------------------------------------------------------

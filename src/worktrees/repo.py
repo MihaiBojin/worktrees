@@ -180,16 +180,25 @@ def common_dir() -> None:
 # --ignored=matching lists the path an ignore pattern names: a directory the
 # pattern matches is one entry, so node_modules/ is one line rather than forty
 # thousand, and sub/gen/ stays sub/gen/ where traditional mode widens it to
-# sub/. A directory no pattern names lists its ignored files. It is also a strict
+# sub/. A directory no pattern names lists its ignored files. The recheck
+# compares this listing; `ignored_groups` cuts it for people. It is also a strict
 # superset of plain --porcelain, which is why there is one spec here and not
 # two: asking twice was 18 of this program's 35 calls over nine worktrees.
 # --untracked-files=normal overrides status.showUntrackedFiles=no, which hides
-# untracked files and makes git reject --ignored outright.
+# untracked files and makes git reject --ignored outright. -z leaves each path
+# unquoted, so check-ignore reads back exactly the path status named.
 @git(
-    "--no-optional-locks status --porcelain --untracked-files=normal --ignored=matching"
+    "--no-optional-locks status --porcelain -z --untracked-files=normal "
+    "--ignored=matching"
 )
-def status_lines() -> None:
+def status_entries() -> None:
     """Every change in a worktree, the gitignored paths included."""
+
+
+# Exit 1 means none of the paths is ignored, which is an answer.
+@git("check-ignore --verbose -z --stdin", ok=(0, 1))
+def ignore_sources() -> None:
+    """The ignore file, line and pattern behind each path read from stdin."""
 
 
 # 128 is what git exits when it cannot reach the remote, and that is an
@@ -481,16 +490,48 @@ class Status:
 
 def status_of(path: str) -> Status:
     """Read a worktree once and answer both questions about it."""
-    lines = status_lines(repo=path).lines
-    return Status(
-        dirty=any(not line.startswith("!! ") for line in lines),
-        ignored=[line[3:] for line in lines if line.startswith("!! ")],
-    )
+    entries = iter(status_entries(repo=path).out.split("\0")[:-1])
+    dirty, ignored = False, []
+    for entry in entries:
+        if entry.startswith("!! "):
+            ignored.append(entry[3:])
+            continue
+        dirty = True
+        if "R" in entry[:2] or "C" in entry[:2]:
+            # A rename or copy names its source in a field of its own.
+            next(entries, None)
+    return Status(dirty=dirty, ignored=ignored)
 
 
 def ignored_paths(path: str) -> list[str]:
     """The gitignored paths alone, for a caller that has no verdict in hand."""
     return status_of(path).ignored
+
+
+def ignored_groups(path: str, ignored: list[str]) -> list[str]:
+    """Each ignored path cut to its first component below the file that ignores it.
+
+    A pattern in packages/a/.gitignore speaks for packages/a/, so
+    packages/a/dist/js/app.js reads as packages/a/dist/. A pattern from the
+    top-level .gitignore, .git/info/exclude or core.excludesFile speaks for
+    the top level, so build/out/a.log reads as build/. A path git names no
+    file for is cut at the top level too.
+    """
+    if not ignored:
+        return []
+    out = ignore_sources(input="\0".join(ignored) + "\0", repo=path).out
+    found = out.split("\0")[:-1]
+    roots = {
+        name: os.path.dirname(source)
+        for source, _, _, name in zip(*[iter(found)] * 4, strict=True)
+        if not os.path.isabs(source) and os.path.basename(source) == ".gitignore"
+    }
+    groups = []
+    for name in ignored:
+        root = roots.get(name, "")
+        first, slash, _ = name.removeprefix(f"{root}/" if root else "").partition("/")
+        groups.append(f"{root}/{first}{slash}" if root else f"{first}{slash}")
+    return list(dict.fromkeys(groups))
 
 
 def unpushed_count(

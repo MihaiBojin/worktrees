@@ -158,6 +158,40 @@ def restore(name: str, sha: str) -> str:
     return f"{command('git branch')} {branch(shlex.quote(name))} {err(sha, YELLOW)}"
 
 
+_ESCAPES = {
+    "\a": "\\a",
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\v": "\\v",
+    "\f": "\\f",
+    "\r": "\\r",
+    '"': '\\"',
+    "\\": "\\\\",
+}
+
+
+def printable(text: str) -> str:
+    """A path as `git status` quotes it, when a character in it would not print.
+
+    A newline splits the line the path is on and an escape reaches the
+    terminal as a code, so such a path goes in double quotes with each of
+    those characters escaped, and every other byte that would not print in
+    octal.
+    """
+    if text.isprintable():
+        return text
+    return '"' + "".join(_escape(c) for c in text) + '"'
+
+
+def _escape(c: str) -> str:
+    if c in _ESCAPES:
+        return _ESCAPES[c]
+    if c.isprintable():
+        return c
+    return "".join(f"\\{b:03o}" for b in c.encode("utf-8", "surrogateescape"))
+
+
 def ask(question: str, hint: str) -> str:
     """A prompt on stderr: the question bold, the answers it takes dim."""
     return f"{err(question, BOLD)} {err(hint, DIM)} "

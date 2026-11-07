@@ -27,7 +27,7 @@ class Verdict:
         branch: str,
         path: str,
         why: str,
-        ignored: int = 0,
+        ignored_paths: tuple[str, ...] = (),
         sha: str = "",
         *,
         proof: str = "",
@@ -42,7 +42,8 @@ class Verdict:
         self.branch = branch
         self.path = path
         self.why = why
-        self.ignored = ignored
+        # Grouped below the ignore file that names each one, as people read them.
+        self.ignored_paths = ignored_paths
         self.sha = sha
         self.proof = proof
         self.request = request
@@ -53,6 +54,10 @@ class Verdict:
     @property
     def label(self) -> str:
         return self.branch or "(detached)"
+
+    @property
+    def ignored(self) -> int:
+        return len(self.ignored_paths)
 
 
 def stale(records: list[R.Worktree]) -> list[R.Worktree]:
@@ -144,8 +149,8 @@ def assess(
             protections.append("you are standing in it")
         if "locked" in wt.flags:
             protections.append("it is locked")
-        ignored = 0
         ignored_paths: tuple[str, ...] = ()
+        ignored_groups: tuple[str, ...] = ()
         if wt.path != main and not Path(wt.path).is_dir():
             # A locked worktree keeps its record while its directory is away,
             # on a removable disk say. git refuses to remove it until it is
@@ -160,10 +165,11 @@ def assess(
             if submodule:
                 protections.append(submodule)
             ignored_paths = tuple(status.ignored)
-            ignored = len(status.ignored)
-            if ignored and not delete_ignored and "ignored-files" not in permissions:
+            ignored_groups = tuple(R.ignored_groups(wt.path, status.ignored))
+            held = len(ignored_groups)
+            if held and not delete_ignored and "ignored-files" not in permissions:
                 protections.append(
-                    f"it holds {ignored} ignored path(s); pass --delete ignored-files"
+                    f"it holds {held} ignored path(s); pass --delete ignored-files"
                 )
         stashes = prune.stashes_on(wt.branch, entries, wt.sha, repo)
         protections += prune.branch_protections(
@@ -176,7 +182,7 @@ def assess(
             wt.branch,
             wt.path,
             why,
-            ignored,
+            ignored_groups,
             wt.sha,
             proof=proof,
             request=request,
@@ -200,6 +206,7 @@ def assess(
             wt.flags,
             ignored_paths,
             prune.stash_subjects(stashes, entries),
+            ignored_groups,
         )
         return row
 

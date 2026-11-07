@@ -118,8 +118,11 @@ class Snapshot:
     sha: str
     path: str = ""
     flags: frozenset[str] = frozenset()
+    # Every path git lists, which the recheck compares, and the same paths cut
+    # to the first component below the ignore file, which the disclosure shows.
     ignored: tuple[str, ...] = ()
     stashes: tuple[tuple[str, str], ...] = ()
+    ignored_groups: tuple[str, ...] = ()
 
 
 def stash_subjects(shas: list[str], entries: list[str]) -> tuple[tuple[str, str], ...]:
@@ -330,7 +333,7 @@ def plan(
                 say("  branch and its stashes retained")
         for sha, subject in snapshot.stashes:
             say(f"  stash {sha}: git stash store -m {shlex.quote(subject)} {sha}")
-        for path in snapshot.ignored:
+        for path in map(render.printable, snapshot.ignored_groups):
             say(render.err(f"  deleting ignored, unrecoverable: {path}", render.YELLOW))
 
 

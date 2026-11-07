@@ -461,7 +461,7 @@ def test_duplicate_name_picker_excludes_partial_matches(world):
         world.git("worktree", "move", str(path), str(dest))
         paths.append(dest)
     code, output = run_on_a_terminal_at(
-        world, world.repo, "gw remove", "same", "--yes", answer="1"
+        world, world.repo, "gw remove", "same", "--yes", answer="\r"
     )
     assert code == 0, output
     assert str(paths[2]) not in output

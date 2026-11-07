@@ -75,7 +75,8 @@ proofs and worktree paths. The `empty`, `stash_blocked` and `ignored` groups hol
 only rows that the matching deletion permissions would make eligible; the
 main checkout, the current checkout, protected branches and `keep` rows never
 appear there. Show those groups separately, retaining all their protections; offer those categories
-only when the user asks. Name ignored-file blockers separately. A row can
+only when the user asks. Name ignored-file blockers separately, listing each
+row's `ignoredPaths` so the user can decide before granting permission. A row can
 have more than one blocker, so show every required permission.
 
 A checked-out branch is already represented by its worktree and is absent

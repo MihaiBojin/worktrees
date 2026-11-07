@@ -19,7 +19,7 @@ other repositories under the same worktree root are outside their scope.
 | Command | Shortcut | What it does |
 | --- | --- | --- |
 | `gw`, `gw --help` | | print every command, its aliases and its shortcuts |
-| `gw list [QUERY] [flags]` | | list worktrees or choose a destination in a terminal |
+| `gw list [QUERY] [flags]` | `gwl` | list worktrees or choose a destination in a terminal |
 | `gw sync` | | fetch the default remote and refresh forge evidence |
 | `gw prune` | `gwp` | confirm and remove eligible worktrees |
 | `gw remove [NAME\|PATH]` | `gwr` | remove one worktree and its finished branch |
@@ -264,7 +264,9 @@ with it; `empty`, `stashes` and `all` are usage errors with `--keep-branch`.
 
 Before confirmation, the CLI discloses the path and branch, the branch
 restore command, stashes with their restore commands, and ignored paths it
-will delete. Quiet, JSON and `--yes` keep this disclosure on stderr.
+will delete. Each ignored path is cut to its first component below the
+`.gitignore` that ignores it, so `build/out/a.log` and `build/out/b.log` read
+as `build/`. Quiet, JSON and `--yes` keep this disclosure on stderr.
 It repeats the assessment after confirmation and refuses changed targets.
 Ignored directory entries can cover a whole directory; the recheck compares
 Git's ignored path listing, not a fingerprint of every file's contents.
@@ -350,11 +352,17 @@ makes that branch `unknown`, with one warning that `git backfill` fetches it.
 
 ## Navigation and branches
 
-`gw` and `gw list` offer the main checkout and this repository's linked
-worktrees. Substring matching comes first, then ordered-letter matching. An
-exact branch or path wins over a partial match. In a terminal, a query with
-one match selects it without a prompt; no query asks. Arrow keys wrap, enter
-or a digit selects, and escape or Ctrl-D cancels. Ctrl-C exits 130.
+`gw list`, `gw l` and the `gwl` shortcut offer the main checkout and this
+repository's linked worktrees. A query matches a worktree's name, branch or
+path: substring matching comes first, then ordered-letter matching on the
+name and branch. An exact name, branch or path wins over a partial match. In
+a terminal, a query with one match selects it without a prompt; several open
+the picker filtered by the query, and no query asks.
+
+In the picker, typing filters the rows, digits included, and Backspace
+removes a character. Arrow keys wrap and Enter selects. Escape clears the
+filter, and a second Escape, or one on an empty filter, cancels, as Ctrl-D
+does. Ctrl-C exits 130.
 
 Without a terminal, the command prints a table of every matching worktree.
 `--list` prints that table in a terminal too; `--json` prints metadata in the
@@ -427,9 +435,9 @@ gw list --json | jq -r '.worktrees[].path'
 | `--delete-ignored` | `--delete ignored-files` |
 | `gwr --force`, `gwr -f` | `gw remove --keep-branch` |
 | `--no-fetch`, `--no-forge`, `--force-refresh`, refresh `-f` | offline by default; run `gw sync` explicitly |
-| `gwl`, `gw l`, `gw ls`, `gw NAME` | `gw list`, `gw list NAME` |
+| `gw ls`, `gw NAME` | `gw list`, `gw list NAME` |
 | `gwh`, `gw help`, `gw h` | `gw --help` or `gw -h` |
-| `gwl --json` array, `.[]` | `gw list --json` object, `.worktrees[]` |
+| a `--json` listing as an array, `.[]` | `gw list --json` object, `.worktrees[]` |
 
 `empty` requires explicit permission. `main` and `master` always remain
 protected. Update scripts that assume a `remove` verdict alone permits

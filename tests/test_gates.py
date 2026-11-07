@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -161,6 +162,92 @@ def test_ignored_paths_are_what_the_patterns_name(world) -> None:
     for name in ("a.o", "b.o"):
         (wt / "out" / name).write_text("x\n")
     assert sorted(R.ignored_paths(str(wt))) == ["out/a.o", "out/b.o", "sub/gen/"]
+
+
+def test_ignored_paths_group_below_the_file_that_ignores_them(world) -> None:
+    """One entry per first component below the ignore file whose pattern matched."""
+    world.commit(".gitignore", "*.log\n**/node_modules\nsub/gen/\n")
+    (world.repo / "packages" / "a").mkdir(parents=True)
+    world.commit("packages/a/.gitignore", "dist/\n")
+    with (world.repo / ".git" / "info" / "exclude").open("a") as exclude:
+        exclude.write("secret\n")
+    wt = world.worktree("built")
+    for name in (
+        "build/out/a.log",
+        "build/out/b.log",
+        "x.log",
+        "packages/a/dist/js/app.js",
+        "packages/a/node_modules/m.js",
+        "sub/gen/deep/c",
+        'we"ird dir/café.log',
+        "secret",
+    ):
+        (wt / name).parent.mkdir(parents=True, exist_ok=True)
+        (wt / name).write_text("x\n")
+    listed = R.ignored_paths(str(wt))
+    assert sorted(R.ignored_groups(str(wt), listed)) == [
+        "build/",
+        "packages/",
+        "packages/a/dist/",
+        "secret",
+        "sub/",
+        'we"ird dir/',
+        "x.log",
+    ]
+
+
+def test_a_staged_rename_is_dirty_and_its_source_is_not_ignored(world) -> None:
+    """With -z a rename carries its source as a field of its own."""
+    world.commit("!! x")
+    wt = world.worktree("renamed")
+    world.git("mv", "!! x", "y", at=wt)
+    status = R.status_of(str(wt))
+    assert status.dirty
+    assert status.ignored == []
+
+
+def test_the_disclosure_and_the_count_use_the_groups(world) -> None:
+    from test_cli import run
+
+    world.commit(".gitignore", "*.log\n")
+    wt = world.merged_worktree("logs")
+    (wt / "build" / "out").mkdir(parents=True)
+    for name in ("a.log", "b.log"):
+        (wt / "build" / "out" / name).write_text("x\n")
+    v = {
+        x.branch: x
+        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    }["logs"]
+    assert "it holds 1 ignored path(s)" in v.why
+    # The paths are data before permission is given, so a caller can decide.
+    preview = run(world, "gw prune", "--json")
+    rows = {r["branch"]: r for r in json.loads(preview.stdout)["verdicts"]}
+    assert (rows["logs"]["ignored"], rows["logs"]["ignoredPaths"]) == (1, ["build/"])
+    assert rows["main"]["ignoredPaths"] == []
+    p = run(world, "gw prune", "--delete", "ignored-files", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert p.stderr.count("deleting ignored, unrecoverable:") == 1
+    assert "deleting ignored, unrecoverable: build/\n" in p.stderr
+    assert not wt.exists()
+
+
+def test_the_disclosure_escapes_what_would_not_print(world) -> None:
+    """A newline would split the line and an escape would reach the terminal."""
+    from test_cli import run
+
+    world.commit(".gitignore", "*.log\n")
+    wt = world.merged_worktree("odd")
+    for name in ("a\x1b[31mb.log", "x\ny.log", "café.log"):
+        (wt / name).write_text("x\n")
+    p = run(world, "gw prune", "--delete", "ignored-files", "--yes")
+    assert p.returncode == 0, p.stderr
+    shown = [
+        line.removeprefix("  deleting ignored, unrecoverable: ")
+        for line in p.stderr.split("\n")
+        if "deleting ignored" in line
+    ]
+    assert sorted(shown) == ['"a\\033[31mb.log"', '"x\\ny.log"', "café.log"]
+    assert "\x1b" not in p.stderr
 
 
 # --------------------------------------------------------------------------
