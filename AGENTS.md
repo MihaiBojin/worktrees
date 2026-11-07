@@ -30,7 +30,7 @@ prompt and from a script unless the function is a pure adapter.
 
 A navigation function carries the binary's name and calls `command <name>`.
 It changes directory when stdout is a destination and prints data otherwise.
-`gw list` changes directory for terminal selections.
+`gw list` and `gw l` change directory for terminal selections.
 Metadata flags and nonterminal input print data; its adapter gets subcommands
 from `--complete`.
 `gwr` can return a destination after checkout removal and failure for later
@@ -64,8 +64,8 @@ picks colour. A missing argument prints the error and then the help, both on
 stderr, at exit 2: the function prints nothing captured from a run that
 failed.
 
-Shortcuts are fixed-flag calls through the plain command name: `gwr!` calls
-`gwr --delete ignored-files`, `gwp!` calls `gwp --yes`, and `gwp!!` calls
+Shortcuts are fixed-flag calls through the plain command name: `gwl` calls
+`gw list`, `gwr!` calls `gwr --delete ignored-files`, `gwp!` calls `gwp --yes`, and `gwp!!` calls
 `gwp --delete all --yes`. No shortcut has a console script.
 `SHORTCUTS` in `tests/test_shims.py` holds each to one line. Interactive zsh
 with `BANG_HIST` requires quoted `'gwp!!'` to avoid history expansion.
@@ -151,32 +151,47 @@ what each row shows, reading the answer back: all of it in the CLI. No shell
 file holds a candidate, a format string or a rank, and nothing spawns an
 external picker.
 
-The set is small. Across the repositories this was written for, the largest
-number of linked worktrees in one is four. A fuzzy finder is the wrong
-instrument at that size, and a list moved through with the arrow keys reads
-faster:
+Typing filters the list with the matching `gw list QUERY` uses, so a
+repository with forty worktrees narrows to one in a few keys:
 
 ```
-  #  WORKTREE    BRANCH      PATH
-> 1  repo        main        /home/you/git/repo
-  2  fix-parser  fix-parser  /home/you/git/.worktrees/fix-parser/repo
-  3  add-tests   add-tests   /home/you/git/.worktrees/add-tests/repo
-which? [up/down and enter, 1-3, or esc to cancel]
+   WORKTREE    BRANCH      PATH
+>  repo        main        /home/you/git/repo
+   fix-parser  fix-parser  /home/you/git/.worktrees/fix-parser/repo
+   add-tests   add-tests   /home/you/git/.worktrees/add-tests/repo
+which? [type to filter, up/down and enter, esc to cancel]
 ```
 
-Up and down move the highlight and wrap, enter takes it, a digit takes that
-row outright, and esc or ctrl-d cancels. The terminal goes into cbreak mode
+Every printable key goes into the filter, digits included, because names
+carry them: `release-0.6.2`, and every branch `gwrot` names. Rows carry no
+numbers for the same reason. Backspace takes a letter back, up and down move
+the highlight and wrap, and enter takes it. Esc clears the filter; on an
+empty filter it cancels, as ctrl-d does, and the hint names which of the two
+it does now. `gw list QUERY` opens the list filtered by its query, so one esc
+widens it to every worktree.
+
+An arrow is `ESC [ A` or, in application mode, `ESC O A`. Any other `ESC [`
+sequence is read to its final byte and dropped, so the `~` that ends the
+delete key is never typed into the filter. A byte after an esc that starts
+no sequence is a key of its own, so two escapes written together are two.
+
+The terminal goes into cbreak mode
 through the stdlib's `termios`, so ctrl-c still raises `KeyboardInterrupt`.
 Both switches use `TCSANOW`: `TCSAFLUSH` discards keys typed before the list
 appears, and `TCSADRAIN` blocks on an echo queue nothing reads, which is how
 the pty tests hang.
 
 The list is redrawn in place when stderr is a terminal that can move its
-cursor. On `TERM=dumb`, or a stderr that is not a terminal, it is printed
-once and each move prints the row it lands on, so nothing writes a cursor
-code where it would show up as text.
+cursor: the cursor climbs over the frame drawn last and erases everything
+under it, since the filter makes the list longer or shorter. The climb counts
+lines, so the frame fits the screen: each row is cut to the terminal's width,
+and the rows shown are a window as tall as the screen that follows the
+highlight. On `TERM=dumb`,
+or a stderr that is not a terminal, the list is printed once, each move
+prints the row it lands on, and each change to the filter prints the rows it
+leaves, so nothing writes a cursor code where it would show up as text.
 
-A query that is exactly one worktree's branch or path is that worktree
+A query that is exactly one worktree's name, branch or path is that worktree
 alone. `gw list one` beside `one-more` is not a question, and neither is
 `gwr "$(gw list two --json | jq -r '.worktrees[0].path')"`.
 `gwr NAME` uses exact names, with an exact path resolving one worktree; several name matches need a picker or a nonterminal refusal.
@@ -185,8 +200,11 @@ Dropping `fzf` is less code, not more. It removes the spawn and the fallback
 branch a machine without `fzf` would otherwise need.
 
 Matching is substring first, then subsequence, which is the one idea worth
-taking from `fzf`: the query's letters appearing in order, ranked by how
-tightly they cluster. About twenty lines, `difflib` not required.
+taking from `fzf`: the query's letters appearing in order. Substring looks at
+the branch and the path, which holds the worktree's name. Subsequence looks
+at the branch and the name, never the whole path, where `.worktrees` hands a
+`t`, a `w` and an `o` to any query. About twenty lines, `difflib` not
+required.
 
 ```
 'parse'  -> ['fix-parser']
@@ -209,16 +227,16 @@ Three more about what is in the list at all:
   only answer that is always right. `main` finds it whatever branch it stands
   on, because its label carries the word, once.
 - In `gw list`, a linked worktree you are standing in is shown and never
-  offered. It carries a `*` rather than a number and the highlight skips it,
+  offered. It carries a `*` in the first column and the highlight skips it,
   because picking it is the one answer that takes you nowhere. Leaving it
   out of the list entirely is worse: the list then shows fewer rows than
   `git worktree list` does, and reads as though something went missing
   rather than as where you already are. The main checkout is offered even
   from inside it, with a `*` after its name, since from a subdirectory it is
   the way back to the top.
-- In `gwr`, the main checkout is shown dimmed and unnumbered, because `git
-  worktree remove` refuses it whatever flag it is given, and the highlight
-  starts on the worktree you are standing in. `gwp` keeps the main
+- In `gwr`, the main checkout is shown dimmed and never highlighted,
+  because `git worktree remove` refuses it whatever flag it is given, and
+  the highlight starts on the worktree you are standing in. `gwp` keeps the main
   checkout in its list for the same reason, and never proposes it.
 
 `--json` and `--list` answer the same question without any of this, and an
@@ -237,8 +255,8 @@ shorthands and whether the command changes the caller's directory. `gwp` and
 word that is not a command is a usage error at exit 2 that suggests
 `gw list WORD`, so a worktree name never competes with a shorthand. `gw list
 [QUERY]` uses the picker on terminal input; without a terminal, or with
-`--json` or `--list`, it prints matching metadata. `gwl`, `gwh`, list
-aliases and the help subcommand are absent.
+`--json` or `--list`, it prints matching metadata. `gw l` is `gw list`, and
+`gwl` is its shortcut. `gwh`, `gw ls` and the help subcommand are absent.
 
 `list`, `version` and `sync` install no console script of their own.
 `gw --help` prints

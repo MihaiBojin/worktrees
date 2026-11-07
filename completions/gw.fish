@@ -10,7 +10,7 @@ function __worktrees_complete_gw
             set target gwp
         case add a
             set target gwa
-        case list
+        case list l
             set target __worktrees_list
         case remove rm
             set target gwr

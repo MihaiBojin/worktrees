@@ -1,6 +1,6 @@
 function gw --wraps gw --description 'cd to where gw lands you'
     set -l navigation 0
-    test "$argv[1]" = list; and set navigation 1
+    contains -- "$argv[1]" list l; and set navigation 1
     for arg in $argv
         test "$arg" != --; or break
         if contains -- "$arg" --json --list -l --help -h --complete --explain; set navigation 0; end

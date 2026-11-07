@@ -1,5 +1,5 @@
 local navigation=0 arg
-[[ $1 == list ]] && navigation=1
+[[ $1 == (list|l) ]] && navigation=1
 for arg in "$@"; do
     [[ $arg != -- ]] || break
     case $arg in --json|--list|-l|--help|-h|--complete|--explain) navigation=0 ;; esac

@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CD_COMMANDS = ("gw", "gwa", "gwr")
 # A shortcut calls a command with its flags fixed, and nothing else.
 SHORTCUTS = {
+    "gwl": "gw list",
     "gwr!": "gwr --delete ignored-files",
     "gwp!": "gwp --yes",
     "gwp!!": "gwp --delete all --yes",
@@ -761,7 +762,7 @@ def test_ambiguous_gw_navigation_uses_the_list_picker(world, shell):
         ["gw", "list", "fix"],
         world.repo,
         env_for(world),
-        answer=b"2",
+        answer=b"-two\r",
     )
     assert process.returncode == 0, process.stderr
     assert process.stdout == b""

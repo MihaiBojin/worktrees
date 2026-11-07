@@ -323,6 +323,7 @@ COMMAND_COMPLETIONS = [
     ("gw a", "gwa", ()),
     ("gw list", "gw", ("list",)),
     ("gw list sync", "gw", ("list",)),
+    ("gw l", "gw", ("list",)),
     ("gw remove", "gwr", ()),
     ("gw rm", "gwr", ()),
     ("gw rotate", "gwrot", ()),
@@ -441,6 +442,20 @@ def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry, args
         word for word in _zsh_complete(world, prefix + " -") if word.startswith("-")
     }
     assert offered == wanted
+
+
+def test_zsh_completes_gwl_flags_as_gw_list(world):
+    """`_gw` answers for `gwl` too, with the word `list` already typed."""
+    wanted = _parsed_flags("gw", "list") | set(
+        re.findall(r"(?:^|\s)(-[a-z])(?:,|\s)", _help("gw", "list"))
+    )
+    offered = {w for w in _zsh_complete(world, "gwl -") if w.startswith("-")}
+    assert offered == wanted
+
+
+def test_zsh_completes_gwl_worktrees(world):
+    world.worktree("topic")
+    assert "topic" in _zsh_complete(world, "gwl to")
 
 
 @pytest.mark.parametrize(

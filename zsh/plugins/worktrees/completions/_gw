@@ -1,4 +1,4 @@
-#compdef gw worktrees
+#compdef gw gwl worktrees
 
 __worktrees_names() {
     local -a names descs
@@ -21,6 +21,8 @@ __worktrees_list() {
 }
 
 _gw() {
+    # gwl is gw list with the word already typed.
+    [[ $service == gwl ]] && { __worktrees_list; return; }
     local -a subs descs
     local line curcontext="$curcontext" state
 
@@ -51,7 +53,7 @@ _gw() {
                     ;;
                 prune|p) _gwp ;;
                 add|a) _gwa ;;
-                list) __worktrees_list ;;
+                list|l) __worktrees_list ;;
                 remove|rm) _gwr ;;
                 rotate|rot) _gwrot ;;
                 branch)

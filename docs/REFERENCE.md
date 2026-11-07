@@ -210,7 +210,7 @@ terminals only, and stays off under quiet or verbose output.
 The command registry owns functions, names, aliases, flags and directory
 behavior. Help and completions read it. Shell functions handle directory
 changes and fixed-flag shortcuts; they hold no assessment or deletion logic.
-The `gw` adapter navigates only for `gw list`; every other call passes
+The `gw` adapter navigates only for `gw list` and `gw l`; every other call passes
 stdout and status through. Completion tests compare shell flags with real CLI help.
 Plugin tests extract the actual skill jq filters and apply them to real CLI
 JSON, including exact paths and permission-blocked rows.

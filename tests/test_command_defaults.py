@@ -39,7 +39,7 @@ def test_bare_gw_prints_the_guide_and_lists_nothing(world):
     assert "WORKTREE" not in p.stdout and "topic" not in p.stdout
 
 
-@pytest.mark.parametrize("name", ["l", "ls", "help", "h", "topic", "--json"])
+@pytest.mark.parametrize("name", ["ls", "help", "h", "topic", "--json"])
 def test_a_word_that_is_not_a_command_is_a_usage_error(world, name):
     world.worktree(name.lstrip("-"))
     p = run(world, "gw", name)
@@ -75,14 +75,19 @@ def test_root_help_prints_the_full_guide_outside_a_repository(world, entry, flag
     assert "gw list is the default" not in p.stdout
     assert "gw list [QUERY]" in p.stdout
     assert "gwp!!" in p.stdout and "NO_COLOR" in p.stdout
-    assert "gwl" not in p.stdout and "gwh" not in p.stdout
+    assert "gwl is gw list" in p.stdout and "gwh" not in p.stdout
     assert "gw help" not in p.stdout
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
 @pytest.mark.parametrize(
     "words,answer",
-    [(["list"], b"2"), (["list", "topic"], b""), (["list", "topic", "--"], b"")],
+    [
+        (["list"], b"topic\r"),
+        (["list", "topic"], b""),
+        (["list", "topic", "--"], b""),
+        (["l", "topic"], b""),
+    ],
 )
 def test_terminal_listing_changes_directory(world, shell, words, answer):
     target = world.worktree("topic")
@@ -175,7 +180,7 @@ def test_terminal_list_selects_sole_main(world, shell, words):
         ["gw", *words],
         subdirectory,
         env_for(world),
-        answer=b"" if query else b"1",
+        answer=b"" if query else b"\r",
     )
     assert p.returncode == 0, p.stderr
     assert p.stdout == b""
@@ -184,7 +189,7 @@ def test_terminal_list_selects_sole_main(world, shell, words):
         assert b"which?" not in p.stderr
     else:
         assert b"which?" in p.stderr
-        assert b"1-1" in p.stderr
+        assert b"esc to cancel" in p.stderr
         assert os.fsencode(world.repo) in p.stderr
 
 
