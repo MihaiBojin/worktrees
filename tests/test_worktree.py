@@ -376,12 +376,31 @@ def test_remove_prints_nothing_when_you_were_not_standing_in_it(world) -> None:
     assert "done" not in world.git("branch", "--format=%(refname:short)").split()
 
 
-def test_remove_prints_the_main_checkout_when_you_were(world) -> None:
+@pytest.mark.parametrize("flags", [("--yes",), ("--yes", "--force")])
+def test_remove_refuses_the_worktree_you_are_in_without_a_terminal(
+    world, flags
+) -> None:
+    """Whatever the flags: the caller's shell is in it, and nothing here can
+    confirm that is what was meant."""
     wt = world.worktree("done")
-    p = run(world, "gwr", "--yes", at=wt)
-    assert p.returncode == 0, p.stderr
-    assert p.stdout.strip() == str(world.repo)
-    assert not wt.exists()
+    p = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from worktrees.cli import gwr; raise SystemExit(gwr())",
+            *flags,
+        ],
+        cwd=str(wt),
+        capture_output=True,
+        text=True,
+        env=env_for(world),
+        stdin=subprocess.DEVNULL,
+    )
+    assert p.returncode == 3, p.stderr
+    assert f"{wt} is the worktree you are in" in p.stderr
+    assert p.stdout == ""
+    assert wt.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/done")
 
 
 def test_remove_refuses_an_unfinished_branch(world) -> None:

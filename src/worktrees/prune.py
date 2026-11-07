@@ -11,7 +11,7 @@ from pathlib import Path
 from . import render, sync
 from . import repo as R
 from .git import GitError, Refused, git
-from .verdicts import Verdict
+from .verdicts import HEAD_BRANCH, MAIN_OR_MASTER, PROTECTED, Verdict
 
 
 @git("worktree prune", mutates=True)
@@ -33,6 +33,24 @@ def ref_delete(ref: str, sha: str) -> None:
     and is refused by the guard. The sha is the one the verdict was formed
     against, so a commit landing on the branch in between fails here.
     """
+
+
+def branch_delete(
+    branch: str,
+    sha: str,
+    head_branch: str,
+    repo: str | os.PathLike[str] | None = None,
+) -> None:
+    """`ref_delete` for a branch, refusing main, master and the head branch.
+
+    Every caller has judged the branch already and found it eligible. This
+    check holds even when that judgement was wrong.
+    """
+    if branch in PROTECTED:
+        raise Refused(MAIN_OR_MASTER)
+    if branch == head_branch:
+        raise Refused(HEAD_BRANCH)
+    ref_delete(f"refs/heads/{branch}", sha, repo=repo)
 
 
 @git("rev-parse --verify $ref", ok=(0, 128))
@@ -179,6 +197,7 @@ def confirm(
 
 def sweep(
     go: list[Verdict],
+    head_branch: str,
     say: Callable[[str], None],
     repo: str | os.PathLike[str] | None = None,
 ) -> int:
@@ -202,7 +221,7 @@ def sweep(
 
         if v.branch:
             try:
-                ref_delete(f"refs/heads/{v.branch}", v.sha, repo=repo)
+                branch_delete(v.branch, v.sha, head_branch, repo=repo)
             except (GitError, Refused) as exc:
                 say(render.fail(f"branch {render.branch(v.branch)} kept: {exc}"))
 
