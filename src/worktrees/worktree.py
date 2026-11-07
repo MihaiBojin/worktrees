@@ -8,13 +8,14 @@ line and does the move.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
-from . import layout, render
+from . import layout, prune, render
 from . import repo as R
 from .git import GitError, Refused, git
 from .new_branch import Refusal, check_ref_format, head
-from .prune import _prune_empty_parents, ref_delete, worktree_remove
+from .prune import Snapshot, _prune_empty_parents
 from .verdicts import REMOVE, Verdict, assess
 
 
@@ -174,13 +175,17 @@ def move(
 
 def remove(
     chosen: Verdict,
-    say: object,
+    was: Snapshot | None,
+    again: Callable[[str], Verdict | None],
+    say: Callable[[str], None],
+    keep_branch: bool = False,
     repo: str | os.PathLike[str] | None = None,
-) -> str:
+) -> tuple[str, bool, bool]:
     """Remove one worktree, and say where to go when it was this one.
 
     Returns the main checkout when the caller was standing in what went, and
-    an empty string otherwise. Empty means stay put.
+    an empty string otherwise, which means stay put; then whether the
+    worktree went, and whether every step did.
 
     What goes and what puts it back is printed by the caller, before this is
     reached, so that a run which stops at the confirmation has still said it.
@@ -195,15 +200,8 @@ def remove(
         # destination to move to.
         os.chdir(main)
 
-    worktree_remove(chosen.path, repo=main)
-    _prune_empty_parents(Path(chosen.path).parent, main)
-    if chosen.branch:
-        try:
-            ref_delete(f"refs/heads/{chosen.branch}", chosen.sha, repo=main)
-        except (GitError, Refused) as exc:
-            if callable(say):
-                say(render.fail(f"branch {render.branch(chosen.branch)} kept: {exc}"))
-    return main if standing_in else ""
+    went, ok = prune.remove(chosen, was, again, say, keep_branch, repo=main)
+    return (main if standing_in and went else ""), went, ok
 
 
 def removable(

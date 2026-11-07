@@ -270,7 +270,8 @@ def delete(args: argparse.Namespace) -> int:
             )
         return int(any(v.error for v in rows))
     never = sync.never()
-    if go and not args.json:
+    # On stderr, so --json and --yes leave it in place.
+    if go:
         _err(render.note(f"deleting {_branches(len(go))}:"))
         _err(_plan(go))
         if never:

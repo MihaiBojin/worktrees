@@ -144,7 +144,8 @@ def test_the_skill_removes_only_the_chosen_worktree_by_its_path(world) -> None:
     proc = _run(world, "gwr", chosen, "--yes")
     assert proc.returncode == 0, proc.stderr
     assert "restore with: git branch done " in proc.stderr
-    assert "removed done" in proc.stderr
+    assert f"removed worktree {chosen}" in proc.stderr
+    assert "deleted branch done" in proc.stderr
     assert not Path(chosen).exists()
     assert world.git("branch", "--list", "done") == ""
 

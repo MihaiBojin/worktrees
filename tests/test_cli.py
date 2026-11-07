@@ -12,7 +12,9 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from conftest import env_for
@@ -1809,3 +1811,160 @@ def test_remove_refuses_an_unfinished_worktree_with_a_submodule_on_a_terminal(
     assert code == 1, out
     assert "git submodule deinit --all" in out
     assert wt.exists()
+
+
+# --------------------------------------------------------------------------
+# a second look between the question and the removal
+# --------------------------------------------------------------------------
+
+
+def _ignore_env(world) -> None:
+    world.repo.joinpath(".gitignore").write_text(".env\n")
+    world.git("add", ".gitignore")
+    world.git("commit", "--quiet", "-m", "ignore")
+
+
+CHANGES: dict[str, tuple[Callable[[Any, Path], object], str]] = {
+    "commit": (
+        lambda world, wt: world.commit("late", at=wt),
+        "it has moved to another commit",
+    ),
+    "switch": (
+        lambda world, wt: world.git("switch", "--quiet", "-c", "elsewhere", at=wt),
+        "it is on another branch now",
+    ),
+    "head": (
+        lambda world, wt: world.commit("ahead"),
+        "the head branch has moved",
+    ),
+    "dirty": (
+        lambda world, wt: wt.joinpath("wip").write_text("x"),
+        "its uncommitted changes changed",
+    ),
+    "lock": (
+        lambda world, wt: world.git("worktree", "lock", str(wt)),
+        "its lock changed",
+    ),
+    "ignored": (
+        lambda world, wt: wt.joinpath(".env").write_text("S=1\n"),
+        "its ignored files changed",
+    ),
+}
+
+
+def _between(monkeypatch, change) -> None:
+    """Make `change` after the disclosure, which is where the question
+    stands, so under --yes it lands between that point and the removal."""
+    original = prune.plan
+
+    def plan(*args, **kwargs):
+        never = original(*args, **kwargs)
+        change()
+        return never
+
+    monkeypatch.setattr(prune, "plan", plan)
+
+
+@pytest.mark.parametrize("entry", ["gwp", "gwr"])
+@pytest.mark.parametrize("change", sorted(CHANGES))
+def test_a_change_after_the_question_removes_nothing(
+    world, monkeypatch, capsys, entry, change
+) -> None:
+    _ignore_env(world)
+    wt = world.worktree("done")
+    make, why = CHANGES[change]
+    _between(monkeypatch, lambda: make(world, wt))
+    argv = ["--yes"] if entry == "gwp" else ["done", "--yes", "--delete", "all"]
+    code = getattr(cli, entry)(argv)
+    err = capsys.readouterr().err
+    assert code == 1, err
+    assert f"kept: {why}; nothing removed" in err
+    assert wt.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/done")
+
+
+def test_a_target_no_longer_eligible_after_the_question_is_kept(
+    world, monkeypatch, capsys
+) -> None:
+    """The facts hold still while the verdict moves: the one ref reaching a
+    detached worktree's commit is deleted."""
+    world.git("branch", "tmp")
+    sha = world.commit("only-on-tmp", at=None)
+    world.git("update-ref", "refs/heads/tmp", sha)
+    world.git("reset", "--quiet", "--hard", "HEAD~1")
+    wt = world.parent / ".worktrees" / "loose" / world.repo.name
+    world.git("worktree", "add", "--quiet", "--detach", str(wt), "tmp")
+    _between(monkeypatch, lambda: world.git("update-ref", "-d", "refs/heads/tmp"))
+    code = cli.gwp(["--yes"])
+    err = capsys.readouterr().err
+    assert code == 1, err
+    assert f"kept: it is not eligible now: no ref reaches {sha}" in err
+    assert wt.exists()
+
+
+def test_each_outcome_is_reported_on_its_own(world, capsys) -> None:
+    wt = world.worktree("done")
+    code = cli.gwp(["--yes"])
+    err = capsys.readouterr().err
+    assert code == 0, err
+    assert f"removed worktree {wt}" in err
+    assert "deleted branch done" in err
+
+
+def test_a_failed_ref_deletion_is_reported_as_failed(
+    world, monkeypatch, capsys
+) -> None:
+    from worktrees.git import GitError
+
+    wt = world.worktree("done")
+
+    def refuse(ref, sha, **kwargs):
+        raise GitError("cannot lock ref")
+
+    monkeypatch.setattr(prune, "ref_delete", refuse)
+    code = cli.gwp(["--yes", "--json"])
+    out = capsys.readouterr()
+    assert code == 1, out.err
+    result = json.loads(out.out)
+    assert (result["removed"], result["failed"]) == (["done"], 1)
+    assert "branch done not deleted: cannot lock ref" in out.err
+    assert not wt.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/done")
+
+
+def test_git_refusing_the_worktree_skips_its_branch(world, monkeypatch, capsys) -> None:
+    from worktrees.git import GitError
+
+    wt = world.worktree("done")
+
+    def refuse(path, **kwargs):
+        raise GitError("it is busy")
+
+    monkeypatch.setattr(prune, "worktree_remove", refuse)
+    code = cli.gwp(["--yes", "--json"])
+    out = capsys.readouterr()
+    assert code == 1, out.err
+    assert json.loads(out.out)["removed"] == []
+    assert f"worktree {wt} kept: it is busy" in out.err
+    assert world.git("rev-parse", "--verify", "refs/heads/done")
+
+
+def test_a_detached_worktree_goes_without_a_ref_deletion(world, capsys) -> None:
+    from worktrees.git import options
+
+    wt = world.parent / ".worktrees" / "loose" / world.repo.name
+    world.git("worktree", "add", "--quiet", "--detach", str(wt), "main")
+    code = cli.gwp(["--yes"])
+    err = capsys.readouterr().err
+    assert code == 0, err
+    assert not wt.exists()
+    assert not any("update-ref" in entry for entry in options.log)
+
+
+def test_removal_never_forces(world, capsys) -> None:
+    from worktrees.git import options
+
+    world.worktree("done")
+    assert cli.gwp(["--yes"]) == 0
+    removes = [" ".join(e) for e in options.log if "remove" in e]
+    assert removes and not any("--force" in e for e in removes)

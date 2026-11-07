@@ -391,7 +391,8 @@ def run_prune(args: argparse.Namespace) -> int:
     asked, at a terminal, or under --yes. Anything else only reports."""
     import json
 
-    from . import prune
+    from . import prune, verdicts
+    from . import repo as R
     from .git import options
 
     options.verbose = args.verbose
@@ -406,7 +407,7 @@ def run_prune(args: argparse.Namespace) -> int:
     elif not head[0].resolves:
         _err(render.fail(head[0].problem()))
 
-    rows, stale, _, _, records = _assess(args, head)
+    rows, stale, ref, head_branch, records = _assess(args, head)
     go = prune.removable(rows)
     errors = int(not head[0].resolves or any(v.error for v in rows))
     result = _assessment(args, rows, stale, records) if args.json else {}
@@ -427,6 +428,8 @@ def run_prune(args: argparse.Namespace) -> int:
             _err(render.note(f"{len(go)} would be removed; gwp --yes removes them"))
         return errors
 
+    # Each target as it was judged, for the look after the question.
+    recorded = {v.path: prune.record(v, ref) for v in go}
     # What goes, and what puts it back, before anything does. On stderr with
     # the rest of the diagnostics, so stdout carries the result alone;
     # --quiet and --yes do not silence it.
@@ -435,22 +438,24 @@ def run_prune(args: argparse.Namespace) -> int:
         _err(render.note("nothing removed"))
         return errors
 
-    failed = prune.sweep(go, _err)
+    ignored = _permits(args, "ignored-files")
+
+    def again(path: str) -> verdicts.Verdict | None:
+        found = [w for w in R.worktrees() if w.path == path]
+        return next(iter(verdicts.assess(found, ref, head_branch, ignored)), None)
+
+    removed, failed = prune.sweep(go, recorded, again, _err)
     if args.json:
-        result |= {"removed": [v.label for v in go], "failed": failed}
+        result |= {"removed": [v.label for v in removed], "failed": failed}
         print(json.dumps(result, indent=2))
-    elif failed:
-        _err(
-            render.fail(
-                f"{failed} of {len(go)} could not be removed; each said why above"
-            )
-        )
     elif args.list:
-        names = ", ".join(render.branch(v.label) for v in go)
-        _err(render.note(f"removed {len(go)} worktree(s): {names}"))
-    else:
-        names = ", ".join(render.out(v.label, render.BRANCH) for v in go)
-        print(f"removed {len(go)} worktree(s): {names}")
+        names = ", ".join(render.branch(v.label) for v in removed)
+        _err(render.note(f"removed {len(removed)} worktree(s): {names}"))
+    elif removed:
+        names = ", ".join(render.out(v.label, render.BRANCH) for v in removed)
+        print(f"removed {len(removed)} worktree(s): {names}")
+    if failed and not args.json:
+        _err(render.fail(f"{failed} of {len(go)} failed a step; each said why above"))
     return 1 if failed or errors else 0
 
 
@@ -945,7 +950,7 @@ def run_remove(args: argparse.Namespace) -> int:
 
     head = _assessment_head(args)
     _require(head[0])
-    rows, _, _, _, records = _assess(args, head, judge=wt_mod.removable)
+    rows, _, ref, head_branch, records = _assess(args, head, judge=wt_mod.removable)
     # Exact and nothing looser: the closest match to a worktree already
     # removed is somebody else's.
     q = args.query
@@ -1007,6 +1012,7 @@ def run_remove(args: argparse.Namespace) -> int:
         )
         return 1
 
+    ignored = _permits(args, "ignored-files")
     if (
         not chosen.eligible
         and chosen.ignored
@@ -1021,6 +1027,7 @@ def run_remove(args: argparse.Namespace) -> int:
             f"{render.branch(chosen.label)} is finished, but holds "
             f"{chosen.ignored} ignored path(s); they go with it"
         )
+        ignored = True
         chosen = prune.Verdict(
             wt_mod.REMOVE,
             chosen.branch,
@@ -1052,32 +1059,36 @@ def run_remove(args: argparse.Namespace) -> int:
         # answered: the checkout goes and the branch stays.
         _warn(f"{why}\nremoving the worktree keeps the branch")
 
+    was = prune.record(chosen, ref)
     never = prune.plan([chosen], _err)
     if not args.yes and not prune.confirm(1, never=never):
         _err(render.note("nothing removed"))
         return 0
 
-    keep_branch = not chosen.eligible
+    def again(path: str) -> verdicts.Verdict | None:
+        found = [w for w in R.worktrees() if w.path == path]
+        return next(
+            iter(verdicts.assess(found, ref, head_branch, ignored, here="")), None
+        )
+
     # --force keeps the branch: the worktree was in the way, the work was not.
-    destination = wt_mod.remove(
-        prune.Verdict(chosen.verdict, "", chosen.path, chosen.why)
-        if keep_branch
-        else chosen,
-        _err,
+    destination, went, ok = wt_mod.remove(
+        chosen, was, again, _err, keep_branch=not chosen.eligible
     )
-    if not args.quiet and not args.json:
-        _err(render.note(f"removed {render.branch(chosen.label)}"))
     if args.json:
         print(
             json.dumps(
-                {**_envelope(args), "removed": chosen.label, "path": destination},
+                {
+                    **_envelope(args),
+                    "removed": chosen.label if went else None,
+                    "path": destination,
+                },
                 indent=2,
             )
         )
-        return 0
-    if destination:
+    elif destination:
         print(destination)
-    return 0
+    return 0 if ok else 1
 
 
 # --------------------------------------------------------------------------

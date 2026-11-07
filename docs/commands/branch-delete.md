@@ -29,7 +29,8 @@ prompt deletes nothing.
 
 `--yes` skips deletion confirmation. It does not choose branches or override
 a verdict. Without a terminal, supply names or `--all`, and `--yes` to delete.
-`--dry-run` needs neither a terminal nor confirmation.
+`--dry-run` needs neither a terminal nor confirmation. The plan prints on
+stderr before the question, under `--json` and `--yes` too.
 
 In a repository whose default remote has no [`gw sync`](../../README.md#gw-sync)
 record, the plan ends with the never-synced line and the question is

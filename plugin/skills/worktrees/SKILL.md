@@ -128,9 +128,12 @@ ask for a worktree in `ignored`, it is
 What the output means:
 
 - `gwr` prints the branch and its path, then `restore with: git branch NAME
-  SHA`, before removing, and `removed NAME` after. When the worktree is no
-  longer proved finished it removes nothing, prints `NAME is not finished:
-  REASON` or `NAME is finished: REASON` and exits 1. A path that matches no
+  SHA`, before removing, and `removed worktree PATH` and `deleted branch
+  NAME` after. When the worktree is no longer proved finished it removes
+  nothing, prints `NAME is not finished: REASON` or `NAME is finished:
+  REASON` and exits 1. When it changed after the assessment it prints `NAME
+  kept: REASON; nothing removed` and exits 1. `branch NAME not deleted:
+  REASON` means the worktree went and the branch stayed, at exit 1. A path that matches no
   worktree, such as one already removed, prints `no worktree matches` and
   exits 1 with nothing removed.
 - `gwbd` prints `each comes back with:` and one `git branch NAME SHA` per

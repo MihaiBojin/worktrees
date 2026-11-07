@@ -492,3 +492,13 @@ def test_branch_delete_holds_back_a_checked_out_branch(world):
     assert "occupied kept: its tip is an ancestor" in p.stderr
     assert world.git("rev-parse", "--verify", "refs/heads/occupied")
     assert world.git("branch", "--list", "done") == ""
+
+
+def test_json_keeps_the_disclosure_on_stderr(world):
+    world.git("branch", "done")
+    sha = world.git("rev-parse", "done")
+    p = cli(world, "branch", "delete", "done", "--yes", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["removed"] == ["done"]
+    assert "deleting 1 branch:" in p.stderr
+    assert f"git branch done {sha}" in p.stderr

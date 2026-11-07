@@ -298,6 +298,8 @@ squash-merged  /home/you/git/.worktrees/squash-merged/repo  remove   its tree or
 squash-merged  /home/you/git/.worktrees/squash-merged/repo
   restore with: git branch squash-merged a2b41ad1fb271bd7d84256f0d35ee5d58c29dd08
 remove 1 worktree(s)? [y/N] y
+→ removed worktree /home/you/git/.worktrees/squash-merged/repo
+→ deleted branch squash-merged
 removed 1 worktree(s): squash-merged
 ```
 
@@ -313,8 +315,18 @@ per-repository and pins its own commits, so the entry survives the branch and
 the branch name in its subject, so the line says which entry is about to start
 pointing at nothing.
 
-The checkout goes through plain `git worktree remove`, so every refusal git
-makes still applies. The branch goes through `git update-ref -d`, naming the
+After the answer, and under `--yes` too, each target is assessed again. It is
+kept, and nothing of it is removed, when its branch, its commit, the head ref
+or the head's commit, its uncommitted changes, its lock or its ignored paths
+differ from what was assessed, or when it is no longer eligible. The line says
+which, as in `done kept: it has moved to another commit; nothing removed`.
+The worktree and the branch are then reported one line each, and a step that
+fails says so and makes the command exit 1. A detached worktree has no branch
+to delete.
+
+The checkout goes through plain `git worktree remove`, never `--force`, so
+every refusal git makes still applies, and a refused checkout keeps its
+branch. The branch goes through `git update-ref -d`, naming the
 sha the verdict was formed against: a branch somebody committed to in between
 survives, and says so in git's own words. Neither `branch -d`, which reads
 history and so refuses the squash merge the probe just proved, nor `branch -D`,

@@ -7,6 +7,7 @@ import shlex
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 from . import render, sync
 from . import repo as R
@@ -177,37 +178,143 @@ def confirm(
     return ask(question).strip().lower() in ("y", "yes")
 
 
+class Snapshot(NamedTuple):
+    """What a target was when it was assessed. Nothing is removed unless it
+    still is."""
+
+    path: str
+    branch: str
+    sha: str
+    head_ref: str
+    head_sha: str
+    locked: bool
+    dirty: bool
+    ignored: tuple[str, ...]
+
+
+# What a second look compares, in order, and what it says when one differs.
+CHANGES = (
+    ("branch", "it is on another branch now"),
+    ("sha", "it has moved to another commit"),
+    ("head_ref", "the head ref is another one now"),
+    ("head_sha", "the head branch has moved"),
+    ("dirty", "its uncommitted changes changed"),
+    ("locked", "its lock changed"),
+    ("ignored", "its ignored files changed"),
+)
+
+
+def look(path: str, repo: str | os.PathLike[str] | None = None) -> Snapshot | None:
+    """The worktree at `path` as it is now, or None once git does not list
+    it. A locked worktree's directory may be away, and reads as clean."""
+    found = next((w for w in R.worktrees(repo) if w.path == path), None)
+    if found is None:
+        return None
+    head = R.head_ref(R.remote(repo), repo=repo)
+    sha = sha_of(head.ref, repo=repo) if head.resolves else None
+    status = R.status_of(path) if Path(path).is_dir() else R.Status(False, [])
+    return Snapshot(
+        path,
+        found.branch,
+        found.sha,
+        head.ref,
+        sha.out.strip() if sha else "",
+        "locked" in found.flags,
+        status.dirty,
+        tuple(status.ignored),
+    )
+
+
+def record(
+    v: Verdict, head_ref: str, repo: str | os.PathLike[str] | None = None
+) -> Snapshot | None:
+    """The snapshot a removal is checked against, tied to the branch, the
+    commit and the head ref the verdict was formed from."""
+    now = look(v.path, repo=repo)
+    return now and now._replace(branch=v.branch, sha=v.sha, head_ref=head_ref)
+
+
+def changed(
+    v: Verdict, was: Snapshot | None, now: Snapshot | None, fresh: Verdict | None
+) -> str:
+    """Why `v` may not be removed after all, or '' when nothing changed.
+
+    `fresh` is the target assessed again, which has to reach the verdict and
+    the eligibility the first assessment did.
+    """
+    if was is None or now is None:
+        return "git no longer lists it"
+    for field, why in CHANGES:
+        if getattr(was, field) != getattr(now, field):
+            return why
+    if fresh is None or (fresh.verdict, fresh.eligible) != (v.verdict, v.eligible):
+        return f"it is not eligible now: {fresh.why if fresh else 'it is gone'}"
+    return ""
+
+
+def remove(
+    v: Verdict,
+    was: Snapshot | None,
+    again: Callable[[str], Verdict | None],
+    say: Callable[[str], None],
+    keep_branch: bool = False,
+    repo: str | os.PathLike[str] | None = None,
+) -> tuple[bool, bool]:
+    """Look again, remove the worktree, then delete its branch at the sha
+    the verdict was formed against. Returns whether the worktree went, and
+    whether every step did.
+
+    `again` assesses one path afresh. Each outcome is said on its own line:
+    a worktree that went and a branch that stayed are two results.
+    """
+    why = changed(v, was, look(v.path, repo=repo), again(v.path))
+    if why:
+        say(render.fail(f"{render.branch(v.label)} kept: {why}; nothing removed"))
+        return False, False
+    try:
+        worktree_remove(v.path, repo=repo)
+    except (GitError, Refused) as exc:
+        say(render.fail(f"worktree {v.path} kept: {exc}"))
+        return False, False
+    say(render.note(f"removed worktree {v.path}"))
+    _prune_empty_parents(Path(v.path).parent, R.main_worktree(repo))
+
+    if not v.branch:
+        return True, True
+    if keep_branch:
+        say(render.note(f"kept branch {render.branch(v.branch)}"))
+        return True, True
+    try:
+        ref_delete(f"refs/heads/{v.branch}", v.sha, repo=repo)
+    except (GitError, Refused) as exc:
+        say(render.fail(f"branch {render.branch(v.branch)} not deleted: {exc}"))
+        return True, False
+    say(render.note(f"deleted branch {render.branch(v.branch)}"))
+    return True, True
+
+
 def sweep(
     go: list[Verdict],
+    recorded: dict[str, Snapshot | None],
+    again: Callable[[str], Verdict | None],
     say: Callable[[str], None],
     repo: str | os.PathLike[str] | None = None,
-) -> int:
-    """Remove each one, in order. Returns how many failed.
+) -> tuple[list[Verdict], int]:
+    """Remove each one, in order. Returns the ones whose worktree went, and
+    how many failed a step.
 
     Serial because `worktree remove` and `update-ref` take the repository's
     shared refs and its worktrees/ directory. One that git refuses is not a
     reason to abandon the rest.
     """
-    main = R.main_worktree(repo)
-    failed = 0
+    removed, failed = [], 0
     for v in go:
-        try:
-            worktree_remove(v.path, repo=repo)
-        except (GitError, Refused) as exc:
-            say(render.fail(f"{render.branch(v.label)} kept: {exc}"))
-            failed += 1
-            continue
-
-        _prune_empty_parents(Path(v.path).parent, main)
-
-        if v.branch:
-            try:
-                ref_delete(f"refs/heads/{v.branch}", v.sha, repo=repo)
-            except (GitError, Refused) as exc:
-                say(render.fail(f"branch {render.branch(v.branch)} kept: {exc}"))
-
+        went, ok = remove(v, recorded.get(v.path), again, say, repo=repo)
+        if went:
+            removed.append(v)
+        failed += not ok
     worktree_prune(repo=repo)
-    return failed
+    return removed, failed
 
 
 def _prune_empty_parents(start: Path, main: str) -> None:

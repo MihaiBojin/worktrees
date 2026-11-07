@@ -453,6 +453,9 @@ Branch assessment is documented in `docs/commands/branch-status.md`, and
 deletion in `docs/commands/branch-delete.md`. `gwbs` assesses local refs,
 including branches without worktrees. `gwbd` rechecks its verdicts after
 confirmation and deletes refs with the full expected SHA and `--no-deref`.
+`gwp` and `gwr` do the same for a worktree: `prune.record` takes a snapshot
+before the disclosure, and `prune.remove` looks again before `git worktree
+remove` and refuses on any difference, a fresh assessment included.
 
 The branch content check compares every path changed from the merge base to
 the tip with the current head tree, including modes and deletions. It can
