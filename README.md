@@ -20,7 +20,8 @@ a shell function of the same name.
 | `gwm NEW` | rename this worktree's branch and move the checkout to match |
 | `gwr [QUERY]` | remove a worktree whose branch is finished, and the branch |
 | `gwr! [QUERY]` | `gwr --delete ignored-files`, a shell function in fish and zsh |
-| `gwp!` | `gwp --delete ignored-files --yes`, a shell function in fish and zsh |
+| `gwp!` | `gwp --yes`, a shell function in fish and zsh |
+| `gwp!!` | `gwp --delete all --yes`, which also deletes empty branches, ignored files and branch stashes; a shell function in fish and zsh |
 | `gwbc NAME` | branch `NAME` off the head branch and check it out |
 | `gwrot` | start the next branch after this one, or catch the head branch up |
 
@@ -124,8 +125,8 @@ fisher install MihaiBojin/worktrees@v0.7.0
 ```
 
 Fisher copies `functions/`, `completions/` and `conf.d/` from the repository
-root, so the functions for `gw`, `gwa`, `gwm`, `gwr`, `gwr!` and `gwp!` land
-together with a completion for every command. Nothing has to be sourced.
+root, so the functions for `gw`, `gwa`, `gwm`, `gwr`, `gwr!`, `gwp!` and
+`gwp!!` land together with a completion for every command. Nothing has to be sourced.
 
 To change release, edit the tag on that line of
 `$__fish_config_dir/fish_plugins` and run `fisher update`. The same edit moves
@@ -568,9 +569,16 @@ permission for them, since `git worktree remove` takes the whole directory,
 and it keeps a branch whose work already landed. Every ignored path is named
 before anything is deleted.
 
-`gwr!` is `gwr --delete ignored-files`, for when the ignored files are ones you meant
-to lose. It is a shell function in fish and zsh, not a console script, and it
-calls the `gwr` function so you still land where `gwr` says.
+`gwr!` is `gwr --delete ignored-files`, for when the ignored files are ones
+you meant to lose. It is a shell function in fish and zsh, not a console
+script, and it calls the `gwr` function so you still land where `gwr` says.
+
+`gwp!` is `gwp --yes`: it skips the question and grants nothing, so it
+removes the eligible rows the table shows and no more. `gwp!!` is `gwp
+--delete all --yes`, which also deletes `empty` branches, ignored files and
+the stashes of the branches it removes. At an interactive zsh prompt `!!`
+is history expansion, so type `gwp\!\!` there, or `setopt no_bang_hist`;
+fish has no such expansion.
 
 ## gwbc and gwrot
 

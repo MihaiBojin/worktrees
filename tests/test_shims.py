@@ -28,7 +28,8 @@ ADAPTERS = tuple(name for name in CD_COMMANDS if name != "gw")
 # A shortcut calls a command with its flags fixed, and nothing else.
 SHORTCUTS = {
     "gwr!": "gwr --delete ignored-files",
-    "gwp!": "gwp --delete ignored-files --yes",
+    "gwp!": "gwp --yes",
+    "gwp!!": "gwp --delete all --yes",
 }
 
 
@@ -230,7 +231,8 @@ def _run_zsh(bin_dir: Path, line: str) -> tuple[int, str]:
             zsh,
             "-f",
             "-c",
-            f"fpath=({fns} $fpath); autoload -Uz gw gwa gwr 'gwr!' 'gwp!'; {line}",
+            f"fpath=({fns} $fpath); "
+            f"autoload -Uz gw gwa gwr 'gwr!' 'gwp!' 'gwp!!'; {line}",
         ],
         capture_output=True,
         text=True,
@@ -262,25 +264,32 @@ def test_the_zsh_shortcut_lands_where_gwr_says_with_the_flag(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-def test_gwp_bang_runs_gwp_with_its_flags_and_its_exit_code(tmp_path, shell) -> None:
+@pytest.mark.parametrize("name", ["gwp!", "gwp!!"])
+def test_a_gwp_shortcut_runs_gwp_with_its_flags_and_its_exit_code(
+    tmp_path, shell, name
+) -> None:
     seen = tmp_path / "argv"
     bin_dir = _fake(tmp_path, "gwp", f'#!/bin/sh\necho "$@" > "{seen}"\nexit 4\n')
     if shell == "fish":
         _, out = _run_fish(
             bin_dir,
-            f"source '{ROOT / 'functions' / 'gwp!.fish'}'; "
-            "gwp! --only remove; echo code=$status",
+            f"source '{ROOT / 'functions' / f'{name}.fish'}'; "
+            f"{name} --only remove; echo code=$status",
         )
     else:
-        _, out = _run_zsh(bin_dir, "gwp! --only remove; echo code=$?")
+        # Not interactive, so zsh reads !! as two characters, as it does
+        # for a script; at a prompt it is history and is typed gwp\!\!.
+        _, out = _run_zsh(bin_dir, f"{name} --only remove; echo code=$?")
     assert "code=4" in out, out
-    assert seen.read_text().split() == [
-        "--delete",
-        "ignored-files",
-        "--yes",
-        "--only",
-        "remove",
-    ]
+    fixed = SHORTCUTS[name].split()[1:]
+    assert seen.read_text().split() == [*fixed, "--only", "remove"]
+
+
+def test_gwp_bang_bang_says_what_it_deletes() -> None:
+    fish = (ROOT / "functions" / "gwp!!.fish").read_text()
+    zsh = (ROOT / "zsh/plugins/worktrees/functions/gwp!!").read_text()
+    for text in (fish, zsh):
+        assert "empty branches, ignored files and branch stashes" in text
 
 
 def test_the_zsh_shim_returns_the_binarys_exit_code(tmp_path) -> None:

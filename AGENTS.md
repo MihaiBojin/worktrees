@@ -90,8 +90,9 @@ failed.
 
 One other kind of function exists: a shortcut, a banged name that calls a
 command with its flags fixed and does nothing else. `gwr!` is `gwr
---delete ignored-files`, and `gwp!` is `gwp --delete ignored-files --yes`.
-A shortcut calls its command by its plain name, so `gwr!` reaches the `gwr`
+--delete ignored-files`, `gwp!` is `gwp --yes`, and `gwp!!` is `gwp
+--delete all --yes`. An interactive zsh reads `!!` as history, so there it
+is typed `gwp\!\!`; a script and fish take it as written. A shortcut calls its command by its plain name, so `gwr!` reaches the `gwr`
 function rather than `command gwr` and the caller still lands where the
 binary says. No binary carries a banged name, so a shortcut shadows nothing,
 and none has a console script of its own.

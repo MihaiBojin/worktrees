@@ -1,4 +1,4 @@
-# gwp!: gwp, deleting ignored files, without asking.
-function gwp! --wraps 'gwp --delete ignored-files --yes' --description 'gwp, deleting the gitignored files too, without asking'
-    gwp --delete ignored-files --yes $argv
+# gwp!: gwp without the question; it grants no --delete permission.
+function gwp! --wraps 'gwp --yes' --description 'gwp, removing every eligible worktree without asking'
+    gwp --yes $argv
 end

@@ -1,2 +1,2 @@
-# gwp!: gwp, deleting ignored files, without asking.
-gwp --delete ignored-files --yes "$@"
+# gwp!: gwp without the question; it grants no --delete permission.
+gwp --yes "$@"
