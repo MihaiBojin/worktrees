@@ -87,6 +87,20 @@ class World:
         self.git("worktree", "add", "--quiet", "-b", branch, str(path), base)
         return path
 
+    def merged_worktree(self, branch: str) -> Path:
+        """A clean worktree whose side-branch tip is merged with two parents."""
+        path = self.worktree(branch)
+        self.commit("merged-" + branch.replace("/", "-"), at=path)
+        self.git("merge", "--quiet", "--no-ff", "-m", "merge " + branch, branch)
+        return path
+
+    def merged_branch(self, branch: str) -> str:
+        """A loose branch with its tip merged through a merge commit."""
+        path = self.merged_worktree(branch)
+        sha = self.git("rev-parse", f"refs/heads/{branch}")
+        self.git("worktree", "remove", str(path))
+        return sha
+
     def sibling(self, name: str, branch: str) -> Path:
         """A second repository beside this one, with a worktree of its own.
 

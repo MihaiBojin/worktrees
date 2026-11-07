@@ -30,7 +30,8 @@ Branches first:
 ```sh
 gwbs --json | jq -c '{
   head_sha,
-  branches: [.verdicts[] | select(.verdict == "remove") | {branch, proof, undo}],
+  branches: [.verdicts[] | select(.eligible) | {branch, proof, undo}],
+  empty: [.verdicts[] | select(.verdict == "empty")] | length,
   kept: [.verdicts[] | select(.verdict == "keep")] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length
 }'
@@ -40,12 +41,13 @@ Then worktrees, with the `head_sha` that printed written in place of
 `HEAD_SHA`:
 
 ```sh
-gws --json | jq -c '{
-  worktrees: [.verdicts[] | select(.verdict == "remove")
+gw --json | jq -c '{
+  worktrees: [.verdicts[] | select(.eligible)
     | {branch, path, why, at_head: (.sha == "HEAD_SHA")}],
+  empty: [.verdicts[] | select(.verdict == "empty")] | length,
   kept: [.verdicts[] | select(.verdict == "keep")] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length,
-  ignored: [.verdicts[] | select(.verdict == "keep" and .ignored > 0) | .branch]
+  ignored: [.verdicts[] | select(.ignored > 0) | .branch]
 }'
 ```
 

@@ -1,4 +1,4 @@
-"""Removing the worktrees `status` marked `remove`, and nothing else."""
+"""Remove eligible worktrees after assessment and confirmation."""
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ from pathlib import Path
 from . import render
 from . import repo as R
 from .git import GitError, Refused, git
-from .verdicts import REMOVE, Verdict
+from .verdicts import REMOVE as REMOVE
+from .verdicts import Verdict
 
 
 @git("worktree prune", mutates=True)
@@ -48,18 +49,14 @@ def object_type(sha: str) -> None:
 # One call for the whole repository, because refs/stash is per-repository
 # rather than per-branch. The quotes survive shlex.split, so the format stays
 # one argv element.
-@git("stash list --format='%gd %gs'")
+@git("stash list --format='%gd %H %gs'")
 def stash_list() -> None:
     """Every stash entry: its selector, then the subject naming its branch."""
 
 
 def removable(verdicts: list[Verdict]) -> list[Verdict]:
-    """The `remove` rows, which is the whole of what prune may touch.
-
-    The one place the set is derived. `status` prints these as `remove` and
-    `prune` removes these, so the two cannot drift.
-    """
-    return [v for v in verdicts if v.verdict == REMOVE]
+    """Only rows whose proof and protections permit deletion."""
+    return [v for v in verdicts if v.eligible]
 
 
 def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str:
@@ -91,20 +88,43 @@ def restore_sha(branch: str, repo: str | os.PathLike[str] | None = None) -> str:
     return text
 
 
-def stashes_on(branch: str, entries: list[str]) -> list[str]:
-    """The selectors of the stash entries made on this branch.
+def stashes_on(
+    branch: str,
+    entries: list[str],
+    tip: str = "",
+    repo: str | os.PathLike[str] | None = None,
+) -> list[str]:
+    """Stash SHAs whose branch subject and first parent match this tip."""
+    from . import merged
 
-    `git stash` writes `WIP on <branch>: ...` and `git stash push -m` writes
-    `On <branch>: ...`, so the branch is in the subject and nowhere else.
-    """
     if not branch:
         return []
+    tip = tip or sha_of(f"refs/heads/{branch}", repo=repo).out.strip()
     found = []
     for line in entries:
-        selector, _, subject = line.partition(" ")
+        parts = line.split(" ", 2)
+        if len(parts) != 3:
+            continue
+        _, sha, subject = parts
         if subject.startswith((f"On {branch}:", f"WIP on {branch}:")):
-            found.append(selector)
+            parent = sha_of(f"{sha}^1", repo=repo)
+            if parent and merged.is_ancestor(parent.out.strip(), tip, repo=repo):
+                found.append(sha)
     return found
+
+
+def branch_protections(
+    branch: str, head_branch: str, verdict: str, stashes: list[str]
+) -> list[str]:
+    """Branch rules that apply to loose refs and checked-out branches."""
+    reasons = []
+    if branch and branch in ("main", "master", head_branch):
+        reasons.append("it is a protected branch")
+    if stashes:
+        reasons.append("its branch has stashes")
+    if verdict == "empty":
+        reasons.append("empty branches require deletion permission")
+    return reasons
 
 
 def plan(

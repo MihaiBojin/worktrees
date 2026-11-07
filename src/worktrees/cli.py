@@ -72,12 +72,13 @@ def _same(a: str, b: str) -> bool:
 
 
 def _verdict_table(rows: list[verdicts.Verdict]) -> str:
-    """The table `gws` prints, which `gwp` prints too rather than name it."""
+    """The assessment table for worktree previews and pruning."""
 
     head: Row = (
         Cell("BRANCH", BOLD),
         Cell("PATH", BOLD),
         Cell("VERDICT", BOLD),
+        Cell("ELIGIBLE", BOLD),
         Cell("WHY", BOLD),
     )
     body: list[Row] = [
@@ -85,6 +86,7 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
             Cell(v.label, render.BRANCH),
             Cell(v.path, DIM),
             Cell(v.verdict, render.VERDICT.get(v.verdict, "")),
+            Cell("yes" if v.eligible else "no"),
             Cell(v.why),
         )
         for v in rows
@@ -94,20 +96,8 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
 
 def _counted(rows: list[verdicts.Verdict]) -> str:
     """How many of each verdict, in the verdicts' own colours."""
-    from . import prune, verdicts
-
-    # `removable` rather than the verdict, so the count is what gwp removes.
-    go = {id(v) for v in prune.removable(rows)}
-    return render.counted(
-        [
-            verdicts.REMOVE
-            if id(v) in go
-            else verdicts.UNKNOWN
-            if v.verdict == verdicts.UNKNOWN
-            else verdicts.KEEP
-            for v in rows
-        ]
-    )
+    eligible = sum(v.eligible for v in rows)
+    return render.counted([v.verdict for v in rows]) + f"; {eligible} eligible"
 
 
 def add_status_flags(p: argparse.ArgumentParser) -> None:
@@ -117,7 +107,7 @@ def add_status_flags(p: argparse.ArgumentParser) -> None:
         action="append",
         choices=render.VERDICTS,
         metavar="VERDICT",
-        help="show only rows with this verdict (remove, keep or unknown); "
+        help="show only rows with this verdict (remove, empty, keep or unknown); "
         "repeat for more",
     )
 
@@ -182,9 +172,6 @@ def _explain() -> int:
 
 
 def _add_assess_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "--branch", default="", metavar="NAME", help="consider only that branch"
-    )
     p.add_argument(
         "--delete-ignored",
         action="store_true",
@@ -252,8 +239,7 @@ def _judge_all(
             head_branch,
             ignored,
             ask_forge=ask_forge,
-            # `gws` and `gwp` report; `gwr` acts, and takes this list as its
-            # candidates, so it asks through `judge` and gets it without.
+            # Targeted removal supplies its own candidate assessment.
             include_main=True,
         )
     )
@@ -274,7 +260,7 @@ def _assessment_head(args: argparse.Namespace) -> tuple[str, str, str]:
 # --------------------------------------------------------------------------
 
 
-def run_status(args: argparse.Namespace) -> int:
+def run_preview(args: argparse.Namespace) -> int:
     """Say what is here. Nothing in this path removes anything."""
 
     from . import layout, prune, verdicts
@@ -313,6 +299,11 @@ def run_status(args: argparse.Namespace) -> int:
                     "verdicts": [
                         {
                             "verdict": v.verdict,
+                            "eligible": v.eligible,
+                            "proof": v.proof,
+                            "request": v.request,
+                            "protections": v.protections,
+                            "stashes": v.stashes,
                             "branch": v.branch,
                             "path": v.path,
                             "why": v.why,
@@ -364,7 +355,7 @@ def run_status(args: argparse.Namespace) -> int:
 
 
 def run_prune(args: argparse.Namespace) -> int:
-    """Remove exactly what status marks removable, having asked first."""
+    """Preview the assessment or remove eligible worktrees after confirmation."""
 
     from . import prune, verdicts
     from .git import options
@@ -372,6 +363,9 @@ def run_prune(args: argparse.Namespace) -> int:
     options.verbose = args.verbose
     if args.explain:
         return _explain()
+
+    if args.dry_run:
+        return run_preview(args)
 
     # git's own bookkeeping for worktrees whose directories somebody removed
     # by hand. A stale record answers for a directory that is not there, and
@@ -854,11 +848,9 @@ def run_remove(args: argparse.Namespace) -> int:
                 print(f"{w.label}\t{w.path}")
         return 0
 
-    # Read cached request evidence after the picker chooses a branch.
+    # Assess cached evidence and protections before offering candidates.
     _require_head()
-    rows, _, head, head_branch, records = _assess(
-        args, judge=wt_mod.removable, ask_forge=False
-    )
+    rows, _, _, _, records = _assess(args, judge=wt_mod.removable, ask_forge=True)
     found = pick.matches(
         args.query, [R.Worktree(v.path, "", v.branch, frozenset()) for v in rows]
     )
@@ -890,44 +882,12 @@ def run_remove(args: argparse.Namespace) -> int:
         return 0
     chosen = by_path[picked.path]
 
-    # Now that there is one branch, the forge is worth a question: it is the
-    # only thing that settles a branch merged as part of a stack.
-    if chosen.verdict != prune.REMOVE:
-        with progress.running(not args.quiet and not args.verbose):
-            judged = wt_mod.removable(
-                chosen.branch, head, head_branch, args.delete_ignored, ask_forge=True
-            )
-        if judged:
-            chosen = judged[0]
-
-    if (
-        chosen.verdict != prune.REMOVE
-        and chosen.ignored
-        and not args.force
-        and not args.yes
-        and sys.stdin.isatty()
-    ):
-        # Somebody at a terminal can consent to what --delete-ignored would
-        # have. The plan below names every path before the question, and
-        # --yes never stands in for that consent.
-        _warn(
-            f"{render.branch(chosen.label)} is finished, but holds "
-            f"{chosen.ignored} ignored path(s); they go with it"
-        )
-        chosen = prune.Verdict(
-            prune.REMOVE, chosen.branch, chosen.path, chosen.why, 0, chosen.sha
-        )
+    if chosen.protections:
+        _err(render.fail(f"{render.branch(chosen.label)} kept: {chosen.why}"))
+        return 1
 
     if chosen.verdict != prune.REMOVE and not args.force:
-        # A finished branch held back by ignored files is not an unfinished
-        # branch. Saying so would contradict the reason printed beside it,
-        # and --force is the wrong answer to it: it deletes those files just
-        # the same, and keeps a branch whose work already landed.
-        state = "is finished" if chosen.ignored else "is not finished"
-        why = f"{render.branch(chosen.label)} {state}: {chosen.why}"
-        if chosen.ignored:
-            _err(render.fail(why))
-            return 1
+        why = f"{render.branch(chosen.label)} is not finished: {chosen.why}"
         if args.yes or not sys.stdin.isatty():
             _err(
                 render.fail(
@@ -1110,13 +1070,10 @@ def _complete_commands() -> int:
 # --------------------------------------------------------------------------
 
 
-def _add_status_flags(p: argparse.ArgumentParser) -> None:
-    _add_assess_flags(p)
-    add_status_flags(p)
-
-
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
+    add_status_flags(p)
+    p.add_argument("--dry-run", action="store_true", help="report without deleting")
     p.add_argument(
         "-y", "--yes", action="store_true", help="do not ask before removing"
     )
@@ -1171,9 +1128,7 @@ def run_branch(args: argparse.Namespace) -> int:
 class _Command:
     """One command under both its names, and every shorthand for it.
 
-    The one place they are written down. `gw status`, `gw st`, `gw s` and
-    `gws` reach the same function because this row says so, and `gw help`
-    prints the row rather than a second list that can disagree with it.
+    Every alias reaches the row's function. Help prints these rows.
     """
 
     __slots__ = ("about", "aliases", "binary", "flags", "lands", "run", "usage")
@@ -1237,17 +1192,10 @@ _COMMANDS: dict[str, _Command] = {
     "branch": _Command(
         run_branch, _add_branch_flags, "create, assess and delete local branches"
     ),
-    "status": _Command(
-        run_status,
-        _add_status_flags,
-        "which worktrees are finished, and why",
-        "gws",
-        aliases=("s", "st"),
-    ),
     "prune": _Command(
         run_prune,
         _add_prune_flags,
-        "remove the ones status marks removable",
+        "assess worktrees and remove eligible ones",
         "gwp",
         aliases=("p",),
     ),
@@ -1344,8 +1292,7 @@ _CANONICAL = _canonical()
 # --------------------------------------------------------------------------
 
 
-_STATUS_HELP = "Say which of this repository's worktrees are finished, and why."
-_PRUNE_HELP = "Remove the worktrees gws marks removable, and their branches."
+_PRUNE_HELP = "Assess worktrees and remove eligible ones, or preview with --dry-run."
 _NEW_BRANCH_HELP = "Fetch, then branch NAME off the head branch and check it out."
 _ROTATE_HELP = (
     "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
@@ -1359,7 +1306,7 @@ class _Parser(argparse.ArgumentParser):
 
     A command that changes directory prints its destination on stdout, and
     its shell function captures that stream, so its help goes to stderr. The
-    rest keep argparse's stdout, where `gws -h | less` reads it.
+    rest keep argparse's stdout, where `gwp -h | less` reads it.
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -1396,13 +1343,6 @@ def _needs(args: argparse.Namespace, what: str) -> int:
     _err("")
     args.parser.print_help(sys.stderr)
     return 2
-
-
-def gws(argv: list[str] | None = None) -> int:
-    """Read-only. There is no flag here that removes anything."""
-    p = _parser("gws", _STATUS_HELP)
-    _add_status_flags(p)
-    return _dispatch(p, argv, run_status)
 
 
 def gwp(argv: list[str] | None = None) -> int:
@@ -1516,8 +1456,9 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
             "--help",
         )
     ):
-        # `worktrees --explain` is not about one command; status answers it.
-        args_in = ["status", *args_in]
+        args_in = ["prune", "--dry-run", *args_in]
+    if not args_in:
+        args_in = ["prune", "--dry-run"]
     if args_in and not args_in[0].startswith("-") and args_in[0] not in _CANONICAL:
         return _unknown_command(prog, args_in[0])
 
@@ -1555,15 +1496,6 @@ def _dispatch(
 ) -> int:
     render.setup()
     raw = sys.argv[1:] if argv is None else argv
-    # Worktree previews use status; branch deletion also has --dry-run.
-    branch_delete = run is run_branch_delete or raw[:2] == ["branch", "delete"]
-    if "--dry-run" in raw and not branch_delete:
-        _err(
-            render.fail(
-                "there is no --dry-run: gws reports, and gwp asks before removing"
-            )
-        )
-        return 2
     args = p.parse_args(raw)
     # argparse gives a subparser its own prog; rebuild it rather than reach
     # into the private table for it. The alias the caller typed, not the
@@ -1577,17 +1509,22 @@ def _dispatch(
             return run_help(args)
         run = _COMMANDS[_CANONICAL[command]].run
     try:
+        if run is run_prune and args.only and not args.dry_run:
+            raise _Stop("--only requires --dry-run", 2)
         if (
             run not in (run_help, run_version, run_sync)
-            and not getattr(args, "json", False)
             and not getattr(args, "explain", False)
             and not getattr(args, "complete", False)
             and not (hasattr(args, "name") and not args.name)
+            and not (run is run_branch and not getattr(args, "branch_command", None))
         ):
             from . import repo as R
             from . import sync
+            from .git import options
 
-            if R.toplevel().out.strip():
+            options.verbose = getattr(args, "verbose", False)
+            R.require_offline_git()
+            if not getattr(args, "json", False) and R.toplevel().out.strip():
                 for notice in sync.notices(getattr(args, "quiet", False)):
                     _err(render.note(notice))
         return run(args)

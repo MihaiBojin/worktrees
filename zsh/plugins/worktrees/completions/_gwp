@@ -3,7 +3,8 @@
 # Flags as `gwp --help` lists them.
 
 _arguments -s \
-    '--branch[consider only that branch]:branch:' \
+    '--dry-run[report without deleting]' \
+    '*--only[filter by verdict]:verdict:(remove empty keep unknown)' \
     '--delete-ignored[count gitignored files as removable]' \
     '(-y --yes)'{-y,--yes}'[do not ask before removing]' \
     '--json[verdicts as data]' \

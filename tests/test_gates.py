@@ -70,19 +70,20 @@ def test_the_probe_separates_them(world) -> None:
         for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
     }
     assert seen["squashed"].verdict == verdicts.REMOVE
-    assert seen["squashed"].why == "squash-merged"
-    assert seen["unmerged"].verdict == verdicts.UNKNOWN
-    assert "no upstream" in seen["unmerged"].why
+    assert seen["squashed"].proof == "squash"
+    assert seen["unmerged"].verdict == verdicts.KEEP
+    assert not seen["unmerged"].eligible
 
 
-def test_a_branch_that_changed_nothing_is_finished(world) -> None:
+def test_a_branch_that_changed_nothing_is_empty(world) -> None:
     """Short-circuit: branch^{tree} == head^{tree}, whatever history says."""
     world.worktree("noop")
     seen = {
         v.branch: v
         for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
     }
-    assert seen["noop"].verdict == verdicts.REMOVE
+    assert seen["noop"].verdict == verdicts.EMPTY
+    assert not seen["noop"].eligible
 
 
 # --------------------------------------------------------------------------
@@ -114,7 +115,7 @@ def test_ignored_files_stop_the_verdict(world) -> None:
     (world.repo / ".gitignore").write_text(".env\nnode_modules\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
-    wt = world.worktree("holds")
+    wt = world.merged_worktree("holds")
     (wt / ".env").write_text("SECRET=1\n")
     (wt / "node_modules").mkdir()
     (wt / "node_modules" / "pkg.js").write_text("x\n")
@@ -123,7 +124,8 @@ def test_ignored_files_stop_the_verdict(world) -> None:
         x.branch: x
         for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
     }["holds"]
-    assert v.verdict == verdicts.KEEP
+    assert v.verdict == verdicts.REMOVE
+    assert not v.eligible
     assert "2 ignored path(s)" in v.why
     assert "--delete-ignored" in v.why
 
@@ -133,6 +135,7 @@ def test_ignored_files_stop_the_verdict(world) -> None:
         for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", True)
     }["holds"]
     assert v.verdict == verdicts.REMOVE
+    assert v.eligible
 
 
 def test_ignored_directory_collapses_to_one_entry(world) -> None:
@@ -287,8 +290,8 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
     assert len(v) == 1
     assert v[0].branch == ""
     assert v[0].label == "(detached)"
-    assert v[0].verdict == verdicts.REMOVE
-    assert v[0].why == "its commit is reached by a ref"
+    assert v[0].verdict == verdicts.EMPTY
+    assert not v[0].eligible
 
 
 # --------------------------------------------------------------------------
@@ -402,7 +405,7 @@ def test_no_unexpected_git_command_ran(world) -> None:
     """The registry is the whole surface; a run stays inside it."""
     from worktrees.git import commands, options
 
-    world.worktree("done")
+    world.merged_worktree("done")
     verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
 
     # The canary. An empty log is indistinguishable from a run that never
@@ -415,7 +418,8 @@ def test_no_unexpected_git_command_ran(world) -> None:
         rest = list(argv[1:])
         if rest[:1] == ["-C"]:
             del rest[:2]
-        while rest and rest[0].startswith("--"):
+        # --version is Git's standalone metadata query.
+        while rest and rest[0].startswith("--") and rest[0] != "--version":
             del rest[0]
         return rest[0]
 
@@ -481,7 +485,7 @@ def test_a_worktree_is_read_once(world) -> None:
         world.worktree(name)
     verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
 
-    status = [argv for argv in options.log if "status" in argv]
+    status = [argv for argv in options.log if "--ignored=traditional" in argv]
     assert len(status) == 3, status
     assert all("--ignored=traditional" in argv for argv in status)
 

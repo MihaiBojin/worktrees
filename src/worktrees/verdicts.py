@@ -1,4 +1,4 @@
-"""One verdict per worktree. Nothing here mutates."""
+"""Completion evidence and deletion protections for every worktree."""
 
 from __future__ import annotations
 
@@ -6,36 +6,17 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import branch_forge, merged, progress, prune
+from . import merged, progress
 from . import repo as R
-from .merged import merged_reason
+from .git import git
 
-# The verdicts, each the instruction it gives. `unknown` is not `keep` with a
-# softer word: "no upstream, so nothing says whether this was pushed" is a
-# different fact from "this is not merged", and a sweep printing them the same
-# way invites somebody to act on the wrong one.
 REMOVE = "remove"
+EMPTY = "empty"
 KEEP = "keep"
 UNKNOWN = "unknown"
 
 
 class Verdict:
-    __slots__ = ("branch", "ignored", "path", "sha", "verdict", "why")
-
-    verdict: str
-    branch: str  # empty when detached
-    path: str
-    why: str
-    # How many ignored paths held back a branch that is otherwise done, and 0
-    # everywhere else. Whether the work landed and whether the directory is
-    # safe to delete are two questions, and only the second one answers to
-    # --delete-ignored, so a caller that prints a refusal needs them apart.
-    ignored: int
-    # The commit the verdict was formed against. Deleting the branch names it
-    # as the value the ref must still hold, so a commit made between the
-    # judgement and the removal fails the delete rather than going with it.
-    sha: str
-
     def __init__(
         self,
         verdict: str,
@@ -44,6 +25,11 @@ class Verdict:
         why: str,
         ignored: int = 0,
         sha: str = "",
+        *,
+        proof: str = "",
+        request: dict | None = None,
+        protections: list[str] | None = None,
+        stashes: list[str] | None = None,
     ) -> None:
         self.verdict = verdict
         self.branch = branch
@@ -51,6 +37,11 @@ class Verdict:
         self.why = why
         self.ignored = ignored
         self.sha = sha
+        self.proof = proof
+        self.request = request
+        self.protections = protections or []
+        self.stashes = stashes or []
+        self.eligible = verdict == REMOVE and not self.protections
 
     @property
     def label(self) -> str:
@@ -58,12 +49,13 @@ class Verdict:
 
 
 def stale(records: list[R.Worktree]) -> list[R.Worktree]:
-    """Records answering for a directory somebody deleted by hand.
-
-    `git worktree prune` is what clears them, so they are nobody's verdict:
-    neither command may propose removing a checkout that is not there.
-    """
+    """Records for worktree directories somebody deleted by hand."""
     return [w for w in records if "prunable" in w.flags]
+
+
+@git("submodule status")
+def submodule_status() -> None:
+    """Initialized submodules have a status prefix other than '-'."""
 
 
 def assess(
@@ -77,114 +69,87 @@ def assess(
     ask_forge: bool = False,
     include_main: bool = False,
 ) -> list[Verdict]:
-    """Every worktree, in the order `git worktree remove` would refuse them.
+    """Assess pinned tips and keep every deletion protection separate.
 
-    Proposing something that would then be refused is a bug here, not a
-    surprise at the confirmation.
-
-    `here` is the checkout the caller is standing in, which is kept rather
-    than proposed. Pass "" to judge it like any other: `gwr` is asked for one
-    by name and steps out of it first, where a listing has no way to.
-
-    `include_main` puts the main checkout in the list, kept and never
-    proposed. A listing leaving it out shows one row where `git worktree
-    list` shows two, and reads as though something went missing. `gwr` takes
-    the list as its candidates, so it asks for the list without it.
+    `here` blocks the caller's worktree for pruning. A targeted removal
+    passes an empty string and handles departure from that directory itself.
     """
+    from . import prune
+
     main = R.main_worktree(repo)
     if here is None:
         here = R.toplevel(repo=repo).out.strip()
-    head_name = R.ref_name(head)
+    head_sha = prune.sha_of(head, repo=repo).out.strip() if head else ""
+    first_parents = (
+        set(merged.first_parent_history(head_sha, repo=repo).lines)
+        if head_sha
+        else set()
+    )
+    remote = R.remote(repo)
+    entries = prune.stash_list(repo=repo).lines
 
     def judge(wt: R.Worktree) -> Verdict | None:
-        def say(verdict: str, why: str, ignored: int = 0) -> Verdict:
-            return Verdict(verdict, wt.branch, wt.path, why, ignored, wt.sha)
-
         if "bare" in wt.flags or "prunable" in wt.flags:
             return None
         if only and wt.branch != only:
             return None
-        if not head:
-            return say(UNKNOWN, "the head ref does not resolve")
-        if wt.path == main:
-            # Said before the standing-in rule below, because which one is
-            # the main checkout is the more useful of the two facts and the
-            # only one that is true from anywhere.
-            if include_main:
-                return say(KEEP, "it is the main checkout, and never removable")
+        if wt.path == main and not include_main:
             return None
-
-        if here and Path(wt.path).resolve() == Path(here).resolve():
-            return say(KEEP, "you are standing in it")
+        progress.say(f"{wt.label}: checking completion evidence")
+        verdict, why, proof, request = merged.branch_proof(
+            wt.branch,
+            wt.sha,
+            head_sha,
+            head_branch,
+            remote,
+            ask_forge,
+            first_parents,
+            repo,
+        )
+        protections = []
+        if wt.path == main:
+            protections.append("it is the main checkout, and never removable")
+        if here and Path(wt.path).resolve() == Path(here).resolve() and wt.path != main:
+            protections.append("you are standing in it")
         if "locked" in wt.flags:
-            return say(KEEP, "it is locked")
-        if wt.branch and wt.branch == head_branch:
-            return say(KEEP, "it is the head branch")
-        # One read, both answers. Asking again further down was half of
-        # every assessment's git calls.
-        progress.say(f"{wt.label}: reading its status")
-        status = R.status_of(wt.path)
-        if status.dirty:
-            return say(KEEP, "it has uncommitted changes")
-
-        if not wt.branch:
-            # Detached: finished when some ref already reaches the commit,
-            # which is the question `git worktree remove` asks of one.
-            if R.refs_containing(wt.sha, repo=repo).out.strip():
-                return say(REMOVE, "its commit is reached by a ref")
-            return say(UNKNOWN, f"no ref reaches {wt.sha}")
-
-        progress.say(f"{wt.label}: is it merged into {head_name}?")
-        reason = merged_reason(wt.branch, head, repo=repo)
-        if not reason and ask_forge:
-            progress.say(f"{wt.label}: reading cached forge evidence")
-            reason, verdict = _forge_reason(
-                wt.branch, wt.sha, head, head_branch, repo=repo
-            )
-            if verdict:
-                return say(verdict, reason)
-        if not reason:
-            progress.say(f"{wt.label}: were its commits pushed?")
-            if R.unpushed_count(wt.branch, repo=repo) is None:
-                return say(
-                    UNKNOWN,
-                    f"not merged into {head_name}, and no upstream says whether "
-                    "its commits were pushed",
+            protections.append("it is locked")
+        ignored = 0
+        if wt.path != main:
+            progress.say(f"{wt.label}: reading its status")
+            status = R.status_of(wt.path)
+            if status.dirty:
+                protections.append("it has uncommitted changes or untracked files")
+            if any(
+                line and not line.startswith("-")
+                for line in submodule_status(repo=wt.path).lines
+            ):
+                protections.append(
+                    "it has an initialized submodule; run "
+                    "git submodule deinit --all in it and retry"
                 )
-            return say(KEEP, f"not merged into {head_name}")
+            ignored = len(status.ignored)
+            if ignored and not delete_ignored:
+                protections.append(
+                    f"it holds {ignored} ignored path(s); pass --delete-ignored"
+                )
+        stashes = prune.stashes_on(wt.branch, entries, wt.sha, repo)
+        protections += prune.branch_protections(
+            wt.branch, head_branch, verdict, stashes
+        )
+        if protections:
+            why += "; " + "; ".join(protections)
+        return Verdict(
+            verdict,
+            wt.branch,
+            wt.path,
+            why,
+            ignored,
+            wt.sha,
+            proof=proof,
+            request=request,
+            protections=protections,
+            stashes=stashes,
+        )
 
-        ignored = status.ignored
-        if ignored and not delete_ignored:
-            return say(
-                KEEP,
-                f"{reason}, but holds {len(ignored)} ignored path(s); "
-                "pass --delete-ignored",
-                len(ignored),
-            )
-
-        return say(REMOVE, reason)
-
-    # Each worktree is independent. Threads overlap Git subprocess waits;
-    # map keeps the worktree order.
     with ThreadPoolExecutor(max_workers=8) as pool:
         return [v for v in pool.map(judge, records) if v is not None]
-
-
-def _forge_reason(
-    branch: str,
-    sha: str = "",
-    head: str = "",
-    head_branch: str = "",
-    repo: str | os.PathLike[str] | None = None,
-) -> tuple[str, str]:
-    """Accept cached proof only for this source tip and a reachable merge."""
-    request = branch_forge.request_for(branch, R.remote(repo), sha, repo)
-    if request is None or request.state != "MERGED":
-        return "", ""
-    if request.unverified_reason(branch, sha, head_branch):
-        return "", ""
-    if not prune.object_type(request.merge_sha, repo=repo):
-        return "", ""
-    if not merged.is_ancestor(request.merge_sha, head, repo=repo):
-        return "", ""
-    return f"its {request.noun} #{request.number} is merged", ""

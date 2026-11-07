@@ -6,11 +6,58 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from .git import git
+from .git import Refused, git
 
 # --------------------------------------------------------------------------
 # the git calls
 # --------------------------------------------------------------------------
+
+
+@git(
+    "config --null --get-regexp "
+    "'^(extensions[.]partialclone|remote[.].*[.](promisor|partialclonefilter))$'",
+    ok=(0, 1),
+)
+def partial_clone_config() -> None:
+    """Promisor settings, including older filter-only configurations."""
+
+
+@git("--version")
+def git_version() -> None:
+    """The installed Git release, without reading repository objects."""
+
+
+def require_offline_git() -> None:
+    """Refuse implicit object retrieval on unpatched partial clones."""
+    values = {}
+    for record in partial_clone_config().out.split("\0"):
+        if record:
+            key, separator, value = record.partition("\n")
+            values[key] = value if separator else None
+    partial = any(
+        not key.endswith(".promisor")
+        or value is None
+        or value.lower() not in ("", "false", "no", "off", "0")
+        for key, value in values.items()
+    )
+    if not partial:
+        return
+    import re
+
+    version = git_version().out.strip()
+    match = re.search(r"\b(\d+)\.(\d+)\.(\d+)\b", version)
+    if match:
+        major, minor, patch = map(int, match.groups())
+        # Patch prefetch honors the lazy-fetch guard on these maintenance releases.
+        floors = {39: 4, 40: 2, 41: 1, 42: 2, 43: 4, 44: 1}
+        if (major, minor, patch) >= (2, 45, 1) or (
+            major == 2 and minor in floors and patch >= floors[minor]
+        ):
+            return
+    raise Refused(
+        "partial clone requires Git 2.45.1 or a patched maintenance release "
+        f"for offline object reads; upgrade Git ({version})"
+    )
 
 
 @git("worktree list --porcelain -z")

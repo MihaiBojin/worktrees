@@ -17,18 +17,6 @@ import os
 
 from .git import git
 
-# commit-tree fails outright when user.email is unset, and a fixed identity
-# keeps the synthetic commit reproducible. Nothing references it, so the next
-# gc collects it.
-_SYNTHETIC = {
-    "GIT_AUTHOR_NAME": "worktrees",
-    "GIT_AUTHOR_EMAIL": "worktrees@localhost",
-    "GIT_AUTHOR_DATE": "@0 +0000",
-    "GIT_COMMITTER_NAME": "worktrees",
-    "GIT_COMMITTER_EMAIL": "worktrees@localhost",
-    "GIT_COMMITTER_DATE": "@0 +0000",
-}
-
 
 @git("merge-base --is-ancestor $ref $head", ok=(0, 1))
 def is_ancestor(ref: str, head: str) -> None:
@@ -45,31 +33,41 @@ def tree_of(ref: str) -> None:
     """The tree a ref points at."""
 
 
-@git("commit-tree $tree -p $parent -m _", env=_SYNTHETIC, ok=(0, 128))
-def commit_tree(tree: str, parent: str) -> None:
-    """Replay a tree as one commit on top of a parent."""
+@git(
+    "diff --no-ext-diff --no-textconv --no-renames --full-index --binary "
+    "--no-color --no-relative --ignore-submodules=none --submodule=short "
+    "--unified=3 --inter-hunk-context=0 --diff-algorithm=myers "
+    "--no-indent-heuristic $base $tip --",
+    env={"GIT_DIFF_OPTS": ""},
+)
+def combined_patch(base: str, tip: str) -> None:
+    """The branch's combined patch from its merge base."""
 
 
-@git("cherry $head $synth", ok=(0, 128))
-def cherry(head: str, synth: str) -> None:
-    """Compare by patch content, which is what a squash preserves."""
+@git(
+    "log --no-merges --format=%H -p --no-ext-diff --no-textconv --no-renames "
+    "--full-index --binary --no-color --no-relative --ignore-submodules=none "
+    "--submodule=short --unified=3 --inter-hunk-context=0 --diff-algorithm=myers "
+    "--no-indent-heuristic $base..$head --",
+    env={"GIT_DIFF_OPTS": ""},
+)
+def upstream_patches(base: str, head: str) -> None:
+    """Individual upstream patches after the common ancestor."""
 
 
-def squash_merged(
-    branch: str, head: str, repo: str | os.PathLike[str] | None = None
-) -> bool:
-    """Is the change `branch` makes already in `head`?
-
-    Replay the branch's tree as a single commit on the merge base and let
-    `git cherry` say whether that patch is upstream. A leading '-' means it is.
-    """
-    return squash_matches(f"refs/heads/{branch}", head, repo=repo)
+@git("patch-id --stable")
+def patch_ids() -> None:
+    """Patch identities read from standard input."""
 
 
 def squash_matches(
     ref: str, head: str, repo: str | os.PathLike[str] | None = None
 ) -> bool:
     """Compare a pinned commit's combined patch with the head branch."""
+
+    base = merge_base(head, ref, repo=repo)
+    if not base or not base.out.strip():
+        return False
 
     tree = tree_of(ref, repo=repo)
     if not tree or not tree.out.strip():
@@ -81,17 +79,15 @@ def squash_matches(
     if head_tree and head_tree.out.strip() == tree.out.strip():
         return True
 
-    base = merge_base(head, ref, repo=repo)
-    if not base or not base.out.strip():
+    patch = combined_patch(base.out.strip(), ref, repo=repo).out
+    ids = patch_ids(input=patch, repo=repo).lines
+    if not ids:
         return False
-
-    synth = commit_tree(tree.out.strip(), base.out.strip(), repo=repo)
-    if not synth or not synth.out.strip():
-        return False
-
-    verdict = cherry(head, synth.out.strip(), repo=repo)
-    lines = verdict.lines if verdict else []
-    return bool(lines) and lines[0].startswith("-")
+    wanted = ids[0].split()[0]
+    upstream = upstream_patches(base.out.strip(), head, repo=repo).out
+    return any(
+        line.split()[0] == wanted for line in patch_ids(input=upstream, repo=repo).lines
+    )
 
 
 @git("merge-base --all $a $b", ok=(0, 1))
@@ -99,7 +95,10 @@ def merge_bases(a: str, b: str) -> None:
     """Every best common ancestor; none for unrelated histories."""
 
 
-@git("diff-tree --no-commit-id --no-ext-diff --no-renames -r --name-only -z $a $b --")
+@git(
+    "diff-tree --no-commit-id --no-ext-diff --no-renames "
+    "--ignore-submodules=none -r --name-only -z $a $b --"
+)
 def changed_paths(a: str, b: str) -> None:
     """Paths whose objects or modes differ between two commits."""
 
@@ -116,16 +115,69 @@ def content_matches(
     return touched.isdisjoint(different)
 
 
-def merged_reason(
-    branch: str, head: str, repo: str | os.PathLike[str] | None = None
-) -> str:
-    """'merged', 'squash-merged', or '' when neither.
+@git("rev-list --first-parent $head")
+def first_parent_history(head: str) -> None:
+    """Every commit on the assessed head's first-parent history."""
 
-    refs/heads/ explicitly: a branch name used as a revision resolves to a tag
-    first, so a tag and a branch sharing a name would answer about the tag.
-    """
-    if is_ancestor(f"refs/heads/{branch}", head, repo=repo):
-        return "merged"
-    if squash_merged(branch, head, repo=repo):
-        return "squash-merged"
-    return ""
+
+def branch_proof(
+    branch: str,
+    sha: str,
+    head: str,
+    head_branch: str,
+    remote: str,
+    ask_forge: bool,
+    first_parents: set[str],
+    repo: str | os.PathLike[str] | None = None,
+) -> tuple[str, str, str, dict | None]:
+    """The same pinned tip and head yield the same completion evidence."""
+    from . import branch_forge
+
+    if not head:
+        return "unknown", "the head ref does not resolve", "", None
+    request = (
+        branch_forge.request_for(branch, remote, sha, repo)
+        if branch and remote and ask_forge
+        else None
+    )
+    data = request.data() if request is not None else None
+    invalid = ""
+    if request is not None and request.state == "MERGED":
+        invalid = request.unverified_reason(branch, sha, head_branch)
+        if not invalid:
+            commit = tree_of(request.merge_sha, repo=repo)
+            if not commit:
+                invalid = "the request's merge commit is not available locally"
+            elif is_ancestor(request.merge_sha, head, repo=repo):
+                return (
+                    "remove",
+                    f"{request.noun} #{request.number} merged this tip "
+                    "into the head branch",
+                    "forge",
+                    data,
+                )
+            else:
+                invalid = "the request's merge commit is not in the head branch"
+    if sha in first_parents:
+        return (
+            "empty",
+            "its tip is on the head ref's first-parent history",
+            "first-parent",
+            data,
+        )
+    for proof, why, check in (
+        ("ancestry", "its tip is an ancestor of the head branch", is_ancestor),
+        (
+            "squash",
+            "its tree or combined patch is already in the head branch",
+            squash_matches,
+        ),
+        ("content", "every changed path matches the head branch", content_matches),
+    ):
+        if check(sha, head, repo=repo):
+            return "remove", why, proof, data
+    if invalid:
+        return "unknown", invalid, "", data
+    if not merge_bases(sha, head, repo=repo).lines:
+        return "unknown", "no common history with the head branch", "", data
+    return "keep", "its commits are not contained in the head branch", "", data

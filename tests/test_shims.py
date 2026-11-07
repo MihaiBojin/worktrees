@@ -104,10 +104,10 @@ def test_a_shim_is_ten_lines_of_shell_or_fewer(name: str) -> None:
 
 
 def test_no_shim_exists_for_a_command_that_does_not_cd() -> None:
-    """gws, gwp, gwbc and gwrot answer the same from a prompt and a script,
+    """gw, gwp, gwbc and gwrot answer the same from a prompt and a script,
     and a function would make those two different programs."""
     shimmed = {f.stem for f in (ROOT / "functions").glob("*.fish")}
-    for name in ("gws", "gwp", "gwbc", "gwrot", "gw", "worktrees"):
+    for name in ("gw", "gwp", "gwbc", "gwrot", "gw", "worktrees"):
         assert name not in shimmed
 
 

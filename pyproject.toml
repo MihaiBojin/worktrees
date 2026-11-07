@@ -56,7 +56,6 @@ gwm = "worktrees.cli:gwm"
 gwp = "worktrees.cli:gwp"
 gwr = "worktrees.cli:gwr"
 gwrot = "worktrees.cli:gwrot"
-gws = "worktrees.cli:gws"
 worktrees = "worktrees.cli:main"
 
 # uv is the front end; hatchling stays the build backend.
