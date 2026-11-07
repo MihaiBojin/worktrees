@@ -501,7 +501,8 @@ prints and the other removes cannot drift.
 
 Every branch deletion goes through `prune.branch_delete`, which refuses
 `main`, `master` and the head branch before it reaches `update-ref`. A
-verdict that wrongly proposed one still deletes nothing.
+verdict that wrongly proposed one still deletes nothing. `gwm` refuses to
+rename these, since a rename takes the old name away as a delete does.
 
 ## Reproduce a failure before asserting its fix
 

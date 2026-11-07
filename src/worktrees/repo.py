@@ -305,6 +305,12 @@ class Head(NamedTuple):
     def name(self) -> str:
         return ref_name(self.ref)
 
+    @property
+    def branch(self) -> str:
+        """The head branch's name, `main` for both `refs/heads/main` and
+        `refs/remotes/origin/main`."""
+        return self.name.removeprefix(f"{self.remote}/") if self.remote else self.name
+
     def problem(self) -> str:
         if self.source == "inferred":
             return "No main or master branch."

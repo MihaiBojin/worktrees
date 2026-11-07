@@ -220,10 +220,7 @@ def _assessment_head(args: argparse.Namespace) -> tuple[R.Head, str]:
     progress.say("finding the head branch")
     head = R.head_ref(remote)
     _shower(args)(head)
-    head_branch = head.name
-    if remote:
-        head_branch = head_branch.removeprefix(remote + "/")
-    return head, head_branch
+    return head, head.branch
 
 
 def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
@@ -891,6 +888,7 @@ def run_list(args: argparse.Namespace) -> int:
 
 def run_move(args: argparse.Namespace) -> int:
     from . import new_branch
+    from . import repo as R
     from . import worktree as wt_mod
     from .git import options
 
@@ -901,7 +899,7 @@ def run_move(args: argparse.Namespace) -> int:
         return _needs(args, "NEW")
 
     try:
-        landed = wt_mod.move(args.name)
+        landed = wt_mod.move(args.name, R.head_ref(R.remote()).branch)
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1

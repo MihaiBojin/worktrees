@@ -278,7 +278,7 @@ included. That holds when the head is something else, so a finished `master`
 in a linked worktree reads `its tip is an ancestor of the head branch; it is
 main or master, which nothing deletes`, `gwp` leaves it, and `gwr --force`
 removes the checkout and keeps the branch. `gwbd main` refuses and names the
-rule.
+rule, and so does `gwm` in a worktree on one of these.
 
 For a worktree the others are the one you are standing in, a lock,
 uncommitted changes or untracked files, and ignored files without

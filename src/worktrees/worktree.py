@@ -15,7 +15,7 @@ from . import repo as R
 from .git import GitError, Refused, git
 from .new_branch import Refusal, check_ref_format, head
 from .prune import _prune_empty_parents, branch_delete, worktree_remove
-from .verdicts import REMOVE, Verdict, assess
+from .verdicts import HEAD_BRANCH, MAIN_OR_MASTER, PROTECTED, REMOVE, Verdict, assess
 
 
 @git("worktree add --no-track -b $name -- $dest $base", mutates=True)
@@ -126,6 +126,7 @@ def _first_absent(dest_parent: Path, main: str) -> Path | None:
 
 def move(
     new: str,
+    head_branch: str,
     repo: str | os.PathLike[str] | None = None,
 ) -> Landed:
     """Rename this worktree's branch and move the checkout to match.
@@ -150,6 +151,11 @@ def move(
     old = R.current_branch(repo=here).out.strip()
     if not old:
         raise Refusal("HEAD is detached here, so there is no branch to rename")
+    # A rename takes the old name away as surely as a delete does.
+    if old in PROTECTED:
+        raise Refusal(f"{render.branch(old)} kept: {MAIN_OR_MASTER}")
+    if old == head_branch:
+        raise Refusal(f"{render.branch(old)} kept: {HEAD_BRANCH}")
     if old == new:
         raise Refusal(f"this worktree is already on {render.branch(new)}")
     if R.ref_exists(f"refs/heads/{new}", repo=repo):

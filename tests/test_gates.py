@@ -443,6 +443,32 @@ def test_the_branch_delete_itself_refuses(world, name, why) -> None:
     assert world.git("rev-parse", f"refs/heads/{name}") == sha
 
 
+@pytest.mark.parametrize(
+    ("name", "why"),
+    [("main", RULE), ("master", RULE), ("trunk", verdicts.HEAD_BRANCH)],
+)
+def test_gwm_refuses_to_rename_main_master_or_the_head_branch(world, name, why) -> None:
+    """A rename takes the old name away as surely as a delete does."""
+    from test_cli import run
+
+    trunk_head(world)
+    world.git("checkout", "--quiet", "--detach")
+    path = world.parent / ".worktrees" / name / world.repo.name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if name == "trunk":
+        world.git("worktree", "add", "--quiet", str(path), "trunk")
+    else:
+        world.worktree(name, base="trunk")
+    sha = world.git("rev-parse", f"refs/heads/{name}")
+
+    p = run(world, "gwm", "renamed", at=path)
+    assert p.returncode == 1, p.stderr
+    assert why in p.stderr
+    assert path.exists()
+    assert world.git("rev-parse", f"refs/heads/{name}") == sha
+    assert not world.git("branch", "--list", "renamed")
+
+
 # --------------------------------------------------------------------------
 # the guard
 # --------------------------------------------------------------------------
