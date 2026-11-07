@@ -103,6 +103,7 @@ Scope and safety.
 | Every removal names the ignored paths it is about to delete, whatever flag got the worktree that far | `git worktree remove` takes the whole directory, so consent and contents are two questions | `prune.plan`. `--delete ignored-files` decides consent alone |
 | `gwr` on the worktree you are standing in steps out, removes it, and prints the main checkout for the shim to `cd` to | refusing would make the common case need a `cd` first, and the `cd` out is the shim's job | `worktree.remove` |
 | The main checkout is never removable, and no escape-hatch flag is printed | `git worktree remove` answers `fatal: '<path>' is a main working tree` and no flag gets past it, so there is nothing to offer | `verdicts.assess` skips it before judging |
+| No command deletes `main`, `master` or the head branch, with any flag | a finished `master` beside a `trunk` head is still the branch somebody pushes to, and a proof about its content says nothing about that | `verdicts.assess` and `branches.assess` make it ineligible, `prune.branch_delete` refuses it below them, and `worktree.move` refuses to rename it |
 | A branch is deleted on this program's own proof, or not at all | a squash merge leaves no history, so deferring to `git branch -d` means the content probe buys the checkout and never the branch | `prune.ref_delete`, and §3.2 for what it replaced |
 | A stale record for a directory somebody deleted by hand is nobody's verdict | clearing one mutates, so only a run that removes may do it | `verdicts.stale` names them, and `prune.sweep` runs `git worktree prune` after a removal |
 
@@ -125,7 +126,7 @@ Output and machine surface.
 | what | why | where |
 | --- | --- | --- |
 | Three verdicts, and `unknown` is not `keep` with a softer word | "no common history with the head branch" is a different fact from "holds work the head branch lacks", and printing them alike invites somebody to act on the wrong one | `verdicts.py` |
-| A protection clears `eligible` and leaves the verdict alone | whether the work landed and whether this run may delete it are two questions, and a finished worktree with uncommitted changes is still finished | `verdicts.assess`, `branches.assess`, `prune.removable` |
+| A protection clears `eligible` and leaves the verdict alone | whether the work landed and whether this run may delete it are two questions, and a finished worktree with uncommitted changes is still finished | `verdicts.assess`, `prune.removable` |
 | Colour is decided per stream, once, and only for a terminal | stdout carries the path `cd $(gwa x)` reads and the JSON `jq` parses | `render.setup`. `NO_COLOR` is tested for a non-empty value, which is the no-color.org rule |
 | Padding runs on the text and painting after it | the other order counts an escape sequence as width, and every column under a coloured cell sits crooked by the length of the code | `render.table` |
 | Help asked for goes to stdout at exit 0; a usage printed because the invocation was wrong goes to stderr at exit 2 | `--help \| less` on an empty screen is the failure this avoids | argparse, plus the hand-written `usage:` lines |

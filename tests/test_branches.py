@@ -191,19 +191,23 @@ def test_a_git_failure_in_a_branch_is_an_error(world):
     assert row["why"].endswith(" exited 129: fatal: simulated"), row["why"]
 
 
-def test_a_checked_out_branch_keeps_its_verdict_and_is_not_eligible(world):
+def test_branch_status_leaves_out_checked_out_branches(world):
+    """A checked-out branch appears only as its worktree, in gwp."""
     world.worktree("occupied")
+    world.git("checkout", "--quiet", "--detach")
     world.git("branch", "done")
     rows = {r["branch"]: r for r in status(world)["verdicts"]}
-    assert set(rows) == {"main", "occupied", "done"}
-    occupied = rows["occupied"]
-    assert occupied["paths"]
-    assert (occupied["verdict"], occupied["eligible"]) == ("remove", False)
-    assert occupied["why"] == (
-        "its tip is an ancestor of the head branch; it is checked out in a worktree"
-    )
+    assert set(rows) == {"main", "done"}
     assert (rows["done"]["verdict"], rows["done"]["eligible"]) == ("remove", True)
     assert (rows["main"]["verdict"], rows["main"]["eligible"]) == ("keep", False)
+
+
+def test_a_named_checked_out_branch_is_a_keep_row(world):
+    occupied = world.worktree("occupied")
+    [row] = status(world, "occupied")["verdicts"]
+    assert (row["verdict"], row["eligible"]) == ("keep", False)
+    assert row["why"] == "checked out in a worktree; see gwp"
+    assert row["paths"] == [str(occupied)]
 
 
 @pytest.mark.parametrize("entry", ["gwbs", "gwbd"])
@@ -466,7 +470,7 @@ def test_the_selector_and_the_plan_name_each_verdict(world):
         for ln in out.splitlines()
         if ln[:3].strip() in ("-", "1")
     }
-    assert rows == {"main": "keep", "done": "remove"}
+    assert rows == {"done": "remove"}  # main is checked out
     assert "VERDICT" in out.split("deleting 1 branch:")[1]
 
 
@@ -480,8 +484,8 @@ def test_the_spinner_line_names_each_branch_and_how_far_along(world, monkeypatch
     monkeypatch.setattr(progress, "say", said.append)
     head = world.git("rev-parse", "HEAD")
     branches.assess([], head, "main")
-    assert "one: is it merged into main? (2 of 3)" in said
-    assert "two: is it merged into main? (3 of 3)" in said
+    assert "one: is it merged into main? (1 of 2)" in said
+    assert "two: is it merged into main? (2 of 2)" in said
 
 
 def test_branch_delete_holds_back_a_checked_out_branch(world):
@@ -489,7 +493,7 @@ def test_branch_delete_holds_back_a_checked_out_branch(world):
     world.git("branch", "done")
     p = cli(world, "branch", "delete", "occupied", "done", "--yes")
     assert p.returncode == 3, p.stderr
-    assert "occupied kept: its tip is an ancestor" in p.stderr
+    assert "occupied kept: checked out in a worktree; see gwp" in p.stderr
     assert world.git("rev-parse", "--verify", "refs/heads/occupied")
     assert world.git("branch", "--list", "done") == ""
 

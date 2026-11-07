@@ -63,11 +63,12 @@ gwp --json | jq -c '{
 - `ignored` names finished worktrees held back only because they hold
   gitignored files.
 - `kept` and `unknown` count the rest. `kept` includes finished rows that a
-  protection holds back, such as uncommitted changes, a lock or an initialized submodule. The main
-  checkout and the head branch are always among the kept.
+  protection holds back, such as uncommitted changes, a lock or an initialized
+  submodule. The main checkout is always among the kept worktrees, and `main`
+  and `master` are never eligible.
 
-A branch checked out in a worktree is never eligible in `branches` and
-appears in `worktrees` instead, so nothing is listed twice.
+`gwbs` leaves out every branch checked out in a worktree. Those appear only
+in `worktrees`, so nothing is listed twice.
 
 ## 2. Show
 
@@ -115,6 +116,10 @@ the shell.
   removes the worktree and its branch. `command` runs the binary, not the
   shell function that would change directory.
 - The chosen branches, in one call: `gwbd 'NAME' 'NAME' ... --yes 2>&1`.
+
+The skill cannot remove the worktree it runs in. `gwp` never proposes it,
+and `gwr` refuses it at exit 3 without a terminal: say so, and that the user
+can remove it with `gwr` from their own shell.
 
 Never `git branch -D`, `git worktree remove`, `git update-ref -d` or `rm`.
 Never pass `--force`, whatever a refusal suggests: it removes a worktree that

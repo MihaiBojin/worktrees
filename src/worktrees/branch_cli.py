@@ -7,7 +7,7 @@ import json
 import sys
 from typing import TYPE_CHECKING
 
-from . import branches, progress, prune, render, sync
+from . import branches, progress, prune, render, sync, verdicts
 from .cli import (
     _assessment_head,
     _envelope,
@@ -97,19 +97,15 @@ def _table(rows: list[branches.Verdict]) -> str:
                 Cell("WHY", BOLD),
                 Cell("WORKTREE", BOLD),
             ),
-            # A `remove` row held back keeps its verdict's colour and dims
-            # the rest, the way gwp's table does.
             *[
                 (
                     _verdict(v),
-                    Cell(v.branch, DIM if held else render.BRANCH),
-                    Cell(v.sha[:12], DIM if held else YELLOW),
-                    Cell(v.why, DIM if held else ""),
+                    Cell(v.branch, render.BRANCH),
+                    Cell(v.sha[:12], YELLOW),
+                    Cell(v.why),
                     Cell(", ".join(v.paths), DIM),
                 )
-                for v, held in (
-                    (v, v.verdict == "remove" and not v.eligible) for v in rows
-                )
+                for v in rows
             ],
         ]
     )
@@ -317,7 +313,11 @@ def delete(args: argparse.Namespace) -> int:
     # leaving exit 3 to speak for it.
     held = [v for v in rows if args.names and not v.eligible]
     for v in held:
-        _err(render.fail(f"{render.branch(v.branch)} kept: {v.why}"))
+        why = v.why
+        # A finished one already says so after its proof.
+        if v.branch in verdicts.PROTECTED and verdicts.MAIN_OR_MASTER not in why:
+            why = f"{why}; {verdicts.MAIN_OR_MASTER}"
+        _err(render.fail(f"{render.branch(v.branch)} kept: {why}"))
     if failures or any(v.error for v in rows):
         return 1
     return 3 if held else 0
