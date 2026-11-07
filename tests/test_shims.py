@@ -62,7 +62,14 @@ def test_a_shortcut_is_one_call_to_a_command(name: str) -> None:
     where the binary says. Anything more is logic, and logic belongs in the
     CLI."""
     call = SHORTCUTS[name]
-    assert call.split()[0] in {*scripts(), *SHORTCUTS}
+    # A shortcut may call another shortcut, but the chain has to end at a
+    # console script: one that reaches itself again never returns.
+    seen, target = {name}, call.split()[0]
+    while target in SHORTCUTS:
+        assert target not in seen, f"{name} reaches {target} twice"
+        seen.add(target)
+        target = SHORTCUTS[target].split()[0]
+    assert target in scripts()
     assert name not in scripts()
     for path, line in (
         (ROOT / "functions" / f"{name}.fish", f"{call} $argv"),
