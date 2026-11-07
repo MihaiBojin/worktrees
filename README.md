@@ -13,7 +13,7 @@ a shell function of the same name.
 | --- | --- |
 | `gwp` | say which worktrees are finished, and why, then remove those, having asked at a terminal |
 | `gws` | fetch the default remote and ask the forge; the only command that reaches the network |
-| `gwbs [NAME ...]` | assess local branches, including those without worktrees |
+| `gwbs [NAME ...]` | assess local branches that have no worktree |
 | `gwbd [NAME ...]` | delete branches proved finished, with confirmation and undo commands |
 | `gwa NAME [BASE]` | create a worktree for `NAME` and land you in it |
 | `gw [QUERY]` | pick one of this repository's worktrees and land you in it |
@@ -271,13 +271,22 @@ delete it: the verdict is `remove` and no protection applies. `gwp` removes
 the eligible rows, the counts line counts them, and `--json` carries
 `eligible` on every row.
 
-A protection never changes the verdict. For a worktree they are the one you
-are standing in, a lock, uncommitted changes or untracked files, an
-initialized submodule, and ignored files without `--delete ignored-files`. A
-`remove` row held back by one names the first that applies after the proof,
-as in `its tip is an ancestor of the head branch; it has uncommitted
-changes`. In `gwbs` the protection is being checked
-out in a worktree, since that branch goes with its worktree.
+A protection never changes the verdict. The first protection is the
+branch's name: no command
+deletes `main`, `master` or the head branch, whatever the flags, `--yes`
+included. That holds when the head is something else, so a finished `master`
+in a linked worktree reads `its tip is an ancestor of the head branch; it is
+main or master, which nothing deletes`, `gwp` leaves it, and `gwr --force`
+removes the checkout and keeps the branch. `gwbd main` refuses and names the
+rule, and so does `gwm` in a worktree on one of these.
+
+For a worktree the others are the one you are standing in, a lock,
+uncommitted changes or untracked files, an initialized submodule, and ignored
+files without `--delete ignored-files`. A `remove` row held back by one names the
+first that applies after the proof, as in `its tip is an ancestor of the head
+branch; it has uncommitted changes`. `gwbs` leaves out a branch checked out in
+a worktree, which appears only as its worktree here. Named, it reads `keep`,
+`checked out in a worktree; see gwp`.
 
 `--delete VALUE` is the permission to delete something a verdict alone does
 not cover. `gwp` and `gwr` take `ignored-files` and `all`, which grants every
@@ -468,6 +477,12 @@ as `gw --list` prints them, and no substring. One match takes that one
 without asking. Several are offered in the picker at a terminal and
 refused at exit 3 without one, with each path named, so a script can pass
 the one it meant. No match fails at exit 1 and removes nothing.
+
+Removing the worktree you are standing in takes a second question, which
+names its path, and `--yes` answers only the first. On a yes, `gwr` moves
+into the main checkout before removing, prints that path, and the shell
+function takes you there. Without a terminal it refuses at exit 3,
+whatever the flags, since nothing can answer the second question.
 
 `gwr` says why a worktree is not eligible, with the same verdict and reason
 `gwp` prints: `is not finished` for a branch with work left, and `is
@@ -758,7 +773,7 @@ When the head branch does not resolve, the command prints why instead of the
 `Head:` line: `No main or master branch.` when the head branch was inferred,
 and otherwise the ref and `gw sync`, which sets it again. `gwp` without a
 terminal and `gwbs` still print every row and exit 1. A row that needs no head keeps its `keep`:
-the main checkout, the head branch, `main`, `master`, and in `gwbs` a branch
+the main checkout, the head branch, `main`, `master`, and in `gwbs` a named branch
 checked out in a worktree. Every other row is `unknown`. `gwp`, `gwr` and
 `gwbd` refuse at exit 1 and change nothing. `gwbc` and `gwrot` fail at exit 1,
 and so does `gwa` when it would branch from the head; `gwa` with a `BASE`, or

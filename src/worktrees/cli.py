@@ -236,10 +236,7 @@ def _assessment_head(args: argparse.Namespace) -> tuple[R.Head, str]:
     progress.say("finding the head branch")
     head = R.head_ref(remote)
     _shower(args)(head)
-    head_branch = head.name
-    if remote:
-        head_branch = head_branch.removeprefix(remote + "/")
-    return head, head_branch
+    return head, head.branch
 
 
 def _shower(args: argparse.Namespace) -> Callable[[R.Head], None]:
@@ -406,7 +403,7 @@ def run_prune(args: argparse.Namespace) -> int:
     elif not head[0].resolves:
         _err(render.fail(head[0].problem()))
 
-    rows, stale, _, _, records = _assess(args, head)
+    rows, stale, _, head_branch, records = _assess(args, head)
     go = prune.removable(rows)
     errors = int(not head[0].resolves or any(v.error for v in rows))
     result = _assessment(args, rows, stale, records) if args.json else {}
@@ -435,7 +432,7 @@ def run_prune(args: argparse.Namespace) -> int:
         _err(render.note("nothing removed"))
         return errors
 
-    failed = prune.sweep(go, _err)
+    failed = prune.sweep(go, head_branch, _err)
     if args.json:
         result |= {"removed": [v.label for v in go], "failed": failed}
         print(json.dumps(result, indent=2))
@@ -903,6 +900,7 @@ def run_list(args: argparse.Namespace) -> int:
 
 def run_move(args: argparse.Namespace) -> int:
     from . import new_branch
+    from . import repo as R
     from . import worktree as wt_mod
     from .git import options
 
@@ -913,7 +911,7 @@ def run_move(args: argparse.Namespace) -> int:
         return _needs(args, "NEW")
 
     try:
-        landed = wt_mod.move(args.name)
+        landed = wt_mod.move(args.name, R.head_ref(R.remote()).branch)
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -986,6 +984,12 @@ def run_remove(args: argparse.Namespace) -> int:
         _err(render.note("nothing picked"))
         return 0
     chosen = by_path[picked.path]
+    standing_in = _same(chosen.path, here)
+    if standing_in and not sys.stdin.isatty():
+        raise Refused(
+            f"{chosen.path} is the worktree you are in, and only a terminal "
+            "can confirm removing it"
+        )
 
     if chosen.error:
         _err(
@@ -1056,6 +1060,13 @@ def run_remove(args: argparse.Namespace) -> int:
     if not args.yes and not prune.confirm(1, never=never):
         _err(render.note("nothing removed"))
         return 0
+    # The second question, which --yes does not answer: the caller's shell
+    # is in this directory.
+    if standing_in and prune._prompt(
+        render.ask(f"you are in {chosen.path}; remove it?", "[y/N]")
+    ).strip().lower() not in ("y", "yes"):
+        _err(render.note("nothing removed"))
+        return 0
 
     keep_branch = not chosen.eligible
     # --force keeps the branch: the worktree was in the way, the work was not.
@@ -1063,6 +1074,7 @@ def run_remove(args: argparse.Namespace) -> int:
         prune.Verdict(chosen.verdict, "", chosen.path, chosen.why)
         if keep_branch
         else chosen,
+        head[1],
         _err,
     )
     if not args.quiet and not args.json:
