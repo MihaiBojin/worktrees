@@ -103,7 +103,8 @@ None of these is ever eligible:
    (`git rev-parse --git-path modules`). `git worktree remove` refuses while either exists. The
    refusal names both steps: `git submodule deinit --all` in the worktree, then deleting that
    directory once nothing in it is needed, since it holds the submodules' own commits.
-7. A worktree with ignored files, unless `ignored-files` is permitted.
+7. A worktree with ignored files, unless `ignored-files` is permitted. At a terminal, without `--yes`,
+   `gwr` lists each ignored path and asks; a yes there permits them for that worktree.
 8. A branch with stashes, or a worktree whose branch has them, unless `stashes` is permitted or
    `gwr --keep-branch` preserves the branch and its stashes.
 9. An `empty` branch and its worktree, unless `empty` is permitted or `gwr --keep-branch` preserves
