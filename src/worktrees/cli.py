@@ -120,6 +120,7 @@ def _verdict_data(rows: list[verdicts.Verdict]) -> list[dict]:
             "path": v.path,
             "why": v.why,
             "ignored": v.ignored,
+            "ignoredPaths": list(v.ignored_paths),
             "sha": v.sha,
         }
         for v in rows
@@ -357,11 +358,11 @@ def run_preview(args: argparse.Namespace) -> int:
                     # them; a caller counting directories needs to know
                     # they are not all this repository's.
                     "neighbours": others,
-                    # `ignored` and `sha` are fields rather than facts to
-                    # parse back out of `why`. A caller deciding whether to
-                    # pass --delete ignored-files wants the count, not a sentence
-                    # that happens to contain it, and the sha is what the
-                    # verdict was formed against.
+                    # `ignored`, `ignoredPaths` and `sha` are fields rather
+                    # than facts to parse back out of `why`. A caller deciding
+                    # whether to pass --delete ignored-files wants the count
+                    # and the paths, not a sentence that happens to contain
+                    # them, and the sha is what the verdict was formed against.
                     "verdicts": _verdict_data(_only(args, rows)),
                 },
                 indent=2,

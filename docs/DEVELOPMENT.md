@@ -11,7 +11,8 @@ uv run --no-sync pre-commit run --all-files
 
 The first run skips the integration tests: real fish and zsh, partial
 clones and the stand-in forge, about a second each. The second runs only
-those. CI runs both.
+those. CI runs both. Each spreads its tests over one pytest-xdist worker per
+core; `-n0` runs them in one process, which `-x` and `--pdb` need.
 
 `uv sync --all-extras --locked` is what CI runs, so a stale `uv.lock` fails
 there rather than resolving something the lock never described.

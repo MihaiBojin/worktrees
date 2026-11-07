@@ -399,7 +399,8 @@ def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
         "nothing to remove; 0 remove, 2 empty, 0 keep, 0 unknown; 0 eligible"
         in p.stdout
     )
-    assert "gw" not in p.stdout
+    # The temporary root can hold the letters, as pytest-xdist's popen-gw0 does.
+    assert "gw" not in p.stdout.replace(str(world.root), "")
 
 
 def test_version_is_a_command_and_not_a_flag(world) -> None:

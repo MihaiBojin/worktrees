@@ -12,6 +12,9 @@ uv run --no-sync pytest tests -m integration
 uv run --no-sync pre-commit run --all-files
 ```
 
+pytest runs one pytest-xdist worker per core. Add `-n0` to run in one process,
+which `-x` and `--pdb` need.
+
 `pre-commit run --all-files` reads `git ls-files`, so a file that is new and
 unstaged is invisible to it. Stage before running the hooks, or install them
 and let the commit do it.
@@ -270,7 +273,7 @@ name that runs a different one.
 
 A shorthand is for typing, so it is short and it is not clever: the first
 letters of the word, or the two-letter name the same job has in git and in a
-shell. `rm` and `mv` mean what they mean everywhere else.
+shell. `rm` means what it means everywhere else.
 
 ## Colour is a property of the stream, not of the program
 
@@ -447,7 +450,13 @@ paths and stash identities. Recheck after confirmation precedes plain
 worktree removal, full-SHA ref deletion and approved stash drops. Ignored
 paths are what an ignore pattern names, so a matched directory is one entry;
 the snapshot is a path listing, not a recursive content fingerprint, and a
-file created inside a listed directory after assessment goes with it. Stash drops verify SHA and repair a
+file created inside a listed directory after assessment goes with it. The
+disclosure, the protection's count and the JSON `ignored` field cut each
+listed path to its first component below the `.gitignore` whose pattern
+matched it, found with `git check-ignore -v`, and the disclosure quotes a
+path holding a character that would not print, as `git status` does. A pattern from
+`.git/info/exclude` or `core.excludesFile` counts from the top level, so
+`build/out/a.log` reads as `build/`. Stash drops verify SHA and repair a
 concurrent wrong-entry drop using the exact subject. Restoration remains
 possible until Git garbage collection prunes the unreachable stash commit.
 Report checkout, branch and stash outcomes separately after partial failure.
