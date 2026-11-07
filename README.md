@@ -294,16 +294,16 @@ For a worktree the others are the one you are standing in, a lock,
 uncommitted changes or untracked files, an initialized submodule, stashes
 that belong to its branch, an `empty` verdict without `--delete empty`, and
 ignored files without `--delete ignored-files`. Stashes hold back a loose
-branch in `gwbs` and `gwbd` the same way.
+branch in `gwbs` and `gwbd` the same way. A `remove` or `empty` row held
+back by one names the first that applies after the proof, as in `its tip is
+an ancestor of the head branch; it has uncommitted changes`. `gwbs` leaves
+out a branch checked out in a worktree, which appears only as its worktree
+here. Named, it reads `keep`, `checked out in a worktree; see gwp`.
 
 A stash belongs to a branch when its subject starts `WIP on NAME:` or `On
 NAME:`, which is what `git stash` and `git stash push -m` write, and the
 commit it was made on is still in the branch. One made on a detached HEAD
-belongs to none. `--json` lists each row's stashes by sha. A `remove` or `empty` row held back by one names the first
-that applies after the proof, as in `its tip is an ancestor of the head
-branch; it has uncommitted changes`. `gwbs` leaves out a branch checked out
-in a worktree, which appears only as its worktree here. Named, it reads
-`keep`, `checked out in a worktree; see gwp`.
+belongs to none. `--json` lists each row's stashes by sha.
 
 `--delete VALUE` is the permission to delete something a verdict alone does
 not cover. `gwp` and `gwr` take `empty`, `ignored-files`, `stashes` and
