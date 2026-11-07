@@ -261,7 +261,9 @@ with it; `empty`, `stashes` and `all` are usage errors with `--keep-branch`.
 
 Before confirmation, the CLI discloses the path and branch, the branch
 restore command, stashes with their restore commands, and ignored paths it
-will delete. Quiet, JSON and `--yes` keep this disclosure on stderr.
+will delete. Each ignored path is cut to its first component below the
+`.gitignore` that ignores it, so `build/out/a.log` and `build/out/b.log` read
+as `build/`. Quiet, JSON and `--yes` keep this disclosure on stderr.
 It repeats the assessment after confirmation and refuses changed targets.
 Ignored directory entries can cover a whole directory; the recheck compares
 Git's ignored path listing, not a fingerprint of every file's contents.

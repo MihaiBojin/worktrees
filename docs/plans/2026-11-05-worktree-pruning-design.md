@@ -167,7 +167,9 @@ For each target:
 2. Print the disclosure to stderr: path, branch, the restore command `git branch NAME SHA`, each stash
    with its restore command, each ignored path that will be deleted, the never-synced line if it
    applies, and the head line if the head was inferred. `--quiet`, `--json` and `--yes` do not
-   suppress it.
+   suppress it. An ignored path is shown cut to its first component below the `.gitignore` whose
+   pattern matched it, or below the top level for `.git/info/exclude` and `core.excludesFile`; the
+   protection's count and the JSON `ignored` field count those entries.
 3. Ask for confirmation unless `--yes` was given. A never-synced repository asks
    `Never synced. Delete anyway?`.
 4. Assess the target again. Refuse if the path, branch SHA, head ref or head SHA, cleanliness, lock
@@ -270,7 +272,8 @@ Every `--json` result is an object carrying:
   when none succeeded or the component does not apply. A time does not mean every branch has evidence.
 - `head.source` is `remote`, `clone` or `inferred`. `head.ref` is `null` when unresolved.
 - Assessment rows carry `verdict`, `eligible` and `stashes` (the matching stash SHAs). `--only empty`
-  filters by verdict.
+  filters by verdict. Worktree rows carry `ignoredPaths`, the grouped ignored paths (section 8), and
+  `ignored`, their count, before any permission is given.
 - `gw list --json` is `{"lastSync": ..., "head": ..., "worktrees": [...]}`.
 - Other commands keep their fields and add these two.
 

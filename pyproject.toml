@@ -34,6 +34,9 @@ dev = [
     # that writes the version into the wheel.
     "hatchling==1.28.0",
     "pre-commit==4.6.1",
+    # Every test drives the CLI through subprocesses and waits on them, so one
+    # worker leaves the other cores idle.
+    "pytest-xdist==3.8.0",
     "pytest==9.1.1",
     # keep-sorted end
 ]
@@ -115,5 +118,6 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["-m", "not integration"]
+# One worker per core; -n0 runs in this process, for -x or --pdb.
+addopts = ["-m", "not integration", "-n", "auto"]
 markers = ["integration: real shells, partial clones and the stand-in forge; run with -m integration"]

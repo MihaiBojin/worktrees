@@ -74,8 +74,13 @@ combined with it.
 Assessment pins the target path, branch ref and full SHA, assessed head ref
 and SHA, ignored path list, and matching stash SHAs and subjects. Disclosure
 prints the path and branch, branch restore command, each stash restore
-command and ignored path. Quiet, JSON and automatic confirmation preserve
-that stderr disclosure. A never-synced repository asks
+command and ignored path. An ignored path is shown cut to its first component
+below the `.gitignore` whose pattern matched it, or below the top level for
+`.git/info/exclude` and `core.excludesFile`: `*.log` in the top-level file
+shows `build/out/a.log` and `build/out/b.log` as one `build/`. A path with a
+character that would not print is quoted and escaped as `git status` does.
+The protection's count and the JSON `ignored` field count those entries.
+Quiet, JSON and automatic confirmation preserve that stderr disclosure. A never-synced repository asks
 `Never synced. Delete anyway?` unless `--yes` skips confirmation.
 
 After confirmation, the command assesses again and refuses changed targets,
@@ -172,7 +177,8 @@ or `inferred`; `head.ref` is null when unresolved.
 
 Worktree and branch assessment put rows in `verdicts`. Both retain
 `verdict`, `eligible`, `proof`, `request`, `protections`, `stashes`, `branch`,
-`sha` and `why`. Worktree rows add exact `path` and an ignored-path count;
+`sha` and `why`. Worktree rows add exact `path`, the grouped ignored paths in
+`ignoredPaths` and their count in `ignored`;
 branch rows add `paths`, `error` and shell-quoted `undo`. `gwp --json` also
 carries `stale`, the paths of worktree records whose directories are gone, and
 `neighbours`, the count of worktrees under the shared root that belong to
