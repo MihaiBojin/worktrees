@@ -63,7 +63,7 @@ def test_the_plugin_preapproves_reads_and_sync_alone(path: Path) -> None:
     assert {
         "Bash(gw sync)",
         "Bash(gw list --json)",
-        "Bash(gw list --list)",
+        "Bash(gw list --table)",
         "Bash(gw prune --json)",
         "Bash(jq:*)",
     } <= set(tools)

@@ -149,7 +149,7 @@ checkout, so a new shell runs whatever the checkout holds.
 The `gw` function runs `command gw` and changes directory when `gw add`,
 `gw remove` or a terminal `gw list` prints an absolute existing destination.
 It forwards metadata unchanged without a terminal and under `--json` or
-`--list`, and every other subcommand passes straight through. Each shortcut
+`--table`, and every other subcommand passes straight through. Each shortcut
 is one line that calls the `gw` function with fixed words, so `gwa` lands
 where `gw add` does.
 
@@ -187,8 +187,8 @@ separate.
 ## Assess and remove
 
 `gw prune` prints the assessment and asks before removing eligible worktrees
-on a terminal. Nonterminal input, `--json` and `--list` print the assessment
-without writing refs, cache entries or directories. `--list` prints an
+on a terminal. Nonterminal input, `--json` and `--table` print the assessment
+without writing refs, cache entries or directories. `--table` prints an
 uncoloured table. `--yes` and `-y` approve removal in any of those modes and
 grant no deletion category. `--only VERDICT` filters an assessment and cannot
 be combined with `--yes`. `--quiet` and `--verbose` work in every pruning
@@ -366,7 +366,7 @@ filter, and a second Escape, or one on an empty filter, cancels, as Ctrl-D
 does. Ctrl-C exits 130.
 
 Without a terminal, the command prints a table of every matching worktree.
-`--list` prints that table in a terminal too; `--json` prints metadata in the
+`--table` prints that table in a terminal too; `--json` prints metadata in the
 `worktrees` array. Neither format selects a destination or changes directory.
 
 A current linked worktree is shown with `*` and cannot be selected. The main
@@ -386,7 +386,7 @@ An unchanged result or divergent head refuses at exit 1.
 ## Output and JSON
 
 Results go to stdout; diagnostics and prompts go to stderr. JSON and
-`gw list --list` never contain colour. A pipe, nonempty `NO_COLOR`, or `TERM=dumb`
+`gw list --table` never contain colour. A pipe, nonempty `NO_COLOR`, or `TERM=dumb`
 disables colour on its stream. `NO_COLOR=` does not disable it.
 
 `-q` suppresses summaries, progress, stale warnings and the head line while
@@ -432,7 +432,8 @@ gw list --json | jq -r '.worktrees[].path'
 | --- | --- |
 | `gwa`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwbc`, `gwrot` binaries | `gw` subcommands, or the plugin's shortcuts |
 | `gws` as assessment, `gw status`, `gw s`, `gw st` | `gw prune --json`; `gws` now runs `gw sync` |
-| `gwp --dry-run` | `gw prune --json` or `gw prune --list` |
+| `gwp --dry-run` | `gw prune --json` or `gw prune --table` |
+| `gw list --list`, `gw list -l`, `gw prune --list` | `gw list --table`, `gw prune --table` |
 | `gwp --branch NAME` | `gw remove NAME` or a quoted exact path |
 | `--delete-ignored` | `--delete ignored-files` |
 | `gwr --force`, `gwr -f` | `gw remove --keep-branch` |

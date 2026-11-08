@@ -419,10 +419,10 @@ def run_prune(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    if args.list:
+    if args.table:
         render.out.on = False
     if args.only or (
-        not args.yes and (args.json or args.list or not sys.stdin.isatty())
+        not args.yes and (args.json or args.table or not sys.stdin.isatty())
     ):
         return run_preview(args)
 
@@ -707,11 +707,9 @@ def _add_list_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "query", nargs="?", default="", metavar="QUERY", help="narrow the list"
     )
-    p.add_argument(
-        "-l", "--list", action="store_true", help="print them all and pick none"
-    )
+    p.add_argument("--table", action="store_true", help="print them all and pick none")
     # For the shell completions, which must not hold a candidate of their own.
-    # Hidden because a person has --list, which is the same answer formatted
+    # Hidden because a person has --table, which is the same answer formatted
     # for eyes.
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
     _add_cd_flags(p)
@@ -826,7 +824,7 @@ def run_list(args: argparse.Namespace) -> int:
         )
         return 0
 
-    if args.list or not sys.stdin.isatty():
+    if args.table or not sys.stdin.isatty():
         if not found:
             _err(render.fail("no worktree matches"))
             return 1
@@ -861,7 +859,7 @@ def run_list(args: argparse.Namespace) -> int:
         return 0
 
     # Which repository this is, above the list, so nobody has to run
-    # `git remote -v` to find out. Only where the picker is drawn: --list and
+    # `git remote -v` to find out. Only where the picker is drawn: --table and
     # --json are what a script reads, and a query that narrows to one takes it
     # without showing anything.
     if not (args.query and len(offered) == 1):
@@ -1137,13 +1135,15 @@ def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     add_status_flags(p)
     p.description = _PRUNE_HELP
     p.add_argument(
-        "--list", action="store_true", help="assess without prompting; uncoloured table"
+        "--table",
+        action="store_true",
+        help="assess without prompting; uncoloured table",
     )
     p.add_argument(
         "-y",
         "--yes",
         action="store_true",
-        help="approve removal, including with --json or --list",
+        help="approve removal, including with --json or --table",
     )
 
 
@@ -1357,7 +1357,7 @@ _CANONICAL = _canonical()
 
 _PRUNE_HELP = (
     "Assess worktrees; terminal input asks before removing eligible ones. "
-    "Nonterminal input, --json and --list assess without removing; "
+    "Nonterminal input, --json and --table assess without removing; "
     "--yes approves removal. "
     "--only always assesses and cannot be combined with --yes."
 )

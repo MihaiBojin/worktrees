@@ -2,11 +2,11 @@
 
 Bare `gw` and `gw --help` print the command guide, outside a repository too.
 `gw list` selects a destination on terminal input; nonterminal input prints
-matching worktree metadata. `--json` and `--list` always print metadata.
+matching worktree metadata. `--json` and `--table` always print metadata.
 `gw WORD` with a word that is not a command exits 2 and suggests
 `gw list WORD`. `gw prune` assesses worktrees and asks before removal on a
-terminal. Nonterminal input, `--json` and `--list` assess without mutation;
-`--yes` approves removal in any mode. `--list` prints an uncoloured table.
+terminal. Nonterminal input, `--json` and `--table` assess without mutation;
+`--yes` approves removal in any mode. `--table` prints an uncoloured table.
 `--only` filters assessment rows and rejects `--yes`. `gw remove` selects one.
 `gw branch status` assesses loose local branches and `gw branch delete`
 deletes selected eligible refs. A checked-out branch appears only as a

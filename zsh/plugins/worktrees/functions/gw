@@ -5,7 +5,7 @@ case $1 in
 esac
 for arg in "$@"; do
     [[ $arg != -- ]] || break
-    case $arg in --json|--list|-l|--help|-h|--complete|--explain) lands=0 ;; esac
+    case $arg in --json|--table|--help|-h|--complete|--explain) lands=0 ;; esac
 done
 if (( ! lands )); then
     command gw "$@"

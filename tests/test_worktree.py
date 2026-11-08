@@ -191,7 +191,7 @@ def test_list_with_a_query_still_takes_the_one_match_outright(world) -> None:
 
 def test_list_marks_the_one_you_stand_in(world) -> None:
     wt = world.worktree("one")
-    p = run(world, "gw", "list", "--list", at=wt)
+    p = run(world, "gw", "list", "--table", at=wt)
     assert p.returncode == 0, p.stderr
     head, *body = p.stdout.splitlines()
     assert head.split() == ["WORKTREE", "BRANCH", "PATH"]
@@ -202,7 +202,7 @@ def test_list_marks_the_one_you_stand_in(world) -> None:
 def test_the_main_checkout_says_so_without_saying_it_twice(world) -> None:
     world.git("branch", "--move", "main", "trunk")
     world.worktree("one", base="trunk")
-    p = run(world, "gw", "list", "--list")
+    p = run(world, "gw", "list", "--table")
     assert "trunk (main)" in p.stdout
 
 

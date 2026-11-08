@@ -39,7 +39,7 @@ The skill reads `gw prune --json` and `gw branch status --json`. These
 commands stay offline. If remote state is never synced or older than 10 minutes, it asks
 whether to run `gw sync`; it runs sync only on your answer. A previous
 approval or refusal remains in force for that cleanup. The skill and
-`/prune` run `gw sync`, `gw list --json`, `gw list --list`,
+`/prune` run `gw sync`, `gw list --json`, `gw list --table`,
 `gw prune --json`, `gw branch status --json`, `jq` and `git remote` without
 a permission prompt.
 

@@ -126,7 +126,7 @@ def test_plain_remote_head_names_the_one_branch_at_its_commit(world, separator):
         "ref": "refs/remotes/origin/HEAD",
         "source": "clone",
     }
-    listed = run(world, "gw", "list", "--list")
+    listed = run(world, "gw", "list", "--table")
     assert f"Head: {name} (clone)" in listed.stderr
 
 

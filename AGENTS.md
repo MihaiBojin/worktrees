@@ -41,7 +41,7 @@ failure status. Every other subcommand passes straight through. The words
 that land are the rows with `lands` set, and `tests/test_shims.py` holds both
 functions to them.
 
-`--json` and `--list` print data on the destination stream. A function that
+`--json` and `--table` print data on the destination stream. A function that
 cannot tell them apart can try to `cd` into a JSON object or suppress its
 output. `fish -c 'gw list --json'` reaches the function too, so this is the
 agent path as much as the human one.
@@ -129,7 +129,7 @@ A completion asks the CLI for its candidates rather than deriving them, and
 `--complete` is how: `gw --complete` prints every subcommand and shorthand,
 `gw list --complete` prints every worktree, both as name and description separated
 by a tab, which fish reads directly and zsh splits for `_describe`. Hidden from
-`--help`, because a person has `gw --help` and `--list` for the same answers.
+`--help`, because a person has `gw --help` and `--table` for the same answers.
 
 No shell file holds a candidate or a rank. What `completions/gw.fish` and
 `_gw` do carry is each subcommand's flags, and `tests/test_completions.py`
@@ -253,7 +253,7 @@ Three more about what is in the list at all:
   the highlight starts on the worktree you are standing in. `gw prune` keeps the main
   checkout in its list for the same reason, and never proposes it.
 
-`--json` and `--list` answer the same question without any of this, and an
+`--json` and `--table` answer the same question without any of this, and an
 agent uses those.
 
 ## One row per command, under every name it answers to
@@ -270,7 +270,7 @@ its command, and the shell plugin's release line, and nothing else;
 word that is not a command is a usage error at exit 2 that suggests
 `gw list WORD`, so a worktree name never competes with a shorthand. `gw list
 [QUERY]` uses the picker on terminal input; without a terminal, or with
-`--json` or `--list`, it prints matching metadata. `gw l` is `gw list`, and
+`--json` or `--table`, it prints matching metadata. `gw l` is `gw list`, and
 `gwl` is its shortcut. `gwh`, `gw ls` and the help subcommand are absent.
 
 A tool's version is asked through the tool's name, so `gw version` and `gw v` are the two spellings and no parser
@@ -297,7 +297,7 @@ stdout carries the path `cd $(gw add x)` reads and the JSON `jq` parses, so a
 redirect, a pipe, a non-empty `NO_COLOR`, or `TERM=dumb` mean the bytes go out
 as they would have without the module. `NO_COLOR=` is not a request to turn it
 off: that is the no-color.org rule, and it is why `supported` tests the value
-and not the key. `--json` and `gw list --list` are never painted at all, even
+and not the key. `--json` and `gw list --table` are never painted at all, even
 on a terminal: both are what a script reads. The colour is applied at the
 call site that formats a table, and neither path passes a code to one.
 
