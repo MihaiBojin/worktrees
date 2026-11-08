@@ -247,15 +247,15 @@ and `--json` omit the warning.
 
 ## 13. Sync warnings
 
-1. **Never synced:** a repository with a remote whose `refs` time is `null`. Every human-readable
-   command first prints to stderr
-   `Never synced: verdicts use refs from the clone or last fetch and no forge evidence. Run: gw sync`.
-   `-q` suppresses it; the deletion disclosure repeats it.
+1. **Never synced:** a repository with a remote whose `refs` time is `null`. Every command that
+   assesses first prints to stderr
+   `Never synced: verdicts use refs from the clone or last fetch and no forge evidence. Run: gw sync`,
+   with `-q` and with `--json` too, since a caller acting on the verdicts needs to know no sync
+   stands behind them. The deletion disclosure repeats it.
 2. **Stale:** the older applicable sync time is more than 10 minutes old. Exactly 10 minutes is fresh.
    Human-readable commands print one stderr line with the age in minutes, hours or days and suggest
-   `gw sync`.
-3. Neither appears for `gw sync`, for `--json` (which carries `lastSync` instead), or for a repository
-   without a remote. `-q` suppresses both.
+   `gw sync`. `-q` and `--json` (which carries `lastSync`) omit it.
+3. Neither appears for `gw sync` or for a repository without a remote, the local case.
 
 ## 14. JSON
 
@@ -279,8 +279,8 @@ Every `--json` result is an object carrying:
 
 ## 15. Output flags
 
-`--quiet` / `-q` suppresses summaries, progress and every warning and notice, the head line and the
-never-synced line included. It keeps results, errors, the disclosure and the confirmation prompt. `--verbose` / `-v` traces Git and forge subprocesses to stderr and
+`--quiet` / `-q` suppresses summaries, progress and every warning and notice, the head line
+included. It keeps results, errors, the never-synced line, the disclosure and the confirmation prompt. `--verbose` / `-v` traces Git and forge subprocesses to stderr and
 leaves JSON on stdout intact. Passing both is a usage error before anything changes.
 
 | Command | `-q` | `-v` |
