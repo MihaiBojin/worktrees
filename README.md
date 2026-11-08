@@ -12,9 +12,10 @@ gw prune                # confirm and remove eligible worktrees
 gw remove fix-parser    # remove one worktree and its finished branch
 ```
 
-Only `gw sync` uses the network. Every other command uses local refs and the
-last sync's evidence. Run commands inside the repository you want assessed;
-other repositories under the same worktree root are outside their scope.
+`gw sync` and `gw ci` use the network. Every other command uses local refs
+and the last sync's evidence. Run commands inside the repository you want
+assessed; other repositories under the same worktree root are outside their
+scope.
 
 | Command | Shortcut | What it does |
 | --- | --- | --- |
@@ -28,6 +29,7 @@ other repositories under the same worktree root are outside their scope.
 | `gw add NAME [BASE]` | `gwa` | create or enter a worktree |
 | `gw branch create NAME` | `gwbc` | start a branch from the assessed head ref |
 | `gw rotate` | `gwrot` | start the next branch in a series, or fast-forward the head branch |
+| `gw ci [NUMBER]` | | read a pull request's checks from GitHub or GitLab |
 | `gw version` | | print the installed version |
 
 `gw` is the one command installed on `$PATH`, and `worktrees` is its long
@@ -391,6 +393,43 @@ head, stripping a previous rotation suffix. Names must be absent from local
 and cached remote refs. On the head branch, rotation fast-forwards it instead.
 An unchanged result or divergent head refuses at exit 1.
 
+## Pull request checks
+
+`gw ci` reads one pull request, or GitLab merge request, and its checks: the
+current branch's, or the one `NUMBER` names. It writes nothing, not even the
+sync cache.
+
+```console
+gw ci                      # the table, failures first
+gw ci 42 --json            # the snapshot as data
+gw ci 42 --wait --json     # read until no check is running
+```
+
+`checksState` is `passed`, `failed`, `pending`, `blocked` or `unknown`.
+`unknown` means no check reported, or `stale`: the review moved while it was
+read, so read again. Each check carries `name`, `workflow`, the forge's own
+`state`, a `bucket` of `pass`, `fail`, `cancel`, `pending`, `skipping`,
+`blocked` or `unknown`, and a `link` to its log. `pr` holds the review's
+number, URL, state, draft flag, head and base, and its mergeability as the
+forge reports it. `passed` describes the checks, not whether the forge will
+merge: a required review still blocks it.
+
+GitHub answers in one `gh pr view`, so the review and its checks describe
+the same head; a re-run replaces the run it repeats. GitLab reads the merge
+request's head pipeline from the project that ran it, and reads the merge
+request again afterwards. A pipeline for an older head is stale, unless it is
+a merged-result pipeline whose parents are the current head and the target's
+current tip.
+
+`--wait` reads every 30 seconds until no check is running and prints the last
+read. An empty list counts as not started for the first two minutes. It gives
+up after 30 minutes with `checksState` still `pending`.
+
+Exit 0 means a snapshot was read, failing checks included. Exit 1 means no
+snapshot: no default remote, a host that is neither GitHub nor GitLab, a
+missing `gh` or `glab`, or a read that failed or came back without the
+review's identity. A malformed number is a usage error, exit 2.
+
 ## Output and JSON
 
 Results go to stdout; diagnostics and prompts go to stderr. JSON and
@@ -409,6 +448,7 @@ parseable. Passing both is a usage error.
 | `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw rotate` | yes | yes |
 | `gw branch status` | yes | no |
 | `gw list` | no | no |
+| `gw ci` | no | yes |
 
 Other commands retain their own flags; use `--help`. Help, version and
 completion work without an assessment. `--only` filters assessment verdicts
@@ -472,10 +512,10 @@ an update-ref delete that names no full sha
 
 ## Agent plugin
 
-[The agent plugin](plugin/README.md) runs the same assessment and removal
-commands. It shows head and sync state first, asks about stale or missing
-sync, then asks which targets and deletion categories you approve. It never
-removes its current checkout.
+[The agent plugin](plugin/README.md) gives Claude Code and Codex six skills
+over these commands: start a branch, fast-forward the head branch, read CI,
+keep a pull request's description true to its diff, merge a pull request
+once CI is green, and prune finished worktrees and branches after asking.
 
 ## Contributing
 

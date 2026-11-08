@@ -1,5 +1,6 @@
-"""The agent plugin in `plugin/`: its manifests agree, and the jq filters its
-skill runs read the JSON `gwp` and `gwbs` print."""
+"""The agent plugin in `plugin/`: its manifests agree, no skill pre-approves
+a command that changes something it should ask about, and the jq filters the
+prune skill runs read the JSON `gwp` and `gwbs` print."""
 
 from __future__ import annotations
 
@@ -14,7 +15,8 @@ from conftest import argv, env_for
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugin"
-SKILL = PLUGIN / "skills" / "worktrees" / "SKILL.md"
+SKILL = PLUGIN / "skills" / "prune" / "SKILL.md"
+SKILLS = sorted(PLUGIN.glob("skills/*/SKILL.md"))
 
 # The fields the Agent Plugins v1 manifest names, in the order
 # releasetools/agent-plugins writes them.
@@ -40,7 +42,7 @@ def test_the_two_client_manifests_describe_one_plugin() -> None:
     codex = _manifest(".codex-plugin/plugin.json")
     assert {k: claude[k] for k in PORTABLE} == {k: codex[k] for k in PORTABLE}
     assert codex["skills"] == "./skills/"
-    assert codex["commands"] == "./commands/"
+    assert not (PLUGIN / "commands").exists()
 
 
 def test_the_portable_manifest_is_the_claude_one_rewritten() -> None:
@@ -52,21 +54,94 @@ def test_the_portable_manifest_is_the_claude_one_rewritten() -> None:
     assert text == json.dumps(wanted, indent=2, ensure_ascii=False) + "\n"
 
 
-@pytest.mark.parametrize("path", [PLUGIN / "commands" / "prune.md", SKILL])
-def test_the_plugin_preapproves_reads_and_sync_alone(path: Path) -> None:
-    """`gw prune --yes` removes worktrees, so no pattern may cover it; each
-    removal goes through a command the user is asked to approve."""
-    tools = re.findall(r"^  - (.+)$", path.read_text().split("---")[1], re.M)
-    prefixes = [m.group(1) for t in tools if (m := re.fullmatch(r"Bash\((.+):\*\)", t))]
-    for removal in ("gw prune --yes", "gw p --yes"):
-        assert not [p for p in prefixes if removal.startswith(p)], removal
+def _frontmatter(path: Path) -> str:
+    return path.read_text().split("---")[1]
+
+
+def _tools(path: Path) -> list[str]:
+    return re.findall(r"^  - (.+)$", _frontmatter(path), re.M)
+
+
+# What a skill runs only with the user's say-so, or the harness's: removal,
+# merging, pushing, rerunning CI, moving a checkout. `gw sync` and
+# `gw branch create` are pre-approved; neither loses work.
+MUTATIONS = (
+    "gw prune --yes",
+    "gw p --yes",
+    "gw remove x --yes",
+    "command gw remove x --yes",
+    "gw branch prune x --yes",
+    "command gw branch prune x --yes",
+    "gw add x",
+    "command gw add x",
+    "gw rotate",
+    "command gw rotate",
+    "gh pr merge 1",
+    "gh pr update-branch 1",
+    "gh run rerun 1",
+    "glab mr merge 1",
+    "git push",
+    "git commit",
+    "git merge --ff-only x",
+    "git switch x",
+    "git symbolic-ref HEAD refs/heads/x",
+    "git update-ref refs/heads/x HEAD",
+    "git branch -m x",
+)
+
+
+def test_every_skill_is_named_for_its_directory() -> None:
+    assert [p.parent.name for p in SKILLS] == [
+        "ci",
+        "describe-pr",
+        "fast-forward",
+        "merge",
+        "new-branch",
+        "prune",
+    ]
+    for path in SKILLS:
+        front = _frontmatter(path)
+        assert re.search(rf"^name: {path.parent.name}$", front, re.M), path
+        assert re.search(r"^description: ", front, re.M), path
+
+
+@pytest.mark.parametrize("path", SKILLS, ids=lambda p: p.parent.name)
+def test_no_skill_preapproves_a_mutation(path: Path) -> None:
+    for tool in _tools(path):
+        found = re.fullmatch(r"Bash\((.+?)(:\*)?\)", tool)
+        if not found:
+            continue
+        prefix, wildcard = found.groups()
+        for mutation in MUTATIONS:
+            covered = mutation.startswith(prefix) if wildcard else mutation == prefix
+            assert not covered, (tool, mutation)
+
+
+def test_only_describe_pr_edits_a_review() -> None:
+    """The user asked for descriptions to be corrected without a prompt."""
+    for path in SKILLS:
+        edits = [
+            t
+            for t in _tools(path)
+            if t.startswith(("Bash(gh pr edit", "Bash(glab mr update"))
+        ]
+        assert bool(edits) == (path.parent.name == "describe-pr"), path
+
+
+@pytest.mark.parametrize("path", sorted(PLUGIN.glob("skills/**/*.md")), ids=str)
+def test_every_link_between_skills_resolves(path: Path) -> None:
+    for target in re.findall(r"\]\(([^)#:]+\.md)\)", path.read_text()):
+        assert (path.parent / target).is_file(), (path, target)
+
+
+def test_the_prune_skill_preapproves_reads_and_sync_alone() -> None:
     assert {
         "Bash(gw sync)",
         "Bash(gw list --json)",
         "Bash(gw list --table)",
         "Bash(gw prune --json)",
         "Bash(jq:*)",
-    } <= set(tools)
+    } <= set(_tools(SKILL))
 
 
 def _filter(command: str) -> str:
@@ -191,3 +266,94 @@ def test_branch_filter_preserves_sync_and_empty_rows(world) -> None:
     assert out["lastSync"] == raw["lastSync"]
     assert [v["branch"] for v in out["empty"]] == ["empty"]
     assert out["branches"] == [v for v in raw["verdicts"] if v["eligible"]]
+
+
+def _skill_filter(skill: str, command: str) -> tuple[list[str], str]:
+    """The flags and program a skill pipes `command`'s JSON through."""
+    found = re.search(
+        rf"^{re.escape(command)} \| jq ((?:-[cr] ?|--arg \w+ '\w+' ?)+)'(.*?)'$",
+        (PLUGIN / "skills" / skill / "SKILL.md").read_text(),
+        re.S | re.M,
+    )
+    assert found, f"the {skill} skill's {command} pipeline is missing"
+    return shlex.split(found.group(1)), found.group(2)
+
+
+def _run_jq(flags: list[str], program: str, piped: str, **args: str) -> str:
+    for name, value in args.items():
+        at = flags.index(name)
+        flags = [*flags[: at + 1], value, *flags[at + 2 :]]
+    proc = subprocess.run(
+        ["jq", *flags, program], input=piped, capture_output=True, text=True, check=True
+    )
+    return proc.stdout
+
+
+def test_fast_forward_finds_the_checkout_holding_the_head_branch(world) -> None:
+    from test_sync import origin
+
+    world.worktree("feature")
+    raw = json.loads(_json(world, "gw list"))
+    flags, program = _skill_filter("fast-forward", "gw list --json")
+    out = json.loads(_run_jq(flags, program, json.dumps(raw)))
+    main = next(row for row in raw["worktrees"] if row["main"])
+    assert out == {"head": raw["head"], "branch": "main", "path": main["path"]}
+
+    origin(world)
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    world.git("switch", "-q", "--detach", at=Path(main["path"]))
+    raw = json.loads(_json(world, "gw list"))
+    assert raw["head"]["ref"] == "refs/remotes/origin/main"
+    out = json.loads(_run_jq(flags, program, json.dumps(raw)))
+    assert out == {"head": raw["head"], "branch": "main", "path": None}
+
+
+def test_merge_finds_the_worktree_holding_a_branch(world) -> None:
+    world.worktree("feat'quoted")
+    world.worktree("other")
+    raw = _json(world, "gw list")
+    flags, program = _skill_filter("merge", "gw list --json")
+    out = _run_jq(flags, program, raw, b="feat'quoted")
+    rows = json.loads(raw)["worktrees"]
+    assert out.splitlines() == [r["path"] for r in rows if r["branch"] == "feat'quoted"]
+    assert len(out.splitlines()) == 1
+
+
+def test_ci_projection_keeps_the_failures_and_the_head(world, network) -> None:
+    from test_ci import _check, _pr
+    from test_sync import origin
+
+    origin(world)
+    world.git("switch", "-qc", "feature")
+    network.answer(
+        {
+            "$view": _pr(
+                number=42,
+                statusCheckRollup=[
+                    _check("tests"),
+                    _check("lint", conclusion="FAILURE"),
+                ],
+            )
+        }
+    )
+    proc = subprocess.run(
+        argv("gw ci", "42", "--json"),
+        cwd=world.repo,
+        env=network.env(),
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    flags, program = _skill_filter("ci", "gw ci 42 --json")
+    out = json.loads(_run_jq(flags, program, proc.stdout))
+    raw = json.loads(proc.stdout)
+    assert out["pr"] == {
+        "number": raw["pr"]["number"],
+        "headSha": raw["pr"]["headSha"],
+        "mergeStateStatus": raw["pr"]["mergeStateStatus"],
+    }
+    assert out["checksState"] == "failed"
+    assert out["stale"] is False
+    assert out["failing"] == [
+        {"name": "lint", "workflow": "CI", "link": raw["checks"][1]["link"]}
+    ]

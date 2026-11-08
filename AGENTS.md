@@ -139,14 +139,35 @@ watching. A shortcut has no completion file of its own.
 
 ## The agent plugin reads `--json`
 
-`plugin/` ships with the CLI. Its skill reads `gw prune --json` and
+`plugin/` ships with the CLI: six skills, each a directory under
+`plugin/skills/` named as its command is, `/worktrees:<name>` in Claude Code
+and `$worktrees:<name>` in Codex. Skills call `gw` from `$PATH`; nothing
+assumes a plugin root or a checkout at a known path.
+
+| skill | runs |
+| --- | --- |
+| `new-branch` | `gw sync`, then `gw branch create` |
+| `fast-forward` | `gw sync`, then `gw rotate` in the checkout that holds the head branch |
+| `ci` | `gw ci --json`, `--wait` to wait without polling |
+| `describe-pr` | checks a review's title and body against its diff, and edits them |
+| `merge` | `describe-pr`, `ci`, fixes on the branch, `gh pr merge`, then `fast-forward` |
+| `prune` | `gw prune --json` and `gw branch status --json`, then the removals approved |
+
+`describe-pr` and `merge` share `describe-pr/format.md`: the review's title
+and body are the squash commit's subject and body, so one set of rules
+writes both. `tests/test_plugin.py` holds every skill's `allowed-tools`
+to reads, `gw sync` and `gw branch create`: no pattern covers a removal, a
+merge, a push, a rerun or a checkout that moves. `describe-pr` alone may
+edit a review, because correcting a description without a prompt is its job.
+
+The prune skill reads `gw prune --json` and
 `gw branch status --json`, preserving head/sync state and full rows for eligible, empty,
 stash-blocked and ignored-file cases. `tests/test_plugin.py` extracts the
 actual jq filters and applies them to real CLI output. Checked-out branches
 are absent from the loose-branch list. Paths and restore commands must retain
 exact quoting.
 
-The skill asks before syncing stale or never-synced remote state, and runs
+The prune skill asks before syncing stale or never-synced remote state, and runs
 `gw sync` only on the user's answer. Removal approval covers chosen targets
 and explicit deletion categories. Each worktree goes through
 `command gw remove` with its exact quoted JSON path, then selected loose
@@ -331,12 +352,12 @@ indented, its exit code when that is not 0 or is the only answer, then a
 blank line. Printing after the run keeps a command and its answer together
 when eight threads are asking at once.
 
-## Only explicit sync uses the network
+## Only explicit sync and ci use the network
 
 `gw sync` fetches every remote with `--prune --tags --no-prune-tags`, the
 default first, updates the default remote's HEAD and queries the forge for
-every local branch tip on eight threads. Every other command stays offline.
-It refuses, before fetching, any remote whose refspec writes outside its own
+every local branch tip on eight threads. `gw ci` reads one review and its
+checks and writes nothing. Every other command stays offline. Sync refuses, before fetching, any remote whose refspec writes outside its own
 `refs/remotes/<name>/`, since a mirror refspec with `--prune` deletes local
 branches. Git refusing a moved tag is a warning; any other refused ref fails
 that remote. The fetch runs in the C locale so sync can read which it was. The
@@ -360,6 +381,17 @@ full clones keep older Git compatibility. Offline proof uses read-only
 patch-id input and creates no synthetic commits.
 
 The per-worktree checks run on eight threads. Mutations remain serial.
+
+`gw ci` takes GitHub's review and checks from one `gh pr view` with
+`statusCheckRollup`, so both describe one head and nothing can go stale
+between them. It keeps the newest run per workflow and name, and a run with
+no start time counts as newest, so a queued re-run supersedes the failure it
+repeats. GitLab needs several calls: the pipeline is read from the project
+that ran it, its jobs across every page, and the merge request again
+afterwards, and a change between the two reads is `stale`. A pipeline for
+another SHA is stale unless it is the merged-result pipeline whose parents
+are the current head and the target's tip. `ci.wait` takes its clock and
+sleep as arguments, so its tests run in-process without waiting.
 
 ## Every git command is one spec
 

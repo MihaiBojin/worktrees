@@ -62,6 +62,33 @@ def _read(argv: list[str], repo: str | os.PathLike[str] | None = None) -> object
     return rows
 
 
+def pages(
+    argv: list[str], repo: str | os.PathLike[str] | None = None
+) -> list[dict] | None:
+    """Read the JSON arrays a `--paginate` call prints back to back, as one."""
+    import json
+
+    proc = _execute(argv, repo)
+    if proc is None:
+        return None
+    decoder, text, at, rows = json.JSONDecoder(), proc.stdout, 0, []
+    try:
+        while True:
+            while at < len(text) and text[at].isspace():
+                at += 1
+            if at == len(text):
+                break
+            page, at = decoder.raw_decode(text, at)
+            if not isinstance(page, list):
+                return None
+            rows.extend(page)
+    except json.JSONDecodeError:
+        return None
+    if not rows and not text.strip():
+        return None
+    return rows if all(isinstance(row, dict) for row in rows) else None
+
+
 def query(
     argv: list[str], repo: str | os.PathLike[str] | None = None
 ) -> list[dict] | None:

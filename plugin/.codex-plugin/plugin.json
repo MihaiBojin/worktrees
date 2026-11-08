@@ -1,7 +1,7 @@
 {
   "name": "worktrees",
   "version": "0.7.0",
-  "description": "Remove the git worktrees and branches the worktrees CLI proves finished, after asking",
+  "description": "Start branches, read CI, describe and merge pull requests, and prune finished worktrees through the worktrees CLI",
   "author": {
     "name": "Mihai Bojin",
     "url": "https://github.com/MihaiBojin"
@@ -9,25 +9,35 @@
   "homepage": "https://github.com/MihaiBojin/worktrees/tree/main/plugin#readme",
   "repository": "https://github.com/MihaiBojin/worktrees",
   "license": "Apache-2.0",
-  "keywords": ["git", "worktree", "branch", "prune", "squash-merge"],
+  "keywords": [
+    "git",
+    "worktree",
+    "branch",
+    "pull-request",
+    "ci",
+    "merge",
+    "prune",
+    "squash-merge"
+  ],
   "skills": "./skills/",
-  "commands": "./commands/",
   "interface": {
     "displayName": "worktrees",
-    "shortDescription": "Remove finished worktrees and branches, with proof",
-    "longDescription": "Ask the worktrees CLI which linked worktrees and local branches are finished, show the ones it proved with the proof it found, and remove only those you choose, through the CLI. A squash merge leaves branches behind that git branch -d calls unmerged; the CLI proves them merged by ancestry, by content or by the forge's merged request, and prints the command that puts each one back.",
+    "shortDescription": "Branches, CI, pull requests and cleanup, through one CLI",
+    "longDescription": "Start a branch from the freshly fetched head branch, read a pull request's checks as compact JSON, keep its title and description true to its diff, merge it once CI is green and report what was fixed on the way, fast-forward the head branch, and remove the worktrees and branches the worktrees CLI proves finished, after asking.",
     "developerName": "Mihai Bojin",
     "category": "Developer Tools",
     "capabilities": [
-      "List the worktrees and branches proved finished, with the proof",
-      "Remove only the ones you choose, through the CLI",
-      "Print the command that restores each removed branch"
+      "Read a pull request's CI checks as JSON, and wait for them",
+      "Check and correct a pull request's title and description",
+      "Fix failing checks, then merge with the repository's strategy",
+      "Start branches and fast-forward the head branch",
+      "Remove only the finished worktrees and branches you choose"
     ],
     "websiteURL": "https://github.com/MihaiBojin/worktrees/tree/main/plugin#readme",
     "defaultPrompt": [
-      "Clean up the finished worktrees and branches here.",
-      "Which of my branches are already merged?",
-      "Prune the squash-merged branches in this repository."
+      "Did CI pass on this pull request?",
+      "Merge pull request 42 once it is green.",
+      "Clean up the finished worktrees and branches here."
     ]
   }
 }

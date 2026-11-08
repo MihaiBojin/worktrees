@@ -1,8 +1,17 @@
 # worktrees, as an agent plugin
 
-`/worktrees:prune` assesses linked worktrees and loose local branches with
-the worktrees CLI. It shows the head and sync state first, then asks which
-targets and deletion categories you approve.
+Six skills for Claude Code and Codex over the worktrees CLI. Each is
+`/worktrees:NAME` in Claude Code and `$worktrees:NAME` in Codex, and an agent
+reaches for one on its own when a task matches its description.
+
+| skill | does |
+| --- | --- |
+| `new-branch` | fetches, then starts a branch off the remote's head |
+| `fast-forward` | fetches, then fast-forwards the checkout holding the head branch |
+| `ci` | reads a pull request's checks as JSON, and waits for them |
+| `describe-pr` | checks a pull request's title and body against its diff, and fixes them |
+| `merge` | fixes failing checks, waits for green, merges, then reports what it fixed |
+| `prune` | removes the worktrees and branches the CLI proves finished, after asking |
 
 ## Install
 
@@ -31,17 +40,51 @@ Install the CLI from the same release:
 uv tool install git-worktrees
 ```
 
-The plugin needs `jq` too. It installs neither tool.
+The skills need `jq`, and `gh` or `glab` signed in for the forge the remote
+is on. The plugin installs none of them. Skills call `gw` from `$PATH`.
+
+## What runs without asking
+
+Each skill pre-approves the reads it makes, `gw sync` and `gw branch create`.
+`describe-pr` may also edit a pull request's title and body, since correcting
+them unprompted is its job. Nothing pre-approves a merge, a push, a CI rerun,
+a fast-forward or a removal: those reach the client's own permission prompt.
+
+## CI
+
+`gw ci --json` prints one snapshot: the review's identity, every check with
+its link, and one `checksState`. `gw ci --wait` returns once no check is
+running, so an agent waiting on CI reads one result rather than one per
+poll. For a failing check the skill reads only the failing part of that
+job's log.
+
+## Pull request descriptions
+
+The title and body become the squash commit, so [one format](skills/describe-pr/format.md)
+serves both: an imperative title in the history's convention, then one line
+per change a reader can see in the diff. Every line has to be supported by
+the diff, the commits or a linked issue. The skill changes only lines that
+are wrong or missing, keeps `release-note` blocks, issue keywords and
+harness footers as they were, and says in its reply what it changed.
+
+## Merge
+
+Asking to merge approves pushing fixes to each named pull request's branch,
+correcting its description, and merging it once green. The skill works in
+the worktree holding the branch, never the main checkout. It merges with
+`.releasetools.yaml`'s `release.merge` or the first strategy the repository
+allows of squash, merge and rebase; a squash keeps GitHub's ` (#NN)` subject
+and the branch's commit trailers, and `--match-head-commit` refuses a head
+that moved after CI passed. It never uses `--admin`, `--auto` or
+`--delete-branch`, and reports a queued merge as queued. The report ends
+with one row per problem: the pull request, what was wrong, what fixed it.
 
 ## Cleanup
 
-The skill reads `gw prune --json` and `gw branch status --json`. These
-commands stay offline. If remote state is never synced or older than 10 minutes, it asks
-whether to run `gw sync`; it runs sync only on your answer. A previous
-approval or refusal remains in force for that cleanup. The skill and
-`/prune` run `gw sync`, `gw list --json`, `gw list --table`,
-`gw prune --json`, `gw branch status --json`, `jq` and `git remote` without
-a permission prompt.
+The prune skill reads `gw prune --json` and `gw branch status --json`. These
+commands stay offline. If remote state is never synced or older than 10
+minutes, it asks whether to run `gw sync`; it runs sync only on your answer.
+A previous approval or refusal remains in force for that cleanup.
 
 It lists eligible worktrees and loose branches, with proofs, and shows empty
 and stash-blocked rows separately. Ignored-file blockers remain visible.
@@ -50,9 +93,9 @@ permission, and the plugin never targets its current checkout.
 
 After you choose, each worktree goes through `command gw remove` with its
 exact quoted JSON path and only its approved `--delete` values. Selected
-loose branches follow through `command gw branch prune`. Both commands reassess first and
-can refuse a target that changed. The skill retains target exclusions and
-category choices across a refresh.
+loose branches follow through `command gw branch prune`. Both commands
+reassess first and can refuse a target that changed. The skill retains
+target exclusions and category choices across a refresh.
 
 The report distinguishes checkout removal, branch deletion and stash
 outcomes, including partial failures. It keeps the CLI's exact restore
