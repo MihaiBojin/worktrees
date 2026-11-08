@@ -24,7 +24,7 @@ other repositories under the same worktree root are outside their scope.
 | `gw prune` | `gwp` | confirm and remove eligible worktrees |
 | `gw remove [NAME\|PATH]` | `gwr` | remove one worktree and its finished branch |
 | `gw branch status [NAME ...]` | `gwbs` | assess local branches without worktrees |
-| `gw branch prune [NAME ...]` | `gbwp` | confirm and delete eligible loose branches |
+| `gw branch prune [NAME ...]` | `gwbp` | confirm and delete eligible loose branches |
 | `gw add NAME [BASE]` | `gwa` | create or enter a worktree |
 | `gw branch create NAME` | `gwbc` | start a branch from the assessed head ref |
 | `gw rotate` | `gwrot` | start the next branch in a series, or fast-forward the head branch |
@@ -438,7 +438,7 @@ gw list --json | jq -r '.worktrees[].path'
 
 | Removed interface | Current interface |
 | --- | --- |
-| `gwa`, `gwp`, `gwr`, `gwbs`, `gbwp`, `gwbc`, `gwrot` binaries | `gw` subcommands, or the plugin's shortcuts |
+| `gwa`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwbc`, `gwrot` binaries | `gw` subcommands, or the plugin's shortcuts |
 | `gws` as assessment, `gw status`, `gw s`, `gw st` | `gw prune --json`; `gws` now runs `gw sync` |
 | `gwp --dry-run` | `gw prune --json` or `gw prune --table` |
 | `gw list --list`, `gw list -l`, `gw prune --list` | `gw list --table`, `gw prune --table` |

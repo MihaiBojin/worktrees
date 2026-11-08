@@ -221,7 +221,7 @@ def test_a_path_holding_a_tab_is_still_offered(world) -> None:
 
 
 @pytest.mark.skipif(not shutil.which("zsh"), reason="zsh is not installed")
-@pytest.mark.parametrize("prefix", ["gw branch prune --dry", "gbwp --dry"])
+@pytest.mark.parametrize("prefix", ["gw branch prune --dry", "gwbp --dry"])
 def test_zsh_completes_branch_flags_without_errors(world, prefix) -> None:
     bin_dir = _completion_binaries(world)
     env = env_for(world)
@@ -354,7 +354,7 @@ def test_fish_dispatches_each_command_to_its_own_flags(world, prefix, entry):
     [
         ("gwp --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gwr! --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gbwp --delete", {"empty", "stashes", "all"}),
+        ("gwbp --delete", {"empty", "stashes", "all"}),
         ("gwp --only", {"remove", "empty", "keep", "unknown"}),
         ("gwbs --only", {"remove", "empty", "keep", "unknown"}),
         ("gw prune --delete", {"empty", "ignored-files", "stashes", "all"}),
@@ -442,7 +442,7 @@ def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry):
     [
         ("gwp --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gwr! --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gbwp --delete", {"empty", "stashes", "all"}),
+        ("gwbp --delete", {"empty", "stashes", "all"}),
         ("gwp --only", {"remove", "empty", "keep", "unknown"}),
         ("gwbs --only", {"remove", "empty", "keep", "unknown"}),
         ("gw prune --delete", {"empty", "ignored-files", "stashes", "all"}),
@@ -467,7 +467,7 @@ CANDIDATES = [
     ("gw branch ", {"create", "prune", "status"}),
     ("gw branch status ", {"done", "main", "one"}),
     ("gwbs ", {"done", "main", "one"}),
-    ("gbwp ", {"done", "main", "one"}),
+    ("gwbp ", {"done", "main", "one"}),
     ("gwa ", set()),
 ]
 

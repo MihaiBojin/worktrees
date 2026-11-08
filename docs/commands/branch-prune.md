@@ -1,7 +1,7 @@
 # worktrees branch prune
 
 `gw branch prune` deletes eligible loose local branches after confirmation
-and a fresh assessment, and the shell plugin's `gbwp` runs it. It uses local
+and a fresh assessment, and the shell plugin's `gwbp` runs it. It uses local
 refs and cached forge evidence; only `gw sync` refreshes them. Checked-out
 branches cannot be deleted here.
 
@@ -10,7 +10,7 @@ gw branch prune old-fix another-fix
 gw branch prune --all --dry-run
 gw branch prune old-fix --yes --json
 gw branch prune unused --delete empty
-gbwp finished-with-stashes --delete stashes
+gwbp finished-with-stashes --delete stashes
 ```
 
 Names select those branches; no names opens a selector on a terminal.
