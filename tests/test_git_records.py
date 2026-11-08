@@ -9,14 +9,14 @@ from test_cli import run
 
 
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085", "\u00a0"])
-@pytest.mark.parametrize("entry", ["gw prune", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw branch prune"])
 def test_separator_branch_stashes_require_explicit_permission(world, separator, entry):
     name = "topic" + separator
     path = world.merged_worktree(name)
     (path / "README").write_text("unfinished")
     world.git("stash", "push", "-qm", "pending work here", at=path)
     sha = world.git("rev-parse", "refs/stash")
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(path))
     preview = (
         run(world, "gw prune", "--json")
@@ -40,7 +40,7 @@ def test_separator_branch_stashes_require_explicit_permission(world, separator, 
 
 
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085", "\u00a0"])
-@pytest.mark.parametrize("entry", ["gw prune", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw branch prune"])
 def test_exact_remote_head_counterpart_stays_protected(world, separator, entry):
     name = "topic" + separator
     path = world.merged_worktree(name)
@@ -48,14 +48,14 @@ def test_exact_remote_head_counterpart_stays_protected(world, separator, entry):
     for branch in ("topic", name):
         world.git("update-ref", f"refs/remotes/origin/{branch}", "main")
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", f"refs/remotes/origin/{name}")
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(path))
     args = [] if entry == "gw prune" else [name]
     preview = run(
         world,
         entry,
         *args,
-        *(["--dry-run"] if entry == "gw branch delete" else []),
+        *(["--dry-run"] if entry == "gw branch prune" else []),
         "--delete",
         "all",
         "--json",

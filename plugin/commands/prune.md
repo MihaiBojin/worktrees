@@ -9,7 +9,7 @@ allowed-tools:
   - Bash(gw prune --json)
   - Bash(gw branch status:*)
   - Bash(command gw remove:*)
-  - Bash(command gw branch delete:*)
+  - Bash(command gw branch prune:*)
   - Bash(jq:*)
   - Bash(git remote:*)
   - Bash(git rev-parse:*)

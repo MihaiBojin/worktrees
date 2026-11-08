@@ -28,7 +28,7 @@ def stash(world, path, subject="pending") -> str:
     return world.git("rev-parse", "refs/stash")
 
 
-@pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch prune"])
 @pytest.mark.parametrize(
     "values",
     [
@@ -41,7 +41,7 @@ def stash(world, path, subject="pending") -> str:
 def test_permissions_combine_without_changing_empty_verdict(world, entry, values):
     path = world.worktree("topic")
     sha = stash(world, path)
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(path))
     args = [] if entry == "gw prune" else ["topic"]
     for value in values:
@@ -52,7 +52,7 @@ def test_permissions_combine_without_changing_empty_verdict(world, entry, values
     assert "topic" not in world.git("branch", "--format=%(refname:short)").splitlines()
     assert not world.git("stash", "list")
     assert sha in p.stderr
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         assert json.loads(p.stdout)["verdicts"][0]["verdict"] == "empty"
 
 
@@ -60,7 +60,7 @@ def test_permissions_combine_without_changing_empty_verdict(world, entry, values
     "args",
     [
         ("gw prune", "--delete", "wat"),
-        ("gw branch delete", "--delete", "ignored-files"),
+        ("gw branch prune", "--delete", "ignored-files"),
         ("gw branch status", "--delete", "all"),
         *[
             ("gw remove", *flags)
@@ -107,11 +107,11 @@ def test_keep_branch_keeps_ref_and_stashes_even_when_protected(world, kind):
     assert "git stash store -m" in p.stderr
 
 
-@pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch prune"])
 def test_yes_does_not_grant_permissions(world, entry):
     path = world.worktree("topic")
     sha = stash(world, path)
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(path))
     args = [] if entry == "gw prune" else ["topic"]
     p = run(world, entry, *args, "--yes")
@@ -247,12 +247,12 @@ def test_remaining_duplicate_checkout_blocks_ref_deletion(world):
     assert world.git("rev-parse", "topic")
 
 
-@pytest.mark.parametrize("entry", ["gw remove", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw remove", "gw branch prune"])
 @pytest.mark.parametrize("suffix", ["", "\u2028"])
 def test_stash_drop_repairs_a_real_concurrent_insertion(world, entry, suffix):
     path = world.merged_worktree("topic")
     target = stash(world, path, "target 'quoted'")
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(path))
     binary = world.root / "bin"
     binary.mkdir()
@@ -294,14 +294,14 @@ def test_stash_drop_repairs_a_real_concurrent_insertion(world, entry, suffix):
     assert f"stash {target}: retained" in p.stderr
 
 
-@pytest.mark.parametrize("entry", ["gw remove", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw remove", "gw branch prune"])
 def test_equal_sha_symbolic_head_retarget_refuses(world, monkeypatch, capsys, entry):
     path = world.merged_worktree("topic")
     world.git("remote", "add", "origin", "https://example.invalid/repo")
     for branch in ("main", "trunk"):
         world.git("update-ref", f"refs/remotes/origin/{branch}", "main")
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(path))
 
     def change(*args, **kwargs):
@@ -337,7 +337,7 @@ def test_loose_branch_rechecks_approved_state(world, monkeypatch, change):
 
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(prune, "_prompt", mutate)
-    assert cli.gw(["branch", "delete", "topic", "--delete", "all"]) != 0
+    assert cli.gw(["branch", "prune", "topic", "--delete", "all"]) != 0
     assert world.git("rev-parse", "topic")
 
 
@@ -430,13 +430,13 @@ def test_delete_all_keeps_protected_targets_and_neighbor(world):
     assert world.git("rev-parse", "main")
 
 
-@pytest.mark.parametrize("entry", ["gw remove", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw remove", "gw branch prune"])
 def test_disclosure_keeps_assessed_sha_when_ref_changes_before_printing(
     world, monkeypatch, capsys, entry
 ):
     path = world.merged_worktree("topic")
     tip = world.git("rev-parse", "topic")
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(path))
     actual = prune.plan
 
@@ -469,13 +469,13 @@ def test_duplicate_name_picker_excludes_partial_matches(world):
     assert paths[1].exists() and paths[2].exists()
 
 
-@pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch prune"])
 def test_never_synced_disclosure_and_confirmation_survive_output_flags(world, entry):
     path = world.merged_worktree("topic")
     world.git("remote", "add", "origin", "https://example.invalid/repo")
     world.git("update-ref", "refs/remotes/origin/main", "main")
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(path))
     args = [] if entry == "gw prune" else ["topic", "--json"]
     code, output = run_on_a_terminal_at(
@@ -523,13 +523,13 @@ def test_detached_removal_never_deletes_a_ref(world, monkeypatch):
     assert world.git("rev-parse", "topic")
 
 
-@pytest.mark.parametrize("entry", ["gw remove", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw remove", "gw branch prune"])
 def test_partial_stash_failure_lists_all_retained_shas(
     world, monkeypatch, capsys, entry
 ):
     path = world.merged_worktree("topic")
     shas = [stash(world, path, "one"), stash(world, path, "two")]
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(path))
 
     def refuse(*args, **kwargs):
@@ -585,7 +585,7 @@ def test_initialized_submodule_after_confirmation_is_preserved(world, monkeypatc
     assert world.git("rev-parse", "topic")
 
 
-@pytest.mark.parametrize("entry", ["gw remove", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw remove", "gw branch prune"])
 @pytest.mark.parametrize("name", ["main", "master", "trunk"])
 def test_all_never_permits_protected_branch_deletion(world, entry, name):
     path = world.merged_worktree("topic")
@@ -688,7 +688,7 @@ def test_nested_current_removal_requires_terminal(world, keep_branch):
 
 
 @pytest.mark.parametrize(
-    "entry", ["gw prune", "gw remove", "keep-branch", "gw branch delete", "foreign"]
+    "entry", ["gw prune", "gw remove", "keep-branch", "gw branch prune", "foreign"]
 )
 def test_cleanup_preserves_neighbor_repository(world, entry):
     own = world.merged_worktree("done")
@@ -711,9 +711,9 @@ def test_cleanup_preserves_neighbor_repository(world, entry):
 
     before = neighbor_state()
     args: tuple[str, ...]
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(own))
-        args = ("gw branch delete", "done", "--delete", "all", "--yes")
+        args = ("gw branch prune", "done", "--delete", "all", "--yes")
     elif entry == "gw prune":
         args = ("gw prune", "--delete", "all", "--yes")
     elif entry == "keep-branch":
@@ -753,13 +753,13 @@ def test_batch_modes_keep_protected_refs(world, mode):
     else:
         world.git("worktree", "remove", str(control))
         if mode == "all":
-            proc = run(world, "gw branch delete", "--all", "--delete", "all", "--yes")
+            proc = run(world, "gw branch prune", "--all", "--delete", "all", "--yes")
             assert proc.returncode == 0, proc.stderr
         else:
             code, output = run_on_a_terminal_at(
                 world,
                 world.repo,
-                "gw branch delete",
+                "gw branch prune",
                 "--delete",
                 "all",
                 answer="1\ny\n",
@@ -810,7 +810,7 @@ def test_retired_removal_flags_refuse_before_preflight(world, network, entry, fl
     assert (path / "private.secret").read_bytes() == b"preserve ignored\n"
 
 
-@pytest.mark.parametrize("entry", ["gw remove", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw remove", "gw branch prune"])
 @pytest.mark.parametrize("pending", [False, True])
 def test_stash_repair_uses_preceding_listed_subject(world, network, entry, pending):
     path = world.merged_worktree("topic")
@@ -818,7 +818,7 @@ def test_stash_repair_uses_preceding_listed_subject(world, network, entry, pendi
     older = stash(world, world.repo, subject)
     target = stash(world, path, "target")
     pending_sha = stash(world, path, "pending") if pending else None
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(path))
     marker = world.root / "stash-race.json"
     injection = (
@@ -888,13 +888,13 @@ def test_stash_repair_uses_preceding_listed_subject(world, network, entry, pendi
     )
 
 
-@pytest.mark.parametrize("entry", ["gw prune", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw branch prune"])
 def test_later_batch_target_is_rechecked(world, network, entry):
     first = world.merged_worktree("a-first")
     second = world.merged_worktree("b-second")
     second_tip = world.git("rev-parse", "b-second")
     saved = stash(world, second, "second retained")
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         world.git("worktree", "remove", str(first))
         world.git("worktree", "remove", str(second))
     marker = world.root / "batch-race.json"
@@ -916,7 +916,7 @@ def test_later_batch_target_is_rechecked(world, network, entry):
     network.intercept(injection)
     proc = subprocess_cli(
         world,
-        *(["a-first", "b-second"] if entry == "gw branch delete" else []),
+        *(["a-first", "b-second"] if entry == "gw branch prune" else []),
         "--delete",
         "all",
         "--yes",

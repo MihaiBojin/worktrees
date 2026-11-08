@@ -1252,12 +1252,12 @@ _BRANCH_COMMANDS: dict[str, _Command] = {
         usage="[NAME ...]",
         shortcuts={"gwbs": ""},
     ),
-    "delete": _Command(
+    "prune": _Command(
         run_branch_delete,
         _add_branch_delete_flags,
         "delete local branches proved finished",
         usage="[NAME ...]",
-        shortcuts={"gwbd": ""},
+        shortcuts={"gbwp": ""},
     ),
 }
 
@@ -1305,7 +1305,7 @@ _COMMANDS: dict[str, _Command] = {
     "remove": _Command(
         run_remove,
         _add_remove_flags,
-        "remove one whose branch is finished",
+        "remove a worktree",
         usage="[QUERY]",
         aliases=("rm",),
         shortcuts={"gwr": "", "gwr!": "--delete ignored-files"},

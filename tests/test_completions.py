@@ -221,7 +221,7 @@ def test_a_path_holding_a_tab_is_still_offered(world) -> None:
 
 
 @pytest.mark.skipif(not shutil.which("zsh"), reason="zsh is not installed")
-@pytest.mark.parametrize("prefix", ["gw branch delete --dry", "gwbd --dry"])
+@pytest.mark.parametrize("prefix", ["gw branch prune --dry", "gbwp --dry"])
 def test_zsh_completes_branch_flags_without_errors(world, prefix) -> None:
     bin_dir = _completion_binaries(world)
     env = env_for(world)
@@ -318,7 +318,7 @@ COMMAND_COMPLETIONS = [
     ("gw rot", "gw rotate"),
     ("gw branch create", "gw branch create"),
     ("gw branch status", "gw branch status"),
-    ("gw branch delete", "gw branch delete"),
+    ("gw branch prune", "gw branch prune"),
     ("gwp --table", "gw prune"),
     *((name, " ".join(words)) for name, words in SHORTCUTS.items()),
 ]
@@ -354,12 +354,12 @@ def test_fish_dispatches_each_command_to_its_own_flags(world, prefix, entry):
     [
         ("gwp --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gwr! --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gwbd --delete", {"empty", "stashes", "all"}),
+        ("gbwp --delete", {"empty", "stashes", "all"}),
         ("gwp --only", {"remove", "empty", "keep", "unknown"}),
         ("gwbs --only", {"remove", "empty", "keep", "unknown"}),
         ("gw prune --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gw rm --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gw branch delete --delete", {"empty", "stashes", "all"}),
+        ("gw branch prune --delete", {"empty", "stashes", "all"}),
         ("gw branch status --only", {"remove", "empty", "keep", "unknown"}),
     ],
 )
@@ -442,12 +442,12 @@ def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry):
     [
         ("gwp --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gwr! --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gwbd --delete", {"empty", "stashes", "all"}),
+        ("gbwp --delete", {"empty", "stashes", "all"}),
         ("gwp --only", {"remove", "empty", "keep", "unknown"}),
         ("gwbs --only", {"remove", "empty", "keep", "unknown"}),
         ("gw prune --delete", {"empty", "ignored-files", "stashes", "all"}),
         ("gw rm --delete", {"empty", "ignored-files", "stashes", "all"}),
-        ("gw branch delete --delete", {"empty", "stashes", "all"}),
+        ("gw branch prune --delete", {"empty", "stashes", "all"}),
         ("gw branch status --only", {"remove", "empty", "keep", "unknown"}),
     ],
 )
@@ -464,10 +464,10 @@ CANDIDATES = [
     ("gw remove ", {"one"}),
     ("gwr ", {"one"}),
     ("gwr! ", {"one"}),
-    ("gw branch ", {"create", "delete", "status"}),
+    ("gw branch ", {"create", "prune", "status"}),
     ("gw branch status ", {"done", "main", "one"}),
     ("gwbs ", {"done", "main", "one"}),
-    ("gwbd ", {"done", "main", "one"}),
+    ("gbwp ", {"done", "main", "one"}),
     ("gwa ", set()),
 ]
 

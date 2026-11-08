@@ -50,7 +50,7 @@ permission, and the plugin never targets its current checkout.
 
 After you choose, each worktree goes through `command gw remove` with its
 exact quoted JSON path and only its approved `--delete` values. Selected
-loose branches follow through `command gw branch delete`. Both commands reassess first and
+loose branches follow through `command gw branch prune`. Both commands reassess first and
 can refuse a target that changed. The skill retains target exclusions and
 category choices across a refresh.
 
