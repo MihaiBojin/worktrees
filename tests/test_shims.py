@@ -319,7 +319,7 @@ def test_data_output_passes_through_on_failure(tmp_path, shell, words):
         ["--complete"],
         ["ls"],
         ["prune"],
-        ["rotate"],
+        ["fast-forward"],
         ["version"],
         ["list", "x"],
         ["list", "--json"],

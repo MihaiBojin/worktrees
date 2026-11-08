@@ -69,7 +69,7 @@ The head ref is the first of these that applies:
    3. Neither exists: `main`, which does not resolve.
 
 When the head ref does not resolve, every row is `unknown`, mutating commands refuse, and `gw add`,
-`gw branch create` and `gw rotate` fail. The message suggests `gw sync`, or says `No main or master branch.` when inference
+`gw branch create` and `gw fast-forward` fail. The message suggests `gw sync`, or says `No main or master branch.` when inference
 was used.
 
 Human-readable commands print the head and its source to stderr, for example
@@ -322,7 +322,7 @@ leaves JSON on stdout intact. Passing both is a usage error before anything chan
 
 | Command | `-q` | `-v` |
 | --- | --- | --- |
-| `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw rotate` | yes | yes |
+| `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw fast-forward` | yes | yes |
 | `gw branch status` | yes | no |
 | `gw list` | no | no |
 
@@ -370,7 +370,7 @@ and `gw --help` and the command's own `--help` print them.
 | `gwl` | `gw list` |
 | `gwr` | `gw remove` |
 | `gwr!` | `gw remove --yes`, the approval `gwp!` gives, and no deletion category |
-| `gwrot` | `gw rotate` |
+| `gwff` | `gw fast-forward` |
 | `gwbc` | `gw branch create` |
 | `gwbs` | `gw branch status` |
 | `gwbp` | `gw branch prune` |
@@ -404,6 +404,7 @@ The skill pre-approves `gw sync`, `gw list --json`, `gw list --table`, `gw prune
   `gw list`.
 - `gwp!!` is now `gwpa!`.
 - `gw branch delete` and `gwbd` are now `gw branch prune` and `gwbp`.
+- `gw rotate`, `gw rot` and `gwrot` are now `gw fast-forward`, `gw ff` and `gwff`.
 - `gwr --force` is now `gw remove --keep-branch`.
 - `gw remove` without a terminal, or with `--json` or `--table`, assesses at exit 0 unless `--yes`
   approves removal, where it refused at exit 3. `gwr!` runs `gw remove --yes`, not

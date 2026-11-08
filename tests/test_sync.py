@@ -292,7 +292,7 @@ def test_malformed_cache_is_never_evidence(world, network, payload):
 
 @pytest.mark.parametrize(
     "entry, args",
-    [("gw add", ["new"]), ("gw branch create", ["new"]), ("gw rotate", [])],
+    [("gw add", ["new"]), ("gw branch create", ["new"]), ("gw fast-forward", [])],
 )
 def test_branch_creation_refuses_unresolved_inferred_head(world, network, entry, args):
     world.git("branch", "-m", "main", "feature")
@@ -310,7 +310,7 @@ ORDINARY = [
     ("gw branch prune", ["--dry-run", "--json"]),
     ("gw add", ["new", "--json"]),
     ("gw remove", ["no-such-worktree", "--yes"]),
-    ("gw rotate", ["--json"]),
+    ("gw fast-forward", ["--json"]),
     ("gw list", ["--json"]),
 ]
 
@@ -486,7 +486,7 @@ def test_a_sync_first_is_traced_under_verbose(world, network):
         "gw branch prune",
         "gw add",
         "gw branch create",
-        "gw rotate",
+        "gw fast-forward",
         "gw remove",
     ],
 )
@@ -703,7 +703,7 @@ def test_gitlab_source_lookup_must_agree_with_identity(world, network, field, va
 
 @pytest.mark.parametrize(
     "entry, args",
-    [("gw add", ["new"]), ("gw branch create", ["new"]), ("gw rotate", [])],
+    [("gw add", ["new"]), ("gw branch create", ["new"]), ("gw fast-forward", [])],
 )
 def test_dangling_clone_head_refuses_branch_creation_with_sync_hint(
     world, network, entry, args

@@ -4,6 +4,10 @@
 the worktrees CLI. It shows the head and sync state first, then asks which
 targets and deletion categories you approve.
 
+`/worktrees:fast-forward` brings the branch you stand on level with the head
+branch through `gw fast-forward --json`, and resolves each conflict the
+rebase stops at.
+
 ## Install
 
 The plugin is listed in the `release-tools` marketplace, pinned to a release
@@ -63,6 +67,30 @@ commit. Ignored files cannot be restored.
 
 The plugin uses CLI proof and protections. It does not delete remote branches
 or bypass a refusal with raw Git deletion or filesystem removal.
+
+## Fast-forward
+
+The fast-forward skill and `/fast-forward` run `gw fast-forward --json`,
+which is what the shell plugin's `gwff` runs; an agent's shell has no plugin
+functions, so they call the binary. Arguments to `/fast-forward` pass
+through, so `/fast-forward next-parser --from release-1.2` names the branch a
+finished one moves to and where it starts.
+
+The CLI decides what happens: fast-forward, rebase, or a new branch when
+this one is already merged. When the rebase stops, the skill reads each
+conflicted file and what each side changed, edits the file to carry both,
+`git add`s it, runs `GIT_EDITOR=true git rebase --continue` and runs the
+command again, until the branch is level. It asks you when the two sides
+cannot both be kept, and before touching a rebase that was already stopped
+when it started, such as one paused in `git rebase -i`. It stages only the
+conflicted files. It reports each commit the rebase stopped at and how each
+file was resolved.
+
+Those commands, `git status`, `git diff`, `git log` and `git show` run
+without a permission prompt. `git rebase --abort` runs only when you ask, and
+the skill never runs `git rebase --skip`, which drops a commit. A refusal
+from the CLI, such as uncommitted changes, is reported and not worked
+around.
 
 ## Versions
 

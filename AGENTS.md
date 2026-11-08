@@ -83,16 +83,27 @@ of the line alone, so no shortcut meets history expansion. `!!` would.
 
 ## Two commands start branches
 
-`gw branch create` and `gw rotate` start branches, not worktrees, and do the job
-`origin new-branch` and `origin rotate` do. The name format, the
-stem-stripping and the remote-aware collision check are the same in both, so
-a branch either one names is one the other would have named.
+`gw branch create` and `gw fast-forward` start branches, not worktrees.
+`gw branch create NAME` starts NAME off the head ref, as `origin new-branch`
+does, and keeps argparse's 2 for a usage error where `origin` has a single
+non-zero exit code.
 
-Two divergences are deliberate. `origin` has a single non-zero exit code and
-draws no line between a usage error and a runtime one; this CLI keeps
-argparse's 2 for a usage error. And `gw rotate` refuses, at exit 1, a rotation or
-catch-up that would change nothing, where `origin rotate` makes a branch at
-the same commit under a new name.
+`gw fast-forward` starts a branch only when the one you stand on is proved
+finished, by the same `merged.branch_proof` that `gw prune` reads. A merged
+branch's name stays with its merged request on the forge, so the finished
+branch keeps its name and commits and the checkout moves to
+`YYYY-MM-DDThh-mm-ssZ/<stem>` in UTC, or to the NAME given, from the head
+ref or `--from`. The stem drops a time an earlier rotation put in front, and
+a name held here or on the default remote is refused.
+
+Every other branch keeps its name. One with no commits of its own
+fast-forwards and one with commits is rebased, both with `--no-autostash`:
+`merge.autoStash` and `rebase.autoStash` would move a dirty tree into the
+stash list every worktree shares. The first conflict stops the rebase and leaves it in progress, at
+exit 1 with the stopped commit and files in `--json`, for a person or the
+agent plugin to finish with `git rebase --continue`. A branch already level
+exits 0. The head branch only fast-forwards.
+[fast-forward](docs/commands/fast-forward.md) gives the order of the checks.
 
 ## Where shell code goes
 
@@ -179,7 +190,7 @@ which? [type to filter, up/down and enter, esc to cancel]
 ```
 
 Every printable key goes into the filter, digits included, because names
-carry them: `release-0.6.2`, and every branch `gw rotate` names. Rows carry no
+carry them: `release-0.6.2`, and every branch `gw fast-forward` names. Rows carry no
 numbers for the same reason. Backspace takes a letter back, up and down move
 the highlight and wrap, and enter takes it. Esc clears the filter; on an
 empty filter it cancels, as ctrl-d does, and the hint names which of the two

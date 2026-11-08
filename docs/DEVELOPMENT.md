@@ -46,7 +46,7 @@ what to run.
 | `src/worktrees/branches.py` | loose-branch assessment and deletion |
 | `src/worktrees/sync.py` | sync, when it is due, and the shared evidence cache |
 | `src/worktrees/new_branch.py` | starting a branch off the head branch |
-| `src/worktrees/rotate.py` | the next branch in a series |
+| `src/worktrees/fast_forward.py` | the current branch, level with the head ref |
 | `src/worktrees/layout.py` | where a worktree lives, derived from the main checkout |
 | `src/worktrees/pick.py` | matching a query, and the arrow-key picker |
 | `src/worktrees/worktree.py` | adding, moving and removing a checkout |
@@ -55,9 +55,8 @@ what to run.
 `pyproject.toml` installs two console scripts, `gw` and `worktrees`, both
 entry points in `cli.py`. Shortcuts such as `gwp` are shell plugin functions.
 
-`new_branch.py` and `rotate.py` start branches rather than worktrees. Their
-names, stem-stripping and collision check match `origin new-branch` and
-`origin rotate`; AGENTS.md lists the two places they differ.
+`new_branch.py` and `fast_forward.py` start branches rather than worktrees.
+AGENTS.md says when `fast_forward.py` starts one and how it names it.
 
 ## What an invocation costs
 
