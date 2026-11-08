@@ -303,7 +303,7 @@ def test_branch_creation_refuses_unresolved_inferred_head(world, network, entry,
         ("gw prune", ["--yes", "--json"]),
         ("gw branch status", ["--json"]),
         ("gw branch create", ["new", "--json"]),
-        ("gw branch delete", ["--dry-run", "--json"]),
+        ("gw branch prune", ["--dry-run", "--json"]),
         ("gw add", ["new", "--json"]),
         ("gw", ["--json"]),
         ("gw remove", ["no-such-worktree", "--yes"]),
@@ -327,7 +327,7 @@ def test_ordinary_commands_never_use_network(world, network, entry, args):
         "gw",
         "gw prune",
         "gw branch status",
-        "gw branch delete",
+        "gw branch prune",
         "gw add",
         "gw branch create",
         "gw rotate",
@@ -453,7 +453,7 @@ def test_fork_proof_requires_authoritative_source_identity(
     else:
         tip = world.git("rev-parse", "feature")
         denied = cli(
-            world, "feature", "--yes", entry="gw branch delete", env=network.env()
+            world, "feature", "--yes", entry="gw branch prune", env=network.env()
         )
         assert denied.returncode != 0, denied.stderr
         assert world.git("rev-parse", "feature") == tip
@@ -527,7 +527,7 @@ def test_gitlab_source_lookup_must_agree_with_identity(world, network, field, va
         if r["branch"] == "feature"
     )
     assert row["verdict"] == "keep", row
-    denied = cli(world, "feature", "--yes", entry="gw branch delete", env=network.env())
+    denied = cli(world, "feature", "--yes", entry="gw branch prune", env=network.env())
     assert denied.returncode == 3, denied.stderr
     assert world.git("rev-parse", "feature") == tip
 
@@ -553,7 +553,7 @@ def test_dangling_clone_head_refuses_branch_creation_with_sync_hint(
     [
         ("gw prune", ["--yes"]),
         ("gw remove", ["linked", "--yes", "--keep-branch"]),
-        ("gw branch delete", ["feature", "--yes"]),
+        ("gw branch prune", ["feature", "--yes"]),
     ],
 )
 def test_unresolved_head_refuses_removal_without_mutation(world, network, entry, args):
@@ -856,7 +856,7 @@ def test_failed_fork_lookup_invalidates_previous_proof(world, network, provider)
 
 
 @pytest.mark.parametrize("provider", ["github", "gitlab"])
-@pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch prune"])
 def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
     seed = world.merged_branch("seed")
     world.git("remote", "add", "unselected", "git@github.com:unselected/repo.git")
@@ -864,7 +864,7 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
     first_parent_proof(world, network, provider, fork=True)
     world.git("branch", "local", seed)
     paths = {}
-    if entry != "gw branch delete":
+    if entry != "gw branch prune":
         for name in ("feature", "local"):
             paths[name] = world.root / name
             world.git("worktree", "add", "--quiet", str(paths[name]), name)
@@ -873,7 +873,7 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
     preview = cli(
         world,
         "--json",
-        entry="gw prune" if entry != "gw branch delete" else "gw branch status",
+        entry="gw prune" if entry != "gw branch prune" else "gw branch status",
         env=network.env(),
     )
     assert preview.returncode == 0, preview.stderr
@@ -884,7 +884,7 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
     assert "local" not in json.loads(cache_path(world).read_text())["branches"]
     selections = (
         [("feature", "local")]
-        if entry == "gw branch delete"
+        if entry == "gw branch prune"
         else [("feature",), ("local",)]
         if entry == "gw remove"
         else [()]
@@ -933,7 +933,7 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
         ("gw", ["list", "--complete"]),
         ("gw remove", ["--complete"]),
         ("gw branch status", ["--complete"]),
-        ("gw branch delete", ["--complete"]),
+        ("gw branch prune", ["--complete"]),
     ],
 )
 def test_metadata_commands_remain_offline(world, network, entry, args):

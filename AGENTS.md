@@ -150,7 +150,7 @@ The skill asks before syncing stale or never-synced remote state, and runs
 `gw sync` only on the user's answer. Removal approval covers chosen targets
 and explicit deletion categories. Each worktree goes through
 `command gw remove` with its exact quoted JSON path, then selected loose
-branches through `command gw branch delete`. The plugin never targets its current checkout. It reports
+branches through `command gw branch prune`. The plugin never targets its current checkout. It reports
 partial checkout, branch and stash outcomes and actual restore commands.
 
 The plugin carries the release version in three manifests, and
@@ -259,7 +259,7 @@ agent uses those.
 ## One row per command, under every name it answers to
 
 `_COMMANDS` in `cli.py` holds the top-level commands; `_BRANCH_COMMANDS`
-holds `branch status` and `branch delete`. `command_rows()` lists the
+holds `branch status` and `branch prune`. `command_rows()` lists the
 executable commands for help and completion checks. A row carries the function, the flags,
 the one-line description, the argument shape, the shorthands, the shell
 plugin's shortcuts and whether the command changes the caller's directory.
@@ -303,7 +303,7 @@ call site that formats a table, and neither path passes a code to one.
 
 `progress.py` draws a spinner on stderr and one line saying what is being
 checked, while `gw sync`, `gw prune`, `gw remove`, `gw branch status` and
-`gw branch delete` assess or mutate. It runs only when
+`gw branch prune` assess or mutate. It runs only when
 stderr is a terminal that can clear a line, and never under `-q` or `-v`,
 since the verbose log writes to the line it redraws. Anything else printed on
 stderr while it spins goes through `progress.line`, which clears the spinner
@@ -473,8 +473,8 @@ Report checkout, branch and stash outcomes separately after partial failure.
 
 Branch assessment and deletion are documented in
 [branch status](docs/commands/branch-status.md) and
-[branch delete](docs/commands/branch-delete.md). Checked-out branches appear
-only as worktrees; `gw branch delete NAME` naming one keeps it and exits 3. Every JSON result is an object with `head` and `lastSync`;
+[branch prune](docs/commands/branch-prune.md). Checked-out branches appear
+only as worktrees; `gw branch prune NAME` naming one keeps it and exits 3. Every JSON result is an object with `head` and `lastSync`;
 `gw list --json` stores navigation rows in `worktrees`.
 
 ## Reproduce a failure before asserting its fix

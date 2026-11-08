@@ -1,3 +1,3 @@
-function gwbd --wraps 'gw branch delete' --description 'gw branch delete'
-    gw branch delete $argv
+function gwbd --wraps 'gw branch prune' --description 'gw branch prune'
+    gw branch prune $argv
 end

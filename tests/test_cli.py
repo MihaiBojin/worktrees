@@ -1091,7 +1091,7 @@ def test_status_rejects_retired_refresh_alias(entry) -> None:
         p.parse_args(["-f"])
 
 
-@pytest.mark.parametrize("entry", ["gw prune", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw branch prune"])
 def test_the_commands_that_remove_take_no_f(entry) -> None:
     """On them -f would read as forcing a removal."""
     import argparse
@@ -1221,11 +1221,11 @@ def test_list_rejects_quiet_before_repository_preflight(world, network, flag, ar
         ("gw", ("sync",)),
         ("gw prune", ("--yes",)),
         ("gw remove", ("topic", "--yes")),
-        ("gw branch delete", ("topic", "--yes")),
+        ("gw branch prune", ("topic", "--yes")),
         ("gw add", ("new",)),
         ("gw branch create", ("new",)),
         ("gw rotate", ()),
-        ("gw", ("branch", "delete", "topic", "--yes")),
+        ("gw", ("branch", "prune", "topic", "--yes")),
         ("gw", ("branch", "create", "new")),
         ("gw", ("p", "--yes")),
         ("gw", ("a", "new")),
@@ -1273,7 +1273,7 @@ def test_sync_verbose_traces_git_and_forge_to_stderr_with_json(world, network, f
     [
         "gw add",
         "gw remove",
-        "gw branch delete",
+        "gw branch prune",
         "gw branch create",
         "gw rotate",
         "gw prune",

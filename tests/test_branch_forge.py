@@ -145,7 +145,7 @@ def test_closed_request_does_not_block_independent_content_proof(forge_world):
 def test_malformed_forge_data_keeps_the_branch(forge_world, payload):
     world, provider, network = forge_world
     env = stub(world, provider, payload, network)
-    p = cli(world, "branch", "delete", "feature", "--yes", "--json", env=env)
+    p = cli(world, "branch", "prune", "feature", "--yes", "--json", env=env)
     assert p.returncode == 3, p.stderr
     assert json.loads(p.stdout)["removed"] == []
     assert world.git("rev-parse", "feature")
@@ -204,9 +204,7 @@ def test_invalid_provider_identity_cannot_supply_proof(
     if local_proof:
         assert world.git("rev-parse", "main") != tip
         assert assessed["proof"] in ("squash", "content"), assessed
-    deleted = cli(
-        world, "feature", "--yes", "--json", entry="gw branch delete", env=env
-    )
+    deleted = cli(world, "feature", "--yes", "--json", entry="gw branch prune", env=env)
     if local_proof:
         assert deleted.returncode == 0, deleted.stderr
         assert json.loads(deleted.stdout)["removed"] == ["feature"]

@@ -24,7 +24,7 @@ other repositories under the same worktree root are outside their scope.
 | `gw prune` | `gwp` | confirm and remove eligible worktrees |
 | `gw remove [NAME\|PATH]` | `gwr` | remove one worktree and its finished branch |
 | `gw branch status [NAME ...]` | `gwbs` | assess local branches without worktrees |
-| `gw branch delete [NAME ...]` | `gwbd` | confirm and delete eligible loose branches |
+| `gw branch prune [NAME ...]` | `gwbd` | confirm and delete eligible loose branches |
 | `gw add NAME [BASE]` | `gwa` | create or enter a worktree |
 | `gw branch create NAME` | `gwbc` | start a branch from the assessed head ref |
 | `gw rotate` | `gwrot` | start the next branch in a series, or fast-forward the head branch |
@@ -201,14 +201,14 @@ identify a target exactly.
 gw prune --json
 gw remove '/home/you/git/.worktrees/fix-parser/repo' --yes
 gw branch status --json
-gw branch delete old-fix another-fix --yes
+gw branch prune old-fix another-fix --yes
 ```
 
 A checked-out branch appears only as its worktree, never as a loose branch.
-`gw branch delete` with no names opens a selector;
-`gw branch delete --all --dry-run` previews all loose branches.
+`gw branch prune` with no names opens a selector;
+`gw branch prune --all --dry-run` previews all loose branches.
 [Branch status](docs/commands/branch-status.md) describes the proofs;
-[branch delete](docs/commands/branch-delete.md) covers selection and recovery.
+[branch prune](docs/commands/branch-prune.md) covers selection and recovery.
 
 | Verdict | Evidence |
 | --- | --- |
@@ -235,7 +235,7 @@ worktree. Detached worktrees get the same checks.
 `--yes` skips the first confirmation. It grants no deletion permission.
 Repeat `--delete` to combine categories:
 
-| Value | `gw prune`, `gw remove` | `gw branch delete` |
+| Value | `gw prune`, `gw remove` | `gw branch prune` |
 | --- | --- | --- |
 | `empty` | permit an empty branch and its worktree | permit an empty branch |
 | `ignored-files` | permit the worktree's ignored paths | usage error |
@@ -396,7 +396,7 @@ parseable. Passing both is a usage error.
 
 | Commands | `-q` | `-v` |
 | --- | --- | --- |
-| `gw sync`, `gw prune`, `gw remove`, `gw branch delete`, `gw add`, `gw branch create`, `gw rotate` | yes | yes |
+| `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw rotate` | yes | yes |
 | `gw branch status` | yes | no |
 | `gw list` | no | no |
 

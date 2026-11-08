@@ -23,7 +23,7 @@ A verdict does not grant permission. `main`, `master`, the head branch,
 branch stashes and an empty verdict can block deletion. Rows record these
 in `protections`; `eligible` is true only when deletion needs no additional
 permission and no protection applies. `gw branch status` rejects `--delete`;
-use approved values with [gw branch delete](branch-delete.md).
+use approved values with [gw branch prune](branch-prune.md).
 
 `--only VERDICT` can be repeated. `--json` prints an object with `head`,
 `lastSync`, `head_sha` and `verdicts`. Each row includes `branch`, `sha`,

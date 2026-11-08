@@ -8,7 +8,7 @@ matching worktree metadata. `--json` and `--list` always print metadata.
 terminal. Nonterminal input, `--json` and `--list` assess without mutation;
 `--yes` approves removal in any mode. `--list` prints an uncoloured table.
 `--only` filters assessment rows and rejects `--yes`. `gw remove` selects one.
-`gw branch status` assesses loose local branches and `gw branch delete`
+`gw branch status` assesses loose local branches and `gw branch prune`
 deletes selected eligible refs. A checked-out branch appears only as a
 worktree. Each shell plugin shortcut, such as `gwp!`, runs one of these with
 fixed words, and `gw --help` lists them under the command they run.
@@ -61,8 +61,8 @@ kept. Detached worktrees receive the same checks.
 Ignored paths require `--delete ignored-files`; branch stashes require
 `--delete stashes`; an `empty` verdict requires `--delete empty`. Repeated
 values combine. `all` expands to those three for worktrees, and to empty
-branches and stashes for `gw branch delete`. `gw branch status` rejects
-`--delete`; `gw branch delete` rejects `ignored-files`. Unsupported
+branches and stashes for `gw branch prune`. `gw branch status` rejects
+`--delete`; `gw branch prune` rejects `ignored-files`. Unsupported
 combinations fail at usage parsing before mutation. `--yes` grants none of
 these permissions.
 
@@ -193,7 +193,7 @@ Removal JSON reports actual outcomes. `gw prune` has `removed`, `failed` and
 `outcomes`; `gw remove` has `removed`, destination `path` and `outcome`. Each
 outcome records `worktree_removed`, `branch_removed`, `retained`, `dropped`,
 `skipped`, `failed` and `destination`, along with its path and branch. `gw
-branch delete` reports `removed`, `failed`, `verdicts` and `outcomes`.
+branch prune` reports `removed`, `failed`, `verdicts` and `outcomes`.
 
 Stdout carries results and destinations; stderr carries diagnostics, prompts
 and disclosures. JSON and list output never contain colour. Colour is decided

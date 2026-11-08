@@ -190,7 +190,7 @@ def test_malformed_cached_request_cannot_authorize_deletion(
     assert row["verdict"] == want, row
     assert row["proof"] != "forge", row
     denied = cli(
-        world, "feature", "--yes", "--json", entry="gw branch delete", env=network.env()
+        world, "feature", "--yes", "--json", entry="gw branch prune", env=network.env()
     )
     assert denied.returncode != 0, denied.stderr
     assert json.loads(denied.stdout)["removed"] == []

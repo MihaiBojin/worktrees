@@ -1,1 +1,1 @@
-gw branch delete "$@"
+gw branch prune "$@"

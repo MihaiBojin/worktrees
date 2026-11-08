@@ -59,11 +59,11 @@ def test_branch_status_lists_only_loose_branches(world):
     assert rows["done"]["eligible"]
 
 
-@pytest.mark.parametrize("entry", ["gw branch status", "gw branch delete"])
+@pytest.mark.parametrize("entry", ["gw branch status", "gw branch prune"])
 def test_console_aliases_work(world, entry):
     world.merged_branch("done")
     args = ["done", "--json"]
-    if entry == "gw branch delete":
+    if entry == "gw branch prune":
         args += ["--dry-run"]
     p = cli(world, *args, entry=entry)
     assert p.returncode == 0, p.stderr
@@ -79,14 +79,14 @@ def test_a_named_checked_out_branch_is_never_deleted(world, where):
         world.merged_branch("done")
         world.git("checkout", "-q", "done")
     sha = world.git("rev-parse", "refs/heads/done")
-    p = cli(world, "done", "--yes", "--delete", "all", entry="gw branch delete")
+    p = cli(world, "done", "--yes", "--delete", "all", entry="gw branch prune")
     assert p.returncode == 3, p.stderr
     assert "checked out in a worktree" in p.stderr
     assert world.git("rev-parse", "refs/heads/done") == sha
 
 
 def test_delete_help_names_every_permission_value(world):
-    p = cli(world, "-h", entry="gw branch delete")
+    p = cli(world, "-h", entry="gw branch prune")
     assert p.returncode == 0, p.stderr
     text = " ".join((p.stdout + p.stderr).split())
     assert "empty branches or stashes; all permits both" in text
@@ -106,7 +106,7 @@ def test_unknown_name_prevents_any_deletion(world):
     p = cli(
         world,
         "branch",
-        "delete",
+        "prune",
         "done",
         "missing",
         "--yes",
@@ -119,7 +119,7 @@ def test_unknown_name_prevents_any_deletion(world):
 def test_delete_prints_an_executable_undo_command(world, name):
     world.merged_branch(name)
     sha = world.git("rev-parse", f"refs/heads/{name}")
-    p = cli(world, "branch", "delete", name, "--yes", "--json")
+    p = cli(world, "branch", "prune", name, "--yes", "--json")
     assert p.returncode == 0, p.stderr
     result = json.loads(p.stdout)
     assert result["removed"] == [name]
@@ -134,14 +134,14 @@ def test_delete_prints_an_executable_undo_command(world, name):
 @pytest.mark.parametrize("args", [("--dry-run",), ()])
 def test_a_pipe_cannot_delete_without_yes(world, args):
     world.merged_branch("done")
-    p = cli(world, "branch", "delete", "done", *args)
+    p = cli(world, "branch", "prune", "done", *args)
     assert p.returncode == (0 if args else 3), p.stderr
     assert world.git("rev-parse", "refs/heads/done")
 
 
 def test_no_arguments_requires_a_selector_even_with_yes(world):
     world.merged_branch("done")
-    p = cli(world, "branch", "delete", "--yes")
+    p = cli(world, "branch", "prune", "--yes")
     assert p.returncode == 3
     assert "terminal" in p.stderr
     assert world.git("rev-parse", "refs/heads/done")
@@ -152,7 +152,7 @@ def test_unmerged_branch_is_not_deleted(world):
     p = cli(
         world,
         "branch",
-        "delete",
+        "prune",
         "feature",
         "--yes",
         "--json",
@@ -206,7 +206,7 @@ def test_selector_requires_a_selection_then_confirmation(world, answer):
 
     world.merged_branch("one")
     world.merged_branch("two")
-    code, out = run_on_a_terminal(world, "gw branch delete", answer=answer)
+    code, out = run_on_a_terminal(world, "gw branch prune", answer=answer)
     assert code == (3 if answer == "9\n" else 0), out
     names = world.git(
         "for-each-ref", "--format=%(refname:short)", "refs/heads"
@@ -221,7 +221,7 @@ def test_all_deletes_only_proven_branches(world):
     p = cli(
         world,
         "branch",
-        "delete",
+        "prune",
         "--all",
         "--yes",
         "--json",
@@ -253,7 +253,7 @@ def test_deletion_rechecks_the_approved_state(world, changed):
 
 def test_completion_lists_names_without_querying_the_forge(world):
     world.merged_branch("one")
-    for entry in ("gw branch status", "gw branch delete"):
+    for entry in ("gw branch status", "gw branch prune"):
         p = cli(world, "--complete", entry=entry)
         assert p.returncode == 0, p.stderr
         assert {line.split("\t")[0] for line in p.stdout.splitlines()} == {
@@ -265,7 +265,7 @@ def test_completion_lists_names_without_querying_the_forge(world):
 def test_long_name_and_branch_help(world):
     p = cli(world, "branch", "--help", entry="main")
     assert p.returncode == 0
-    assert "status" in p.stdout and "delete" in p.stdout
+    assert "status" in p.stdout and "prune" in p.stdout
     p = cli(
         world,
         "branch",
@@ -313,7 +313,7 @@ def test_json_reports_only_successful_deletions(world, monkeypatch, capsys):
         return original(ref, sha, **kwargs)
 
     monkeypatch.setattr(prune, "ref_delete", fail_one)
-    code = C.gw(["branch", "delete", "one", "two", "--yes", "--json"])
+    code = C.gw(["branch", "prune", "one", "two", "--yes", "--json"])
     out = capsys.readouterr()
     assert code == 1
     result = json.loads(out.out)
@@ -324,7 +324,7 @@ def test_json_reports_only_successful_deletions(world, monkeypatch, capsys):
 
 def test_successful_deletion_is_reported_to_a_person(world):
     world.merged_branch("done")
-    p = cli(world, "branch", "delete", "done", "--yes")
+    p = cli(world, "branch", "prune", "done", "--yes")
     assert p.returncode == 0, p.stderr
     assert "deleted 1 branch: done" in p.stdout
 
@@ -334,7 +334,7 @@ def test_the_selector_and_the_plan_name_each_verdict(world):
     from test_cli import run_on_a_terminal
 
     world.merged_branch("done")
-    code, out = run_on_a_terminal(world, "gw branch delete", answer="1\nn\n")
+    code, out = run_on_a_terminal(world, "gw branch prune", answer="1\nn\n")
     assert code == 0, out
     rows = {
         ln.split()[2]: ln.split()[1]
@@ -357,3 +357,15 @@ def test_the_spinner_line_names_each_branch_and_how_far_along(world, monkeypatch
     branches.assess([], head, "main", "", ask_forge=False)
     assert "one: checking completion evidence (2 of 3)" in said
     assert "two: checking completion evidence (3 of 3)" in said
+
+
+def test_version_prints_the_repository_head(world):
+    p = cli(world, "version")
+    assert p.returncode == 0, p.stderr
+    assert "Head: main (inferred)" in p.stderr
+
+
+def test_remove_help_describes_removing_a_worktree(world):
+    p = cli(world, "remove", "--help")
+    assert p.returncode == 0, p.stderr
+    assert "remove a worktree" in p.stderr

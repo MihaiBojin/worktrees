@@ -103,7 +103,7 @@ __worktrees_branch_status() {
         '*:branch:{__worktrees_candidates branches branch branch status}'
 }
 
-__worktrees_branch_delete() {
+__worktrees_branch_prune() {
     _arguments -s \
         '--all[assess all local branches for deletion]' \
         '--dry-run[report without deleting]' \
@@ -114,7 +114,7 @@ __worktrees_branch_delete() {
         '(-v --verbose)'{-v,--verbose}'[print every command]' \
         '--explain[print every git command and exit]' \
         '(-h --help)'{-h,--help}'[show the help and exit]' \
-        '*:branch:{__worktrees_candidates branches branch branch delete}'
+        '*:branch:{__worktrees_candidates branches branch branch prune}'
 }
 
 _gw() {
@@ -124,7 +124,7 @@ _gw() {
     case $service in
         gwa) fixed=(add) ;;
         gwbc) fixed=(branch create) ;;
-        gwbd) fixed=(branch delete) ;;
+        gwbd) fixed=(branch prune) ;;
         gwbs) fixed=(branch status) ;;
         gwl) fixed=(list) ;;
         gwp) fixed=(prune) ;;
@@ -168,7 +168,7 @@ _gw() {
                             case $words[1] in
                                 create) __worktrees_branch_create ;;
                                 status) __worktrees_branch_status ;;
-                                delete) __worktrees_branch_delete ;;
+                                prune) __worktrees_branch_prune ;;
                             esac
                             ;;
                     esac

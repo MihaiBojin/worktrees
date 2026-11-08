@@ -498,7 +498,7 @@ def test_stashes_protect_loose_finished_branches(world):
     assert row["verdict"] == "remove"
     assert row["stashes"] == [stash]
     assert not row["eligible"]
-    result = run(world, "gw branch delete", "done", "--yes", "--json")
+    result = run(world, "gw branch prune", "done", "--yes", "--json")
     assert result.returncode == 3, result.stderr
     assert json.loads(result.stdout)["removed"] == []
     assert world.git("rev-parse", "done") == row["sha"]
@@ -523,7 +523,7 @@ def test_protected_branch_deletion_names_rule(world, name):
     world.git("update-ref", "refs/remotes/origin/trunk", "trunk")
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
     sha = world.git("rev-parse", f"refs/heads/{name}")
-    result = run(world, "gw branch delete", name, "--yes", "--json")
+    result = run(world, "gw branch prune", name, "--yes", "--json")
     assert result.returncode == 3, result.stderr
     assert "protected branch" in result.stderr
     assert world.git("rev-parse", f"refs/heads/{name}") == sha
@@ -602,7 +602,7 @@ def test_ignored_file_permission_cannot_prove_an_unfinished_branch(world):
     assert world.git("rev-parse", "refs/heads/busy") == sha
 
 
-@pytest.mark.parametrize("entry", ["gw branch status", "gw branch delete", "gw remove"])
+@pytest.mark.parametrize("entry", ["gw branch status", "gw branch prune", "gw remove"])
 def test_first_parent_history_is_reused_through_rechecks(world, entry):
     from worktrees import cli
     from worktrees.git import options
@@ -614,7 +614,7 @@ def test_first_parent_history_is_reused_through_rechecks(world, entry):
         world.merged_branch("one")
         world.merged_branch("two")
         args = ["--json"] + (
-            ["one", "two", "--yes"] if entry == "gw branch delete" else []
+            ["one", "two", "--yes"] if entry == "gw branch prune" else []
         )
     cli.gw([*entry.split()[1:], *args])
     calls = [argv for argv in options.log if "--first-parent" in argv]

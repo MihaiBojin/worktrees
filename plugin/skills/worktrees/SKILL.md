@@ -119,7 +119,7 @@ for a narrower approval or add `--keep-branch` on your own.
 Then invoke chosen loose branches, quoting every exact branch name:
 
 ```sh
-command gw branch delete 'NAME' 'OTHER_NAME' --yes
+command gw branch prune 'NAME' 'OTHER_NAME' --yes
 ```
 
 Add only their approved `--delete empty` or `--delete stashes` values. Split
