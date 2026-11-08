@@ -98,6 +98,7 @@ def test_every_skill_is_named_for_its_directory() -> None:
         "merge",
         "new-branch",
         "prune",
+        "ship-it",
     ]
     for path in SKILLS:
         front = _frontmatter(path)
@@ -105,8 +106,14 @@ def test_every_skill_is_named_for_its_directory() -> None:
         assert re.search(r"^description: ", front, re.M), path
 
 
-@pytest.mark.parametrize("path", SKILLS, ids=lambda p: p.parent.name)
+@pytest.mark.parametrize(
+    "path",
+    [p for p in SKILLS if p.parent.name != "ship-it"],
+    ids=lambda p: p.parent.name,
+)
 def test_no_skill_preapproves_a_mutation(path: Path) -> None:
+    """ship-it's job is publishing; test_ship_it_preapproves_publishing_alone
+    holds its list."""
     for tool in _tools(path):
         found = re.fullmatch(r"Bash\((.+?)(:\*)?\)", tool)
         if not found:
@@ -122,15 +129,16 @@ def test_no_skill_preapproves_a_mutation(path: Path) -> None:
             assert not covered, (tool, mutation)
 
 
-def test_only_describe_pr_edits_a_review() -> None:
-    """The user asked for descriptions to be corrected without a prompt."""
+def test_only_describe_pr_and_ship_it_edit_a_review() -> None:
+    """The user asked for descriptions to be corrected without a prompt, and
+    ship-it writes the review it opens."""
     for path in SKILLS:
         edits = [
             t
             for t in _tools(path)
             if t.startswith(("Bash(gh pr edit", "Bash(glab mr update"))
         ]
-        assert bool(edits) == (path.parent.name == "describe-pr"), path
+        assert bool(edits) == (path.parent.name in ("describe-pr", "ship-it")), path
 
 
 @pytest.mark.parametrize("path", sorted(PLUGIN.glob("skills/**/*.md")), ids=str)
@@ -345,6 +353,94 @@ def test_the_skill_names_the_fields_fast_forward_prints(world) -> None:
         fast_forward.CONFLICT,
         fast_forward.STASH_CONFLICT,
     }
+
+
+SHIP_IT = PLUGIN / "skills" / "ship-it" / "SKILL.md"
+RIGHTS = PLUGIN / "skills" / "ship-it" / "rights.md"
+
+
+def test_ship_it_preapproves_publishing_alone() -> None:
+    """Invoking ship-it is the approval for every step of publishing one
+    change, and for nothing that removes, bypasses or forces."""
+    tools = _tools(SHIP_IT)
+    for wanted in (
+        "gw branch create fix-parser --json",
+        "gw fast-forward --autostash --json",
+        "gw ci-checks 41 --wait --json",
+        "git add -- README",
+        "git commit -m subject",
+        "GIT_EDITOR=true git rebase --continue",
+        "git push --set-upstream origin fix-parser",
+        "git push --force-with-lease --force-if-includes origin fix-parser",
+        "gh pr create --base main --head fix-parser --title t --body-file f",
+        "gh pr edit 41 --body-file f",
+        "gh pr merge 41 --squash --subject s --body-file f --match-head-commit x",
+        "gh run rerun 7 --failed",
+        "glab mr create --target-branch main --source-branch x --title t --yes",
+        "glab mr merge 41 --squash --sha x --auto-merge=false",
+        "glab ci retry 7",
+    ):
+        assert _covers(tools, wanted), wanted
+    for refused in (
+        "gw prune --yes",
+        "gw remove x --yes",
+        "gw branch prune x --yes",
+        "gw add x",
+        "git push",
+        "git push --force origin x",
+        "git push origin --delete x",
+        "git add -A",
+        "git add .",
+        "git reset --hard",
+        "git stash",
+        "git rebase --skip",
+        "git rebase --abort",
+        "git switch main",
+        "git branch -D x",
+        "gh pr update-branch 1",
+    ):
+        assert not _covers(tools, refused), refused
+
+
+def test_ship_it_never_writes_a_flag_that_bypasses_or_forces() -> None:
+    """Its allow patterns match prefixes, so a trailing --force or --admin
+    would run unasked; the skill's own commands never carry one."""
+    commands = re.findall(r"^(?:gh|glab|git) .+$", SHIP_IT.read_text(), re.M)
+    assert commands
+    for command in commands:
+        words = shlex.split(command.replace('"$(cat FILE)"', "FILE"))
+        for flag in ("--force", "-f", "--admin", "--auto", "--delete-branch", "-A"):
+            assert flag not in words, command
+
+
+def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
+    """The rules a user adds are for the commands the skill runs, and every
+    command it runs that publishes has a rule."""
+    rules = re.findall(r'^  "Bash\((.+?) \*\)",?$', RIGHTS.read_text(), re.M)
+    # The allow list ends where the deny list starts.
+    allow = rules[: rules.index("git push --force")]
+    tools = {
+        found.group(1)
+        for tool in _tools(SHIP_IT)
+        if (found := re.fullmatch(r"Bash\((.+?):\*\)", tool))
+    }
+    assert set(allow) <= tools, set(allow) - tools
+    for publishing in (
+        "git commit",
+        "git push --set-upstream",
+        "git push --force-with-lease --force-if-includes",
+        "gh pr create",
+        "gh pr edit",
+        "gh pr merge",
+        "gh run rerun",
+        "glab mr create",
+        "glab mr update",
+        "glab mr merge",
+        "glab ci retry",
+        "gw fast-forward",
+        "gw branch create",
+    ):
+        assert publishing in allow, publishing
 
 
 def _skill_filter(skill: str, command: str, nth: int = 0) -> tuple[list[str], str]:

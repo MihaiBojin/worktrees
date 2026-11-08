@@ -125,8 +125,8 @@ title and body, which step 2 made true:
 
 - Subject: the title, then ` (#NUMBER)`, as GitHub would have written it.
 - Body: the pull request body, without the lines that only make sense on a
-  pull request page, such as a `Generated with` footer, screenshots or task
-  lists, and keeping any `release-note` block.
+  pull request page, such as a `Generated with` footer, the auto-resolution
+  block, screenshots or task lists, and keeping any `release-note` block.
 - Then every trailer from the branch's commits, copied from this output
   rather than retyped, once each:
 
@@ -140,13 +140,14 @@ then write the body to a file with the Write tool and merge:
 
 ```sh
 gh pr merge NUMBER --squash --subject 'SUBJECT' --body-file FILE --match-head-commit HEAD_SHA
-glab mr merge NUMBER --squash --squash-message "$(cat FILE)" --sha HEAD_SHA
+glab mr merge NUMBER --squash --squash-message "$(cat FILE)" --sha HEAD_SHA --auto-merge=false
 ```
 
 `--merge` or `--rebase` replace `--squash` for those strategies; a rebase
 takes no subject or body. `HEAD_SHA` is the `pr.headSha` CI passed on, so a
 push since then refuses the merge instead of landing unseen work. Never add
-`--admin`, `--auto` or `--delete-branch`.
+`--admin`, `--auto` or `--delete-branch`. glab sets auto-merge by default
+while a pipeline runs, which `--auto-merge=false` turns off.
 
 Then read it back:
 
