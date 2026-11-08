@@ -15,21 +15,21 @@ reaches for one on its own when a task matches its description.
 
 ## Install
 
-The plugin is listed in the `release-tools` marketplace, pinned to a release
+The plugin is listed in the `mihaibojin` marketplace, pinned to a release
 of this repository.
 
 Claude Code:
 
 ```shell
-claude plugin marketplace add releasetools/agent-plugins
-claude plugin install worktrees@release-tools
+claude plugin marketplace add MihaiBojin/agent-plugins
+claude plugin install worktrees@mihaibojin
 ```
 
 Codex:
 
 ```shell
-codex plugin marketplace add releasetools/agent-plugins
-codex plugin add worktrees@release-tools
+codex plugin marketplace add MihaiBojin/agent-plugins
+codex plugin add worktrees@mihaibojin
 ```
 
 ## Requirements
