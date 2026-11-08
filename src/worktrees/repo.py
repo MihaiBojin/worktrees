@@ -434,9 +434,13 @@ class Head:
     source: str
     branch: str
     other: bool = False
+    # The ref a remote HEAD resolves to, exactly as git named it.
+    target: str | None = None
 
     def data(self) -> dict:
-        return {"ref": self.ref, "source": self.source}
+        """The ref the head resolves to: `refs/remotes/origin/main`, not
+        `refs/remotes/origin/HEAD`, which every clone would report alike."""
+        return {"ref": self.target or self.ref, "source": self.source}
 
     @property
     def unresolved(self) -> str:
@@ -467,7 +471,9 @@ def head(repo: str | os.PathLike[str] | None = None) -> Head:
             ref_exists(target, repo=repo)
         )
         branch = target.removeprefix(f"refs/remotes/{remote_name}/")
-        return Head(remote_head if valid else None, source, branch)
+        if not valid:
+            return Head(None, source, branch)
+        return Head(remote_head, source, branch, target=target)
     found = [
         name
         for name in ("main", "master")

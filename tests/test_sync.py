@@ -134,13 +134,13 @@ def test_clone_head_becomes_synced_remote_head(world, network, entry):
     origin(world)
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     assert listing(world, network, entry)["head"] == {
-        "ref": "refs/remotes/origin/HEAD",
+        "ref": "refs/remotes/origin/main",
         "source": "clone",
     }
     proc = cli(world, "sync", env=network.env())
     assert proc.returncode == 0, proc.stderr
     data = listing(world, network, entry)
-    assert data["head"] == {"ref": "refs/remotes/origin/HEAD", "source": "remote"}
+    assert data["head"] == {"ref": "refs/remotes/origin/main", "source": "remote"}
     for timestamp in data["lastSync"].values():
         assert timestamp.endswith("Z")
         assert datetime.fromisoformat(timestamp.replace("Z", "+00:00")).tzinfo == UTC

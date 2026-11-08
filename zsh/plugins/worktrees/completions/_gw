@@ -1,4 +1,4 @@
-#compdef gw worktrees gwa gwbc gbwp gwbs gwl gwp gwp! gwpa gwpa! gwr gwr! gwrot gws
+#compdef gw worktrees gwa gwbc gwbp gwbs gwl gwp gwp! gwpa gwpa! gwr gwr! gwrot gws
 
 # Flags as `gw <command> --help` lists them, and candidates from the CLI.
 # A shortcut completes as the gw command it runs: gwa as `gw add`.
@@ -125,7 +125,7 @@ _gw() {
     case $service in
         gwa) fixed=(add) ;;
         gwbc) fixed=(branch create) ;;
-        gbwp) fixed=(branch prune) ;;
+        gwbp) fixed=(branch prune) ;;
         gwbs) fixed=(branch status) ;;
         gwl) fixed=(list) ;;
         gwp) fixed=(prune) ;;

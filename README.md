@@ -24,7 +24,7 @@ other repositories under the same worktree root are outside their scope.
 | `gw prune` | `gwp` | confirm and remove eligible worktrees |
 | `gw remove [NAME\|PATH]` | `gwr` | remove one worktree and its finished branch |
 | `gw branch status [NAME ...]` | `gwbs` | assess local branches without worktrees |
-| `gw branch prune [NAME ...]` | `gbwp` | confirm and delete eligible loose branches |
+| `gw branch prune [NAME ...]` | `gwbp` | confirm and delete eligible loose branches |
 | `gw add NAME [BASE]` | `gwa` | create or enter a worktree |
 | `gw branch create NAME` | `gwbc` | start a branch from the assessed head ref |
 | `gw rotate` | `gwrot` | start the next branch in a series, or fast-forward the head branch |
@@ -423,12 +423,14 @@ Every JSON result is an object with `lastSync` and `head`:
 ```json
 {
   "lastSync": {"refs": "2026-11-05T10:00:00Z", "forge": null},
-  "head": {"ref": "refs/remotes/origin/HEAD", "source": "remote"}
+  "head": {"ref": "refs/remotes/origin/main", "source": "remote"}
 }
 ```
 
 Times are UTC RFC 3339 or null. A time does not mean every branch has forge
-evidence. Head source is `remote`, `clone` or `inferred`; unresolved `ref` is
+evidence. Head source is `remote`, `clone` or `inferred`. `ref` is the branch
+the head resolves to: the remote-tracking ref a remote HEAD points at, or
+`refs/heads/main` or `refs/heads/master` when inferred. Unresolved `ref` is
 null. Worktree assessment has `verdicts`, with `verdict`, `eligible`,
 `protections`, `stashes`, exact `path`, `branch`, `sha` and proof fields.
 `gw list --json` puts its rows in `worktrees`.
@@ -442,7 +444,7 @@ gw list --json | jq -r '.worktrees[].path'
 
 | Removed interface | Current interface |
 | --- | --- |
-| `gwa`, `gwp`, `gwr`, `gwbs`, `gbwp`, `gwbc`, `gwrot` binaries | `gw` subcommands, or the plugin's shortcuts |
+| `gwa`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwbc`, `gwrot` binaries | `gw` subcommands, or the plugin's shortcuts |
 | `gws` as assessment, `gw status`, `gw s`, `gw st` | `gw prune --json`; `gws` now runs `gw sync` |
 | `gwp --dry-run` | `gw prune --json` or `gw prune --table` |
 | `gw list --list`, `gw list -l`, `gw prune --list` | `gw list --table`, `gw prune --table` |

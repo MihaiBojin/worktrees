@@ -7,7 +7,7 @@
 0="${${(M)0:#/*}:-$PWD/$0}"
 
 fpath+=("${0:h}/functions" "${0:h}/completions")
-autoload -Uz gw gwa gwbc gbwp gwbs gwl gwp 'gwp!' gwpa 'gwpa!' gwr 'gwr!' gwrot gws
+autoload -Uz gw gwa gwbc gwbp gwbs gwl gwp 'gwp!' gwpa 'gwpa!' gwr 'gwr!' gwrot gws
 
 # The release this plugin came from, which `gw --help` and `gw version` compare
 # with their own. Exported, because the environment is all a binary can see
