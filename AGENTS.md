@@ -95,7 +95,10 @@ asks each commit below the tip, from the tip down, since the first of a
 squashed pair is not upstream on its own. A branch whose merged part is
 another branch's, a stacked one whose parent merged, keeps its name and its
 open request, and drops the merged commits in place with the same
-`git rebase --onto`.
+`git rebase --onto`. When the parent gained commits before it merged, its
+squash holds more than the two share, so no local proof marks the shared
+part; `branch_forge.carried_by` asks the forge which merged request carried
+the branch's oldest commit, and that request's commit list marks it.
 A merged branch's name stays with its merged request on the forge, so the
 finished branch keeps its name and commits and the checkout moves to
 `YYYY-MM-DDThh-mm-ssZ/<stem>` in UTC, or to the NAME given, from the head

@@ -228,9 +228,15 @@ def fast_forward(
     if verdict == "remove":
         found = (tip, proof, why)
     elif verdict == "keep":
-        found = _forge_boundary(
-            request, branch, tip, head_sha, resolved.branch, repo
-        ) or merged.boundary(tip, head_sha, repo)
+        found = (
+            _forge_boundary(request, branch, tip, head_sha, resolved.branch, repo)
+            or merged.boundary(tip, head_sha, repo)
+            or (
+                _parent_boundary(branch, tip, head_sha, resolved.branch, remote, repo)
+                if live
+                else None
+            )
+        )
     # A finished branch moves to a new one, and so does a partly merged one
     # whose own request merged, since the name stays with that request. One
     # whose merged part is another branch's, a stacked branch whose parent
@@ -358,6 +364,51 @@ def _forge_boundary(
         f"{request.noun} #{request.number} merged its first commits "
         "into the head branch",
     )
+
+
+def _parent_boundary(
+    branch: str,
+    tip: str,
+    head: str,
+    head_branch: str,
+    remote: str,
+    repo: str | os.PathLike[str] | None,
+) -> tuple[str, str, str] | None:
+    """The newest of the branch's commits another branch's merged request
+    carried, its proof and why.
+
+    For a branch stacked on one whose request squash-merged after the parent
+    gained commits of its own: the squash holds more than the commits the two
+    share, so neither ancestry nor content can mark where the parent's part
+    ends. Its request can, from the branch's oldest commit. Only a request
+    into the head branch whose merge commit the fetched head ref holds counts.
+    """
+    own = merged.own_commits(head, tip, repo=repo).lines
+    if not own:
+        return None
+    answered, carried = branch_forge.carried_by(own[-1], remote, repo)
+    if not answered:
+        raise Unfetched(
+            "the forge could not be asked which request carried the first "
+            f"commit of {render.branch(branch)}"
+        )
+    for request in carried:
+        if request.source_branch == branch or request.target_branch != head_branch:
+            continue
+        if not merged.tree_of(request.merge_sha, repo=repo) or not merged.is_ancestor(
+            request.merge_sha, head, repo=repo
+        ):
+            continue
+        point = next((commit for commit in own if commit in request.commits), "")
+        if point:
+            return (
+                point,
+                "forge",
+                f"{request.noun} #{request.number} from "
+                f"{render.branch(request.source_branch)} merged its commits up to "
+                f"{_short(point, repo=repo)}",
+            )
+    return None
 
 
 def stopped_rebase(repo: str | os.PathLike[str] | None = None) -> Moved | None:

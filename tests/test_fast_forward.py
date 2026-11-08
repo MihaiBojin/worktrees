@@ -929,9 +929,10 @@ def test_the_forge_marks_where_a_squash_merge_ended(world, network) -> None:
 def test_the_live_query_asks_for_merged_requests(world, network, host) -> None:
     """--limit 1 of any state would hide a merged request behind a newer one
     opened from the same branch."""
-    with_work(world)
+    tip = with_work(world)
     advance(world)
     on_forge(world, host)
+    network.answer({"$api": {carriers(host, tip): []}})
 
     p = gw_ff_online(world, network, "--json")
     assert p.returncode == 0, p.stderr
@@ -1112,3 +1113,132 @@ def test_a_stacked_branch_with_no_merged_request_keeps_its_name(world, network) 
     payload = json.loads(p.stdout)
     assert (payload["result"], payload["branch"]) == ("rebased", "child")
     assert world.git("rev-parse", "HEAD~1") == head
+
+
+# --------------------------------------------------------------------------
+# a stacked branch whose parent gained commits before it merged
+# --------------------------------------------------------------------------
+
+
+def carriers(host: str, sha: str) -> str:
+    """The API path that lists the requests that carried `sha`."""
+    if host == "github.com":
+        return f"repos/owner/repo/commits/{sha}/pulls"
+    return f"projects/owner%2Frepo/repository/commits/{sha}/merge_requests"
+
+
+def carried(host: str, merge: str, commits: list[str], **changes) -> dict:
+    """The forge's answers for parent's request, merged as `merge`."""
+    if host == "github.com":
+        row = {
+            "number": 1,
+            "state": "closed",
+            "merged_at": "2026-11-08T00:00:00Z",
+            "head": {"ref": "parent", "sha": commits[-1]},
+            "base": {"ref": "main", "repo": {"full_name": "owner/repo"}},
+            "merge_commit_sha": merge,
+        }
+        listed = "repos/owner/repo/pulls/1/commits?per_page=100"
+        shas = [{"sha": c} for c in commits]
+    else:
+        row = {
+            "iid": 1,
+            "state": "merged",
+            "web_url": "https://gitlab.com/owner/repo/-/merge_requests/1",
+            "source_branch": "parent",
+            "target_branch": "main",
+            "merge_commit_sha": merge,
+        }
+        listed = "projects/owner%2Frepo/merge_requests/1/commits?per_page=100"
+        shas = [{"id": c} for c in commits]
+    return {carriers(host, commits[0]): [{**row, **changes}], listed: shas}
+
+
+def outgrown(world) -> tuple[str, str, str]:
+    """parent commits A, child stacks B on it, parent goes on with A2, and
+    main squash-merges parent. Returns A, A2 and the squash."""
+    world.git("switch", "--quiet", "--create", "parent")
+    first = world.commit("x.txt", "1\n")
+    world.git("switch", "--quiet", "--create", "child")
+    world.commit("b.txt", "b\n")
+    world.git("switch", "--quiet", "parent")
+    later = world.commit("x.txt", "2\n")
+    world.git("switch", "--quiet", "main")
+    world.git("merge", "--quiet", "--squash", "parent")
+    world.git("commit", "--quiet", "-m", "parent (#1)")
+    squash = world.git("rev-parse", "HEAD")
+    world.git("switch", "--quiet", "child")
+    return first, later, squash
+
+
+def test_raw_git_replays_a_parent_commit_the_squash_outgrew(world) -> None:
+    """What the forge is asked for: A's patch is not the squash's, and x.txt
+    differs from main, so git replays A and stops."""
+    from worktrees import merged
+
+    _, _, squash = outgrown(world)
+    tip = world.git("rev-parse", "child")
+    assert merged.boundary(tip, squash, repo=world.repo) is None
+    raw = subprocess.run(
+        ["git", "rebase", "--no-autostash", "main"],
+        cwd=world.repo,
+        capture_output=True,
+        text=True,
+    )
+    assert raw.returncode != 0
+    assert rebasing(world)
+
+
+@pytest.mark.parametrize("host", ["github.com", "gitlab.com"])
+def test_the_parents_merged_request_marks_its_commits(world, network, host) -> None:
+    first, later, squash = outgrown(world)
+    on_forge(world, host)
+    network.answer({"$api": carried(host, squash, [first, later])})
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["branch"], payload["proof"]) == (
+        "rebased",
+        "child",
+        "forge",
+    )
+    assert payload["boundary"] == world.git("rev-parse", "--short", first)
+    assert payload["carried"] == 1
+    assert world.git("rev-parse", "HEAD~1") == squash
+    assert world.git("log", "-1", "--format=%s") == "b.txt"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"base": {"ref": "release", "repo": {"full_name": "owner/repo"}}},
+        {"base": {"ref": "main", "repo": {"full_name": "fork/repo"}}},
+        {"merged_at": None},
+        {"head": {"ref": "child", "sha": "x"}},
+        {"merge_commit_sha": "0" * 40},
+    ],
+    ids=["target", "repository", "unmerged", "its own", "merge not in head"],
+)
+def test_a_request_that_does_not_verify_marks_nothing(world, network, change) -> None:
+    first, later, squash = outgrown(world)
+    on_forge(world)
+    network.answer({"$api": carried("github.com", squash, [first, later], **change)})
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 1
+    assert json.loads(p.stdout)["result"] == "conflict"
+
+
+def test_a_forge_that_cannot_say_what_carried_the_branch_refuses(
+    world, network
+) -> None:
+    outgrown(world)
+    on_forge(world)
+    before = world.git("rev-parse", "HEAD")
+
+    p = gw_ff_online(world, network)
+    assert p.returncode == 1
+    assert "the forge could not be asked which request carried" in p.stderr
+    assert p.stderr.rstrip().endswith("Run: WORKTREES_OFFLINE=1 gw fast-forward")
+    assert world.git("rev-parse", "HEAD") == before
