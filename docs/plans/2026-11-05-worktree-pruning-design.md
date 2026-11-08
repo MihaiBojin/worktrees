@@ -211,9 +211,20 @@ An unmatched name fails without changing anything.
 
 ## 11. Synchronization and cache
 
-`gw sync` fetches the default remote, runs `git remote set-head <remote> --auto`, and queries the forge
-for every local branch tip, including branches checked out in worktrees. Other remotes are not fetched
-and play no part in verdicts.
+`gw sync` fetches every remote `git fetch --all` would, the default remote first and always, each with
+`git fetch --prune --tags --no-prune-tags`. It then runs `git remote set-head <remote> --auto` for the
+default remote and queries the forge for every local branch tip, including branches checked out in
+worktrees, on eight threads. Only the default remote plays a part in verdicts.
+
+Fetching prunes remote-tracking refs and never local tags, whatever `fetch.pruneTags` says. A tag that
+moved on the remote stays at its local commit: Git refuses to move it, and sync warns, names it and
+prints `git fetch --tags --force <remote>`. Any other ref Git refuses fails that remote's fetch.
+
+Before fetching anything, sync refuses a remote whose `remote.<name>.fetch` writes outside
+`refs/remotes/<name>/`. `git clone --mirror` sets `+refs/*:refs/*`, and with `--prune` that deletes
+every local branch the remote lacks, including one checked out in a linked worktree, at exit 0. It
+also refuses a default remote whose refspecs update nothing in `refs/remotes/<name>/`, as `git clone
+--bare` leaves it. The refusal prints the `git config` command that fixes the refspec.
 
 The cache is one file in the Git common directory, shared by every worktree and replaced atomically. It
 records the default remote's name and URL; if either changes, the cache is ignored and the repository
@@ -226,14 +237,19 @@ the last sync has no forge evidence until the next one; local proof still applie
 | --- | --- | --- | --- | --- |
 | Fetch and queries succeed | advances | advances | 0 | yes |
 | Query finds no request | advances | advances | 0 | none, recorded as "no request" |
-| Fetch fails | unchanged | unchanged | nonzero | previous evidence only |
+| Default remote's fetch fails | unchanged | unchanged | nonzero | previous evidence only |
+| Another remote's fetch fails | advances | advances | nonzero | yes |
+| A remote tag moved | advances | advances | 0, with a warning | yes |
+| `set-head` fails | advances | advances | nonzero | yes |
+| A refspec writes outside `refs/remotes/<name>/` | unchanged | unchanged | nonzero | previous evidence only; nothing fetched |
 | Host is not a known forge | advances | `null` | 0 | none |
 | `gh` or `glab` missing or unauthenticated | advances | unchanged | nonzero | previous evidence only |
 | Query fails for a branch | advances | unchanged | nonzero | none for that branch |
 | No remote | `null` | `null` | 0 | none; head inferred |
-| Several remotes, no `checkout.defaultRemote` | unchanged | unchanged | nonzero | none |
+| Several remotes, no `checkout.defaultRemote` | unchanged | unchanged | nonzero | none; every remote fetched |
 
-The last row's message lists the remotes and prints `git config checkout.defaultRemote <name>`.
+With no remote, sync prints `No remote to sync.` With several remotes and no default, it fetches them all,
+then lists them and prints `git config checkout.defaultRemote <name>`.
 Missing, malformed or mismatched cache entries are never proof.
 
 ## 12. Offline rule

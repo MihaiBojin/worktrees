@@ -301,13 +301,14 @@ and not the key. `--json` and `gw list --table` are never painted at all, even
 on a terminal: both are what a script reads. The colour is applied at the
 call site that formats a table, and neither path passes a code to one.
 
-`progress.py` draws a spinner on stderr and one line saying what is being
-checked, while `gw sync`, `gw prune`, `gw remove`, `gw branch status` and
-`gw branch delete` assess or mutate. It runs only when
-stderr is a terminal that can clear a line, and never under `-q` or `-v`,
-since the verbose log writes to the line it redraws. Anything else printed on
-stderr while it spins goes through `progress.line`, which clears the spinner
-first.
+`progress.py` draws a spinner on stderr and one line per running thread
+saying what it is checking, while `gw sync`, `gw prune`, `gw remove`,
+`gw branch status` and `gw branch delete` assess or mutate. A thread's line
+goes when the thread ends, and every line is cut to the terminal width so
+the redraw can count its rows. It runs only when stderr is a terminal that
+can clear a line, and never under `-q` or `-v`, since the verbose log writes
+to the lines it redraws. Anything else printed on stderr while it spins goes
+through `progress.line`, which clears the spinner first.
 
 Every message on stderr goes through `render.fail`, `render.warn` or
 `render.note`, a usage error and a cancelled picker included. On a terminal
@@ -332,8 +333,13 @@ when eight threads are asking at once.
 
 ## Only explicit sync uses the network
 
-`gw sync` fetches the default remote, updates its remote HEAD and queries the
-forge for every local branch tip. Every other command stays offline. The
+`gw sync` fetches every remote with `--prune --tags --no-prune-tags`, the
+default first, updates the default remote's HEAD and queries the forge for
+every local branch tip on eight threads. Every other command stays offline.
+It refuses, before fetching, any remote whose refspec writes outside its own
+`refs/remotes/<name>/`, since a mirror refspec with `--prune` deletes local
+branches. Git refusing a moved tag is a warning; any other refused ref fails
+that remote. The fetch runs in the C locale so sync can read which it was. The
 shared `git-worktrees-sync.json` cache in the Git common directory records
 remote name/URL, successful sync times and source-tip forge evidence. Sync
 replaces it atomically. Remote identity changes invalidate it; malformed or

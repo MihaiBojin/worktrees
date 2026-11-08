@@ -1395,7 +1395,7 @@ def test_quiet_omits_progress_on_stderr_terminal(world, flag):
             if child >= 0:
                 os.close(child)
             os.close(parent)
-    assert b"\r\x1b[2K" in outputs[0] and b"Head:" in outputs[0]
+    assert b"\r\x1b[J" in outputs[0] and b"Head:" in outputs[0]
     # Nothing is wrong here, so quiet leaves the terminal untouched.
     assert outputs[1] == b""
 

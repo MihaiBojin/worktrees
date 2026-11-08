@@ -61,14 +61,17 @@ def run_sync(args: argparse.Namespace) -> int:
 
     options.verbose = args.verbose
     with progress.running(not args.quiet and not args.verbose):
-        code, messages = sync.run()
-    for message in messages:
+        code, failures, warnings = sync.run()
+    for message in failures:
         _err(render.fail(message))
+    if not args.quiet:
+        for message in warnings:
+            _err(render.warn(message))
     if args.json:
         print(_json({}))
     elif not args.quiet:
         if not code:
-            print("Sync complete.")
+            print("Sync complete." if R.remotes().lines else "No remote to sync.")
         _err(render.note(sync.head_line(R.head())))
     return code
 

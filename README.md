@@ -20,7 +20,7 @@ other repositories under the same worktree root are outside their scope.
 | --- | --- | --- |
 | `gw`, `gw --help` | | print every command, its aliases and its shortcuts |
 | `gw list [QUERY] [flags]` | `gwl` | list worktrees or choose a destination in a terminal |
-| `gw sync` | `gws` | fetch the default remote and refresh forge evidence |
+| `gw sync` | `gws` | fetch every remote and refresh forge evidence |
 | `gw prune` | `gwp` | confirm and remove eligible worktrees |
 | `gw remove [NAME\|PATH]` | `gwr` | remove one worktree and its finished branch |
 | `gw branch status [NAME ...]` | `gwbs` | assess local branches without worktrees |
@@ -326,15 +326,23 @@ warning and the head line, and JSON carries both states in `lastSync` and
 `head`. Repositories without remotes have neither sync warning.
 
 The default remote is `checkout.defaultRemote`, or the only remote. Several
-remotes without that setting make sync refuse and print the configuration
-command. Other remotes do not affect verdicts.
+remotes without that setting are all fetched, then sync fails and prints the
+configuration command. Other remotes do not affect verdicts.
 
-`gw sync` fetches that remote, updates its remote HEAD, then queries GitHub
-or GitLab for every local branch tip. A fetch failure leaves both times
-unchanged. Forge failure can leave refs refreshed while returning failure;
-an unsupported forge leaves its time null. No remote is a successful local
-case with both times null. [The reference](docs/REFERENCE.md) lists each
-partial outcome.
+`gw sync` fetches every remote, the default one first, with all their tags.
+It updates the default remote's HEAD, then queries GitHub or GitLab for every
+local branch tip, eight at a time. It prunes remote-tracking refs and never
+a local tag. A tag that moved on the remote keeps its local commit, with a
+warning that prints `git fetch --tags --force <remote>`.
+
+A remote whose fetch refspec writes outside `refs/remotes/<name>/`, such as
+the `+refs/*:refs/*` that `git clone --mirror` sets, makes sync refuse before
+fetching: with `--prune` it would delete local branches the remote lacks.
+
+A failed fetch of the default remote leaves both times unchanged. Forge
+failure can leave refs refreshed while returning failure; an unsupported
+forge leaves its time null. No remote is a successful local case with both
+times null. [The reference](docs/REFERENCE.md) lists each partial outcome.
 
 The shared cache, `git-worktrees-sync.json` in the Git common directory,
 records remote name/URL, successful sync times and forge evidence keyed by
