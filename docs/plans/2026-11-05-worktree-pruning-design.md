@@ -1,10 +1,11 @@
 # Worktree pruning and synchronization design
 
 The CLI assesses the branches and worktrees of the current repository, removes the ones it can prove are
-finished, and reads remote evidence that only `gw sync` fetches. The agent plugin runs the same commands
-a person does and shows the CLI's verdicts.
+finished, and reads remote evidence that `gw sync` fetches, which every other command runs first once the
+last sync is a minute old. The agent plugin runs the same commands a person does and shows the CLI's
+verdicts.
 
-Status: implemented in #123 to #130 and revised through #175. Open follow-ups: #164 and #165.
+Status: implemented in #123 to #130 and revised through #186. Open follow-ups: #164 and #165.
 
 ## 1. Terms
 
@@ -35,7 +36,10 @@ worktree root are neither assessed nor removed.
 | `gw remove PATH\|NAME` with terminal input or `--yes` | Remove one worktree (sections 9 and 10). | Yes |
 | `gw branch status` | Assess local branches that have no worktree. Rejects `--delete`. | No |
 | `gw branch prune NAME...` | Delete eligible loose branches. | Yes |
-| `gw sync` | Fetch every remote, then the default remote's head and forge evidence (section 11). The only command that uses the network. | Refs, cache |
+| `gw sync` | Fetch every remote, then the default remote's head and forge evidence (section 11). Every other command but `gw version`, help and completion runs it first when it is due (section 12). | Refs, cache |
+
+The sync a command runs first writes remote-tracking refs, the remote's new tags and the cache, whatever
+the last column says.
 
 `gw` is the only console script, and `worktrees` is its long name. Every command is a `gw`
 subcommand; the shell plugin's shortcuts (section 17) are other spellings of them.
@@ -258,12 +262,21 @@ With no remote, sync prints `No remote to sync.` With several remotes and no def
 then lists them and prints `git config checkout.defaultRemote <name>`.
 Missing, malformed or mismatched cache entries are never proof.
 
-## 12. Offline rule
+## 12. Sync before a command
 
-No command except `gw sync` runs `git fetch`, `git remote set-head`, `gh` or `glab`. The options
-`--no-fetch`, `--no-forge`, `--force-refresh` and their short aliases no longer exist.
+Only sync runs `git fetch`, `git remote set-head`, `gh` or `glab`: `gw sync`, or the sync every other
+command but `gw version`, help and completion runs first when one is due. It is due when the default
+remote's `refs` time is `null` or at least `WORKTREES_SYNC_TTL` seconds old, 60 when the variable is unset
+or empty, and `0` makes every command sync. Any value but whole seconds is a usage error at exit 2. The
+forge time is not read, since a forge that keeps failing would make every command sync, and a repository
+without a default remote never syncs first. A failed sync warns on stderr, `-q` and `--json` hide the
+warning, and the command goes on with its own stdout and exit status.
 
-A partial clone never fetches a missing object on an offline command's behalf. A proof that needs
+`WORKTREES_OFFLINE`, when non-empty, turns sync off: nothing syncs first, `gw sync` refuses at exit 3,
+and the lines in section 13 end without `Run: gw sync`. The options `--no-fetch`, `--no-forge`,
+`--force-refresh` and their short aliases no longer exist.
+
+A partial clone never fetches a missing object on an assessment's behalf. A proof that needs
 one gives `unknown`, and human output warns once that `git backfill` fetches what is missing. `-q`
 and `--json` omit the warning.
 
@@ -399,7 +412,9 @@ The skill pre-approves `gw sync`, `gw list --json`, `gw list --table`, `gw prune
 - `gws` runs `gw sync`, which fetches, instead of assessing.
 - New verdict `empty`; new `--delete` values; `main` and `master` always protected.
 - `gw list --json` returns an object with a `worktrees` array; every JSON result carries `lastSync` and `head`.
-- No command except `gw sync` fetches.
+- Every command but `gw version`, help and completion syncs first once the last sync is
+  `WORKTREES_SYNC_TTL` seconds old, 60 by default. `WORKTREES_OFFLINE` keeps every command off the
+  network in place of `--no-fetch`.
 
 Help, examples, fish and zsh completions, shortcut tests, plugin filters and command documentation
 change with the code. `MihaiBojin/agent-plugins` at `8390c6d` has five Origin
