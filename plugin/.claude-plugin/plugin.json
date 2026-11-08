@@ -1,7 +1,7 @@
 {
   "name": "worktrees",
   "version": "0.7.0",
-  "description": "Remove the git worktrees and branches the worktrees CLI proves finished, after asking",
+  "description": "Rebase a branch onto the head branch through its conflicts, and remove the git worktrees and branches the worktrees CLI proves finished",
   "author": {
     "name": "Mihai Bojin",
     "url": "https://github.com/MihaiBojin"
@@ -9,5 +9,5 @@
   "homepage": "https://github.com/MihaiBojin/worktrees/tree/main/plugin#readme",
   "repository": "https://github.com/MihaiBojin/worktrees",
   "license": "Apache-2.0",
-  "keywords": ["git", "worktree", "branch", "prune", "squash-merge"]
+  "keywords": ["git", "worktree", "branch", "prune", "squash-merge", "rebase"]
 }

@@ -191,3 +191,83 @@ def test_branch_filter_preserves_sync_and_empty_rows(world) -> None:
     assert out["lastSync"] == raw["lastSync"]
     assert [v["branch"] for v in out["empty"]] == ["empty"]
     assert out["branches"] == [v for v in raw["verdicts"] if v["eligible"]]
+
+
+FAST_FORWARD = PLUGIN / "skills" / "fast-forward" / "SKILL.md"
+
+
+def _tools(path: Path) -> list[str]:
+    return re.findall(r"^  - (.+)$", path.read_text().split("---")[1], re.M)
+
+
+def _covers(tools: list[str], command: str) -> bool:
+    """Would one of these allowed-tools patterns run `command` unasked?"""
+    for tool in tools:
+        found = re.fullmatch(r"Bash\((.+?)(:\*)?\)", tool)
+        if found and (
+            command == found.group(1)
+            or (found.group(2) and command.startswith(found.group(1)))
+        ):
+            return True
+    return False
+
+
+@pytest.mark.parametrize(
+    "path", [PLUGIN / "commands" / "fast-forward.md", FAST_FORWARD]
+)
+def test_fast_forward_preapproves_the_conflict_loop_alone(path: Path) -> None:
+    """The loop the issue asks for runs unasked; anything that drops a
+    commit, discards a resolution or leaves the checkout does not."""
+    tools = _tools(path)
+    for wanted in (
+        "gw fast-forward --json",
+        "git add README",
+        "GIT_EDITOR=true git rebase --continue",
+    ):
+        assert _covers(tools, wanted), wanted
+    for refused in (
+        "git rebase --skip",
+        "git rebase --abort",
+        "git rebase main",
+        "git reset --hard",
+        "git checkout --theirs README",
+        "git stash",
+        "git switch main",
+        "git push",
+        "gw sync",
+    ):
+        assert not _covers(tools, refused), refused
+
+
+def test_the_skill_names_the_fields_fast_forward_prints(world) -> None:
+    """Every field and result the skill reads is one the CLI prints."""
+    from worktrees import fast_forward
+
+    listed = FAST_FORWARD.read_text().split("The result's fields:")[1]
+    listed = listed.split("\n\n")[1]
+    bullets = [line.removeprefix("- ").split(": ", 1) for line in listed.splitlines()]
+    fields = {name for names, _ in bullets for name in re.findall(r"`(\w+)`", names)}
+    results = set(re.findall(r"`([a-z-]+)`", bullets[0][1]))
+
+    world.git("switch", "--quiet", "--create", "fix-parser")
+    world.commit("README", "branch\n")
+    world.git("switch", "--quiet", "main")
+    world.commit("README", "main\n")
+    world.git("switch", "--quiet", "fix-parser")
+    proc = subprocess.run(
+        argv("gw fast-forward", "--json"),
+        cwd=world.repo,
+        env=env_for(world),
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 1, proc.stderr
+    printed = json.loads(proc.stdout)
+    assert fields == set(printed) - {"head", "lastSync"}
+    assert results == {
+        fast_forward.CURRENT,
+        fast_forward.FAST_FORWARDED,
+        fast_forward.REBASED,
+        fast_forward.ROTATED,
+        fast_forward.CONFLICT,
+    }

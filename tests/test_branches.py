@@ -368,4 +368,4 @@ def test_version_prints_the_repository_head(world):
 def test_remove_help_describes_removing_a_worktree(world):
     p = cli(world, "remove", "--help")
     assert p.returncode == 0, p.stderr
-    assert "remove a worktree" in p.stderr
+    assert "Remove one worktree and its branch" in p.stderr
