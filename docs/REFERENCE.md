@@ -225,7 +225,9 @@ the branch; a detached worktree's `undo` is null. Worktree rows add exact
 `ignored`; branch rows add `paths` and `error`. `gw prune --json` also
 carries `stale`, the paths of worktree records whose directories are gone, and
 `neighbours`, the count of worktrees under the shared root that belong to
-another repository.
+another repository. `gw branch status --json` and `gw branch prune --json`
+carry `head_sha`, the commit the head ref named when the branches were
+assessed, or an empty string when the head does not resolve.
 `gw list --json` puts navigation rows in `worktrees`, with `branch`, `path`,
 `main`, `here` and `flags`. Do not apply a top-level array filter.
 
