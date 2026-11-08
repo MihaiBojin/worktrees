@@ -738,6 +738,193 @@ def test_the_source_branch_stashes_are_listed_split_at_the_boundary(world) -> No
     assert len(world.git("stash", "list").splitlines()) == 2
 
 
+def stash_on_tip(world) -> str:
+    """Staged, unstaged and untracked work on the tip, stashed; its sha."""
+    (world.repo / "y.txt").write_text("staged\n")
+    world.git("add", "y.txt")
+    (world.repo / "y.txt").write_text("unstaged\n")
+    (world.repo / "u.txt").write_text("untracked\n")
+    world.git("stash", "push", "--quiet", "--include-untracked", "-m", "late")
+    return world.git("rev-parse", "stash@{0}")
+
+
+def matching(world, branch: str) -> list[str]:
+    from worktrees import prune
+
+    entries = prune.stash_list(repo=world.repo).lines
+    return prune.stashes_on(branch, entries, repo=world.repo)
+
+
+def test_raw_git_rebase_leaves_a_stash_on_no_branch(world) -> None:
+    """What the move below exists for: rebased in place, the branch's commits
+    are new ones, and the stash made on the old tip matches none of them."""
+    merged_up_to, _ = partly_merged(world)
+    stash = stash_on_tip(world)
+    assert matching(world, "fix-parser") == [stash]
+    world.git("rebase", "--quiet", "--no-autostash", "--onto", "main", merged_up_to)
+    assert matching(world, "fix-parser") == []
+    assert world.git("stash", "list", "--format=%H") == stash
+
+
+def test_a_stash_made_after_the_boundary_moves_with_its_commit(world) -> None:
+    partly_merged(world)
+    stash = stash_on_tip(world)
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert payload["result"] == "rebased"
+    [entry] = payload["stashes"]
+    assert (entry["sha"], entry["after"], entry["kept"]) == (stash, True, "")
+    copy = entry["moved"]
+    assert world.git("stash", "list", "--format=%H %gs") == (
+        f"{copy} On fix-parser: late"
+    )
+    assert world.git("rev-parse", f"{copy}^1") == world.git("rev-parse", "HEAD")
+    assert matching(world, "fix-parser") == [copy]
+    world.git("stash", "apply", "--quiet", "--index", copy)
+    assert world.git("show", ":y.txt") == "staged"
+    assert (world.repo / "y.txt").read_text() == "unstaged\n"
+    assert (world.repo / "u.txt").read_text() == "untracked\n"
+
+
+def test_a_rotation_moves_the_stash_onto_the_new_branch(world, network) -> None:
+    merged_up_to, _ = partly_merged(world)
+    stash_on_tip(world)
+    own_merge(world, network, merged_up_to)
+
+    p = gw_ff_online(world, network, "next-parser")
+    assert p.returncode == 0, p.stderr
+    copy = world.git("stash", "list", "--format=%H")
+    assert f"moved as {copy}" in p.stderr
+    assert world.git("stash", "list", "--format=%gs") == "On next-parser: late"
+    assert world.git("rev-parse", f"{copy}^1") == world.git("rev-parse", "next-parser")
+    assert matching(world, "next-parser") == [copy]
+    assert matching(world, "fix-parser") == []
+
+
+def test_a_stash_that_does_not_apply_to_the_replayed_commit_stays(world) -> None:
+    partly_merged(world)
+    (world.repo / "README").write_text("stashed\n")
+    world.git("stash", "push", "--quiet", "-m", "late")
+    stash = world.git("rev-parse", "stash@{0}")
+    advance(world, "README", "main\n")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    [entry] = json.loads(p.stdout)["stashes"]
+    head = world.git("rev-parse", "--short", "HEAD")
+    assert (entry["moved"], entry["kept"]) == (
+        "",
+        f"it does not apply cleanly to {head}",
+    )
+    assert world.git("stash", "list", "--format=%H") == stash
+
+
+def test_raw_patch_ids_differ_once_the_lines_around_a_change_move(world) -> None:
+    """What the context-free patch-id below exists for."""
+    from worktrees import merged
+
+    advance(world, "f.txt", "".join(f"{n}\n" for n in range(1, 8)))
+    world.git("switch", "--quiet", "--create", "fix-parser")
+    world.commit("f.txt", "1\n2\n3\nfour\n5\n6\n7\n")
+    advance(world, "f.txt", "1\ntwo\n3\n4\n5\n6\n7\n")
+    world.git("rebase", "--quiet", "--no-autostash", "main")
+
+    def ids(spec, base: str, tip: str) -> list[str]:
+        patches = spec(base, tip, repo=world.repo).out
+        return [
+            line.split()[0]
+            for line in merged.patch_ids(input=patches, repo=world.repo).lines
+        ]
+
+    before = ("main~1", "ORIG_HEAD")
+    after = ("main", "HEAD")
+    assert ids(merged.upstream_patches, *before) != ids(merged.upstream_patches, *after)
+    assert ids(F.bare_patches, *before) == ids(F.bare_patches, *after)
+
+
+def test_a_stash_moves_when_main_edited_the_lines_around_its_commit(world) -> None:
+    advance(world, "f.txt", "".join(f"{n}\n" for n in range(1, 8)))
+    partly_merged(world)
+    world.commit("f.txt", "1\n2\n3\nfour\n5\n6\n7\n")
+    (world.repo / "README").write_text("stashed\n")
+    world.git("stash", "push", "--quiet", "-m", "late")
+    advance(world, "f.txt", "1\ntwo\n3\n4\n5\n6\n7\n")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    [entry] = json.loads(p.stdout)["stashes"]
+    assert entry["kept"] == ""
+    assert world.git("rev-parse", f"{entry['moved']}^1") == world.git(
+        "rev-parse", "HEAD"
+    )
+
+
+def test_a_stash_on_a_merge_the_rebase_drops_stays(world) -> None:
+    """A rebase replays the commits a merge brought in, and not the merge."""
+    partly_merged(world)
+    world.git("switch", "--quiet", "--create", "side")
+    world.commit("e.txt", "e\n")
+    world.git("switch", "--quiet", "fix-parser")
+    world.git("merge", "--quiet", "--no-ff", "-m", "merge side", "side")
+    (world.repo / "README").write_text("stashed\n")
+    world.git("stash", "push", "--quiet", "-m", "late")
+    stash = world.git("rev-parse", "stash@{0}")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    [entry] = json.loads(p.stdout)["stashes"]
+    assert (entry["after"], entry["moved"], entry["kept"]) == (
+        True,
+        "",
+        "no replayed commit matches the one it was made on",
+    )
+    assert world.git("stash", "list", "--format=%H") == stash
+
+
+def test_a_git_that_cannot_copy_a_stash_leaves_it(world, monkeypatch) -> None:
+    """A git before 2.40 has no `merge-tree --merge-base`."""
+    from worktrees.errors import GitError
+
+    def old_git(*args, **kwargs):
+        raise GitError(
+            "git merge-tree exited 129:\nerror: unknown option `merge-base=abc'"
+        )
+
+    partly_merged(world)
+    stash = stash_on_tip(world)
+    monkeypatch.setattr(F, "merge_tree", old_git)
+
+    moved = F.fast_forward()
+    assert moved.result == F.REBASED
+    [entry] = moved.stashes
+    assert (entry["moved"], entry["kept"]) == (
+        "",
+        "git could not copy it: error: unknown option `merge-base=abc'",
+    )
+    assert world.git("stash", "list", "--format=%H") == stash
+
+
+def test_a_carry_that_stops_lists_the_stashes_and_moves_none(world) -> None:
+    partly_merged(world)
+    stash = stash_on_tip(world)
+    advance(world, "y.txt", "main\n")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 1
+    payload = json.loads(p.stdout)
+    assert payload["result"] == "conflict"
+    [entry] = payload["stashes"]
+    assert (entry["sha"], entry["moved"], entry["kept"]) == (
+        stash,
+        "",
+        "the rebase stopped before any stash moved",
+    )
+    assert world.git("stash", "list", "--format=%H") == stash
+    world.git("rebase", "--abort")
+
+
 # --------------------------------------------------------------------------
 # --autostash
 # --------------------------------------------------------------------------

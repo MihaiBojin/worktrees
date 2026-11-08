@@ -60,7 +60,12 @@ What it does depends on the branch, checked in this order:
    the branch's oldest commit. One from another branch, into the head
    branch, whose merge commit the fetched head ref holds, marks the newest
    of the branch's commits it carried: how a stacked branch finds its
-   parent's commits when the parent gained more before it merged.
+   parent's commits when the parent gained more before it merged. The forge
+   lists at most 100 of a request's commits here, a choice made because a
+   parent seldom drifts that far from the branch stacked on it. A request
+   with more can mark the boundary too early or not at all, and the rebase
+   then replays commits the head ref already has: one that conflicts stops
+   it, and `git rebase --abort` puts the branch back.
    When the branch's own request merged, it keeps its name and its commits,
    and the commits after the boundary are replayed onto a new branch with
    `git rebase --onto`: `rotated`, with `carried` above zero. When another
@@ -108,11 +113,28 @@ can renumber a sha.
 
 ## Stashes
 
-A partly merged or rotated branch keeps its stashes, the ones whose subject
-names it and whose commit is on it. `stashes` lists them with `after` true
-for one made on a commit after the boundary, which is work done after the
-merge. One made on
-the boundary or before it may hold work the merge already took.
+A partly merged or rotated branch's stashes are the ones whose subject names
+it and whose commit is on it. `stashes` lists them, with `after` true for
+one made on a commit after the boundary, which is work done after the merge.
+One made on the boundary or before it may hold work the merge already took,
+and stays where it is.
+
+Once the carry finishes, each stash made after the boundary moves to the
+replayed copy of the commit it was made on, the one with the same patch-id,
+taken from the lines the commit changes and none around them.
+It goes to the branch that holds the commits now: the new one after a
+rotation, the same one after a rebase in place, whose new commits would
+otherwise leave it matching no branch. `git merge-tree --write-tree` puts
+its index and its changes onto that commit without touching the checkout,
+and the copy keeps its untracked files as they were. `git stash store` puts
+the copy on the stash list, and the original is dropped by sha with the
+check `gw branch prune` makes. `moved` is the copy's sha.
+
+A stash made after the boundary stays, with `kept` saying why, when no
+replayed commit has the patch-id of the one it was made on, as with a merge
+commit, which the rebase drops; when its changes conflict on the replayed
+commit; when the rebase stopped; or on a git before 2.40, which lacks
+`merge-tree --merge-base`. `git stash apply SHA` still applies it by hand.
 
 ## Conflicts
 
@@ -140,7 +162,7 @@ command again reports the stopped rebase until it finishes, then `current`.
 | `stopped_at`, `subject` | the commit the rebase stopped at |
 | `paths` | files with conflicts, from the top level; empty once all are staged |
 | `stash` | the stash entry holding changes that did not re-apply |
-| `stashes` | a partly merged or rotated branch's stashes: `sha`, `subject`, `after` |
+| `stashes` | a partly merged or rotated branch's stashes: `sha`, `subject`, `after`, `moved`, `kept` |
 
 Exit 0 means the branch is level. Exit 1 is a `conflict` or a
 `stash-conflict`, with the JSON above, or a refusal, with nothing on stdout

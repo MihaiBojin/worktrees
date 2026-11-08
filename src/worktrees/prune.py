@@ -163,6 +163,36 @@ def stash_subject(sha: str) -> None:
     """Read the subject of an entry inserted after the last listing."""
 
 
+def drop_stash(sha: str, repo: str | os.PathLike[str] | None = None) -> bool:
+    """Drop the stash entry `sha`; False when the list no longer holds it.
+
+    git drops by position, and another worktree can push or drop between the
+    listing and the drop, so the sha git reports dropping is checked. An
+    entry dropped in its place is stored back under its subject, and the
+    drop is refused.
+    """
+    entries = [line.split(" ", 2) for line in stash_list(repo=repo).lines]
+    found = next((item for item in entries if item[1] == sha), None)
+    if found is None:
+        return False
+    result = stash_drop(found[0], repo=repo)
+    match = re.search(r"Dropped stash@\{\d+\} \(([0-9a-f]+)\)", result.out)
+    if not match:
+        raise Refused(
+            f"stash {sha} not dropped: Git did not identify the dropped entry"
+        )
+    actual = match.group(1)
+    if actual != sha:
+        subject = next((item[2] for item in entries if item[1] == actual), None)
+        if subject is None:
+            subject = stash_subject(actual, repo=repo).value
+        stash_store(subject, actual, repo=repo)
+        raise Refused(
+            f"stash {sha} not dropped: concurrent stash change; restored {actual}"
+        )
+    return True
+
+
 def drop_stashes(snapshot: Snapshot, outcome: Outcome, repo=None) -> None:
     wanted = {sha for sha, _ in snapshot.stashes}
     listing = [line.split(" ", 2) for line in stash_list(repo=repo).lines]
@@ -171,32 +201,15 @@ def drop_stashes(snapshot: Snapshot, outcome: Outcome, repo=None) -> None:
     outcome.skipped.extend(sorted(vanished))
     outcome.retained = [sha for sha in outcome.retained if sha not in vanished]
     for sha in ordered:
-        entries = [line.split(" ", 2) for line in stash_list(repo=repo).lines]
-        found = next((item for item in entries if item[1] == sha), None)
-        if found is None:
-            outcome.skipped.append(sha)
-            outcome.retained.remove(sha)
-            continue
-        result = stash_drop(found[0], repo=repo)
-        match = re.search(r"Dropped stash@\{\d+\} \(([0-9a-f]+)\)", result.out)
-        if not match:
-            raise Refused(
-                f"stash {sha} not dropped: Git did not identify the dropped entry"
-            )
-        actual = match.group(1)
-        if actual != sha:
-            subject = next((item[2] for item in entries if item[1] == actual), None)
-            if subject is None:
-                subject = stash_subject(actual, repo=repo).value
-            stash_store(subject, actual, repo=repo)
+        try:
+            dropped = drop_stash(sha, repo)
+        except Refused:
             current = {line.split(" ", 2)[1] for line in stash_list(repo=repo).lines}
             absent = set(outcome.retained) - current
             outcome.skipped.extend(sorted(absent))
             outcome.retained = [item for item in outcome.retained if item in current]
-            raise Refused(
-                f"stash {sha} not dropped: concurrent stash change; restored {actual}"
-            )
-        outcome.dropped.append(sha)
+            raise
+        (outcome.dropped if dropped else outcome.skipped).append(sha)
         outcome.retained.remove(sha)
 
 

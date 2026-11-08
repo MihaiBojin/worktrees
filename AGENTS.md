@@ -98,7 +98,13 @@ open request, and drops the merged commits in place with the same
 `git rebase --onto`. When the parent gained commits before it merged, its
 squash holds more than the two share, so no local proof marks the shared
 part; `branch_forge.carried_by` asks the forge which merged request carried
-the branch's oldest commit, and that request's commit list marks it.
+the branch's oldest commit, and that request's commit list marks it, read
+from one page of 100 by choice: a parent seldom drifts further.
+Once a carry finishes, each stash made after the merged part moves to the
+replayed copy of its commit, matched by patch-id:
+`git merge-tree --write-tree` re-bases it without touching the checkout,
+`git stash store` records the copy, and `prune.drop_stash` drops the
+original by sha with the check `gw branch prune` makes.
 A merged branch's name stays with its merged request on the forge, so the
 finished branch keeps its name and commits and the checkout moves to
 `YYYY-MM-DDThh-mm-ssZ/<stem>` in UTC, or to the NAME given, from the head
