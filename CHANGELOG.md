@@ -145,7 +145,7 @@ at once. `gw prune --branch` and `gw prune --dry-run`: use `gw remove` for
 one worktree, and `gw prune --json` or `gw prune --table` to assess.
 `gw branch prune --dry-run` remains.
 
-`gwm`, `gw move`, `gw m` and `gw mv`: use `git branch --move` and
+`gw move`, `gw m` and `gw mv`: use `git branch --move` and
 `git worktree move`. `gwh`, `gw help`, `gw h`, `gw ls`, `gw status`,
 `gw s` and `gw st`.
 
@@ -166,6 +166,13 @@ directory name now finds it. `gw l` is `gw list`.
 `gw add` and `gw remove` change your directory through the `gw` shell
 function, as a terminal `gw list` does, so `gw a NAME` lands you in the
 new worktree.
+
+`gwm`, and `gw list --head` behind it, change into the worktree that has
+the head branch checked out: `main`, `master` or whichever branch the
+remote's HEAD names. It works from inside that worktree too, which brings
+you back to its top. When no worktree has the branch it exits 1 and
+suggests `gw add BRANCH`. `--json` and `--table` print that worktree's
+row.
 
 `gw sync` refuses a remote whose fetch refspec writes outside
 `refs/remotes/<name>/`, such as the one `git clone --mirror` sets, because
