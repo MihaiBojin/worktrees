@@ -5,20 +5,14 @@ from __future__ import annotations
 import json
 import shlex
 import subprocess
-import sys
 
 import pytest
-from conftest import env_for
+from conftest import argv, env_for
 
 
 def cli(world, *args: str, entry: str = "gw", env=None):
     return subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
-            *args,
-        ],
+        argv(entry, *args),
         cwd=world.repo,
         env=env or env_for(world),
         capture_output=True,
@@ -65,11 +59,11 @@ def test_branch_status_lists_only_loose_branches(world):
     assert rows["done"]["eligible"]
 
 
-@pytest.mark.parametrize("entry", ["gwbs", "gwbd"])
+@pytest.mark.parametrize("entry", ["gw branch status", "gw branch delete"])
 def test_console_aliases_work(world, entry):
     world.merged_branch("done")
     args = ["done", "--json"]
-    if entry == "gwbd":
+    if entry == "gw branch delete":
         args += ["--dry-run"]
     p = cli(world, *args, entry=entry)
     assert p.returncode == 0, p.stderr
@@ -85,14 +79,14 @@ def test_a_named_checked_out_branch_is_never_deleted(world, where):
         world.merged_branch("done")
         world.git("checkout", "-q", "done")
     sha = world.git("rev-parse", "refs/heads/done")
-    p = cli(world, "done", "--yes", "--delete", "all", entry="gwbd")
+    p = cli(world, "done", "--yes", "--delete", "all", entry="gw branch delete")
     assert p.returncode == 3, p.stderr
     assert "checked out in a worktree" in p.stderr
     assert world.git("rev-parse", "refs/heads/done") == sha
 
 
 def test_delete_help_names_every_permission_value(world):
-    p = cli(world, "-h", entry="gwbd")
+    p = cli(world, "-h", entry="gw branch delete")
     assert p.returncode == 0, p.stderr
     text = " ".join((p.stdout + p.stderr).split())
     assert "empty branches or stashes; all permits both" in text
@@ -212,7 +206,7 @@ def test_selector_requires_a_selection_then_confirmation(world, answer):
 
     world.merged_branch("one")
     world.merged_branch("two")
-    code, out = run_on_a_terminal(world, "gwbd", answer=answer)
+    code, out = run_on_a_terminal(world, "gw branch delete", answer=answer)
     assert code == (3 if answer == "9\n" else 0), out
     names = world.git(
         "for-each-ref", "--format=%(refname:short)", "refs/heads"
@@ -259,7 +253,7 @@ def test_deletion_rechecks_the_approved_state(world, changed):
 
 def test_completion_lists_names_without_querying_the_forge(world):
     world.merged_branch("one")
-    for entry in ("gwbs", "gwbd"):
+    for entry in ("gw branch status", "gw branch delete"):
         p = cli(world, "--complete", entry=entry)
         assert p.returncode == 0, p.stderr
         assert {line.split("\t")[0] for line in p.stdout.splitlines()} == {
@@ -319,7 +313,7 @@ def test_json_reports_only_successful_deletions(world, monkeypatch, capsys):
         return original(ref, sha, **kwargs)
 
     monkeypatch.setattr(prune, "ref_delete", fail_one)
-    code = C.gwbd(["one", "two", "--yes", "--json"])
+    code = C.gw(["branch", "delete", "one", "two", "--yes", "--json"])
     out = capsys.readouterr()
     assert code == 1
     result = json.loads(out.out)
@@ -340,7 +334,7 @@ def test_the_selector_and_the_plan_name_each_verdict(world):
     from test_cli import run_on_a_terminal
 
     world.merged_branch("done")
-    code, out = run_on_a_terminal(world, "gwbd", answer="1\nn\n")
+    code, out = run_on_a_terminal(world, "gw branch delete", answer="1\nn\n")
     assert code == 0, out
     rows = {
         ln.split()[2]: ln.split()[1]

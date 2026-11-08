@@ -7,8 +7,8 @@ description: >
 
 # Clean up worktrees and loose branches
 
-The `worktrees` CLI supplies completion proofs and deletion protections.
-It comes from `uv tool install git-worktrees`; if its commands or `jq` are
+The `gw` CLI supplies completion proofs and deletion protections.
+It comes from `uv tool install git-worktrees`; if `gw` or `jq` is
 missing, report that and stop. Work inside the requested repository.
 
 ## Assess and show sync state first
@@ -16,7 +16,7 @@ missing, report that and stop. Work inside the requested repository.
 Read worktrees, then loose branches, using these pipelines:
 
 ```sh
-gwp --json | jq -c '
+gw prune --json | jq -c '
 def permission: test("^(empty branches require deletion permission|its branch has stashes|it holds [0-9]+ ignored path\\(s\\); pass --delete ignored-files)$");
 def grantable: .eligible == false and (.verdict == "remove" or .verdict == "empty") and all(.protections[]; permission);
 {
@@ -31,7 +31,7 @@ def grantable: .eligible == false and (.verdict == "remove" or .verdict == "empt
 ```
 
 ```sh
-gwbs --json | jq -c '
+gw branch status --json | jq -c '
 def permission: test("^(empty branches require deletion permission|its branch has stashes)$");
 def grantable: .eligible == false and (.verdict == "remove" or .verdict == "empty") and all(.protections[]; permission);
 {
@@ -80,7 +80,7 @@ row's `ignoredPaths` so the user can decide before granting permission. A row ca
 have more than one blocker, so show every required permission.
 
 A checked-out branch is already represented by its worktree and is absent
-from `gwbs`. Never target the current checkout, even if the user names it;
+from `gw branch status`. Never target the current checkout, even if the user names it;
 identify it from the current working directory or `gw list --json`'s
 `worktrees[].here` if needed. The main checkout and protected branches remain
 blocked too. Do not infer eligibility from a verdict alone.
@@ -103,10 +103,11 @@ the assessment.
 ## Remove the approved targets
 
 For each chosen worktree, invoke the binary with its exact JSON path,
-quoted for the shell:
+quoted for the shell. `command` skips any `gw` shell function, which would
+change directory:
 
 ```sh
-command gwr 'PATH' --yes
+command gw remove 'PATH' --yes
 ```
 
 One call per worktree. Preserve spaces and literal quotes in the path; a
@@ -118,12 +119,12 @@ for a narrower approval or add `--keep-branch` on your own.
 Then invoke chosen loose branches, quoting every exact branch name:
 
 ```sh
-command gwbd 'NAME' 'OTHER_NAME' --yes
+command gw branch delete 'NAME' 'OTHER_NAME' --yes
 ```
 
 Add only their approved `--delete empty` or `--delete stashes` values. Split
-branch calls when their category approvals differ. Do not run bulk `gwp`
-for a selective approval. The CLI reassesses before removing and can refuse
+branch calls when their category approvals differ. Do not run bulk
+`gw prune` for a selective approval. The CLI reassesses before removing and can refuse
 changed targets. Use its commands rather than raw Git deletion or `rm`.
 
 ## Report actual outcomes and restoration

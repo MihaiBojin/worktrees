@@ -14,7 +14,7 @@ import tty
 from pathlib import Path
 
 import pytest
-from conftest import env_for
+from conftest import argv, env_for
 from test_cli import run_on_a_terminal, run_on_a_terminal_at
 
 from worktrees import layout, pick
@@ -28,12 +28,7 @@ SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 def run(world, entry: str, *args: str, at: Path | None = None):
     return subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
-            *args,
-        ],
+        argv(entry, *args),
         cwd=str(at or world.repo),
         capture_output=True,
         text=True,
@@ -69,7 +64,7 @@ def test_a_branch_with_slashes_becomes_directories(world) -> None:
 
 
 def test_add_prints_only_the_destination(world) -> None:
-    p = run(world, "gwa", "fix-parser")
+    p = run(world, "gw add", "fix-parser")
     assert p.returncode == 0, p.stderr
     dest = world.parent / ".worktrees" / "fix-parser" / "repo"
     assert p.stdout.strip() == str(dest)
@@ -115,13 +110,13 @@ def test_add_refuses_a_name_git_rejects(world, name: str) -> None:
 
 
 def test_add_with_no_name_names_what_was_typed(world) -> None:
-    p = run(world, "gwa")
+    p = run(world, "gw add")
     assert p.returncode == 2
-    assert p.stderr.startswith("gwa needs NAME\n\nusage: gwa ")
+    assert p.stderr.startswith("gw add needs NAME\n\nusage: gw add ")
     assert p.stdout == ""
 
 
-@pytest.mark.parametrize("binary", ["gwa", "gwr"])
+@pytest.mark.parametrize("binary", ["gw add", "gw remove"])
 def test_a_command_that_lands_prints_its_help_on_stderr(world, binary: str) -> None:
     """Its shell function captures stdout to find where to go."""
     p = run(world, binary, "--help")
@@ -394,7 +389,7 @@ def test_a_redrawn_list_fits_the_screen_and_follows_the_highlight(
 def test_remove_prints_nothing_when_you_were_not_standing_in_it(world) -> None:
     """Empty stdout means stay put."""
     wt = world.merged_worktree("done")
-    p = run(world, "gwr", "done", "--yes")
+    p = run(world, "gw remove", "done", "--yes")
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip() == ""
     assert not wt.exists()
@@ -405,7 +400,9 @@ def test_remove_prints_the_main_checkout_when_you_were(world) -> None:
     wt = world.merged_worktree("done")
     from test_cli import run_on_a_terminal_at
 
-    code, output = run_on_a_terminal_at(world, wt, "gwr", "done", "--yes", answer="y\n")
+    code, output = run_on_a_terminal_at(
+        world, wt, "gw remove", "done", "--yes", answer="y\n"
+    )
     assert code == 0, output
     assert output.rstrip().endswith(str(world.repo))
     assert not wt.exists()
@@ -414,7 +411,7 @@ def test_remove_prints_the_main_checkout_when_you_were(world) -> None:
 def test_remove_refuses_an_unfinished_branch(world) -> None:
     wt = world.worktree("busy")
     world.commit("b.txt", "b\n", at=wt)
-    p = run(world, "gwr", "busy", "--yes")
+    p = run(world, "gw remove", "busy", "--yes")
     assert p.returncode == 1
     assert "kept" in p.stderr
     assert "--keep-branch" in p.stderr
@@ -431,14 +428,14 @@ def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     wt = world.merged_worktree("holds")
     (wt / ".env").write_text("SECRET=1\n")
 
-    p = run(world, "gwr", "holds", "--yes")
+    p = run(world, "gw remove", "holds", "--yes")
     assert p.returncode == 1
     assert "ignored path(s)" in p.stderr
     assert "is not finished" not in p.stderr
     assert "--delete ignored-files" in p.stderr
     assert wt.exists()
 
-    p = run(world, "gwr", "holds", "--yes", "--delete", "ignored-files")
+    p = run(world, "gw remove", "holds", "--yes", "--delete", "ignored-files")
     assert p.returncode == 0, p.stderr
     assert "deleting ignored, unrecoverable: .env" in p.stderr
     assert not wt.exists()
@@ -453,7 +450,15 @@ def test_keep_branch_names_the_ignored_files_it_is_about_to_delete(world) -> Non
     (wt / ".env").write_text("SECRET=1\n")
     world.commit("b.txt", "b\n", at=wt)
 
-    p = run(world, "gwr", "busy", "--yes", "--keep-branch", "--delete", "ignored-files")
+    p = run(
+        world,
+        "gw remove",
+        "busy",
+        "--yes",
+        "--keep-branch",
+        "--delete",
+        "ignored-files",
+    )
     assert p.returncode == 0, p.stderr
     assert "deleting ignored, unrecoverable: .env" in p.stderr
     assert not wt.exists()
@@ -463,7 +468,7 @@ def test_keep_branch_removes_the_checkout_and_keeps_the_branch(world) -> None:
     """The worktree was in the way. The work was not."""
     wt = world.worktree("busy")
     world.commit("b.txt", "b\n", at=wt)
-    p = run(world, "gwr", "busy", "--yes", "--keep-branch")
+    p = run(world, "gw remove", "busy", "--yes", "--keep-branch")
     assert p.returncode == 0, p.stderr
     assert not wt.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/busy")
@@ -471,7 +476,7 @@ def test_keep_branch_removes_the_checkout_and_keeps_the_branch(world) -> None:
 
 def test_remove_prints_the_restore_line_once(world) -> None:
     world.merged_worktree("done")
-    p = run(world, "gwr", "done", "--yes")
+    p = run(world, "gw remove", "done", "--yes")
     assert p.stderr.count("restore with: git branch done ") == 1
 
 

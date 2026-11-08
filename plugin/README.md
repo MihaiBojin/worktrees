@@ -35,8 +35,8 @@ The plugin needs `jq` too. It installs neither tool.
 
 ## Cleanup
 
-The skill reads `gwp --json` and `gwbs --json`. These commands stay
-offline. If remote state is never synced or older than 10 minutes, it asks
+The skill reads `gw prune --json` and `gw branch status --json`. These
+commands stay offline. If remote state is never synced or older than 10 minutes, it asks
 whether to run `gw sync`; it runs sync only on your answer. A previous
 approval or refusal remains in force for that cleanup.
 
@@ -45,9 +45,9 @@ and stash-blocked rows separately. Ignored-file blockers remain visible.
 Those categories need explicit approval. `--yes` grants no deletion
 permission, and the plugin never targets its current checkout.
 
-After you choose, each worktree goes through `command gwr` with its exact
-quoted JSON path and only its approved `--delete` values. Selected loose
-branches follow through `command gwbd`. Both commands reassess first and
+After you choose, each worktree goes through `command gw remove` with its
+exact quoted JSON path and only its approved `--delete` values. Selected
+loose branches follow through `command gw branch delete`. Both commands reassess first and
 can refuse a target that changed. The skill retains target exclusions and
 category choices across a refresh.
 

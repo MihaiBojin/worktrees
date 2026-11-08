@@ -3,7 +3,7 @@
 Colour where something will render it, and columns that line up.
 
 Colour is off until `setup()` decides, per stream. stdout carries the data
-`cd $(gwa x)` and `jq` read, so a redirect, a pipe, a non-empty `NO_COLOR` or
+`cd $(gw add x)` and `jq` read, so a redirect, a pipe, a non-empty `NO_COLOR` or
 `TERM=dumb` all mean the bytes go out exactly as they would have without this
 module.
 
@@ -68,7 +68,7 @@ class Cell:
     """One cell. The width comes from the text, the code paints it after.
 
     `Cell.of` builds one from pieces, each painted its own way, for a cell
-    such as `gwa NAME [BASE]` whose command and arguments differ.
+    such as `gw add NAME [BASE]` whose command and arguments differ.
     """
 
     __slots__ = ("code", "parts", "text")
@@ -124,7 +124,7 @@ def table(rows: list[Row], ink: Ink | None = None) -> str:
 # --------------------------------------------------------------------------
 
 
-# What each verdict prints in, in `gw`, `gwp` and `gwbs` alike, and in the
+# What each verdict prints in, in `gw prune` and `gw branch status` alike, and in the
 # counts under them. A branch is the same bold magenta it is on stderr.
 VERDICT = {"remove": GREEN, "empty": DIM, "keep": BLUE, "unknown": YELLOW}
 BRANCH = BOLD + MAGENTA

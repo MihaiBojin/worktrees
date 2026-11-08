@@ -7,10 +7,9 @@ import json
 import re
 import shlex
 import subprocess
-import sys
 from pathlib import Path
 
-from conftest import env_for
+from conftest import argv, env_for
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugin"
@@ -53,24 +52,28 @@ def test_the_portable_manifest_is_the_claude_one_rewritten() -> None:
 
 
 def test_the_prune_command_preapproves_reads_and_sync_alone() -> None:
-    """`gwp --yes` removes worktrees, so no pattern may cover it; each removal
-    goes through a command the user is asked to approve."""
+    """`gw prune --yes` removes worktrees, so no pattern may cover it; each
+    removal goes through a command the user is asked to approve."""
     text = (PLUGIN / "commands" / "prune.md").read_text()
     tools = re.findall(r"^  - (.+)$", text.split("---")[1], re.M)
-    wide = [t for t in tools if re.match(r"Bash\((gw|gwp)(:| [^)]*:)", t)]
-    assert wide == []
-    assert {"Bash(gw sync)", "Bash(gw list --json)", "Bash(gwp --json)"} <= set(tools)
+    prefixes = [m.group(1) for t in tools if (m := re.fullmatch(r"Bash\((.+):\*\)", t))]
+    for removal in ("gw prune --yes", "gw p --yes"):
+        assert not [p for p in prefixes if removal.startswith(p)], removal
+    assert {
+        "Bash(gw sync)",
+        "Bash(gw list --json)",
+        "Bash(gw prune --json)",
+    } <= set(tools)
 
 
-def _filter(entry: str) -> str:
+def _filter(command: str) -> str:
     """Read the actual assessment pipeline from the installed skill."""
-    command = "gwp" if entry == "worktrees" else "gwbs"
     found = re.search(
         rf"^{command} --json \| jq -c '(.*?)'\n```",
         SKILL.read_text(),
         re.S | re.M,
     )
-    assert found, f"the skill's {entry} pipeline is missing"
+    assert found, f"the skill's {command} pipeline is missing"
     return found.group(1)
 
 
@@ -83,13 +86,7 @@ def _jq(program: str, piped: str) -> dict:
 
 def _json(world, entry: str, *args: str, cwd: Path | None = None) -> str:
     proc = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
-            *args,
-            "--json",
-        ],
+        argv(entry, *args, "--json"),
         cwd=cwd or world.repo,
         env=env_for(world),
         capture_output=True,
@@ -118,8 +115,8 @@ def test_filters_preserve_exact_targets_permissions_and_restore_commands(world) 
     (unfinished / "README").write_text("stash me too")
     world.git("stash", "push", "-m", "unfinished work", at=unfinished)
 
-    raw = json.loads(_json(world, "gwp", cwd=current))
-    out = _jq(_filter("worktrees"), json.dumps(raw))
+    raw = json.loads(_json(world, "gw prune", cwd=current))
+    out = _jq(_filter("gw prune"), json.dumps(raw))
     assert out["head"] == raw["head"]
     assert out["lastSync"] == raw["lastSync"]
     assert [row["branch"] for row in out["worktrees"]] == ["finished'quoted"]
@@ -135,8 +132,8 @@ def test_filters_preserve_exact_targets_permissions_and_restore_commands(world) 
     assert out["stash_blocked"][0]["stashes"]
     assert not any(v["path"] == str(current) for v in out["worktrees"])
 
-    raw_branches = json.loads(_json(world, "gwbs"))
-    branches = _jq(_filter("gwbs"), json.dumps(raw_branches))
+    raw_branches = json.loads(_json(world, "gw branch status"))
+    branches = _jq(_filter("gw branch status"), json.dumps(raw_branches))
     assert branches["head"] == raw_branches["head"]
     assert branches["lastSync"] == raw_branches["lastSync"]
     assert [v["branch"] for v in branches["branches"]] == ["loose'quoted"]
@@ -163,18 +160,18 @@ def test_filters_keep_ignored_and_stash_permissions_distinct(world) -> None:
     world.git("worktree", "remove", str(stashed))
     world.worktree("empty")
 
-    out = _jq(_filter("worktrees"), _json(world, "gwp"))
+    out = _jq(_filter("gw prune"), _json(world, "gw prune"))
     assert not out["worktrees"]
     assert [v["branch"] for v in out["ignored"]] == ["ignored"]
     assert out["ignored"][0]["ignored"] == 1
     permitted = _jq(
-        _filter("worktrees"),
-        _json(world, "gwp", "--delete", "ignored-files"),
+        _filter("gw prune"),
+        _json(world, "gw prune", "--delete", "ignored-files"),
     )
     assert [v["branch"] for v in permitted["worktrees"]] == ["ignored"]
     assert not permitted["worktrees"][0]["protections"]
     assert any(v["branch"] == "empty" and not v["eligible"] for v in permitted["empty"])
-    branches = _jq(_filter("gwbs"), _json(world, "gwbs"))
+    branches = _jq(_filter("gw branch status"), _json(world, "gw branch status"))
     assert not branches["branches"]
     assert [v["branch"] for v in branches["stash_blocked"]] == ["loose-stashed"]
     assert branches["stash_blocked"][0]["stashes"]
@@ -184,8 +181,8 @@ def test_filters_keep_ignored_and_stash_permissions_distinct(world) -> None:
 def test_branch_filter_preserves_sync_and_empty_rows(world) -> None:
     world.merged_branch("finished")
     world.git("branch", "empty")
-    raw = json.loads(_json(world, "gwbs"))
-    out = _jq(_filter("gwbs"), json.dumps(raw))
+    raw = json.loads(_json(world, "gw branch status"))
+    out = _jq(_filter("gw branch status"), json.dumps(raw))
     assert out["head"] == raw["head"]
     assert out["lastSync"] == raw["lastSync"]
     assert [v["branch"] for v in out["empty"]] == ["empty"]

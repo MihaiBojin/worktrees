@@ -174,7 +174,7 @@ def removable(
     permissions: frozenset[str] = frozenset(),
     keep_branch: bool = False,
 ) -> list[Verdict]:
-    """Assess targets for gwr, including the current worktree.
+    """Assess targets for gw remove, including the current worktree.
 
     The caller requires a second terminal confirmation before removing its
     current checkout and changes to the main checkout before removal.

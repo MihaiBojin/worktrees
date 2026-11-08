@@ -1,14 +1,15 @@
 # worktrees branch delete
 
-`gwbd` deletes eligible loose local branches after confirmation and a fresh
-assessment. It uses local refs and cached forge evidence; only `gw sync`
-refreshes them. Checked-out branches cannot be deleted here.
+`gw branch delete` deletes eligible loose local branches after confirmation
+and a fresh assessment, and the shell plugin's `gwbd` runs it. It uses local
+refs and cached forge evidence; only `gw sync` refreshes them. Checked-out
+branches cannot be deleted here.
 
 ```console
-gwbd old-fix another-fix
-gwbd --all --dry-run
-gwbd old-fix --yes --json
-gwbd unused --delete empty
+gw branch delete old-fix another-fix
+gw branch delete --all --dry-run
+gw branch delete old-fix --yes --json
+gw branch delete unused --delete empty
 gwbd finished-with-stashes --delete stashes
 ```
 

@@ -88,7 +88,7 @@ def owner_of(candidate: str, repo: str | os.PathLike[str] | None = None) -> str:
     git is what answers this. `git worktree list` cannot: a worktree belonging
     to another repository is one this repository has never heard of, so the
     list comes back empty and reads exactly like "nothing is there", which is
-    how a `gwa` that should have refused lands you in somebody else's
+    how a `gw add` that should have refused lands you in somebody else's
     checkout.
     """
     theirs = R.common_dir(repo=candidate)

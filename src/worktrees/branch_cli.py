@@ -202,7 +202,9 @@ def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:
     if not candidates:
         return []
     if not sys.stdin.isatty():
-        raise Refused("not a terminal; pass branch names or --all, or use gwbs --json")
+        raise Refused(
+            "not a terminal; pass branch names or --all, or use gw branch status --json"
+        )
     # The ones that cannot be picked first and grey, so the numbered rows
     # sit together above the prompt.
     others = [v for v in rows if not v.eligible]

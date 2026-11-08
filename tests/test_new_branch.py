@@ -1,4 +1,4 @@
-"""gwbc: fetch, then branch off the head branch and check it out."""
+"""gw branch create: fetch, then branch off the head branch and check it out."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from conftest import env_for
+from conftest import argv, env_for
 
 from worktrees import new_branch
 from worktrees.git import Refused, guard
@@ -16,14 +16,9 @@ from worktrees.git import Refused, guard
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 
-def gwbc(world, *args: str) -> subprocess.CompletedProcess[str]:
+def branch_create(world, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import gwbc; raise SystemExit(gwbc())",
-            *args,
-        ],
+        argv("gw branch create", *args),
         cwd=str(world.repo),
         capture_output=True,
         text=True,
@@ -98,16 +93,18 @@ def test_a_tag_cannot_be_the_base(world) -> None:
 
 
 def test_a_name_is_required(world) -> None:
-    p = gwbc(world)
+    p = branch_create(world)
     assert p.returncode == 2
-    assert p.stderr.startswith("gwbc needs NAME\n\nusage: gwbc ")
+    assert p.stderr.startswith(
+        "gw branch create needs NAME\n\nusage: gw branch create "
+    )
     assert "the branch to start" in p.stderr
     assert p.stdout == ""
 
 
 @pytest.mark.parametrize("flags", [(), ("-q",), ("--quiet",)])
 def test_the_binary_reports_what_it_made(world, flags) -> None:
-    p = gwbc(world, "feature", *flags)
+    p = branch_create(world, "feature", *flags)
     assert p.returncode == 0, p.stderr
     sha = world.git("rev-parse", "--short", "refs/heads/main")
     assert p.stdout.strip() == f"feature from main at {sha}"
@@ -115,14 +112,14 @@ def test_the_binary_reports_what_it_made(world, flags) -> None:
 
 
 def test_json_is_data_on_stdout(world) -> None:
-    p = gwbc(world, "feature", "--json")
+    p = branch_create(world, "feature", "--json")
     assert p.returncode == 0, p.stderr
     assert json.loads(p.stdout)["base"] == "refs/heads/main"
 
 
 def test_a_refusal_leaves_the_checkout_alone(world) -> None:
     world.git("branch", "taken", "main")
-    p = gwbc(world, "taken")
+    p = branch_create(world, "taken")
     assert p.returncode == 1
     assert "already a branch" in p.stderr
     assert p.stdout == ""
@@ -131,21 +128,21 @@ def test_a_refusal_leaves_the_checkout_alone(world) -> None:
 
 def test_a_forced_checkout_is_refused(world) -> None:
     """The same class as reset --hard: it discards the working tree."""
-    for argv in (
+    for words in (
         ("checkout", "-f", "main"),
         ("checkout", "--force", "main"),
         ("switch", "--discard-changes", "main"),
     ):
         with pytest.raises(Refused):
-            guard(argv)
+            guard(words)
     guard(("checkout", "--no-track", "-b", "x", "refs/heads/main"))
 
 
 def test_the_usage_line_names_what_was_typed(world) -> None:
-    """The alias and the subcommand are two programs, not one."""
-    p = gwbc(world)
+    """`gw` and `worktrees` are two programs, and each names itself."""
+    p = branch_create(world)
     assert p.returncode == 2
-    assert p.stderr.startswith("gwbc needs NAME\n")
+    assert p.stderr.startswith("gw branch create needs NAME\n")
 
     p = subprocess.run(
         [

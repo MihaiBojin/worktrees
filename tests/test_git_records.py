@@ -9,25 +9,25 @@ from test_cli import run
 
 
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085", "\u00a0"])
-@pytest.mark.parametrize("entry", ["gwp", "gwbd"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw branch delete"])
 def test_separator_branch_stashes_require_explicit_permission(world, separator, entry):
     name = "topic" + separator
     path = world.merged_worktree(name)
     (path / "README").write_text("unfinished")
     world.git("stash", "push", "-qm", "pending work here", at=path)
     sha = world.git("rev-parse", "refs/stash")
-    if entry == "gwbd":
+    if entry == "gw branch delete":
         world.git("worktree", "remove", str(path))
     preview = (
-        run(world, "gwp", "--json")
-        if entry == "gwp"
-        else run(world, "gwbs", name, "--json")
+        run(world, "gw prune", "--json")
+        if entry == "gw prune"
+        else run(world, "gw branch status", name, "--json")
     )
     assert preview.returncode == 0, preview.stderr
     row = next(v for v in json.loads(preview.stdout)["verdicts"] if v["branch"] == name)
     assert row["stashes"] == [sha]
     assert not row["eligible"]
-    args = [] if entry == "gwp" else [name]
+    args = [] if entry == "gw prune" else [name]
     denied = run(world, entry, *args, "--yes")
     assert denied.returncode in (0, 3), denied.stderr
     assert world.git("rev-parse", f"refs/heads/{name}")
@@ -40,7 +40,7 @@ def test_separator_branch_stashes_require_explicit_permission(world, separator, 
 
 
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085", "\u00a0"])
-@pytest.mark.parametrize("entry", ["gwp", "gwbd"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw branch delete"])
 def test_exact_remote_head_counterpart_stays_protected(world, separator, entry):
     name = "topic" + separator
     path = world.merged_worktree(name)
@@ -48,14 +48,14 @@ def test_exact_remote_head_counterpart_stays_protected(world, separator, entry):
     for branch in ("topic", name):
         world.git("update-ref", f"refs/remotes/origin/{branch}", "main")
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", f"refs/remotes/origin/{name}")
-    if entry == "gwbd":
+    if entry == "gw branch delete":
         world.git("worktree", "remove", str(path))
-    args = [] if entry == "gwp" else [name]
+    args = [] if entry == "gw prune" else [name]
     preview = run(
         world,
         entry,
         *args,
-        *(["--dry-run"] if entry == "gwbd" else []),
+        *(["--dry-run"] if entry == "gw branch delete" else []),
         "--delete",
         "all",
         "--json",
@@ -67,7 +67,7 @@ def test_exact_remote_head_counterpart_stays_protected(world, separator, entry):
     removed = run(world, entry, *args, "--delete", "all", "--yes")
     assert removed.returncode in (0, 3), removed.stderr
     assert world.git("rev-parse", f"refs/heads/{name}")
-    if entry == "gwp":
+    if entry == "gw prune":
         assert path.exists()
 
 
@@ -94,7 +94,7 @@ def test_branch_start_uses_exact_symbolic_head(world, separator):
     world.git("update-ref", "refs/remotes/origin/topic", before)
     world.git("update-ref", f"refs/remotes/origin/{name}", after)
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", f"refs/remotes/origin/{name}")
-    result = run(world, "gwbc", "next", "--json")
+    result = run(world, "gw branch create", "next", "--json")
     assert result.returncode == 0, result.stderr
     assert world.git("rev-parse", "next") == after
     assert json.loads(result.stdout)["base"] == f"refs/remotes/origin/{name}"
@@ -106,7 +106,7 @@ def test_rotate_reads_exact_current_branch(world, separator):
     path = world.worktree(name)
     world.git("branch", "topic")
     tip = world.commit("feature", at=path)
-    result = run(world, "gwrot", "--json", at=path)
+    result = run(world, "gw rotate", "--json", at=path)
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["previous"] == name
     assert world.git("rev-parse", f"refs/heads/{name}") == tip
@@ -119,7 +119,7 @@ def test_plain_remote_head_names_the_one_branch_at_its_commit(world, separator):
     world.git("remote", "add", "origin", "https://example.invalid/repo")
     world.git("update-ref", f"refs/remotes/origin/{name}", tip)
     world.git("update-ref", "--no-deref", "refs/remotes/origin/HEAD", tip)
-    result = run(world, "gwbc", "next", "--json")
+    result = run(world, "gw branch create", "next", "--json")
     assert result.returncode == 0, result.stderr
     assert world.git("rev-parse", "next") == tip
     assert json.loads(result.stdout)["head"] == {
@@ -136,8 +136,11 @@ def test_plain_remote_head_at_two_branches_does_not_resolve(world):
     for branch in ("trunk", "release"):
         world.git("update-ref", f"refs/remotes/origin/{branch}", tip)
     world.git("update-ref", "--no-deref", "refs/remotes/origin/HEAD", tip)
-    result = run(world, "gwbs", "--json")
+    result = run(world, "gw branch status", "--json")
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["head"]["ref"] is None
-    assert "Head: unresolved (clone). Run: gw sync" in run(world, "gwbs").stderr
-    assert run(world, "gwbc", "next").returncode != 0
+    assert (
+        "Head: unresolved (clone). Run: gw sync"
+        in run(world, "gw branch status").stderr
+    )
+    assert run(world, "gw branch create", "next").returncode != 0

@@ -1,10 +1,13 @@
-local navigation=0 arg
-[[ $1 == (list|l) ]] && navigation=1
+local lands=0 arg
+case $1 in
+    list|l) [[ -t 0 ]] && lands=1 ;;
+    add|a|remove|rm) lands=1 ;;
+esac
 for arg in "$@"; do
     [[ $arg != -- ]] || break
-    case $arg in --json|--list|-l|--help|-h|--complete|--explain) navigation=0 ;; esac
+    case $arg in --json|--list|-l|--help|-h|--complete|--explain) lands=0 ;; esac
 done
-if [[ ! -t 0 ]] || (( ! navigation )); then
+if (( ! lands )); then
     command gw "$@"
     return $?
 fi
@@ -14,9 +17,12 @@ output="$(command gw "$@"; code=$?; printf .; exit $code)"
 code=$?
 output=${output%.}
 dest=${output%$'\n'}
-if (( code == 0 )) && [[ $dest == /* && -d $dest ]]; then
-    cd -- "$dest" || return $?
-else
-    printf '%s' "$output"
-fi
+# A removal's destination stands even when later cleanup failed.
+case $code:$1 in 0:*|*:remove|*:rm)
+    if [[ $dest == /* && -d $dest ]]; then
+        cd -- "$dest" || return $?
+        return $code
+    fi
+esac
+printf '%s' "$output"
 return $code

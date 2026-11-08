@@ -1,8 +1,9 @@
 """The shell functions, and the rule that keeps them honest.
 
 A function of a given name beats a binary of that name in every shell, and
-in fish it wins inside `fish -c` too. So a shim carrying any logic is logic
-a script cannot reach. These assert it carries none.
+in fish it wins inside `fish -c` too. So a function carrying any logic is
+logic a script cannot reach. `gw` carries one job, changing the caller's
+directory, and every other function is a shortcut that calls it.
 """
 
 from __future__ import annotations
@@ -14,107 +15,86 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 from typing import NoReturn
 
 import pytest
 from conftest import World, env_for
 
+from worktrees.cli import _COMMANDS, command_rows, shortcuts
+
 ROOT = Path(__file__).resolve().parents[1]
-CD_COMMANDS = ("gw", "gwa", "gwr")
-# A shortcut calls a command with its flags fixed, and nothing else.
+FISH = ROOT / "functions"
+ZSH = ROOT / "zsh/plugins/worktrees/functions"
+# Each shortcut and the words it runs, from the table `gw --help` prints.
 SHORTCUTS = {
-    "gwl": "gw list",
-    "gwr!": "gwr --delete ignored-files",
-    "gwp!": "gwp --yes",
-    "gwp!!": "gwp --delete all --yes",
+    name: words for path, c in command_rows() for name, words in shortcuts(path, c)
 }
+# The words after `gw` that land the caller somewhere.
+LANDS = {word for path, c in command_rows() if c.lands for word in (path, *c.aliases)}
+# Removal lands even when a later cleanup step failed.
+REMOVES = {"remove", *_COMMANDS["remove"].aliases}
 
 
-def scripts() -> dict[str, str]:
-    return tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["scripts"]
+def test_every_function_is_gw_or_a_shortcut() -> None:
+    """A function left behind after its shortcut was renamed shadows nothing
+    and reports nothing; it just stops working."""
+    fish = {f.stem for f in FISH.glob("*.fish")}
+    zsh = {f.name for f in ZSH.iterdir()}
+    assert fish == zsh == {"gw", *SHORTCUTS}
 
 
-def test_every_shim_names_a_console_script() -> None:
-    """A shim left behind after its binary was renamed shadows nothing and
-    reports nothing; it just stops working."""
-    declared = scripts()
-    for f in sorted((ROOT / "functions").glob("*.fish")):
-        assert f.stem in declared or f.stem in SHORTCUTS, (
-            f"{f.name} has no console script"
-        )
-    for f in sorted((ROOT / "zsh/plugins/worktrees/functions").iterdir()):
-        assert f.name in declared or f.name in SHORTCUTS, f"{f} has no console script"
-
-
-def test_the_two_dialects_ship_the_same_names() -> None:
-    fish = {f.stem for f in (ROOT / "functions").glob("*.fish")}
-    zsh = {f.name for f in (ROOT / "zsh/plugins/worktrees/functions").iterdir()}
-    assert fish == zsh == set(CD_COMMANDS) | set(SHORTCUTS)
+def test_the_zsh_plugin_autoloads_every_function() -> None:
+    plugin = (ROOT / "zsh/plugins/worktrees/worktrees.plugin.zsh").read_text()
+    line = next(ln for ln in plugin.splitlines() if ln.startswith("autoload -Uz "))
+    assert set(shlex.split(line)[2:]) == {f.name for f in ZSH.iterdir()}
 
 
 @pytest.mark.parametrize("name", SHORTCUTS)
-def test_a_shortcut_is_one_call_to_a_command(name: str) -> None:
-    """By its plain name, not `command`, so a shortcut to a shim still lands
-    where the binary says. Anything more is logic, and logic belongs in the
-    CLI."""
-    call = SHORTCUTS[name]
-    assert call.split()[0] in scripts()
-    assert name not in scripts()
-    for path, line in (
-        (ROOT / "functions" / f"{name}.fish", f"{call} $argv"),
-        (ROOT / "zsh/plugins/worktrees/functions" / name, f'{call} "$@"'),
-    ):
-        code = [
-            stripped
-            for stripped in (raw.strip() for raw in path.read_text().splitlines())
-            if stripped
-            and not stripped.startswith("#")
-            and not stripped.startswith("function ")
-            and stripped != "end"
-        ]
-        assert code == [line], path
+def test_a_shortcut_is_one_call_to_the_gw_function(name: str) -> None:
+    """By its plain name, not `command gw`, so a shortcut to a command that
+    lands still lands. Anything more is logic, and logic belongs in the CLI.
+    fish's `--wraps` hands it the completions of the words it runs."""
+    run = " ".join(SHORTCUTS[name])
+    assert (FISH / f"{name}.fish").read_text() == (
+        f"function {name} --wraps '{run}' --description '{run}'\n    {run} $argv\nend\n"
+    )
+    assert (ZSH / name).read_text() == f'{run} "$@"\n'
 
 
-@pytest.mark.parametrize("name", CD_COMMANDS)
-def test_a_shim_calls_its_own_binary_and_nothing_else(name: str) -> None:
+def test_gw_calls_its_own_binary_and_nothing_else() -> None:
     """`command` is what stops the function calling itself. Without it the
-    shim recurses until the shell gives up."""
-    for path in (
-        ROOT / "functions" / f"{name}.fish",
-        ROOT / "zsh/plugins/worktrees/functions" / name,
-    ):
-        body = path.read_text()
-        assert f"command {name}" in body, path
-        for other in CD_COMMANDS:
-            if other != name:
-                assert not re.search(rf"command {other}\b", body), (
-                    f"{path} calls {other}"
-                )
+    function recurses until the shell gives up."""
+    for path in (FISH / "gw.fish", ZSH / "gw"):
+        code = "\n".join(
+            line
+            for line in path.read_text().splitlines()
+            if not line.strip().startswith("#")
+        )
+        assert re.findall(r"\bcommand (\S+)", code) == ["gw", "gw"], path
 
 
-@pytest.mark.parametrize("name", CD_COMMANDS)
-def test_adapters_stay_small(name: str) -> None:
-    """Allow exact output capture and CLI dispatch without hiding operations."""
-    for path in (
-        ROOT / "functions" / f"{name}.fish",
-        ROOT / "zsh/plugins/worktrees/functions" / name,
-    ):
+def test_gw_lands_for_exactly_the_commands_that_land() -> None:
+    fish = (FISH / "gw.fish").read_text()
+    zsh = (ZSH / "gw").read_text()
+    fish_cases = re.findall(r"^\s*case (.+)$", fish, re.M)
+    zsh_cases = re.findall(r"^\s*([a-z|]+)\) ", zsh, re.M)
+    assert {w for case in fish_cases for w in case.split()} == LANDS
+    assert {w for case in zsh_cases for w in case.split("|")} == LANDS
+    after_failure = re.search(r'contains -- "\$argv\[1\]" (.+)$', fish, re.M)
+    assert after_failure and set(after_failure.group(1).split()) == REMOVES
+    assert set(re.findall(r"\*:(\w+)", zsh)) == REMOVES
+
+
+def test_the_gw_function_stays_small() -> None:
+    """Exact output capture and one switch on the subcommand, nothing else."""
+    for path in (FISH / "gw.fish", ZSH / "gw"):
         code = [
             line
             for line in path.read_text().splitlines()
             if line.strip() and not line.strip().startswith("#")
         ]
-        limit = 25 if name == "gw" else 18
-        assert len(code) <= limit, f"{path} is {len(code)} lines"
-
-
-def test_no_shim_exists_for_a_command_that_does_not_cd() -> None:
-    """Only navigation commands and shortcuts need shell functions."""
-    shimmed = {f.stem for f in (ROOT / "functions").glob("*.fish")}
-    for name in ("gwp", "gwbc", "gwrot", "worktrees"):
-        assert name not in shimmed
+        assert len(code) <= 30, f"{path} is {len(code)} lines"
 
 
 # --------------------------------------------------------------------------
@@ -123,7 +103,7 @@ def test_no_shim_exists_for_a_command_that_does_not_cd() -> None:
 
 
 def _fake(tmp_path: Path, name: str, script: str) -> Path:
-    """A stand-in binary, so the shim is what is under test."""
+    """A stand-in binary, so the function is what is under test."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     exe = bin_dir / name
@@ -136,176 +116,239 @@ def _missing(shell: str) -> NoReturn:  # pragma: no cover
     """Skip locally, fail in CI.
 
     A skip is invisible in `pytest -q`, so a runner without the shell went
-    green without the shim ever running. A checkout on a machine with one
+    green without the function ever running. A checkout on a machine with one
     shell and not the other still skips.
     """
     if os.environ.get("CI"):
-        pytest.fail(f"{shell} is not installed, and CI has to run its shim")
+        pytest.fail(f"{shell} is not installed, and CI has to run its functions")
     pytest.skip(f"{shell} is not installed")
 
 
-def _run_fish(bin_dir: Path, line: str) -> tuple[int, str]:
-    fish = shutil.which("fish")
-    if not fish:  # pragma: no cover
-        _missing("fish")
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
-    proc = subprocess.run(
-        [
-            fish,
-            "--no-config",
-            "-c",
-            f"source {ROOT / 'functions' / 'gwa.fish'}; {line}",
-        ],
-        capture_output=True,
-        text=True,
-        env=env,
+def _setup(shell: str) -> str:
+    """Every function the plugin ships, defined the way the plugin does."""
+    if shell == "fish":
+        return "; ".join(
+            f"source {shlex.quote(str(path))}" for path in sorted(FISH.glob("*.fish"))
+        )
+    return f"fpath=({ZSH} $fpath); autoload -Uz " + shlex.join(
+        [path.name for path in sorted(ZSH.iterdir())]
     )
-    return proc.returncode, proc.stdout + proc.stderr
 
 
-def test_the_fish_shim_lands_the_caller_in_the_printed_directory(tmp_path) -> None:
-    target = tmp_path / "landing"
-    target.mkdir()
-    bin_dir = _fake(tmp_path, "gwa", f'#!/bin/sh\nprintf "%s\\n" "{target}"\n')
-    code, out = _run_fish(bin_dir, "gwa >/dev/null; pwd")
-    assert code == 0, out
-    assert str(target.resolve()) in out
-
-
-def test_the_fish_shim_keeps_a_path_holding_a_newline_whole(tmp_path) -> None:
-    """fish splits command substitution on newlines. `string collect` is why
-    this arrives as one directory rather than two."""
-    target = tmp_path / "we\nird"
-    target.mkdir()
-    bin_dir = _fake(tmp_path, "gwa", f'#!/bin/sh\nprintf "%s\\n" "{target}"\n')
-    code, out = _run_fish(bin_dir, "gwa; test -d . ; and echo LANDED")
-    assert code == 0, out
-    assert "LANDED" in out
-
-
-def test_the_fish_shim_returns_the_binarys_exit_code(tmp_path) -> None:
-    """The pipeline's own $status belongs to `string collect`, which returns
-    1 when it collected nothing. $pipestatus[1] is the command's."""
-    bin_dir = _fake(tmp_path, "gwa", '#!/bin/sh\necho "went wrong" >&2\nexit 3\n')
-    _, out = _run_fish(bin_dir, "gwa; echo code=$status")
-    assert "code=3" in out, out
-
-
-def test_the_fish_shim_stays_put_on_empty_output(tmp_path) -> None:
-    """gwr prints nothing when the caller should not move."""
-    bin_dir = _fake(tmp_path, "gwa", "#!/bin/sh\nexit 0\n")
-    code, out = _run_fish(bin_dir, "cd /; gwa; pwd")
-    assert code == 0, out
-    assert out.strip().endswith("/")
-
-
-def test_the_fish_shortcut_lands_where_gwr_says_with_the_flag(tmp_path) -> None:
-    """stdout goes to /dev/null, so only `pwd` can print the target: a
-    shortcut that skipped the shim would print it and stay put."""
-    target = tmp_path / "landing-bang"
-    target.mkdir()
-    seen = tmp_path / "argv"
-    bin_dir = _fake(
-        tmp_path, "gwr", f'#!/bin/sh\necho "$@" > "{seen}"\nprintf "%s\\n" "{target}"\n'
+def _drive(
+    shell: str,
+    bin_dir: Path,
+    words: list[str],
+    at: Path,
+    env: dict[str, str] | None = None,
+    answer: bytes | None = None,
+) -> tuple[subprocess.CompletedProcess[bytes], bytes]:
+    binary = shutil.which(shell)
+    if not binary:
+        _missing(shell)
+    cwd_file = bin_dir.parent / "shell-cwd"
+    save = "set -l code $status" if shell == "fish" else "local code=$?"
+    no_config = "--no-config" if shell == "fish" else "-f"
+    line = (
+        f"{_setup(shell)}; {shlex.join(words)}; {save}; "
+        f"printf '%s' \"$PWD\" > {shlex.quote(str(cwd_file))}; exit $code"
     )
-    fns = ROOT / "functions"
-    code, out = _run_fish(
-        bin_dir,
-        f"source {fns / 'gwr.fish'}; source '{fns / 'gwr!.fish'}'; "
-        "gwr! x >/dev/null; pwd",
+    terminal = pty.openpty() if answer is not None else None
+    if terminal:
+        os.write(terminal[0], answer or b"")
+    try:
+        process = subprocess.run(
+            [binary, no_config, "-c", line],
+            cwd=at,
+            env={
+                **(env or os.environ),
+                "PATH": f"{bin_dir}:{(env or os.environ)['PATH']}",
+            },
+            stdin=terminal[1] if terminal else subprocess.DEVNULL,
+            capture_output=True,
+        )
+    finally:
+        if terminal:
+            os.close(terminal[0])
+            os.close(terminal[1])
+    return process, cwd_file.read_bytes()
+
+
+def _cli_binaries(world: World) -> Path:
+    bin_dir = world.root / "bin"
+    bin_dir.mkdir()
+    binary = bin_dir / "gw"
+    binary.write_text(
+        f"#!{sys.executable}\nfrom worktrees.cli import gw\nraise SystemExit(gw())\n"
     )
-    assert code == 0, out
-    assert str(target.resolve()) in out
-    assert seen.read_text().split() == ["--delete", "ignored-files", "x"]
+    binary.chmod(0o755)
+    return bin_dir
 
 
-def _run_zsh(bin_dir: Path, line: str) -> tuple[int, str]:
-    zsh = shutil.which("zsh")
-    if not zsh:  # pragma: no cover
-        _missing("zsh")
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
-    fns = ROOT / "zsh/plugins/worktrees/functions"
-    proc = subprocess.run(
-        [
-            zsh,
-            "-f",
-            "-c",
-            f"fpath=({fns} $fpath); autoload -Uz gwa gwr 'gwr!' 'gwp!'; {line}",
-        ],
-        capture_output=True,
-        text=True,
-        env=env,
+def _printing(tmp_path: Path, target: Path, code: int = 0) -> Path:
+    """A gw that prints `target` as its destination and exits `code`."""
+    return _fake(
+        tmp_path,
+        "gw",
+        f"#!{sys.executable}\nimport os\n"
+        f"os.write(1, {os.fsencode(target.resolve())!r} + b'\\n')\n"
+        f"raise SystemExit({code})\n",
     )
-    return proc.returncode, proc.stdout + proc.stderr
-
-
-def test_the_zsh_shim_lands_the_caller_in_the_printed_directory(tmp_path) -> None:
-    target = tmp_path / "landing-zsh"
-    target.mkdir()
-    bin_dir = _fake(tmp_path, "gwa", f'#!/bin/sh\nprintf "%s\\n" "{target}"\n')
-    code, out = _run_zsh(bin_dir, "gwa >/dev/null; pwd")
-    assert code == 0, out
-    assert str(target.resolve()) in out
-
-
-def test_the_zsh_shortcut_lands_where_gwr_says_with_the_flag(tmp_path) -> None:
-    target = tmp_path / "landing-bang-zsh"
-    target.mkdir()
-    seen = tmp_path / "argv"
-    bin_dir = _fake(
-        tmp_path, "gwr", f'#!/bin/sh\necho "$@" > "{seen}"\nprintf "%s\\n" "{target}"\n'
-    )
-    code, out = _run_zsh(bin_dir, "gwr! x >/dev/null; pwd")
-    assert code == 0, out
-    assert str(target.resolve()) in out
-    assert seen.read_text().split() == ["--delete", "ignored-files", "x"]
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-def test_gwp_bang_runs_gwp_with_its_flags_and_its_exit_code(tmp_path, shell) -> None:
-    seen = tmp_path / "argv"
-    bin_dir = _fake(tmp_path, "gwp", f'#!/bin/sh\necho "$@" > "{seen}"\nexit 4\n')
-    if shell == "fish":
-        _, out = _run_fish(
-            bin_dir,
-            f"source '{ROOT / 'functions' / 'gwp!.fish'}'; "
-            "gwp! --branch x; echo code=$status",
-        )
-    else:
-        _, out = _run_zsh(bin_dir, "gwp! --branch x; echo code=$?")
-    assert "code=4" in out, out
-    assert seen.read_text().split() == [
-        "--yes",
-        "--branch",
-        "x",
+@pytest.mark.parametrize("name", SHORTCUTS)
+def test_a_shortcut_forwards_its_words_arguments_and_exit_code(tmp_path, shell, name):
+    bin_dir = _fake(tmp_path, "gw", '#!/bin/sh\nprintf "%s\\n" "$@"\nexit 4\n')
+    process, cwd = _drive(shell, bin_dir, [name, "--only", "two words"], tmp_path)
+    assert process.returncode == 4, process.stderr
+    assert process.stdout.decode().splitlines() == [
+        *SHORTCUTS[name][1:],
+        "--only",
+        "two words",
     ]
+    assert cwd == os.fsencode(tmp_path.resolve())
 
 
-def test_the_zsh_shim_returns_the_binarys_exit_code(tmp_path) -> None:
-    bin_dir = _fake(tmp_path, "gwa", "#!/bin/sh\nexit 3\n")
-    code, _ = _run_zsh(bin_dir, "gwa")
-    assert code == 3
-
-
-def test_the_zsh_shim_keeps_a_path_holding_a_newline_whole(tmp_path) -> None:
-    """The sentinel preserves the line feeds inside a destination."""
-    target = tmp_path / "we\nird-zsh"
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+@pytest.mark.parametrize(
+    "words",
+    [
+        ["gw", "list", "x"],
+        ["gw", "add", "x"],
+        ["gw", "a", "x"],
+        ["gwa", "x"],
+        ["gw", "remove", "x"],
+        ["gw", "rm", "x"],
+        ["gwr", "x"],
+        ["gwr!", "x"],
+    ],
+)
+@pytest.mark.parametrize("suffix", [" space \t", "line\nbreak", "final\n"])
+def test_gw_lands_on_the_exact_destination_bytes(tmp_path, shell, words, suffix):
+    """fish splits command substitution on newlines and zsh strips trailing
+    ones; `string collect -N` and the sentinel are why this arrives whole."""
+    target = tmp_path / suffix
     target.mkdir()
-    bin_dir = _fake(tmp_path, "gwa", f'#!/bin/sh\nprintf "%s\\n" "{target}"\n')
-    code, out = _run_zsh(bin_dir, "gwa; test -d . && echo LANDED")
-    assert code == 0, out
-    assert "LANDED" in out
+    bin_dir = _printing(tmp_path, target)
+    process, cwd = _drive(shell, bin_dir, words, tmp_path, answer=b"")
+    assert process.returncode == 0, process.stderr
+    assert process.stdout == b""
+    assert cwd == os.fsencode(target.resolve())
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+@pytest.mark.parametrize(
+    "words", [["gwr", "current"], ["gw", "rm", "current"], ["gwr!", "current"]]
+)
+def test_remove_lands_after_partial_failure_and_keeps_the_exit_code(
+    tmp_path, shell, words
+):
+    target = tmp_path / "main\n"
+    target.mkdir()
+    process, cwd = _drive(shell, _printing(tmp_path, target, 4), words, tmp_path)
+    assert process.returncode == 4, process.stderr
+    assert process.stdout == b""
+    assert cwd == os.fsencode(target.resolve())
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+@pytest.mark.parametrize("words", [["gwa", "x"], ["gw", "add", "x"], ["gw", "list"]])
+def test_add_and_list_stay_put_when_the_command_fails(tmp_path, shell, words):
+    target = tmp_path / "landing"
+    target.mkdir()
+    bin_dir = _printing(tmp_path, target, 1)
+    process, cwd = _drive(shell, bin_dir, words, tmp_path, answer=b"")
+    assert process.returncode == 1, process.stderr
+    assert process.stdout == os.fsencode(target.resolve()) + b"\n"
+    assert cwd == os.fsencode(tmp_path.resolve())
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+def test_gw_stays_put_on_empty_output(tmp_path, shell):
+    """remove prints nothing when the caller should not move."""
+    bin_dir = _fake(tmp_path, "gw", "#!/bin/sh\nexit 0\n")
+    process, cwd = _drive(shell, bin_dir, ["gwr", "x"], tmp_path)
+    assert process.returncode == 0, process.stderr
+    assert process.stdout == b""
+    assert cwd == os.fsencode(tmp_path.resolve())
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+@pytest.mark.parametrize(
+    "payload",
+    [b'{"path": "/nowhere", "branch": "x"}\n', b"* main   /one\n  other  /two\n"],
+)
+def test_gw_prints_captured_output_that_is_not_a_directory(tmp_path, shell, payload):
+    """The function cannot tell a destination from data by looking, so it
+    asks whether what it has is somewhere to go, and prints it when not."""
+    bin_dir = _fake(
+        tmp_path, "gw", f"#!{sys.executable}\nimport os\nos.write(1, {payload!r})\n"
+    )
+    process, cwd = _drive(shell, bin_dir, ["gwa", "x"], tmp_path)
+    assert process.returncode == 0, process.stderr
+    assert process.stdout == payload
+    assert cwd == os.fsencode(tmp_path.resolve())
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+@pytest.mark.parametrize(
+    "words", [["gw", "list", "--json"], ["gwr", "--json"], ["gwa", "--json"]]
+)
+def test_data_output_passes_through_on_failure(tmp_path, shell, words):
+    payload = b'{"error": "cleanup failed"}\n\n'
+    bin_dir = _fake(
+        tmp_path,
+        "gw",
+        f"#!{sys.executable}\nimport os\nos.write(1, {payload!r})\n"
+        "raise SystemExit(4)\n",
+    )
+    process, cwd = _drive(shell, bin_dir, words, tmp_path)
+    assert process.returncode == 4, process.stderr
+    assert process.stdout == payload
+    assert cwd == os.fsencode(tmp_path.resolve())
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+@pytest.mark.parametrize(
+    "words",
+    [
+        [],
+        ["--help"],
+        ["--json"],
+        ["--complete"],
+        ["ls"],
+        ["prune"],
+        ["rotate"],
+        ["version"],
+        ["list", "x"],
+        ["list", "--json"],
+        ["add", "--json"],
+        ["add", "x", "--help"],
+        ["rm", "-h"],
+        ["remove", "--complete"],
+    ],
+)
+def test_gw_moves_only_for_a_command_that_lands(tmp_path, shell, words):
+    """Without a terminal on stdin, `list` prints metadata rather than
+    picking, so it is data too."""
+    target = tmp_path / "target"
+    target.mkdir()
+    process, cwd = _drive(shell, _printing(tmp_path, target), ["gw", *words], tmp_path)
+    assert process.returncode == 0, process.stderr
+    assert process.stdout == os.fsencode(target.resolve()) + b"\n"
+    assert cwd == os.fsencode(tmp_path.resolve())
 
 
 def test_a_real_terminal_is_not_required(tmp_path) -> None:
-    """The shim is a pipe around the binary either way; this drives it on a
-    pty so the interactive path is exercised too."""
+    """The function is a pipe around the binary either way; this drives it
+    on a pty so the interactive path is exercised too."""
     fish = shutil.which("fish")
     if not fish:  # pragma: no cover
         _missing("fish")
     target = tmp_path / "pty-landing"
     target.mkdir()
-    bin_dir = _fake(tmp_path, "gwa", f'#!/bin/sh\nprintf "%s\\n" "{target}"\n')
+    bin_dir = _printing(tmp_path, target)
 
     # Popen rather than pty.fork: a pytest-xdist worker runs threads, and a
     # fork that goes on to run Python can deadlock on a lock one of them held.
@@ -315,7 +358,7 @@ def test_a_real_terminal_is_not_required(tmp_path) -> None:
             fish,
             "--no-config",
             "-c",
-            f"source {ROOT / 'functions' / 'gwa.fish'}; gwa; pwd",
+            f"{_setup('fish')}; gwa x; pwd",
         ],
         stdin=child,
         stdout=child,
@@ -335,34 +378,6 @@ def test_a_real_terminal_is_not_required(tmp_path) -> None:
     proc.wait()
     os.close(parent)
     assert str(target.resolve()) in out.decode(errors="replace")
-
-
-def test_the_fish_shim_prints_output_that_is_not_a_directory(tmp_path) -> None:
-    """`--json` and `--list` print on the same stream a destination arrives
-    on. The shim cannot tell them apart by looking, so it asks whether what
-    it has is somewhere to go, and prints it when it is not.
-    """
-    payload = '{"path": "/nowhere", "branch": "x"}'
-    bin_dir = _fake(tmp_path, "gwa", f"#!/bin/sh\nprintf '%s\\n' '{payload}'\n")
-    code, out = _run_fish(bin_dir, "cd /; gwa --json; pwd")
-    assert code == 0, out
-    assert out.splitlines() == [payload, "/"], out
-
-
-def test_the_fish_shim_prints_a_multi_line_listing_whole(tmp_path) -> None:
-    listing = "* main   /one\\n  other  /two"
-    bin_dir = _fake(tmp_path, "gwa", f"#!/bin/sh\nprintf '%b\\n' '{listing}'\n")
-    code, out = _run_fish(bin_dir, "cd /; gwa --list; pwd")
-    assert code == 0, out
-    assert out.splitlines() == ["* main   /one", "  other  /two", "/"], out
-
-
-def test_the_zsh_shim_prints_output_that_is_not_a_directory(tmp_path) -> None:
-    payload = '{"path": "/nowhere", "branch": "x"}'
-    bin_dir = _fake(tmp_path, "gwa", f"#!/bin/sh\nprintf '%s\\n' '{payload}'\n")
-    code, out = _run_zsh(bin_dir, "cd /; gwa --json; pwd")
-    assert code == 0, out
-    assert out.splitlines() == [payload, "/"], out
 
 
 @pytest.mark.parametrize(
@@ -407,7 +422,7 @@ def test_each_plugin_tells_the_binary_its_release(shell: str, plugin: Path) -> N
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
 def test_a_restore_line_means_the_same_in_every_shell(world, shell: str) -> None:
     """`shlex.quote` writes POSIX single quotes, which fish reads literally
-    too, so `gwp` prints one line rather than one per shell."""
+    too, so `gw prune` prints one line rather than one per shell."""
     from worktrees import prune
 
     name = "weird>pwned"  # unquoted, the shell redirects and git gets `weird`
@@ -427,71 +442,9 @@ def test_a_restore_line_means_the_same_in_every_shell(world, shell: str) -> None
     assert not (world.repo / "pwned").exists()
 
 
-# Navigation uses the real CLI; stand-in binaries isolate output transport.
-def _drive(
-    shell: str,
-    bin_dir: Path,
-    words: list[str],
-    at: Path,
-    env: dict[str, str] | None = None,
-    answer: bytes | None = None,
-) -> tuple[subprocess.CompletedProcess[bytes], bytes]:
-    binary = shutil.which(shell)
-    if not binary:
-        _missing(shell)
-    cwd_file = bin_dir.parent / "shell-cwd"
-    if shell == "fish":
-        setup = "; ".join(
-            f"source {shlex.quote(str(path))}"
-            for path in sorted((ROOT / "functions").glob("*.fish"))
-        )
-        save = "set -l code $status"
-        finish = "exit $code"
-        no_config = "--no-config"
-    else:
-        fns = ROOT / "zsh/plugins/worktrees/functions"
-        setup = f"fpath=({fns} $fpath); autoload -Uz " + shlex.join(
-            [path.name for path in sorted(fns.iterdir())]
-        )
-        save = "local code=$?"
-        finish = "exit $code"
-        no_config = "-f"
-    line = (
-        f"{setup}; {shlex.join(words)}; {save}; "
-        f"printf '%s' \"$PWD\" > {shlex.quote(str(cwd_file))}; {finish}"
-    )
-    terminal = pty.openpty() if answer is not None else None
-    if terminal:
-        os.write(terminal[0], answer or b"")
-    try:
-        process = subprocess.run(
-            [binary, no_config, "-c", line],
-            cwd=at,
-            env={
-                **(env or os.environ),
-                "PATH": f"{bin_dir}:{(env or os.environ)['PATH']}",
-            },
-            stdin=terminal[1] if terminal else subprocess.DEVNULL,
-            capture_output=True,
-        )
-    finally:
-        if terminal:
-            os.close(terminal[0])
-            os.close(terminal[1])
-    return process, cwd_file.read_bytes()
-
-
-def _cli_binaries(world: World) -> Path:
-    bin_dir = world.root / "bin"
-    bin_dir.mkdir()
-    for name in ("gw", "gwr"):
-        binary = bin_dir / name
-        binary.write_text(
-            f"#!{sys.executable}\nfrom worktrees.cli import {name}\n"
-            f"raise SystemExit({name}())\n"
-        )
-        binary.chmod(0o755)
-    return bin_dir
+# --------------------------------------------------------------------------
+# the real CLI behind the functions
+# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
@@ -505,6 +458,18 @@ def test_gw_navigates_through_list_matching(world, shell, query):
     )
     assert process.returncode == 0, process.stderr
     assert process.stdout == b""
+    assert cwd == os.fsencode(target.resolve())
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+@pytest.mark.parametrize("words", [["gw", "add"], ["gw", "a"], ["gwa"]])
+def test_add_lands_in_the_new_worktree(world, shell, words):
+    process, cwd = _drive(
+        shell, _cli_binaries(world), [*words, "topic"], world.repo, env_for(world)
+    )
+    assert process.returncode == 0, process.stderr
+    assert process.stdout == b""
+    target = world.parent / ".worktrees" / "topic" / world.repo.name
     assert cwd == os.fsencode(target.resolve())
 
 
@@ -525,13 +490,10 @@ def test_gw_subcommands_take_precedence_and_list_is_the_escape(world, shell, nam
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("entry", ["gw"])
-def test_ambiguous_navigation_lists_matching_paths_without_a_terminal(
-    world, shell, entry
-):
+def test_ambiguous_navigation_lists_matching_paths_without_a_terminal(world, shell):
     targets = [world.worktree(name) for name in ("fix-one", "fix-two")]
     process, cwd = _drive(
-        shell, _cli_binaries(world), [entry, "list", "fix"], world.repo, env_for(world)
+        shell, _cli_binaries(world), ["gw", "list", "fix"], world.repo, env_for(world)
     )
     assert process.returncode == 0, process.stderr
     assert b"WORKTREE" in process.stdout
@@ -555,106 +517,7 @@ def test_gw_missing_name_does_not_move(world, shell):
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("name", ["gw", "gwr", "gwa"])
-@pytest.mark.parametrize("suffix", [" space \t", "line\nbreak", "final\n"])
-def test_navigation_preserves_exact_destination_bytes(tmp_path, shell, name, suffix):
-    target = tmp_path / suffix
-    target.mkdir()
-    binary = (
-        f"#!{sys.executable}\nimport os, sys\n"
-        "if sys.argv[1:] == ['--complete']:\n"
-        "    print('version\\tversion')\n"
-        "else:\n"
-        f"    os.write(1, {os.fsencode(target.resolve())!r} + b'\\n')\n"
-    )
-    bin_dir = _fake(tmp_path, name, binary)
-    words = [name, *(["list"] if name == "gw" else []), "target"]
-    process, cwd = _drive(shell, bin_dir, words, tmp_path, answer=b"")
-    assert process.returncode == 0, process.stderr
-    assert process.stdout == b""
-    assert cwd == os.fsencode(target.resolve())
-
-
-@pytest.mark.parametrize("shell", ["fish", "zsh"])
-def test_gwr_lands_after_partial_failure_and_keeps_the_exit_code(tmp_path, shell):
-    target = tmp_path / "main\n"
-    target.mkdir()
-    bin_dir = _fake(
-        tmp_path,
-        "gwr",
-        f"#!/bin/sh\nprintf '%s\\n' {shlex.quote(str(target))}\nexit 4\n",
-    )
-    process, cwd = _drive(shell, bin_dir, ["gwr", "current"], tmp_path)
-    assert process.returncode == 4, process.stderr
-    assert process.stdout == b""
-    assert cwd == os.fsencode(target.resolve())
-
-
-@pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("name", ["gw", "gwr", "gwa"])
-def test_adapter_preserves_data_output_on_failure(tmp_path, shell, name):
-    payload = b'{"error": "cleanup failed"}\n\n'
-    bin_dir = _fake(
-        tmp_path,
-        name,
-        f"#!{sys.executable}\nimport os\nos.write(1, {payload!r})\n"
-        "raise SystemExit(4)\n",
-    )
-    process, cwd = _drive(shell, bin_dir, [name, "--json"], tmp_path)
-    assert process.returncode == 4, process.stderr
-    assert process.stdout == payload
-    assert cwd == os.fsencode(tmp_path.resolve())
-
-
-@pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize(
-    "words",
-    [
-        [],
-        ["--help"],
-        ["--json"],
-        ["--complete"],
-        ["ls"],
-        ["custom"],
-        ["list", "--json"],
-    ],
-)
-def test_gw_navigates_only_for_list(tmp_path, shell, words):
-    target = tmp_path / "target"
-    target.mkdir()
-    binary = (
-        f"#!{sys.executable}\nimport sys\n"
-        "if sys.argv[1:] == ['--complete']:\n"
-        "    print('ls\\tlist\\ncustom\\tcustom')\n"
-        f"else:\n    print({str(target)!r})\n"
-    )
-    bin_dir = _fake(tmp_path, "gw", binary)
-    process, cwd = _drive(shell, bin_dir, ["gw", *words], tmp_path)
-    assert process.returncode == 0, process.stderr
-    assert process.stdout
-    assert cwd == os.fsencode(tmp_path.resolve())
-
-
-@pytest.mark.parametrize("shell", ["fish", "zsh"])
-def test_gwp_double_bang_forwards_arguments_and_failure(tmp_path, shell):
-    bin_dir = _fake(tmp_path, "gwp", '#!/bin/sh\nprintf "%s\\n" "$@"\nexit 4\n')
-    process, _ = _drive(
-        shell, bin_dir, ["gwp!!", "--only", "empty", "two words"], tmp_path
-    )
-    assert process.returncode == 4, process.stderr
-    assert process.stdout.splitlines() == [
-        b"--delete",
-        b"all",
-        b"--yes",
-        b"--only",
-        b"empty",
-        b"two words",
-    ]
-
-
-@pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("entry", ["gw"])
-def test_navigation_reaches_a_real_main_path_ending_in_newline(world, shell, entry):
+def test_navigation_reaches_a_real_main_path_ending_in_newline(world, shell):
     target = world.root / "main\n"
     world.repo.rename(target)
     world.repo = target
@@ -662,7 +525,7 @@ def test_navigation_reaches_a_real_main_path_ending_in_newline(world, shell, ent
     process, cwd = _drive(
         shell,
         _cli_binaries(world),
-        [entry, "list", "main"],
+        ["gw", "list", "main"],
         linked,
         env_for(world),
         answer=b"",
@@ -690,27 +553,20 @@ def test_real_gw_data_and_subcommands_keep_the_callers_directory(world, shell, w
         shell, _cli_binaries(world), ["gw", *words], world.repo, env_for(world)
     )
     assert process.returncode == 0, process.stderr
-    assert process.stdout or words == ["--help"]
+    assert process.stdout
     assert cwd == os.fsencode(world.repo.resolve())
     if words == ["list", "one"]:
         assert b"WORKTREE" in process.stdout and os.fsencode(target) in process.stdout
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-def test_gwp_double_bang_help_names_every_deletion_category(world, shell):
-    bin_dir = _cli_binaries(world)
-    _fake(
-        world.root,
-        "gwp",
-        f"#!{sys.executable}\nfrom worktrees.cli import gwp\nraise SystemExit(gwp())\n",
-    )
+def test_a_shortcuts_help_names_what_it_runs(world, shell):
     process, cwd = _drive(
-        shell, bin_dir, ["gwp!!", "--help"], world.repo, env_for(world)
+        shell, _cli_binaries(world), ["gwpa!", "--help"], world.repo, env_for(world)
     )
     assert process.returncode == 0, process.stderr
-    assert (
-        b"gwp!! deletes empty branches, ignored files and branch stashes"
-        in process.stdout
+    assert b"gwpa! runs gw prune --delete all --yes" in b" ".join(
+        process.stdout.split()
     )
     assert cwd == os.fsencode(world.repo.resolve())
 

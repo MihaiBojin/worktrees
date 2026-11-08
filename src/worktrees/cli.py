@@ -20,6 +20,9 @@ if TYPE_CHECKING:  # names used in annotations, which never run
     from . import worktree as wt_mod
 
 
+_NO_WORKTREES = "no worktrees besides the main checkout; gw add NAME makes one"
+
+
 def _err(text: str) -> None:
     progress.line(text)
 
@@ -160,7 +163,7 @@ def _offerable(path: str) -> bool:
     the first one, so a tab inside the path lands in the description.
 
     A filename may hold any byte but NUL and `/`. Nothing here makes such a
-    path, since `gwa` derives it from a branch name and git refuses a newline
+    path, since `gw add` derives it from a branch name and git refuses a newline
     in a ref, so this only ever skips a worktree added by hand.
     """
     return "\n" not in path
@@ -380,7 +383,7 @@ def run_preview(args: argparse.Namespace) -> int:
     print()
     print(_counted(rows))
     if len(rows) < 2:
-        _err(render.note("no worktrees besides the main checkout; gwa NAME makes one"))
+        _err(render.note(_NO_WORKTREES))
     if stale:
         _warn(
             f"{len(stale)} stale record(s) for directories that are gone; "
@@ -395,9 +398,9 @@ def run_preview(args: argparse.Namespace) -> int:
         )
     if unknown:
         names = ", ".join(render.branch(v.label) for v in unknown)
-        _warn(f"unclear, and gwp does not touch these: {names}")
+        _warn(f"unclear, and gw prune does not touch these: {names}")
     if go:
-        _err(render.note(f"gwp --yes removes the {len(go)} marked removable"))
+        _err(render.note(f"gw prune --yes removes the {len(go)} marked removable"))
     return 0
 
 
@@ -451,11 +454,7 @@ def run_prune(args: argparse.Namespace) -> int:
                 print()
                 print(f"nothing to remove; {_counted(rows)}")
                 if len(rows) < 2:
-                    _err(
-                        render.note(
-                            "no worktrees besides the main checkout; gwa NAME makes one"
-                        )
-                    )
+                    _err(render.note(_NO_WORKTREES))
         return 0
 
     if unknown and not args.quiet:
@@ -506,6 +505,7 @@ def run_prune(args: argparse.Namespace) -> int:
 
 
 def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
+    p.description = _NEW_BRANCH_HELP
     p.add_argument(
         "name", nargs="?", default="", metavar="NAME", help="the branch to start"
     )
@@ -563,6 +563,7 @@ def run_new_branch(args: argparse.Namespace) -> int:
 
 
 def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
+    p.description = _ROTATE_HELP
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument(
         "-q", "--quiet", action="store_true", help="omit summaries and progress"
@@ -734,7 +735,7 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
 
 
 def _landed(args: argparse.Namespace, landed: wt_mod.Landed) -> int:
-    """One destination on stdout, so `cd $(gwa x)` works."""
+    """One destination on stdout, so `cd $(gw add x)` works."""
 
     if args.json:
         print(
@@ -899,7 +900,7 @@ def run_remove(args: argparse.Namespace) -> int:
 
     if args.complete:
         # Every worktree this can reach, and no verdict: whether a branch is
-        # finished is what gwr works out after you pick one, not what decides
+        # finished is what gw remove works out after you pick one, not what decides
         # whether its name can be typed. No fetch either, so TAB stays fast.
         for w in R.worktrees():
             if "bare" not in w.flags and not w.main and _offerable(w.path):
@@ -1058,15 +1059,8 @@ def run_version(args: argparse.Namespace) -> int:
     return 0
 
 
-def _listed(names: list[str]) -> str:
-    """`a, b and c`, and `a` on its own when there is one."""
-    if len(names) == 1:
-        return names[0]
-    return f"{', '.join(names[:-1])} and {names[-1]}"
-
-
 def _guide() -> int:
-    """Every name this package installs, and what each one answers."""
+    """Every gw command, with the shell plugin's shortcuts under each."""
     o = render.out
     print(
         f"{o('worktrees', BOLD)} {o(__version__, YELLOW)}: git worktree commands "
@@ -1074,48 +1068,49 @@ def _guide() -> int:
     )
     print()
 
-    # The binary green, the subcommand blue, what goes after either dim, so
-    # each column reads as one kind of thing. Plain text off a terminal.
-    rows: list[Row] = [(Cell("COMMAND", BOLD), Cell("GW", BOLD), Cell("DOES", BOLD))]
-    for name, c in command_rows():
+    # The subcommand blue, what goes after it dim, a shortcut green, so each
+    # kind of name reads as one thing. Plain text off a terminal.
+    rows: list[Row] = [(Cell("COMMAND", BOLD), Cell("DOES", BOLD))]
+    for path, c in command_rows():
         aliases = f" ({', '.join(c.aliases)})" if c.aliases else ""
-        usage = f" {c.usage}" if c.usage and not c.binary else ""
+        usage = f" {c.usage}" if c.usage else ""
         rows.append(
             (
-                # Commands without a console script use only their gw spelling.
-                Cell.of((c.binary, BOLD + GREEN), (f" {c.usage}", DIM))
-                if c.binary and c.usage
-                else Cell(c.binary or "\u2014", BOLD + GREEN if c.binary else DIM),
-                Cell.of(("gw ", DIM), (name, BLUE), (usage, DIM), (aliases, DIM)),
+                Cell.of(("gw ", DIM), (path, BLUE), (aliases, DIM), (usage, DIM)),
                 Cell(c.about),
             )
         )
+        for name, words in shortcuts(path, c):
+            rows.append(
+                (Cell.of(("  ", ""), (name, BOLD + GREEN)), Cell(" ".join(words), DIM))
+            )
     print(table(rows))
     print()
-
-    def names(binaries: list[str]) -> str:
-        return _listed([o(b, BOLD + GREEN) for b in binaries])
-
-    lands = ["gw", *(c.binary for _, c in command_rows() if c.lands and c.binary)]
-    print(
-        f"{names(lands)} change the directory you are "
-        "standing in.\nA binary cannot do that, so each needs the shell function "
-        "of the same name\nfrom the plugin; the rest need nothing but $PATH."
-    )
-    print("gw list [QUERY] picks a destination in a terminal; typing filters.")
-    print("Without a terminal, or with --json or --list, it prints metadata.")
-    print("gwl is gw list; gwp! skips confirmation; gwr! deletes ignored files.")
-    print("gwp!! deletes empty branches, ignored files and branch stashes.")
+    print("Indented names are shortcuts the shell plugin defines.")
     text, same = plugin_state()
     print(o(text, "" if same else YELLOW))
-    print()
-    print(
-        f"{names(['gwbc', 'gwrot'])} start branches rather than worktrees."
-        "\n\nOutput flags depend on the command. "
-        f"`{o('gw <command> --help', BOLD)}` lists them.\n"
-        f"A non-empty {o('NO_COLOR', BOLD)} turns the colour off."
-    )
     return 0
+
+
+def shortcuts(path: str, command: _Command) -> list[tuple[str, list[str]]]:
+    """Each shortcut the shell plugins define for this command, with the
+    words it runs: `gwp!` runs `gw prune --yes`."""
+    return [
+        (name, ["gw", *path.split(), *flags.split()])
+        for name, flags in command.shortcuts.items()
+    ]
+
+
+def _shortcuts_epilog(path: str, command: _Command) -> str | None:
+    """The end of a command's --help, naming its shortcuts."""
+    found = shortcuts(path, command)
+    if not found:
+        return None
+    return (
+        "Shell plugin shortcuts: "
+        + "; ".join(f"{name} runs {' '.join(words)}" for name, words in found)
+        + "."
+    )
 
 
 def _complete_commands() -> int:
@@ -1141,7 +1136,6 @@ def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
     add_status_flags(p)
     p.description = _PRUNE_HELP
-    p.epilog = "gwp!! deletes empty branches, ignored files and branch stashes."
     p.add_argument(
         "--list", action="store_true", help="assess without prompting; uncoloured table"
     )
@@ -1169,7 +1163,12 @@ def _add_branch_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
     subs = p.add_subparsers(dest="branch_command")
     for name, command in _BRANCH_COMMANDS.items():
-        child = subs.add_parser(name, help=command.about)
+        child = subs.add_parser(
+            name,
+            help=command.about,
+            description=command.about,
+            epilog=_shortcuts_epilog(f"branch {name}", command),
+        )
         if command.flags:
             command.flags(child)
 
@@ -1200,37 +1199,38 @@ def run_branch(args: argparse.Namespace) -> int:
 
 
 class _Command:
-    """One command under both its names, and every shorthand for it.
+    """One command, every shorthand for it, and the shell plugin's shortcuts.
 
     Every alias reaches the row's function. Help prints these rows.
     """
 
-    __slots__ = ("about", "aliases", "binary", "flags", "lands", "run", "usage")
+    __slots__ = ("about", "aliases", "flags", "lands", "run", "shortcuts", "usage")
 
     run: Callable[[argparse.Namespace], int]
     flags: Callable[[argparse.ArgumentParser], None] | None
     about: str
-    binary: str  # the console script, where the command installs one
     usage: str
     aliases: tuple[str, ...]
-    lands: bool  # changes the caller's directory, so it needs a shim
+    # A shell function's name, and the flags it adds to `gw <command>`.
+    shortcuts: dict[str, str]
+    lands: bool  # changes the caller's directory, so the gw function cds
 
     def __init__(
         self,
         run: Callable[[argparse.Namespace], int],
         flags: Callable[[argparse.ArgumentParser], None] | None,
         about: str,
-        binary: str = "",
         usage: str = "",
         aliases: tuple[str, ...] = (),
+        shortcuts: dict[str, str] | None = None,
         lands: bool = False,
     ) -> None:
         self.run = run
         self.flags = flags
         self.about = about
-        self.binary = binary
         self.usage = usage
         self.aliases = aliases
+        self.shortcuts = shortcuts or {}
         self.lands = lands
 
 
@@ -1239,22 +1239,22 @@ _BRANCH_COMMANDS: dict[str, _Command] = {
         run_new_branch,
         _add_new_branch_flags,
         "branch off the head branch",
-        "gwbc",
         usage="NAME",
+        shortcuts={"gwbc": ""},
     ),
     "status": _Command(
         run_branch_status,
         _add_branch_status_flags,
         "which branches are finished, and why",
-        "gwbs",
         usage="[NAME ...]",
+        shortcuts={"gwbs": ""},
     ),
     "delete": _Command(
         run_branch_delete,
         _add_branch_delete_flags,
         "delete local branches proved finished",
-        "gwbd",
         usage="[NAME ...]",
+        shortcuts={"gwbd": ""},
     ),
 }
 
@@ -1270,16 +1270,21 @@ _COMMANDS: dict[str, _Command] = {
         run_prune,
         _add_prune_flags,
         "assess worktrees and remove eligible ones",
-        "gwp",
         aliases=("p",),
+        shortcuts={
+            "gwp": "",
+            "gwp!": "--yes",
+            "gwpa": "--delete all",
+            "gwpa!": "--delete all --yes",
+        },
     ),
     "add": _Command(
         run_add,
         _add_add_flags,
         "create a worktree and land you in it",
-        "gwa",
         usage="NAME [BASE]",
         aliases=("a",),
+        shortcuts={"gwa": ""},
         lands=True,
     ),
     "list": _Command(
@@ -1288,25 +1293,25 @@ _COMMANDS: dict[str, _Command] = {
         "list worktrees or pick a destination",
         usage="[QUERY]",
         aliases=("l",),
+        shortcuts={"gwl": ""},
         lands=True,
     ),
     "remove": _Command(
         run_remove,
         _add_remove_flags,
         "remove one whose branch is finished",
-        "gwr",
         usage="[QUERY]",
         aliases=("rm",),
+        shortcuts={"gwr": "", "gwr!": "--delete ignored-files"},
         lands=True,
     ),
     "rotate": _Command(
         run_rotate,
         _add_rotate_flags,
         "the next branch in a series",
-        "gwrot",
         aliases=("rot",),
+        shortcuts={"gwrot": ""},
     ),
-    # Version is available through the tool's name without a separate binary.
     "version": _Command(
         run_version,
         None,
@@ -1365,24 +1370,20 @@ class _Parser(argparse.ArgumentParser):
     """argparse, with its help on a stream the caller can see.
 
     A command that changes directory prints its destination on stdout, and
-    its shell function captures that stream, so its help goes to stderr. The
-    rest keep argparse's stdout, where `gwp -h | less` reads it.
+    the gw shell function captures that stream, so its help goes to stderr.
+    The rest keep argparse's stdout, where `gw prune -h | less` reads it.
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args, lands: bool = False, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        self.lands = lands
         # Subparsers are built from this class too and their defaults win, so
         # every command finds the parser that names it, for `_needs`.
         self.set_defaults(parser=self)
 
     def print_help(self, file=None) -> None:
         if file is None:
-            lands = {c.binary for c in _COMMANDS.values() if c.lands and c.binary}
-            file = (
-                sys.stderr
-                if self.prog in lands or self.prog.endswith(" list")
-                else sys.stdout
-            )
+            file = sys.stderr if self.lands else sys.stdout
         # argparse decides colour by asking whether sys.stdout is a terminal,
         # whatever stream the help goes to, so it is asked about this one.
         saved, sys.stdout = sys.stdout, file
@@ -1407,55 +1408,6 @@ def _needs(args: argparse.Namespace, what: str) -> int:
     _err("")
     args.parser.print_help(sys.stderr)
     return 2
-
-
-def gwp(argv: list[str] | None = None) -> int:
-    """Asks before it acts, unless --yes."""
-    p = _parser("gwp", _PRUNE_HELP)
-    _add_prune_flags(p)
-    return _dispatch(p, argv, run_prune)
-
-
-def gwbs(argv: list[str] | None = None) -> int:
-    command = _BRANCH_COMMANDS["status"]
-    p = _parser(command.binary, command.about)
-    _add_branch_status_flags(p)
-    return _dispatch(p, argv, command.run)
-
-
-def gwbd(argv: list[str] | None = None) -> int:
-    command = _BRANCH_COMMANDS["delete"]
-    p = _parser(command.binary, command.about)
-    _add_branch_delete_flags(p)
-    return _dispatch(p, argv, command.run)
-
-
-def gwbc(argv: list[str] | None = None) -> int:
-    """Checking out needs no shell either."""
-    p = _parser("gwbc", _NEW_BRANCH_HELP)
-    _add_new_branch_flags(p)
-    return _dispatch(p, argv, run_new_branch)
-
-
-def gwa(argv: list[str] | None = None) -> int:
-    """Prints the destination. The shell function does the cd."""
-    p = _parser("gwa", "Create a worktree for NAME and print where it is.")
-    _add_add_flags(p)
-    return _dispatch(p, argv, run_add)
-
-
-def gwr(argv: list[str] | None = None) -> int:
-    """Prints a path only when the caller was standing in what went."""
-    p = _parser("gwr", "Remove a worktree whose branch is finished, and the branch.")
-    _add_remove_flags(p)
-    return _dispatch(p, argv, run_remove)
-
-
-def gwrot(argv: list[str] | None = None) -> int:
-    """Naming a branch and continuing a series are two commands."""
-    p = _parser("gwrot", _ROTATE_HELP)
-    _add_rotate_flags(p)
-    return _dispatch(p, argv, run_rotate)
 
 
 def gw(argv: list[str] | None = None) -> int:
@@ -1491,31 +1443,29 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     subs = p.add_subparsers(dest="command")
     name = _CANONICAL[args_in[0]]
     command = _COMMANDS[name]
-    sub = subs.add_parser(name, aliases=list(command.aliases), help=command.about)
+    sub = subs.add_parser(
+        name,
+        aliases=list(command.aliases),
+        help=command.about,
+        description=command.about,
+        epilog=_shortcuts_epilog(name, command),
+        lands=command.lands,
+    )
     if command.flags:
         command.flags(sub)
-    return _dispatch(p, args_in, None)
+    return _dispatch(p, args_in)
 
 
-def _dispatch(
-    p: argparse.ArgumentParser,
-    argv: list[str] | None,
-    run: Callable[[argparse.Namespace], int] | None,
-) -> int:
+def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
     render.setup()
-    raw = sys.argv[1:] if argv is None else argv
-    args = p.parse_args(raw)
+    args = p.parse_args(argv)
     # argparse gives a subparser its own prog; rebuild it rather than reach
     # into the private table for it. The alias the caller typed, not the
     # canonical name, so a usage line echoes what they wrote.
-    command = getattr(args, "command", None)
-    args.prog = f"{p.prog} {command}" if command else p.prog
+    args.prog = f"{p.prog} {args.command}"
     if getattr(args, "branch_command", None):
         args.prog += f" {args.branch_command}"
-    if run is None:
-        if command is None:
-            return _guide()
-        run = _COMMANDS[_CANONICAL[command]].run
+    run = _COMMANDS[_CANONICAL[args.command]].run
     try:
         if getattr(args, "quiet", False) and getattr(args, "verbose", False):
             raise _Stop("--quiet and --verbose cannot be combined", 2)

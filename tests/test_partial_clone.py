@@ -64,11 +64,11 @@ def trace_children(path: Path) -> list[list[str]]:
 
 @pytest.mark.parametrize(
     "entry,args",
-    [("gw", ("prune",)), ("gwp", ()), ("gwbs", ())],
+    [("gw", ("prune",)), ("gw prune", ()), ("gw branch status", ())],
 )
 def test_partial_clone_assessment_never_fetches_or_writes(world, entry, args):
     partial = partial_clone(world)
-    if entry == "gwbs":
+    if entry == "gw branch status":
         partial.git("branch", "loose", "origin/feature")
     trace = world.root / "assessment-trace.jsonl"
     before = git_snapshot(partial.repo)
@@ -85,7 +85,7 @@ def test_partial_clone_assessment_never_fetches_or_writes(world, entry, args):
     )
     assert result.returncode == 0, result.stderr
     rows = {r["branch"]: r for r in json.loads(result.stdout)["verdicts"]}
-    lacking = rows["loose" if entry == "gwbs" else "feature"]
+    lacking = rows["loose" if entry == "gw branch status" else "feature"]
     assert lacking["verdict"] == "unknown"
     assert lacking["why"].startswith("this partial clone lacks objects")
     assert git_snapshot(partial.repo) == before
@@ -99,7 +99,7 @@ def test_partial_clone_assessment_never_fetches_or_writes(world, entry, args):
 def test_partial_clone_says_once_why_verdicts_are_unknown(world, quiet):
     partial = partial_clone(world)
     partial.git("branch", "loose", "origin/feature")
-    result = cli(partial, *(["-q"] if quiet else []), entry="gwbs")
+    result = cli(partial, *(["-q"] if quiet else []), entry="gw branch status")
     assert result.returncode == 0, result.stderr
     warning = "some verdicts are unknown: this partial clone lacks objects"
     assert result.stderr.count(warning) == (0 if quiet else 1)
@@ -146,7 +146,7 @@ def test_unsafe_git_partial_clone_refuses_before_object_commands(world, version)
     result = cli(
         partial,
         "--json",
-        entry="gwp",
+        entry="gw prune",
         env={
             **env,
             "PATH": f"{stub}{os.pathsep}{env['PATH']}",
@@ -192,7 +192,7 @@ def test_patched_git_partial_clone_policy_accepts_supported_releases(world, vers
     result = cli(
         partial,
         "--json",
-        entry="gwp",
+        entry="gw prune",
         env={
             **env,
             "PATH": f"{stub}{os.pathsep}{env['PATH']}",
@@ -214,7 +214,7 @@ def test_old_git_full_clone_remains_usable(world):
     result = cli(
         world,
         "--json",
-        entry="gwp",
+        entry="gw prune",
         env={**env, "PATH": f"{stub}{os.pathsep}{env['PATH']}"},
     )
     assert result.returncode == 0, result.stderr
@@ -279,7 +279,7 @@ def test_false_promisor_flag_does_not_restrict_full_clones(world, value):
     result = cli(
         world,
         "--json",
-        entry="gwp",
+        entry="gw prune",
         env={**env, "PATH": f"{stub}{os.pathsep}{env['PATH']}"},
     )
     assert result.returncode == 0, result.stderr
@@ -294,7 +294,7 @@ def test_partial_clone_usage_errors_precede_git_capability_checks(world):
         "--only",
         "empty",
         "--yes",
-        entry="gwp",
+        entry="gw prune",
         env={**env, "PATH": f"{stub}{os.pathsep}{env['PATH']}"},
     )
     assert result.returncode == 2, result.stderr

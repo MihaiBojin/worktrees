@@ -220,11 +220,11 @@ def test_the_disclosure_and_the_count_use_the_groups(world) -> None:
     }["logs"]
     assert "it holds 1 ignored path(s)" in v.why
     # The paths are data before permission is given, so a caller can decide.
-    preview = run(world, "gwp", "--json")
+    preview = run(world, "gw prune", "--json")
     rows = {r["branch"]: r for r in json.loads(preview.stdout)["verdicts"]}
     assert (rows["logs"]["ignored"], rows["logs"]["ignoredPaths"]) == (1, ["build/"])
     assert rows["main"]["ignoredPaths"] == []
-    p = run(world, "gwp", "--delete", "ignored-files", "--yes")
+    p = run(world, "gw prune", "--delete", "ignored-files", "--yes")
     assert p.returncode == 0, p.stderr
     assert p.stderr.count("deleting ignored, unrecoverable:") == 1
     assert "deleting ignored, unrecoverable: build/\n" in p.stderr
@@ -239,7 +239,7 @@ def test_the_disclosure_escapes_what_would_not_print(world) -> None:
     wt = world.merged_worktree("odd")
     for name in ("a\x1b[31mb.log", "x\ny.log", "café.log"):
         (wt / name).write_text("x\n")
-    p = run(world, "gwp", "--delete", "ignored-files", "--yes")
+    p = run(world, "gw prune", "--delete", "ignored-files", "--yes")
     assert p.returncode == 0, p.stderr
     shown = [
         line.removeprefix("  deleting ignored, unrecoverable: ")

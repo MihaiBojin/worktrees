@@ -1,14 +1,54 @@
-#compdef gw gwl worktrees
+#compdef gw worktrees gwa gwbc gwbd gwbs gwl gwp gwp! gwpa gwpa! gwr gwr! gwrot
 
-__worktrees_names() {
+# Flags as `gw <command> --help` lists them, and candidates from the CLI.
+# A shortcut completes as the gw command it runs: gwa as `gw add`.
+
+# TAG DESCRIPTION [WORD ...]: what `gw WORD ... --complete` prints, one
+# name and description a line, separated by a tab.
+__worktrees_candidates() {
+    local tag=$1 descr=$2 line
     local -a names descs
-    local line
-    for line in ${(f)"$(command gw list --complete 2>/dev/null)"}; do
+    shift 2
+    for line in ${(f)"$(command gw "$@" --complete 2>/dev/null)"}; do
         names+=( ${line%%$'\t'*} )
         descs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
     done
     (( $#names )) || return 1
-    _describe -t worktrees worktree descs names
+    _describe -t $tag $descr descs names
+}
+
+__worktrees_sync() {
+    _arguments -s \
+        '--json[sync state as data]' \
+        '(-q --quiet)'{-q,--quiet}'[omit the summary]' \
+        '(-v --verbose)'{-v,--verbose}'[print every command]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]'
+}
+
+__worktrees_version() {
+    _arguments '(-h --help)'{-h,--help}'[show the help and exit]'
+}
+
+__worktrees_prune() {
+    _arguments -s \
+        '--list[assess without prompting; uncoloured table]' \
+        '*--only[filter assessment; rejects --yes]:verdict:(remove empty keep unknown)' \
+        '(-y --yes)'{-y,--yes}'[approve removal, including with --json or --list]' \
+        '*--delete[permit deletion categories]:value:(empty ignored-files stashes all)' \
+        '--json[assess as JSON; --yes approves removal]' \
+        '(-q --quiet)'{-q,--quiet}'[verdicts only]' \
+        '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+        '--explain[print every git command and exit]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]'
+}
+
+__worktrees_add() {
+    _arguments -s \
+        '--json[the result as data]' \
+        '(-q --quiet)'{-q,--quiet}'[the path alone]' \
+        '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+        '--explain[print every git command and exit]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]'
 }
 
 __worktrees_list() {
@@ -17,14 +57,89 @@ __worktrees_list() {
         '--json[the result as data]' \
         '--explain[print every git command and exit]' \
         '(-h --help)'{-h,--help}'[show the help and exit]' \
-        '1:worktree:__worktrees_names'
+        '1:worktree:{__worktrees_candidates worktrees worktree list}'
+}
+
+# `gw remove --complete` prints the worktrees remove can reach, which is not
+# list's list: the main checkout is never one.
+__worktrees_remove() {
+    _arguments -s \
+        '--keep-branch[retain the branch and its stashes]' \
+        '*--delete[permit deletion categories]:value:(empty ignored-files stashes all)' \
+        '(-y --yes)'{-y,--yes}'[do not ask]' \
+        '--json[the result as data]' \
+        '(-q --quiet)'{-q,--quiet}'[the path alone]' \
+        '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+        '--explain[print every git command and exit]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]' \
+        '1:worktree:{__worktrees_candidates worktrees worktree remove}'
+}
+
+__worktrees_rotate() {
+    _arguments -s \
+        '--json[the result as data]' \
+        '(-q --quiet)'{-q,--quiet}'[omit summaries and progress]' \
+        '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+        '--explain[print every git command and exit]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]'
+}
+
+__worktrees_branch_create() {
+    _arguments -s \
+        '--json[the result as data]' \
+        '(-q --quiet)'{-q,--quiet}'[omit summaries and progress]' \
+        '(-v --verbose)'{-v,--verbose}'[print every git command]' \
+        '--explain[print every git command and exit]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]'
+}
+
+__worktrees_branch_status() {
+    _arguments -s \
+        '*--only[show only rows with this verdict]:verdict:(remove empty keep unknown)' \
+        '--json[verdicts and evidence as data]' \
+        '(-q --quiet)'{-q,--quiet}'[omit the summary]' \
+        '--explain[print every git command and exit]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]' \
+        '*:branch:{__worktrees_candidates branches branch branch status}'
+}
+
+__worktrees_branch_delete() {
+    _arguments -s \
+        '--all[assess all local branches for deletion]' \
+        '--dry-run[report without deleting]' \
+        '(-y --yes)'{-y,--yes}'[skip deletion confirmation]' \
+        '*--delete[permit deletion categories]:value:(empty stashes all)' \
+        '--json[verdicts and evidence as data]' \
+        '(-q --quiet)'{-q,--quiet}'[omit the summary]' \
+        '(-v --verbose)'{-v,--verbose}'[print every command]' \
+        '--explain[print every git command and exit]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]' \
+        '*:branch:{__worktrees_candidates branches branch branch delete}'
 }
 
 _gw() {
-    # gwl is gw list with the word already typed.
-    [[ $service == gwl ]] && { __worktrees_list; return; }
-    local -a subs descs
-    local line curcontext="$curcontext" state
+    local curcontext="$curcontext" state line
+    local -a fixed
+
+    case $service in
+        gwa) fixed=(add) ;;
+        gwbc) fixed=(branch create) ;;
+        gwbd) fixed=(branch delete) ;;
+        gwbs) fixed=(branch status) ;;
+        gwl) fixed=(list) ;;
+        gwp) fixed=(prune) ;;
+        'gwp!') fixed=(prune --yes) ;;
+        gwpa) fixed=(prune --delete all) ;;
+        'gwpa!') fixed=(prune --delete all --yes) ;;
+        gwr) fixed=(remove) ;;
+        'gwr!') fixed=(remove --delete ignored-files) ;;
+        gwrot) fixed=(rotate) ;;
+    esac
+    if (( $#fixed )); then
+        words=(gw $fixed "${(@)words[2,-1]}")
+        (( CURRENT += $#fixed ))
+        service=gw
+    fi
 
     _arguments -C \
         '(-h --help)'{-h,--help}'[show the help and exit]' \
@@ -32,46 +147,28 @@ _gw() {
         '*:: :->rest'
 
     case $state in
-        command)
-            for line in ${(f)"$(command gw --complete 2>/dev/null)"}; do
-                subs+=( ${line%%$'\t'*} )
-                descs+=( "${line%%$'\t'*}:${line#*$'\t'}" )
-            done
-            (( $#subs )) && _describe -t commands 'gw command' descs subs
-            ;;
+        command) __worktrees_candidates commands 'gw command' ;;
         rest)
-            case ${words[1]} in
-                sync)
-                    _arguments -s \
-                        '--json[sync state as data]' \
-                        '(-q --quiet)'{-q,--quiet}'[omit the summary]' \
-                        '(-v --verbose)'{-v,--verbose}'[print every command]' \
-                        '(-h --help)'{-h,--help}'[show the help and exit]'
-                    ;;
-                version|v)
-                    _arguments '(-h --help)'{-h,--help}'[show the help and exit]'
-                    ;;
-                prune|p) _gwp ;;
-                add|a) _gwa ;;
+            case $words[1] in
+                sync) __worktrees_sync ;;
+                version|v) __worktrees_version ;;
+                prune|p) __worktrees_prune ;;
+                add|a) __worktrees_add ;;
                 list|l) __worktrees_list ;;
-                remove|rm) _gwr ;;
-                rotate|rot) _gwrot ;;
+                remove|rm) __worktrees_remove ;;
+                rotate|rot) __worktrees_rotate ;;
                 branch)
-                    _arguments -C '1:action:->branch' '*:: :->branch_args'
+                    _arguments -C \
+                        '(-h --help)'{-h,--help}'[show the help and exit]' \
+                        '1: :->action' \
+                        '*:: :->args'
                     case $state in
-                        branch)
-                            local -a actions descriptions
-                            for line in ${(f)"$(command gw branch --complete 2>/dev/null)"}; do
-                                actions+=( ${line%%$'\t'*} )
-                                descriptions+=( "${line%%$'\t'*}:${line#*$'\t'}" )
-                            done
-                            _describe -t commands 'branch command' descriptions actions
-                            ;;
-                        branch_args)
-                            case ${words[1]} in
-                                create) _gwbc ;;
-                                status) _gwbs ;;
-                                delete) _gwbd ;;
+                        action) __worktrees_candidates commands 'branch command' branch ;;
+                        args)
+                            case $words[1] in
+                                create) __worktrees_branch_create ;;
+                                status) __worktrees_branch_status ;;
+                                delete) __worktrees_branch_delete ;;
                             esac
                             ;;
                     esac

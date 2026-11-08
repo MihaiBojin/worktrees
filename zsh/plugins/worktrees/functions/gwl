@@ -1,4 +1,1 @@
-# gwl [QUERY]: gw list, the word already typed.
-# The gw function rather than `command gw`, so the caller still lands
-# where gw list says.
 gw list "$@"

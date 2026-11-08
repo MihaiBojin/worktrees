@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from conftest import argv
 from test_branches import cli, local_branch
 
 
@@ -19,13 +19,7 @@ def origin(world, host="github.com", name="origin") -> None:
 
 def listing(world, network, entry="gw", at=None) -> dict:
     proc = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            f"from worktrees.cli import {entry}; raise SystemExit({entry}())",
-            *(["list"] if entry == "gw" else []),
-            "--json",
-        ],
+        argv(entry, *(["list"] if entry == "gw" else []), "--json"),
         cwd=at or world.repo,
         env=network.env(),
         capture_output=True,
@@ -83,7 +77,9 @@ def first_parent_proof(
     network.answer(responses)
     proc = cli(world, "sync", env=network.env())
     assert proc.returncode == 0, proc.stderr
-    rows = {r["branch"]: r for r in listing(world, network, "gwbs")["verdicts"]}
+    rows = {
+        r["branch"]: r for r in listing(world, network, "gw branch status")["verdicts"]
+    }
     for name in names:
         assert rows[name]["verdict"] == "remove", rows[name]
         assert rows[name]["proof"] == "forge", rows[name]
@@ -98,7 +94,7 @@ def test_json_envelope_preserves_worktrees(world, network):
     assert data["worktrees"][0]["path"] == str(world.repo)
 
 
-@pytest.mark.parametrize("entry", ["gw", "gwbs"])
+@pytest.mark.parametrize("entry", ["gw", "gw branch status"])
 @pytest.mark.parametrize(
     "case, expected",
     [
@@ -129,11 +125,11 @@ def test_head_inference_uses_local_committer_dates(
         "ref": f"refs/heads/{expected}" if expected else None,
         "source": "inferred",
     }
-    if case == "neither" and entry == "gwbs":
+    if case == "neither" and entry == "gw branch status":
         assert all(row["verdict"] == "unknown" for row in data["verdicts"])
 
 
-@pytest.mark.parametrize("entry", ["gw", "gwbs"])
+@pytest.mark.parametrize("entry", ["gw", "gw branch status"])
 def test_clone_head_becomes_synced_remote_head(world, network, entry):
     origin(world)
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
@@ -289,7 +285,8 @@ def test_malformed_cache_is_never_evidence(world, network, payload):
 
 
 @pytest.mark.parametrize(
-    "entry, args", [("gwa", ["new"]), ("gwbc", ["new"]), ("gwrot", [])]
+    "entry, args",
+    [("gw add", ["new"]), ("gw branch create", ["new"]), ("gw rotate", [])],
 )
 def test_branch_creation_refuses_unresolved_inferred_head(world, network, entry, args):
     world.git("branch", "-m", "main", "feature")
@@ -303,14 +300,14 @@ def test_branch_creation_refuses_unresolved_inferred_head(world, network, entry,
     "entry, args",
     [
         ("gw", ["prune", "--json"]),
-        ("gwp", ["--yes", "--json"]),
-        ("gwbs", ["--json"]),
-        ("gwbc", ["new", "--json"]),
-        ("gwbd", ["--dry-run", "--json"]),
-        ("gwa", ["new", "--json"]),
+        ("gw prune", ["--yes", "--json"]),
+        ("gw branch status", ["--json"]),
+        ("gw branch create", ["new", "--json"]),
+        ("gw branch delete", ["--dry-run", "--json"]),
+        ("gw add", ["new", "--json"]),
         ("gw", ["--json"]),
-        ("gwr", ["no-such-worktree", "--yes"]),
-        ("gwrot", ["--json"]),
+        ("gw remove", ["no-such-worktree", "--yes"]),
+        ("gw rotate", ["--json"]),
     ],
 )
 def test_ordinary_commands_never_use_network(world, network, entry, args):
@@ -325,7 +322,17 @@ def test_ordinary_commands_never_use_network(world, network, entry, args):
 
 
 @pytest.mark.parametrize(
-    "entry", ["gw", "gwp", "gwbs", "gwbd", "gwa", "gwbc", "gwrot", "gwr"]
+    "entry",
+    [
+        "gw",
+        "gw prune",
+        "gw branch status",
+        "gw branch delete",
+        "gw add",
+        "gw branch create",
+        "gw rotate",
+        "gw remove",
+    ],
 )
 @pytest.mark.parametrize("flag", ["--no-fetch", "--no-forge", "--force-refresh"])
 def test_network_flags_are_usage_errors(world, network, entry, flag):
@@ -364,7 +371,7 @@ def test_stale_notice_boundary_and_units(
         assert error.count("Last sync:") == 1
     else:
         assert "Last sync:" not in error
-    assert C.gwp(["-q"]) == 0
+    assert C.gw(["prune", "-q"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
     assert C.gw(["list", "--json"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
@@ -373,7 +380,7 @@ def test_stale_notice_boundary_and_units(
 @pytest.mark.parametrize("quiet", [False, True])
 def test_never_synced_and_inferred_notices_yield_only_to_quiet(world, network, quiet):
     origin(world)
-    proc = cli(world, *(["-q"] if quiet else []), entry="gwp", env=network.env())
+    proc = cli(world, *(["-q"] if quiet else []), entry="gw prune", env=network.env())
     assert proc.returncode == 0, proc.stderr
     never = (
         "Never synced: verdicts use refs from the clone or last fetch "
@@ -437,7 +444,7 @@ def test_fork_proof_requires_authoritative_source_identity(
     network.answer({"feature": [row], "$api": api})
     proc = cli(world, "sync", env=network.env())
     assert proc.returncode == (1 if identity == "missing" else 0), proc.stderr
-    data = listing(world, network, "gwbs")
+    data = listing(world, network, "gw branch status")
     feature = next(row for row in data["verdicts"] if row["branch"] == "feature")
     assert (feature["verdict"] == "remove") is (identity == "verified"), feature
     if identity == "verified":
@@ -445,7 +452,9 @@ def test_fork_proof_requires_authoritative_source_identity(
         assert feature["request"]["repository"] == f"{host}/owner/repo"
     else:
         tip = world.git("rev-parse", "feature")
-        denied = cli(world, "feature", "--yes", entry="gwbd", env=network.env())
+        denied = cli(
+            world, "feature", "--yes", entry="gw branch delete", env=network.env()
+        )
         assert denied.returncode != 0, denied.stderr
         assert world.git("rev-parse", "feature") == tip
     tool = "gh" if provider == "github" else "glab"
@@ -514,17 +523,18 @@ def test_gitlab_source_lookup_must_agree_with_identity(world, network, field, va
     assert proc.returncode == 0, proc.stderr
     row = next(
         r
-        for r in listing(world, network, "gwbs")["verdicts"]
+        for r in listing(world, network, "gw branch status")["verdicts"]
         if r["branch"] == "feature"
     )
     assert row["verdict"] == "keep", row
-    denied = cli(world, "feature", "--yes", entry="gwbd", env=network.env())
+    denied = cli(world, "feature", "--yes", entry="gw branch delete", env=network.env())
     assert denied.returncode == 3, denied.stderr
     assert world.git("rev-parse", "feature") == tip
 
 
 @pytest.mark.parametrize(
-    "entry, args", [("gwa", ["new"]), ("gwbc", ["new"]), ("gwrot", [])]
+    "entry, args",
+    [("gw add", ["new"]), ("gw branch create", ["new"]), ("gw rotate", [])],
 )
 def test_dangling_clone_head_refuses_branch_creation_with_sync_hint(
     world, network, entry, args
@@ -541,9 +551,9 @@ def test_dangling_clone_head_refuses_branch_creation_with_sync_hint(
 @pytest.mark.parametrize(
     "entry, args",
     [
-        ("gwp", ["--yes"]),
-        ("gwr", ["linked", "--yes", "--keep-branch"]),
-        ("gwbd", ["feature", "--yes"]),
+        ("gw prune", ["--yes"]),
+        ("gw remove", ["linked", "--yes", "--keep-branch"]),
+        ("gw branch delete", ["feature", "--yes"]),
     ],
 )
 def test_unresolved_head_refuses_removal_without_mutation(world, network, entry, args):
@@ -582,7 +592,7 @@ def test_cache_source_identity_must_match_verification(world, network, identity)
     assert cli(world, "sync", env=network.env()).returncode == 0
     control = next(
         row
-        for row in listing(world, network, "gwbs")["verdicts"]
+        for row in listing(world, network, "gw branch status")["verdicts"]
         if row["branch"] == "feature"
     )
     assert control["verdict"] == "remove", control
@@ -591,7 +601,7 @@ def test_cache_source_identity_must_match_verification(world, network, identity)
     cache_path(world).write_text(json.dumps(cached))
     row = next(
         row
-        for row in listing(world, network, "gwbs")["verdicts"]
+        for row in listing(world, network, "gw branch status")["verdicts"]
         if row["branch"] == "feature"
     )
     assert row["verdict"] != "remove", row
@@ -619,7 +629,7 @@ def test_gitlab_project_id_must_belong_to_selected_repository(world, network):
     assert cli(world, "sync", env=network.env()).returncode == 0
     result = next(
         row
-        for row in listing(world, network, "gwbs")["verdicts"]
+        for row in listing(world, network, "gw branch status")["verdicts"]
         if row["branch"] == "feature"
     )
     assert result["verdict"] != "remove", result
@@ -642,7 +652,7 @@ def test_malformed_sync_timestamp_cannot_supply_proof(
     cached = json.loads(cache_path(world).read_text())
     cached["lastSync"][component] = invalid
     cache_path(world).write_text(json.dumps(cached))
-    data = listing(world, network, "gwbs")
+    data = listing(world, network, "gw branch status")
     assert data["lastSync"][component] is None
     row = next(row for row in data["verdicts"] if row["branch"] == "feature")
     assert row["verdict"] != "remove", row
@@ -671,11 +681,7 @@ def test_inferred_head_notice_paints_both_branch_names_on_stderr(world, network)
     world.git("branch", "master")
     parent, child = pty.openpty()
     proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            "from worktrees.cli import gwp; raise SystemExit(gwp())",
-        ],
+        argv("gw prune"),
         cwd=world.repo,
         env=network.env(TERM="xterm"),
         stdin=subprocess.DEVNULL,
@@ -732,7 +738,9 @@ def test_new_branch_does_not_inherit_cached_request(world, network, provider):
     first_parent_proof(world, network, provider)
     world.git("branch", "new-name", "feature")
     before = network.network_calls()
-    rows = {r["branch"]: r for r in listing(world, network, "gwbs")["verdicts"]}
+    rows = {
+        r["branch"]: r for r in listing(world, network, "gw branch status")["verdicts"]
+    }
     assert rows["feature"]["verdict"] == "remove"
     assert rows["feature"]["proof"] == "forge"
     assert rows["new-name"]["verdict"] == "empty"
@@ -776,7 +784,7 @@ def test_sync_failure_retains_positive_cached_proof(world, network, provider, fa
     before_assessment = network.network_calls()
     row = next(
         r
-        for r in listing(world, network, "gwbs")["verdicts"]
+        for r in listing(world, network, "gw branch status")["verdicts"]
         if r["branch"] == "feature"
     )
     assert row["verdict"] == "remove", row
@@ -809,7 +817,9 @@ def test_failed_queries_invalidate_positive_proof(world, network, provider, tota
     else:
         assert now["branches"]["second"]["request"] is not None
     before = network.network_calls()
-    rows = {r["branch"]: r for r in listing(world, network, "gwbs")["verdicts"]}
+    rows = {
+        r["branch"]: r for r in listing(world, network, "gw branch status")["verdicts"]
+    }
     assert rows["feature"]["verdict"] == "empty", rows["feature"]
     assert rows["feature"]["request"] is None
     assert rows["second"]["verdict"] == ("empty" if total else "remove")
@@ -837,7 +847,7 @@ def test_failed_fork_lookup_invalidates_previous_proof(world, network, provider)
     before = network.network_calls()
     row = next(
         r
-        for r in listing(world, network, "gwbs")["verdicts"]
+        for r in listing(world, network, "gw branch status")["verdicts"]
         if r["branch"] == "feature"
     )
     assert row["verdict"] == "empty", row
@@ -846,7 +856,7 @@ def test_failed_fork_lookup_invalidates_previous_proof(world, network, provider)
 
 
 @pytest.mark.parametrize("provider", ["github", "gitlab"])
-@pytest.mark.parametrize("entry", ["gwp", "gwr", "gwbd"])
+@pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch delete"])
 def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
     seed = world.merged_branch("seed")
     world.git("remote", "add", "unselected", "git@github.com:unselected/repo.git")
@@ -854,7 +864,7 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
     first_parent_proof(world, network, provider, fork=True)
     world.git("branch", "local", seed)
     paths = {}
-    if entry != "gwbd":
+    if entry != "gw branch delete":
         for name in ("feature", "local"):
             paths[name] = world.root / name
             world.git("worktree", "add", "--quiet", str(paths[name]), name)
@@ -863,7 +873,7 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
     preview = cli(
         world,
         "--json",
-        entry="gwp" if entry != "gwbd" else "gwbs",
+        entry="gw prune" if entry != "gw branch delete" else "gw branch status",
         env=network.env(),
     )
     assert preview.returncode == 0, preview.stderr
@@ -874,16 +884,16 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
     assert "local" not in json.loads(cache_path(world).read_text())["branches"]
     selections = (
         [("feature", "local")]
-        if entry == "gwbd"
+        if entry == "gw branch delete"
         else [("feature",), ("local",)]
-        if entry == "gwr"
+        if entry == "gw remove"
         else [()]
     )
     for selection in selections:
         proc = cli(world, *selection, "--yes", "--json", entry=entry, env=network.env())
         assert proc.returncode == 0, proc.stderr
         data = json.loads(proc.stdout)
-        if entry == "gwr":
+        if entry == "gw remove":
             assert data["outcome"]["worktree_removed"]
             assert data["outcome"]["branch_removed"]
         else:
@@ -921,9 +931,9 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
         ("gw", ["branch", "--complete"]),
         ("gw", ["version"]),
         ("gw", ["list", "--complete"]),
-        ("gwr", ["--complete"]),
-        ("gwbs", ["--complete"]),
-        ("gwbd", ["--complete"]),
+        ("gw remove", ["--complete"]),
+        ("gw branch status", ["--complete"]),
+        ("gw branch delete", ["--complete"]),
     ],
 )
 def test_metadata_commands_remain_offline(world, network, entry, args):
@@ -940,14 +950,10 @@ def test_every_command_help_remains_offline(world, network):
     from worktrees.cli import command_rows
 
     origin(world)
-    for name, command in command_rows():
+    for name, _ in command_rows():
         proc = cli(world, *name.split(), "--help", env=network.env())
         assert proc.returncode == 0, (name, proc.stderr)
         assert "usage:" in proc.stdout + proc.stderr
-        if command.binary:
-            proc = cli(world, "--help", entry=command.binary, env=network.env())
-            assert proc.returncode == 0, (command.binary, proc.stderr)
-            assert "usage:" in proc.stdout + proc.stderr
     assert not network.network_calls()
 
 
@@ -965,7 +971,9 @@ def test_unresolved_head_marks_real_preview_rows_unknown(world, network, head_so
     world.git("branch", "-m", "main", "feature")
     refs = world.git("for-each-ref", "--format=%(refname) %(objectname)")
     records = world.git("worktree", "list", "--porcelain")
-    preview = cli(world, "--json", "--delete", "all", entry="gwp", env=network.env())
+    preview = cli(
+        world, "--json", "--delete", "all", entry="gw prune", env=network.env()
+    )
     assert preview.returncode == 0, preview.stderr
     data = json.loads(preview.stdout)
     assert data["head"] == {"ref": None, "source": head_source}
@@ -977,7 +985,7 @@ def test_unresolved_head_marks_real_preview_rows_unknown(world, network, head_so
     assert all(
         r["verdict"] == "unknown" and not r["eligible"] for r in data["verdicts"]
     )
-    loose = listing(world, network, "gwbs")
+    loose = listing(world, network, "gw branch status")
     assert {r["branch"] for r in loose["verdicts"]} == {"loose", "detached"}
     assert all(
         r["verdict"] == "unknown" and not r["eligible"] for r in loose["verdicts"]
@@ -1014,6 +1022,6 @@ def test_the_head_line_names_an_unresolved_remote_head(world, network, state):
             world.git("update-ref", "refs/remotes/origin/release", "main")
             world.git("update-ref", "--no-deref", "refs/remotes/origin/HEAD", "main")
         wanted = "Head: unresolved (remote). Run: gw sync"
-    proc = cli(world, entry="gwp", env=network.env())
+    proc = cli(world, entry="gw prune", env=network.env())
     assert proc.returncode == 0, proc.stderr
     assert wanted in proc.stderr

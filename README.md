@@ -7,35 +7,35 @@ Git worktree commands that refuse to lose work.
 
 ```console
 gw sync                 # refresh remote refs and forge evidence
-gw                      # choose a worktree, or print metadata without a terminal
-gwp                     # confirm and remove eligible worktrees
-gwr fix-parser          # remove one worktree and its finished branch
+gw list                 # choose a worktree, or print metadata without a terminal
+gw prune                # confirm and remove eligible worktrees
+gw remove fix-parser    # remove one worktree and its finished branch
 ```
 
 Only `gw sync` uses the network. Every other command uses local refs and the
 last sync's evidence. Run commands inside the repository you want assessed;
 other repositories under the same worktree root are outside their scope.
 
-| Command | What it does |
-| --- | --- |
-| `gw` | print every command and what it does |
-| `gw list [QUERY] [flags]` | list worktrees or choose a destination in a terminal |
-| `gw sync` | fetch the default remote and refresh forge evidence |
-| `gwp` | confirm and remove eligible worktrees |
-| `gwr [NAME\|PATH]` | remove one worktree and its finished branch |
-| `gwbs [NAME ...]` | assess local branches without worktrees |
-| `gwbd [NAME ...]` | confirm and delete eligible loose branches |
-| `gwa NAME [BASE]` | create or enter a worktree |
-| `gwl [QUERY]` | the `gw list` shortcut, which changes directory |
-| `gwbc NAME` | start a branch from the assessed head ref |
-| `gwrot` | start the next branch in a series, or fast-forward the head branch |
-| `gw --help` | show command names, aliases and shortcuts |
-| `gw version` | print the installed version |
+| Command | Shortcut | What it does |
+| --- | --- | --- |
+| `gw`, `gw --help` | | print every command, its aliases and its shortcuts |
+| `gw list [QUERY] [flags]` | `gwl` | list worktrees or choose a destination in a terminal |
+| `gw sync` | | fetch the default remote and refresh forge evidence |
+| `gw prune` | `gwp` | confirm and remove eligible worktrees |
+| `gw remove [NAME\|PATH]` | `gwr` | remove one worktree and its finished branch |
+| `gw branch status [NAME ...]` | `gwbs` | assess local branches without worktrees |
+| `gw branch delete [NAME ...]` | `gwbd` | confirm and delete eligible loose branches |
+| `gw add NAME [BASE]` | `gwa` | create or enter a worktree |
+| `gw branch create NAME` | `gwbc` | start a branch from the assessed head ref |
+| `gw rotate` | `gwrot` | start the next branch in a series, or fast-forward the head branch |
+| `gw version` | | print the installed version |
 
-`gw prune`, `gw remove`, `gw branch status` and `gw branch delete` reach the
-same commands as their short binaries. `gw --help` lists every spelling.
-`worktrees` is the long name for `gw`. A subcommand takes precedence over a
-worktree name: use `gw list sync` to reach a worktree named `sync`.
+`gw` is the one command installed on `$PATH`, and `worktrees` is its long
+name. A shortcut is a function from the fish or zsh plugin that runs the `gw`
+command beside it and completes as that command does. `gwp!`, `gwpa`, `gwpa!`
+and `gwr!` add fixed flags, as [Shortcuts](#shortcuts) lists. A subcommand takes
+precedence over a worktree name: use `gw list sync` to reach a worktree named
+`sync`.
 
 ## Install
 
@@ -43,10 +43,9 @@ worktree name: use `gw list sync` to reach a worktree named `sync`.
 uv tool install git-worktrees
 ```
 
-One venv serves every command name, and `~/.local/bin` gets a link per name.
-The distribution is `git-worktrees` because PyPI already holds `worktrees`;
-every command keeps its own name. A version installs that release and nothing
-later:
+`~/.local/bin` gets `gw` and its long name, `worktrees`. The distribution is
+`git-worktrees` because PyPI already holds `worktrees`. A version installs
+that release and nothing later:
 
 ```console
 uv tool install git-worktrees==0.1.0
@@ -56,8 +55,9 @@ Python 3.11 or newer, and no dependencies. The standard library answers every
 question this asks, so an invocation pays for the interpreter and nothing
 else.
 
-The console scripts work from any shell. Install the fish or zsh plugin too
-for commands that change your directory and for completions.
+`gw` works from any shell. Install the fish or zsh plugin too for the
+shortcuts, for completions, and for `gw add`, `gw remove` and `gw list` to
+change your directory.
 
 Install the plugin at the tag of the release `uv` installed. Without a tag
 both managers take `main`, which can be ahead of the last release, and the
@@ -74,7 +74,7 @@ fisher install MihaiBojin/worktrees@v0.7.0
 ```
 
 Fisher copies `functions/`, `completions/` and `conf.d/` from the repository
-root, so navigation functions and cleanup shortcuts arrive with completions.
+root, so the `gw` function and the shortcuts arrive with completions.
 Nothing has to be sourced.
 
 To change release, edit the tag on that line of
@@ -146,11 +146,12 @@ checkout, so a new shell runs whatever the checkout holds.
 
 ### What the shell code does
 
-Each navigation function runs `command <name>` and changes directory when
-stdout is an absolute existing destination. `gw` forwards metadata unchanged
-without a terminal and under `--json` or `--list`. `gwp`, `gwbs`, `gwbd`, `gwbc`, `gwrot`
-change no directory, so they ship as console scripts alone and answer the same
-from a prompt and from a script.
+The `gw` function runs `command gw` and changes directory when `gw add`,
+`gw remove` or a terminal `gw list` prints an absolute existing destination.
+It forwards metadata unchanged without a terminal and under `--json` or
+`--list`, and every other subcommand passes straight through. Each shortcut
+is one line that calls the `gw` function with fixed words, so `gwa` lands
+where `gw add` does.
 
 Both plugins export `WORKTREES_PLUGIN_VERSION`, the release they came from,
 since the environment is all a binary sees of the shell that started it. `gw --help`
@@ -177,36 +178,37 @@ command added to the table needs no edit in either shell.
 One row a line, `label<TAB>path`. A worktree whose path holds a newline is
 left out of that listing, because both shells would read it as two rows and
 offer the tail as a worktree of its own. That worktree remains reachable by
-name or exact path. Navigation adapters preserve path bytes, including
-trailing newlines, and remove only the final destination-record newline.
+name or exact path. The `gw` function preserves path bytes, including
+trailing newlines, and removes only the final destination-record newline.
 
 Neither manager puts a binary on `$PATH`, which is why the two installs stay
 separate.
 
 ## Assess and remove
 
-`gwp` prints the assessment and asks before removing eligible worktrees on a
-terminal. Nonterminal input, `--json` and `--list` print the assessment without
-writing refs, cache entries or directories. `--list` prints an uncoloured table.
-`--yes` and `-y` approve removal in any of those modes and grant no deletion
-category. `--only VERDICT` filters an assessment and cannot be combined with
-`--yes`. `--quiet` and `--verbose` work in every pruning mode, separately.
-`gwr` selects one exact worktree name or path. Several exact name matches
-open a picker on a terminal; without one, `gwr` refuses and lists the paths.
-A missing name fails. Use a quoted full path to identify a target exactly.
+`gw prune` prints the assessment and asks before removing eligible worktrees
+on a terminal. Nonterminal input, `--json` and `--list` print the assessment
+without writing refs, cache entries or directories. `--list` prints an
+uncoloured table. `--yes` and `-y` approve removal in any of those modes and
+grant no deletion category. `--only VERDICT` filters an assessment and cannot
+be combined with `--yes`. `--quiet` and `--verbose` work in every pruning
+mode, separately. `gw remove` selects one exact worktree name or path. Several
+exact name matches open a picker on a terminal; without one, `gw remove`
+refuses and lists the paths. A missing name fails. Use a quoted full path to
+identify a target exactly.
 
 ```console
-gwp --json
-gwr '/home/you/git/.worktrees/fix-parser/repo' --yes
-gwbs --json
-gwbd old-fix another-fix --yes
+gw prune --json
+gw remove '/home/you/git/.worktrees/fix-parser/repo' --yes
+gw branch status --json
+gw branch delete old-fix another-fix --yes
 ```
 
 A checked-out branch appears only as its worktree, never as a loose branch.
-`gwbd` with no names opens a selector; `gwbd --all --dry-run` previews all
-loose branches. [Branch status](docs/commands/branch-status.md) describes the
-proofs; [branch delete](docs/commands/branch-delete.md) covers selection and
-recovery.
+`gw branch delete` with no names opens a selector;
+`gw branch delete --all --dry-run` previews all loose branches.
+[Branch status](docs/commands/branch-status.md) describes the proofs;
+[branch delete](docs/commands/branch-delete.md) covers selection and recovery.
 
 | Verdict | Evidence |
 | --- | --- |
@@ -225,7 +227,7 @@ or worktrees with an initialized submodule or a submodule store. For a
 submodule refusal, run `git submodule deinit --all` inside the target, delete
 the store the refusal names once nothing in it is needed, and retry. A locked
 worktree whose directory is away keeps its record and stays until you unlock
-it, as `git worktree remove` requires. `gwp` also protects the current
+it, as `git worktree remove` requires. `gw prune` also protects the current
 worktree. Detached worktrees get the same checks.
 
 ### Permissions
@@ -233,21 +235,22 @@ worktree. Detached worktrees get the same checks.
 `--yes` skips the first confirmation. It grants no deletion permission.
 Repeat `--delete` to combine categories:
 
-| Value | `gwp`, `gwr` | `gwbd` |
+| Value | `gw prune`, `gw remove` | `gw branch delete` |
 | --- | --- | --- |
 | `empty` | permit an empty branch and its worktree | permit an empty branch |
 | `ignored-files` | permit the worktree's ignored paths | usage error |
 | `stashes` | permit the branch's stashes | same |
 | `all` | all categories above | empty branches and stashes |
 
-`gwbs` rejects `--delete`. An unknown or unsupported value is a usage error
-before mutation. `--delete empty` changes eligibility, not the verdict.
-Ignored files have no recovery command: Git never recorded their contents.
+`gw branch status` rejects `--delete`. An unknown or unsupported value is a
+usage error before mutation. `--delete empty` changes eligibility, not the
+verdict. Ignored files have no recovery command: Git never recorded their
+contents.
 
 ```console
-gwp --delete empty --delete ignored-files
-gwr old-checkout --keep-branch
-gwr old-checkout --keep-branch --delete ignored-files
+gw prune --delete empty --delete ignored-files
+gw remove old-checkout --keep-branch
+gw remove old-checkout --keep-branch --delete ignored-files
 ```
 
 `--keep-branch` removes an otherwise unprotected checkout without completion
@@ -287,28 +290,24 @@ unreachable commit. Stashes match a branch by their `WIP on NAME:` or
 no branch. Concurrent stash changes are checked by SHA; an accidentally
 dropped different entry is restored at the top of the list.
 
-`gwr` asks a second confirmation before removing the current worktree, even
-with `--yes`. It refuses without a terminal. Its process moves to the main
-checkout first and prints that destination after checkout removal, including
-when later branch or stash cleanup fails. The command then returns failure;
-the fish and zsh functions still move your shell to the destination. JSON
-carries it in `path` and `outcome.destination`.
+`gw remove` asks a second confirmation before removing the current worktree,
+even with `--yes`. It refuses without a terminal. Its process moves to the
+main checkout first and prints that destination after checkout removal,
+including when later branch or stash cleanup fails. The command then returns
+failure; the fish and zsh functions still move your shell to the destination.
+JSON carries it in `path` and `outcome.destination`.
 
 ### Shortcuts
 
-| Function | Invocation |
+| Shortcut | Runs |
 | --- | --- |
-| `gwl` | `gw list` |
-| `gwp!` | `gwp --yes` |
-| `gwp!!` | `gwp --delete all --yes` |
-| `gwr!` | `gwr --delete ignored-files` |
+| `gwp!` | `gw prune --yes` |
+| `gwpa` | `gw prune --delete all` |
+| `gwpa!` | `gw prune --delete all --yes` |
+| `gwr!` | `gw remove --delete ignored-files` |
 
-`gwp!!` permits deleting empty branches, ignored files and branch stashes.
-In interactive zsh with history expansion enabled, quote the function name:
-
-```console
-'gwp!!'
-```
+`gwpa` permits deleting empty branches, ignored files and branch stashes, and
+still asks at a terminal. `gwpa!` skips that question.
 
 ## Head and synchronization
 
@@ -372,15 +371,16 @@ Without a terminal, the command prints a table of every matching worktree.
 A current linked worktree is shown with `*` and cannot be selected. The main
 checkout remains a destination from inside it, so you can return from a
 subdirectory. A worktree is selected through `gw list NAME`, so a worktree
-named `sync` or `p` never collides with a command. The fish and zsh adapters preserve stdout and status for metadata and
-change directory for terminal selections.
+named `sync` or `p` never collides with a command. The fish and zsh `gw`
+function preserves stdout and status for metadata and changes directory for
+terminal selections.
 
-`gwa NAME [BASE]` creates or enters a worktree. `gwbc NAME` creates a branch from the assessed head
-ref without setting that head as upstream. `gwrot` creates the next
-`NAME-YYYY-MM-DD_NNN` sibling from the head, stripping a previous rotation
-suffix. Names must be absent from local and cached remote refs. On the head
-branch, rotation fast-forwards it instead. An unchanged result or divergent
-head refuses at exit 1.
+`gw add NAME [BASE]` creates or enters a worktree. `gw branch create NAME`
+creates a branch from the assessed head ref without setting that head as
+upstream. `gw rotate` creates the next `NAME-YYYY-MM-DD_NNN` sibling from the
+head, stripping a previous rotation suffix. Names must be absent from local
+and cached remote refs. On the head branch, rotation fast-forwards it instead.
+An unchanged result or divergent head refuses at exit 1.
 
 ## Output and JSON
 
@@ -390,14 +390,14 @@ disables colour on its stream. `NO_COLOR=` does not disable it.
 
 `-q` suppresses summaries, progress and stale warnings while keeping results,
 errors, inferred-head notices, never-synced notices and deletion disclosures.
-It keeps `gwbc`'s branch/base/SHA result and both `gwrot` outcome tables.
-`-v` traces subprocesses on stderr and keeps JSON stdout parseable. Passing
-both is a usage error.
+It keeps `gw branch create`'s branch/base/SHA result and both `gw rotate`
+outcome tables. `-v` traces subprocesses on stderr and keeps JSON stdout
+parseable. Passing both is a usage error.
 
 | Commands | `-q` | `-v` |
 | --- | --- | --- |
-| `gw sync`, `gwp`, `gwr`, `gwbd`, `gwa`, `gwbc`, `gwrot` | yes | yes |
-| `gwbs` | yes | no |
+| `gw sync`, `gw prune`, `gw remove`, `gw branch delete`, `gw add`, `gw branch create`, `gw rotate` | yes | yes |
+| `gw branch status` | yes | no |
 | `gw list` | no | no |
 
 Other commands retain their own flags; use `--help`. Help, version and
@@ -420,7 +420,7 @@ null. Worktree assessment has `verdicts`, with `verdict`, `eligible`,
 `gw list --json` puts its rows in `worktrees`.
 
 ```console
-gwp --json | jq '.verdicts[] | select(.eligible)'
+gw prune --json | jq '.verdicts[] | select(.eligible)'
 gw list --json | jq -r '.worktrees[].path'
 ```
 
@@ -428,11 +428,12 @@ gw list --json | jq -r '.worktrees[].path'
 
 | Removed interface | Current interface |
 | --- | --- |
-| `gws`, `gw status`, `gw s`, `gw st` | `gwp --json` |
-| `gwp --dry-run` | `gwp --json` or `gwp --list` |
-| `gwp --branch NAME` | `gwr NAME` or a quoted exact path |
+| `gwa`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwbc`, `gwrot` binaries | `gw` subcommands, or the plugin's shortcuts |
+| `gws`, `gw status`, `gw s`, `gw st` | `gw prune --json` |
+| `gwp --dry-run` | `gw prune --json` or `gw prune --list` |
+| `gwp --branch NAME` | `gw remove NAME` or a quoted exact path |
 | `--delete-ignored` | `--delete ignored-files` |
-| `gwr --force`, `gwr -f` | `gwr --keep-branch` |
+| `gwr --force`, `gwr -f` | `gw remove --keep-branch` |
 | `--no-fetch`, `--no-forge`, `--force-refresh`, refresh `-f` | offline by default; run `gw sync` explicitly |
 | `gw ls`, `gw NAME` | `gw list`, `gw list NAME` |
 | `gwh`, `gw help`, `gw h` | `gw --help` or `gw -h` |

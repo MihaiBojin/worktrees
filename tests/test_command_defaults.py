@@ -35,7 +35,7 @@ def test_bare_gw_prints_the_guide_and_lists_nothing(world):
     world.worktree("topic")
     p = run(world, "gw")
     assert p.returncode == 0, p.stderr
-    assert "COMMAND" in p.stdout and "gw list [QUERY]" in p.stdout
+    assert "COMMAND" in p.stdout and "gw list (l) [QUERY]" in p.stdout
     assert "WORKTREE" not in p.stdout and "topic" not in p.stdout
 
 
@@ -71,11 +71,11 @@ def test_listing_rejects_pruning_flags(world, flag):
 def test_root_help_prints_the_full_guide_outside_a_repository(world, entry, flag):
     p = run(world, entry, flag, at=world.root)
     assert p.returncode == 0, p.stderr
-    assert "COMMAND" in p.stdout and "GW" in p.stdout and "DOES" in p.stdout
+    assert "COMMAND" in p.stdout and "DOES" in p.stdout
     assert "gw list is the default" not in p.stdout
-    assert "gw list [QUERY]" in p.stdout
-    assert "gwp!!" in p.stdout and "NO_COLOR" in p.stdout
-    assert "gwl is gw list" in p.stdout and "gwh" not in p.stdout
+    assert "gw list (l) [QUERY]" in p.stdout
+    assert "gwpa!" in p.stdout and "gwl" in p.stdout
+    assert "gwh" not in p.stdout
     assert "gw help" not in p.stdout
 
 
