@@ -247,6 +247,36 @@ def test_remaining_duplicate_checkout_blocks_ref_deletion(world):
     assert world.git("rev-parse", "topic")
 
 
+def _row(result, path) -> dict:
+    assert result.returncode == 0, result.stderr
+    return next(v for v in json.loads(result.stdout)["verdicts"] if v["path"] == path)
+
+
+@pytest.mark.parametrize("name", ["done", "a'b", "$(id)"])
+def test_prune_json_carries_the_command_that_restores_each_branch(world, name):
+    """The `undo` an agent reads is the line the disclosure prints, and it
+    puts the deleted branch back at the sha it was deleted at."""
+    path = world.merged_worktree(name)
+    sha = world.git("rev-parse", f"refs/heads/{name}")
+    undo = f"git branch {shlex.quote(name)} {sha}"
+    assert _row(run(world, "gw prune", "--json"), str(path))["undo"] == undo
+    p = run(world, "gw prune", "--yes", "--json")
+    assert _row(p, str(path))["undo"] == undo
+    assert f"restore with: {undo}\n" in p.stderr
+    assert not path.exists()
+    assert not world.git("for-each-ref", "--format=%(refname)", f"refs/heads/{name}")
+    subprocess.run(shlex.split(undo), cwd=world.repo, check=True)
+    assert world.git("rev-parse", f"refs/heads/{name}") == sha
+
+
+def test_a_detached_worktree_has_no_branch_to_restore(world):
+    path = world.merged_worktree("done")
+    world.git("checkout", "--quiet", "--detach", at=path)
+    row = _row(run(world, "gw prune", "--json"), str(path))
+    assert row["branch"] == ""
+    assert row["undo"] is None
+
+
 @pytest.mark.parametrize("entry", ["gw remove", "gw branch prune"])
 @pytest.mark.parametrize("suffix", ["", "\u2028"])
 def test_stash_drop_repairs_a_real_concurrent_insertion(world, entry, suffix):

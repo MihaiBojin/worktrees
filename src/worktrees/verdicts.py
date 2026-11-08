@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,6 +19,16 @@ REMOVE = "remove"
 EMPTY = "empty"
 KEEP = "keep"
 UNKNOWN = "unknown"
+
+
+def restore_command(branch: str, sha: str) -> str:
+    """`git branch NAME SHA`, the line that puts a deleted branch back.
+
+    The name is quoted, because this line exists to be pasted and git permits
+    `$`, a backtick and `;` in a branch name. `shlex.quote` writes POSIX
+    single quotes, which bash, zsh and fish all read the same way.
+    """
+    return f"git branch {shlex.quote(branch)} {sha}"
 
 
 class Verdict:
@@ -58,6 +69,11 @@ class Verdict:
     @property
     def ignored(self) -> int:
         return len(self.ignored_paths)
+
+    @property
+    def undo(self) -> str | None:
+        """None on a detached worktree, which has no branch to put back."""
+        return restore_command(self.branch, self.sha) if self.branch else None
 
 
 def stale(records: list[R.Worktree]) -> list[R.Worktree]:

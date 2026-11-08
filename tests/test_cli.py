@@ -1546,13 +1546,14 @@ def test_prune_metadata_on_terminal_uses_explicit_approval(world, mode, approved
     assert cache.read_bytes() == b'{"sentinel": true}\n'
     if approved:
         assert not finished.exists()
-        assert "git branch finished " in out
+        assert "restore with: git branch finished " in out
     else:
         assert snapshot(finished) == finished_before
         assert snapshot(world.repo) == repo_before
         assert world.git("show-ref") == refs
         assert world.git("worktree", "list", "--porcelain") == records
-        assert "git branch finished " not in out
+        # The disclosure, not the JSON row's `undo`, which carries the same words.
+        assert "restore with: git branch finished " not in out
     if mode == "--table":
         assert "VERDICT" in out and str(finished) in out
     else:

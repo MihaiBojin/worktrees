@@ -142,11 +142,11 @@ branch deletion and stash outcomes separately, including refusals and
 partial failures. A failed command can already have removed its checkout or
 branch. Never turn a refused or retained step into a success report.
 
-Keep exact branch restore commands printed by the CLI; loose-branch rows
-also carry `undo`. When a worktree row needs a branch restore command,
-construct `git branch NAME SHA` from its exact branch and full SHA with
-shell quoting. Stash subjects are absent from assessment JSON: retain the
-actual `git stash store -m SUBJECT SHA` commands from removal disclosure,
+Take each branch restore command from its row's `undo`, which worktree and
+loose-branch rows both carry and which matches the line the CLI prints. A
+detached worktree's `undo` is null: it has no branch to restore. Stash
+subjects are absent from assessment JSON: retain the actual
+`git stash store -m SUBJECT SHA` commands from removal disclosure,
 including their exact subject quoting. Do not invent a subject.
 
 Present restore commands for what was actually deleted. A branch restore
