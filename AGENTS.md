@@ -340,10 +340,13 @@ replaces it atomically. Remote identity changes invalidate it; malformed or
 mismatched evidence is never proof.
 
 `sync._FRESH` is 10 minutes. Warnings compare the oldest non-null component
-time, with exactly 10 minutes still fresh. Quiet suppresses every warning,
-the never-synced and inferred-head notices included; a removal's disclosure
-still repeats them. `gw sync` and `gw version` print the head line. JSON
-carries `lastSync` and `head` instead. A repository without remotes has no sync warning.
+time, with exactly 10 minutes still fresh. The never-synced line goes to
+stderr under `-q` and `--json` as well, because a caller acting on the
+verdicts needs to hear that no sync stands behind them. Quiet and JSON
+suppress every other warning, the inferred-head notice included; a removal's
+disclosure still repeats it. `gw sync` and `gw version` print the head line.
+JSON carries `lastSync` and `head`. A repository without remotes, the local
+case, has no sync warning.
 
 Partial-clone object reads require Git 2.45.1 onward or the maintenance
 cohorts in `repo.require_offline_git`. Lower reported vendor versions refuse;

@@ -1492,11 +1492,13 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
 
             options.verbose = getattr(args, "verbose", False)
             R.require_offline_git()
-            # -q hides every warning, the never-synced and inferred-head
-            # lines included; a removal's disclosure still repeats them.
-            quiet = getattr(args, "quiet", False)
-            if not getattr(args, "json", False) and not quiet and R.toplevel().value:
-                for notice in sync.notices():
+            # The never-synced line is on stderr under -q and --json too: a
+            # caller acting on these verdicts needs to know no sync stands
+            # behind them. -q and --json hide the rest.
+            hushed = getattr(args, "json", False) or getattr(args, "quiet", False)
+            if R.toplevel().value:
+                shown = sync.freshness(quiet=True) if hushed else sync.notices()
+                for notice in shown:
                     _err(render.note(notice))
         code = run(args)
         merged = sys.modules.get("worktrees.merged")

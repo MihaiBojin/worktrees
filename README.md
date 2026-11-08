@@ -317,12 +317,13 @@ head: the only `main` or `master`, the newer tip if both exist, and `main` on
 a tie. With neither, the head is unresolved. Every verdict is then unknown,
 mutation refuses, and branch/worktree creation and rotation fail.
 
-Human output names the head and its source on stderr. An inferred head and a
-never-synced warning remain visible with `-q`. A never-synced repository with
-a remote uses clone or last-fetch refs and no forge evidence. Stale sync
-state, older than 10 minutes, produces an age warning; exactly 10 minutes is
-fresh. Quiet suppresses only the stale warning. Repositories without remotes
-have neither sync warning. JSON carries the state instead of these notices.
+Human output names the head and its source on stderr. A never-synced
+repository with a remote uses clone or last-fetch refs and no forge evidence,
+and says so on stderr even with `-q` or `--json`, so a script acting on the
+verdicts hears it too. Stale sync state, older than 10 minutes, produces an
+age warning; exactly 10 minutes is fresh. `-q` and `--json` omit the age
+warning and the head line, and JSON carries both states in `lastSync` and
+`head`. Repositories without remotes have neither sync warning.
 
 The default remote is `checkout.defaultRemote`, or the only remote. Several
 remotes without that setting make sync refuse and print the configuration
@@ -388,8 +389,9 @@ Results go to stdout; diagnostics and prompts go to stderr. JSON and
 `gw list --list` never contain colour. A pipe, nonempty `NO_COLOR`, or `TERM=dumb`
 disables colour on its stream. `NO_COLOR=` does not disable it.
 
-`-q` suppresses summaries, progress and stale warnings while keeping results,
-errors, inferred-head notices, never-synced notices and deletion disclosures.
+`-q` suppresses summaries, progress, stale warnings and the head line while
+keeping results, errors, never-synced notices and deletion disclosures, which
+repeat an inferred head.
 It keeps `gw branch create`'s branch/base/SHA result and both `gw rotate`
 outcome tables. `-v` traces subprocesses on stderr and keeps JSON stdout
 parseable. Passing both is a usage error.

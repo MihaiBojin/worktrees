@@ -153,12 +153,13 @@ by branch and source SHA; moved or new branches need sync for forge proof.
 | No remote | null | null | 0, inferred head | none |
 | Multiple remotes without default | unchanged | unchanged | failure | none |
 
-A remote repository with no refs sync time prints a never-synced warning.
-The older non-null sync time is stale after 10 minutes, with exactly
-10 minutes still fresh. Human output prints age and suggests `gw sync`.
-Quiet suppresses every warning, the never-synced and inferred head notices
-included; a removal's disclosure still repeats them. JSON output and
-repositories without remotes omit these warnings. `gw sync` and `gw version`
+A remote repository with no refs sync time prints a never-synced warning on
+stderr, under `-q` and `--json` too, so a caller acting on the verdicts hears
+that no sync stands behind them. The older non-null sync time is stale after
+10 minutes, with exactly 10 minutes still fresh. Human output prints age and
+suggests `gw sync`. Quiet and JSON output suppress the stale warning and the
+inferred head notice; a removal's disclosure still repeats them. Repositories
+without remotes, the local case, have neither warning. `gw sync` and `gw version`
 print the head line, and a head that does not resolve is named in it. JSON provides the state instead. Staleness never causes
 a network call.
 

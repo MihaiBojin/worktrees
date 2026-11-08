@@ -78,35 +78,43 @@ def envelope(repo: str | os.PathLike[str] | None = None) -> dict:
     return {"lastSync": read(repo)["lastSync"], "head": R.head(repo).data()}
 
 
+def freshness(
+    quiet: bool = False, repo: str | os.PathLike[str] | None = None
+) -> list[str]:
+    """Never synced, or synced too long ago; quiet keeps only never synced.
+
+    A repository without a remote is the local case and has neither.
+    """
+    if not R.remotes(repo=repo).lines:
+        return []
+    times = read(repo)["lastSync"]
+    if not times["refs"]:
+        return [NEVER]
+    if quiet:
+        return []
+    oldest = min(
+        datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        for value in times.values()
+        if value
+    )
+    age = max(0, time.time() - oldest)
+    if age <= _FRESH:
+        return []
+    amount, unit = (
+        (int(age // 86400), "day")
+        if age >= 86400
+        else (int(age // 3600), "hour")
+        if age >= 3600
+        else (int(age // 60), "minute")
+    )
+    return [f"Last sync: {amount} {unit}{'s' if amount != 1 else ''} ago. Run: gw sync"]
+
+
 def notices(
     quiet: bool = False, repo: str | os.PathLike[str] | None = None
 ) -> list[str]:
     """The local head source and the age of the available remote evidence."""
-    lines = []
-    cached = read(repo)
-    times = cached["lastSync"]
-    if R.remotes(repo=repo).lines:
-        if not times["refs"]:
-            lines.append(NEVER)
-        elif not quiet:
-            applicable = [value for value in times.values() if value]
-            oldest = min(
-                datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-                for value in applicable
-            )
-            age = max(0, time.time() - oldest)
-            if age > _FRESH:
-                amount, unit = (
-                    (int(age // 86400), "day")
-                    if age >= 86400
-                    else (int(age // 3600), "hour")
-                    if age >= 3600
-                    else (int(age // 60), "minute")
-                )
-                lines.append(
-                    f"Last sync: {amount} {unit}{'s' if amount != 1 else ''} ago. "
-                    "Run: gw sync"
-                )
+    lines = freshness(quiet, repo)
     head = R.head(repo)
     if head.source == "inferred" or not quiet:
         lines.append(head_line(head))

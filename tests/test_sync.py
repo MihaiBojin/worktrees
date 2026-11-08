@@ -378,7 +378,10 @@ def test_stale_notice_boundary_and_units(
 
 
 @pytest.mark.parametrize("quiet", [False, True])
-def test_never_synced_and_inferred_notices_yield_only_to_quiet(world, network, quiet):
+def test_never_synced_survives_quiet_and_json_and_inferred_yields(
+    world, network, quiet
+):
+    """A caller acting on these verdicts needs to hear that no sync is behind them."""
     origin(world)
     proc = cli(world, *(["-q"] if quiet else []), entry="gw prune", env=network.env())
     assert proc.returncode == 0, proc.stderr
@@ -386,10 +389,11 @@ def test_never_synced_and_inferred_notices_yield_only_to_quiet(world, network, q
         "Never synced: verdicts use refs from the clone or last fetch "
         "and no forge evidence. Run: gw sync"
     )
-    assert (never in proc.stderr) is not quiet
+    assert proc.stderr.count(never) == 1
     assert ("Head: main (inferred)" in proc.stderr) is not quiet
     data = cli(world, "list", "--json", env=network.env())
-    assert "Never synced:" not in data.stderr and "Head:" not in data.stderr
+    json.loads(data.stdout)
+    assert data.stderr.count(never) == 1 and "Head:" not in data.stderr
     proc = cli(world, "sync", *(["-q"] if quiet else []), env=network.env())
     assert "Never synced:" not in proc.stderr
     assert ("Head: main (remote)" in proc.stderr) is not quiet, proc.stderr
