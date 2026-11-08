@@ -7,7 +7,13 @@ matching worktree metadata. `--json` and `--table` always print metadata.
 `gw list WORD`. `gw prune` assesses worktrees and asks before removal on a
 terminal. Nonterminal input, `--json` and `--table` assess without mutation;
 `--yes` approves removal in any mode. `--table` prints an uncoloured table.
-`--only` filters assessment rows and rejects `--yes`. `gw remove` selects one.
+`--only` filters assessment rows and rejects `--yes`. `gw remove` selects one
+and follows the same rules for it: nonterminal input, `--json` and `--table`
+print its row, in the `verdicts` shape `gw prune --json` uses, and remove
+nothing; `--yes` approves removal in any mode. It takes no `--only`, since a
+single target has a single verdict. A target that is not eligible still fails
+under `--yes`, and removing the worktree you stand in still needs a second
+answer at a terminal.
 `gw branch status` assesses loose local branches and `gw branch prune`
 deletes selected eligible refs. A checked-out branch appears only as a
 worktree. Each shell plugin shortcut, such as `gwp!`, runs one of these with

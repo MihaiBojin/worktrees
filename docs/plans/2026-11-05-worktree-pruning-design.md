@@ -31,7 +31,8 @@ worktree root are neither assessed nor removed.
 | `gw prune` with nonterminal input, `--json`, `--table` or `--only`, without `--yes` | Print the assessment table or JSON, preserving stale records and repository state. | No |
 | `gw prune` with terminal input | Clear stale worktree records, show the full table, disclose eligible targets, confirm, then remove. | Stale records first; removal after approval |
 | `gw prune --yes` | Remove eligible targets without prompting, including with nonterminal input, `--json` or `--table`. Grants no deletion category. | Yes |
-| `gw remove PATH\|NAME` | Remove one worktree (sections 9 and 10). | Yes |
+| `gw remove PATH\|NAME` with nonterminal input, `--json` or `--table`, without `--yes` | Print the match's assessment row or JSON, as `gw prune` does. No `--only`: one target has one verdict. | No |
+| `gw remove PATH\|NAME` with terminal input or `--yes` | Remove one worktree (sections 9 and 10). | Yes |
 | `gw branch status` | Assess local branches that have no worktree. Rejects `--delete`. | No |
 | `gw branch prune NAME...` | Delete eligible loose branches. | Yes |
 | `gw sync` | Fetch every remote, then the default remote's head and forge evidence (section 11). The only command that uses the network. | Refs, cache |
@@ -209,7 +210,7 @@ and assessment never writes refs, the cache or any directory.
 
 | Command | Matching | Several matches, terminal | Several matches, no terminal |
 | --- | --- | --- | --- |
-| `gw remove NAME` | Exact name; an exact path always resolves to one worktree | Picker limited to the exact matches | Refuse and list the paths |
+| `gw remove NAME` | Exact name; an exact path always resolves to one worktree | Picker limited to the exact matches | With `--yes`, refuse and list the paths; without, print every match's row |
 | `gw list [QUERY]` | Exact, then substring, then subsequence matching | Picker filtered as you type; a unique query selects directly | Metadata for every match |
 
 An unmatched name fails without changing anything.
@@ -355,7 +356,7 @@ and `gw --help` and the command's own `--help` print them.
 | `gwa` | `gw add` |
 | `gwl` | `gw list` |
 | `gwr` | `gw remove` |
-| `gwr!` | `gw remove --delete ignored-files` |
+| `gwr!` | `gw remove --yes`, the approval `gwp!` gives, and no deletion category |
 | `gwrot` | `gw rotate` |
 | `gwbc` | `gw branch create` |
 | `gwbs` | `gw branch status` |
@@ -391,6 +392,9 @@ The skill pre-approves `gw sync`, `gw list --json`, `gw list --table`, `gw prune
 - `gwp!!` is now `gwpa!`.
 - `gw branch delete` and `gwbd` are now `gw branch prune` and `gwbp`.
 - `gwr --force` is now `gw remove --keep-branch`.
+- `gw remove` without a terminal, or with `--json` or `--table`, assesses at exit 0 unless `--yes`
+  approves removal, where it refused at exit 3. `gwr!` runs `gw remove --yes`, not
+  `gw remove --delete ignored-files`.
 - `--list` is now `--table`, with no short form.
 - `gws` runs `gw sync`, which fetches, instead of assessing.
 - New verdict `empty`; new `--delete` values; `main` and `master` always protected.

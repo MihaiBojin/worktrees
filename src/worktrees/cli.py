@@ -720,6 +720,8 @@ def _add_list_flags(p: argparse.ArgumentParser) -> None:
 
 
 def _add_remove_flags(p: argparse.ArgumentParser) -> None:
+    """gw prune's rules for one target. No --only: one target has one verdict."""
+    p.description = _REMOVE_HELP
     p.add_argument(
         "query", nargs="?", default="", metavar="PATH|QUERY", help="which one"
     )
@@ -728,12 +730,20 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="remove the checkout and retain its branch and stashes",
     )
-    _add_delete_flags(p)
-    p.add_argument("-y", "--yes", action="store_true", help="do not ask")
+    _add_assess_flags(p)
+    p.add_argument(
+        "--table",
+        action="store_true",
+        help="assess without prompting; uncoloured table",
+    )
+    p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="approve removal, including with --json or --table",
+    )
     # Removal candidates omit main, which Git cannot remove.
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
-    _add_cd_flags(p)
-    _add_cd_output_flags(p)
 
 
 def _landed(args: argparse.Namespace, landed: wt_mod.Landed) -> int:
@@ -889,6 +899,28 @@ def run_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _remove_preview(args: argparse.Namespace, rows: list[verdicts.Verdict]) -> int:
+    """The rows gw prune would print for these worktrees, and no removal.
+
+    Never a bare path on stdout: the gw function changes into one.
+    """
+    if args.json:
+        print(_json({"verdicts": _verdict_data(rows)}, indent=2))
+        return 0
+    if args.table:
+        render.out.on = False
+    print(_verdict_table(rows))
+    if args.quiet:
+        return 0
+    print()
+    print(_counted(rows))
+    if len(rows) == 1 and rows[0].eligible:
+        sys.stdout.flush()
+        named = shlex.quote(rows[0].path)
+        _err(render.note(f"gw remove {named} --yes removes it"))
+    return 0
+
+
 def run_remove(args: argparse.Namespace) -> int:
 
     from . import layout, pick, prune
@@ -920,7 +952,6 @@ def run_remove(args: argparse.Namespace) -> int:
             found = [
                 w for w in worktrees if args.query in (layout.name_of(w.path), w.branch)
             ]
-        _refuse_ambiguous(found)
     by_path = {v.path: v for v in rows}
     candidates = [by_path[w.path] for w in found if w.path in by_path]
 
@@ -933,6 +964,13 @@ def run_remove(args: argparse.Namespace) -> int:
             )
         )
         return 1
+
+    # gw prune's rule: without approval, a caller that cannot answer, or asked
+    # for data, gets the assessment and nothing changes.
+    if not args.yes and (args.json or args.table or not sys.stdin.isatty()):
+        return _remove_preview(args, candidates)
+    if args.query:
+        _refuse_ambiguous(found)
 
     # The main checkout is listed and never offered: `git worktree remove`
     # refuses it whatever flag it is given. The worktree you stand in is
@@ -1309,7 +1347,7 @@ _COMMANDS: dict[str, _Command] = {
         "remove a worktree",
         usage="[QUERY]",
         aliases=("rm",),
-        shortcuts={"gwr": "", "gwr!": "--delete ignored-files"},
+        shortcuts={"gwr": "", "gwr!": "--yes"},
         lands=True,
     ),
     "rotate": _Command(
@@ -1364,6 +1402,12 @@ _PRUNE_HELP = (
     "Nonterminal input, --json and --table assess without removing; "
     "--yes approves removal. "
     "--only always assesses and cannot be combined with --yes."
+)
+_REMOVE_HELP = (
+    "remove a worktree. Terminal input picks and asks; nonterminal input, "
+    "--json and --table assess the match without removing; --yes approves "
+    "removal. Removing the worktree you stand in asks once more, at a "
+    "terminal only."
 )
 _NEW_BRANCH_HELP = "Branch NAME off the head ref and check it out, without fetching."
 _ROTATE_HELP = (
