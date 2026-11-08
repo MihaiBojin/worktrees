@@ -89,20 +89,38 @@ does, and keeps argparse's 2 for a usage error where `origin` has a single
 non-zero exit code.
 
 `gw fast-forward` starts a branch only when the one you stand on is proved
-finished, by the same `merged.branch_proof` that `gw prune` reads. A merged
-branch's name stays with its merged request on the forge, so the finished
-branch keeps its name and commits and the checkout moves to
+finished, by the same `merged.branch_proof` that `gw prune` reads, or when
+its first commits are and its own request merged them: `merged.boundary`
+asks each commit below the tip, from the tip down, since the first of a
+squashed pair is not upstream on its own. A branch whose merged part is
+another branch's, a stacked one whose parent merged, keeps its name and its
+open request, and drops the merged commits in place with the same
+`git rebase --onto`.
+A merged branch's name stays with its merged request on the forge, so the
+finished branch keeps its name and commits and the checkout moves to
 `YYYY-MM-DDThh-mm-ssZ/<stem>` in UTC, or to the NAME given, from the head
-ref or `--from`. The stem drops a time an earlier rotation put in front, and
-a name held here or on the default remote is refused.
+ref or `--from`. Commits after the merged part are replayed onto it with
+`git rebase --onto`, so a stop is an ordinary stopped rebase. The stem drops
+a time an earlier rotation put in front, and a name held here or on the
+default remote is refused.
+
+It decides on evidence read in the same run. It fetches the default remote
+whatever the TTL and asks the forge for the branch's newest merged request,
+never reading the cached one, since a pull request merged a moment ago is
+the usual reason to run it. Either failing is a refusal whose last line is
+the same command under `WORKTREES_OFFLINE=1`.
 
 Every other branch keeps its name. One with no commits of its own
-fast-forwards and one with commits is rebased, both with `--no-autostash`:
-`merge.autoStash` and `rebase.autoStash` would move a dirty tree into the
-stash list every worktree shares. The first conflict stops the rebase and leaves it in progress, at
-exit 1 with the stopped commit and files in `--json`, for a person or the
-agent plugin to finish with `git rebase --continue`. A branch already level
-exits 0. The head branch only fast-forwards.
+fast-forwards and one with commits is rebased, both with `--no-autostash`
+unless `--autostash` is given: `merge.autoStash` and `rebase.autoStash`
+would move a dirty tree into the stash list every worktree shares without
+being asked. Under `--autostash`, git's own autostash carries the changes,
+and one that does not re-apply leaves an `autostash` entry that the result
+names by sha as `stash-conflict`. The first conflict stops the rebase and
+leaves it in progress, at exit 1 with the stopped commit and files in
+`--json`, for a person or the agent plugin to finish with
+`git rebase --continue`. A branch already level exits 0. The head branch
+only fast-forwards.
 [fast-forward](docs/commands/fast-forward.md) gives the order of the checks.
 
 ## Where shell code goes
@@ -158,7 +176,7 @@ assumes a plugin root or a checkout at a known path.
 | skill | runs |
 | --- | --- |
 | `new-branch` | `gw sync`, then `gw branch create` |
-| `fast-forward` | `gw fast-forward --json`, then each rebase conflict until the branch is level |
+| `fast-forward` | `gw fast-forward --autostash --json`, then each rebase conflict until the branch is level |
 | `ci-checks` | `gw ci-checks --json`, `--wait` to wait without polling |
 | `describe-pr` | checks a review's title and body against its diff, and edits them |
 | `merge` | `describe-pr`, `ci-checks`, fixes on the branch, `gh pr merge`, then `fast-forward` in the head branch's checkout |
@@ -376,15 +394,18 @@ when eight threads are asking at once.
 `gw sync` fetches every remote with `--prune --tags --no-prune-tags`, the
 default first, updates the default remote's HEAD and queries the forge for
 every local branch tip on eight threads. Every other command but
-`gw version`, `gw ci-checks`, help and completion runs the same `sync.run`
-first when
+`gw version`, `gw ci-checks`, `gw fast-forward`, help and completion runs
+the same `sync.run` first when
 `sync.due` says so: the default remote's refs time is null or at least
 `WORKTREES_SYNC_TTL` seconds old, 60 by default. The forge time is not read,
 since a forge that keeps failing would sync before every command. Without a
 default remote nothing syncs first, because sync records nothing there.
+`gw fast-forward` runs `sync.fetch` on every run instead, which fetches the
+default remote and records the refs time.
 
 A failed sync before a command is a warning, and the command goes on with
-the evidence it has; quiet and JSON hide the warning. Nothing it prints
+the evidence it has; quiet and JSON hide the warning. A failed fetch before
+`gw fast-forward` is a refusal. Nothing it prints
 reaches stdout, so `cd $(gw add x)` and `jq` never see it. A TTL that is not
 whole seconds is a usage error at exit 2.
 

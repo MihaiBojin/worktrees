@@ -608,6 +608,11 @@ def _add_fast_forward_flags(p: argparse.ArgumentParser) -> None:
         metavar="REF",
         help="start that branch from this branch or commit, not the head ref",
     )
+    p.add_argument(
+        "--autostash",
+        action="store_true",
+        help="carry uncommitted changes across, through git's own autostash",
+    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument(
         "-q", "--quiet", action="store_true", help="omit summaries and progress"
@@ -620,10 +625,38 @@ def _add_fast_forward_flags(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _offline_retry(args: argparse.Namespace) -> str:
+    """The line ending a refusal for want of live evidence: the same run, offline."""
+    from . import sync
+
+    return f"Run: {sync.OFFLINE}=1 {args.typed}"
+
+
+def _fetch_now(args: argparse.Namespace) -> None:
+    """Fetch the default remote before fast-forward decides, whatever the TTL.
+
+    A failed fetch is a refusal rather than a warning: a pull request merged
+    a moment ago is the usual reason to run the command, and only a fetch
+    brings its squash commit.
+    """
+    from . import sync
+
+    if sync.offline():
+        return
+    quiet = args.quiet or args.verbose
+    with progress.running(not quiet):
+        failures, warnings = sync.fetch()
+    if failures:
+        raise _Stop("\n".join([*failures, _offline_retry(args)]), 1)
+    if not args.quiet and not args.json:
+        for message in warnings:
+            _warn(message)
+
+
 def run_fast_forward(args: argparse.Namespace) -> int:
 
     from . import fast_forward as ff
-    from . import new_branch
+    from . import new_branch, sync
     from .git import options
 
     options.verbose = args.verbose
@@ -631,7 +664,15 @@ def run_fast_forward(args: argparse.Namespace) -> int:
         return _explain()
 
     try:
-        moved = ff.fast_forward(args.new_name, args.start)
+        moved = ff.fast_forward(
+            args.new_name,
+            args.start,
+            autostash=args.autostash,
+            live=not sync.offline(),
+        )
+    except ff.Unfetched as exc:
+        _err(render.fail(f"{exc}\n{_offline_retry(args)}"))
+        return 1
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -643,9 +684,51 @@ def run_fast_forward(args: argparse.Namespace) -> int:
         # already put the same facts on stdout.
         _stopped(moved)
         return 1
+    if moved.result == ff.STASH_CONFLICT:
+        _unapplied(moved)
+        return 1
     if not args.json:
         print(_moved(moved))
+        _stashes(moved)
     return 0
+
+
+def _unapplied(moved: fast_forward.Moved) -> None:
+    """Uncommitted work that did not re-apply, the files it conflicts in, and
+    the sha that puts it back."""
+    files = "".join(f"\n  {path}" for path in moved.paths)
+    _err(
+        render.fail(
+            "the uncommitted changes did not re-apply cleanly on "
+            f"{render.branch(moved.branch)}, and left conflicts in:{files}"
+        )
+    )
+    if moved.stash:
+        _err(
+            render.note(
+                f"the changes are also kept on the stash list as {moved.stash}; "
+                f"resolve the files, or git stash apply {moved.stash} once they "
+                "are restored"
+            )
+        )
+
+
+def _stashes(moved: fast_forward.Moved) -> None:
+    """A rotated branch's stashes, which stay with it."""
+    if not moved.stashes:
+        return
+    after = sum(1 for entry in moved.stashes if entry["after"])
+    listed = "".join(
+        f"\n  {entry['sha']} {entry['subject']}"
+        + ("  (made after the merged part)" if entry["after"] else "")
+        for entry in moved.stashes
+    )
+    _err(
+        render.note(
+            f"{render.branch(moved.previous)} keeps {len(moved.stashes)} "
+            f"stash(es), {after} made after the merged part:{listed}"
+        )
+    )
 
 
 def _stopped(moved: fast_forward.Moved) -> None:
@@ -679,7 +762,9 @@ def _moved(moved: fast_forward.Moved) -> str:
         ff.ROTATED: f"new, from {base}",
     }
     note = now[moved.result]
-    if moved.ahead:
+    if moved.carried:
+        note += f", carrying {_commits(moved.carried)} after {moved.boundary}"
+    if moved.ahead and not moved.carried:
         note += f", {_commits(moved.ahead)} of its own"
     after = (
         Cell("now", BOLD),
@@ -692,7 +777,11 @@ def _moved(moved: fast_forward.Moved) -> str:
     was = {
         ff.FAST_FORWARDED: "",
         ff.REBASED: f"{_commits(moved.behind)} behind {base}",
-        ff.ROTATED: f"kept, finished: {moved.why}",
+        ff.ROTATED: (
+            f"kept, finished up to {moved.boundary}: {moved.why}"
+            if moved.carried
+            else f"kept, finished: {moved.why}"
+        ),
     }
     before = (
         Cell("was", DIM),
@@ -1571,9 +1660,11 @@ _COMMANDS: dict[str, _Command] = {
         _add_fast_forward_flags,
         "bring this branch level with the head ref",
         "Bring the branch you stand on level with the head ref: fast-forward "
-        "it, or rebase its own commits and stop at the first conflict. A branch "
-        "already merged there keeps its name, and the checkout moves to a new "
-        "branch started from the head ref or --from.",
+        "it, or rebase its own commits and stop at the first conflict, after a "
+        "fetch and a forge query it refuses to go without unless "
+        "WORKTREES_OFFLINE is set. A branch merged there keeps its name, and "
+        "the checkout moves to a new branch from the head ref or --from, "
+        "carrying the commits made after the merge.",
         usage="[NAME]",
         aliases=("ff",),
         shortcuts={"gwff": ""},
@@ -1727,6 +1818,8 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
     # into the private table for it. The alias the caller typed, not the
     # canonical name, so a usage line echoes what they wrote.
     args.prog = f"{p.prog} {args.command}"
+    # The command as typed, for a refusal that ends with the same run offline.
+    args.typed = shlex.join([p.prog, *argv])
     if getattr(args, "branch_command", None):
         args.prog += f" {args.branch_command}"
     run = _COMMANDS[_CANONICAL[args.command]].run
@@ -1764,7 +1857,10 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             # behind them. -q and --json hide the rest.
             hushed = getattr(args, "json", False) or getattr(args, "quiet", False)
             if R.toplevel().value:
-                _refresh(args)
+                if run is run_fast_forward:
+                    _fetch_now(args)
+                else:
+                    _refresh(args)
                 shown = sync.freshness(quiet=True) if hushed else sync.notices()
                 for notice in shown:
                     _err(render.note(notice))

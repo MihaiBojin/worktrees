@@ -702,8 +702,7 @@ def test_gitlab_source_lookup_must_agree_with_identity(world, network, field, va
 
 
 @pytest.mark.parametrize(
-    "entry, args",
-    [("gw add", ["new"]), ("gw branch create", ["new"]), ("gw fast-forward", [])],
+    "entry, args", [("gw add", ["new"]), ("gw branch create", ["new"])]
 )
 def test_dangling_clone_head_refuses_branch_creation_with_sync_hint(
     world, network, entry, args

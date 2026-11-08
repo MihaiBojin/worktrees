@@ -32,7 +32,7 @@ repositories under the same worktree root are outside their scope.
 | `gw branch prune [NAME ...]` | `gwbp` | confirm and delete eligible loose branches |
 | `gw add NAME [BASE]` | `gwa` | create or enter a worktree |
 | `gw branch create NAME` | `gwbc` | start a branch from the assessed head ref |
-| `gw fast-forward [NAME]` | `gwff` | rebase this branch onto the head ref, or move a merged one to a new branch |
+| `gw fast-forward [NAME]` | `gwff` | rebase this branch onto the head ref, or move a merged one, and what came after its merge, to a new branch |
 | `gw ci-checks [NUMBER]` | | read a pull request's checks from GitHub or GitLab; `gw ci` for short |
 | `gw version` | | print the installed version |
 
@@ -361,14 +361,16 @@ branch and source tip. Sync replaces it atomically. Changing the remote's
 name or URL invalidates it. Malformed or mismatched evidence proves nothing.
 A moved branch needs another sync for forge evidence; local proof still works.
 
-Every command except `gw sync`, `gw version`, help and completion syncs first
-when the default remote's refs have never synced or last synced 60 seconds
-ago or more. `WORKTREES_SYNC_TTL` sets that window in whole seconds, and `0`
+Every command except `gw sync`, `gw version`, `gw fast-forward`, help and
+completion syncs first when the default remote's refs have never synced or
+last synced 60 seconds ago or more. `WORKTREES_SYNC_TTL` sets that window in whole seconds, and `0`
 syncs before every command. The forge time does not count, so a forge that
 keeps failing does not make every command sync. A failed sync warns, `-q` and
 `--json` hide the warning, and the command goes on with the evidence it had.
 Without a default remote nothing syncs first. An unreachable remote costs
 every command its fetch timeout, which `WORKTREES_OFFLINE` skips.
+`gw fast-forward` fetches the default remote and asks the forge on every
+run, and refuses when either fails.
 
 `WORKTREES_OFFLINE`, set to anything but the empty string, keeps every
 command off the network: nothing syncs first, and `gw sync` refuses at exit 3.
@@ -420,13 +422,17 @@ terminal selections.
 creates a branch from the assessed head ref without setting that head as
 upstream.
 
-`gw fast-forward` brings the branch you stand on level with the head ref. A
-branch with no commits of its own fast-forwards, the head branch included;
-one with commits is rebased, and the first conflict stops the rebase with the
-files left for you to resolve. A branch proved finished keeps its name, and
-the checkout moves to a new branch from the head ref or `--from`, named
-`YYYY-MM-DDThh-mm-ssZ/NAME` unless you name it. A branch already level exits
-0 and changes nothing. [Fast-forward](docs/commands/fast-forward.md) gives the
+`gw fast-forward` brings the branch you stand on level with the head ref,
+after fetching and asking the forge in the same run. A branch with no
+commits of its own fast-forwards, the head branch included; one with commits
+is rebased, and the first conflict stops the rebase with the files left for
+you to resolve. A branch proved finished keeps its name, and the checkout
+moves to a new branch from the head ref or `--from`, named
+`YYYY-MM-DDThh-mm-ssZ/NAME` unless you name it. A branch whose own pull
+request squash-merged its first commits moves the same way, carrying only
+the commits made after the merge; a stacked branch whose parent merged keeps
+its name and drops the merged commits in place. `--autostash` carries uncommitted changes across. A branch
+already level exits 0 and changes nothing. [Fast-forward](docs/commands/fast-forward.md) gives the
 order of the checks, the JSON and the conflict loop.
 
 ## Pull request checks

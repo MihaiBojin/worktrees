@@ -15,9 +15,13 @@ from __future__ import annotations
 
 import os
 import threading
+from typing import TYPE_CHECKING
 
 from .errors import MissingObjects
 from .git import git
+
+if TYPE_CHECKING:  # annotations only
+    from . import branch_forge
 
 # Set when a proof needed an object this partial clone lacks, so the command
 # can say once why those branches are unknown.
@@ -68,9 +72,16 @@ def patch_ids() -> None:
 
 
 def squash_matches(
-    ref: str, head: str, repo: str | os.PathLike[str] | None = None
+    ref: str,
+    head: str,
+    repo: str | os.PathLike[str] | None = None,
+    upstream: dict[str, set[str]] | None = None,
 ) -> bool:
-    """Compare a pinned commit's combined patch with the head branch."""
+    """Compare a pinned commit's combined patch with the head branch.
+
+    `upstream` keeps the head's patch-ids by merge base, for a caller asking
+    about several commits of one branch.
+    """
 
     base = merge_base(head, ref, repo=repo)
     if not base or not base.out.strip():
@@ -90,11 +101,14 @@ def squash_matches(
     ids = patch_ids(input=patch, repo=repo).lines
     if not ids:
         return False
-    wanted = ids[0].split()[0]
-    upstream = upstream_patches(base.out.strip(), head, repo=repo).out
-    return any(
-        line.split()[0] == wanted for line in patch_ids(input=upstream, repo=repo).lines
-    )
+    known = {} if upstream is None else upstream
+    fork = base.out.strip()
+    if fork not in known:
+        patches = upstream_patches(fork, head, repo=repo).out
+        known[fork] = {
+            line.split()[0] for line in patch_ids(input=patches, repo=repo).lines
+        }
+    return ids[0].split()[0] in known[fork]
 
 
 @git("merge-base --all $a $b", ok=(0, 1))
@@ -127,6 +141,11 @@ def first_parent_history(head: str) -> None:
     """Every commit on the assessed head's first-parent history."""
 
 
+@git("rev-list --topo-order $head..$tip")
+def own_commits(head: str, tip: str) -> None:
+    """The branch's commits the head lacks, newest first."""
+
+
 def branch_proof(
     branch: str,
     sha: str,
@@ -136,13 +155,18 @@ def branch_proof(
     ask_forge: bool,
     first_parents: set[str],
     repo: str | os.PathLike[str] | None = None,
+    live: branch_forge.Request | None = None,
 ) -> tuple[str, str, str, dict | None]:
-    """The same pinned tip and head yield the same completion evidence."""
+    """The same pinned tip and head yield the same completion evidence.
+
+    `live` is a request read from the forge in this run, for a caller that
+    must not trust the cache; `ask_forge` reads the cache otherwise.
+    """
     from . import branch_forge
 
     if not head:
         return "unknown", "the head ref does not resolve", "", None
-    request = (
+    request = live or (
         branch_forge.request_for(branch, remote, sha, repo)
         if branch and remote and ask_forge
         else None
@@ -186,19 +210,41 @@ def branch_proof(
     return "keep", "its commits are not contained in the head branch", "", data
 
 
+def boundary(
+    tip: str, head: str, repo: str | os.PathLike[str] | None = None
+) -> tuple[str, str, str] | None:
+    """The newest commit below the tip whose change the head already has.
+
+    For a branch whose first commits were squash-merged and which went on
+    afterwards. Asked from the tip down, because the answer is not monotone:
+    the first commit of a squashed pair is not upstream on its own, while the
+    pair is. Returns the commit, its proof and why, or None when no commit
+    below the tip is proved, or when this partial clone lacks what a proof
+    needs, which leaves the branch to an ordinary rebase.
+    """
+    upstream: dict[str, set[str]] = {}
+    for commit in own_commits(head, tip, repo=repo).lines[1:]:
+        try:
+            found = _local_proof(commit, head, repo, upstream)
+        except MissingObjects:
+            lacking.set()
+            return None
+        if found:
+            return commit, found[0], found[1]
+    return None
+
+
 def _local_proof(
-    sha: str, head: str, repo: str | os.PathLike[str] | None
+    sha: str,
+    head: str,
+    repo: str | os.PathLike[str] | None,
+    upstream: dict[str, set[str]] | None = None,
 ) -> tuple[str, str] | None:
     """The first local proof that the tip's change is in the head, if any."""
-    for proof, why, check in (
-        ("ancestry", "its tip is an ancestor of the head branch", is_ancestor),
-        (
-            "squash",
-            "its tree or combined patch is already in the head branch",
-            squash_matches,
-        ),
-        ("content", "every changed path matches the head branch", content_matches),
-    ):
-        if check(sha, head, repo=repo):
-            return proof, why
+    if is_ancestor(sha, head, repo=repo):
+        return "ancestry", "its tip is an ancestor of the head branch"
+    if squash_matches(sha, head, repo=repo, upstream=upstream):
+        return "squash", "its tree or combined patch is already in the head branch"
+    if content_matches(sha, head, repo=repo):
+        return "content", "every changed path matches the head branch"
     return None

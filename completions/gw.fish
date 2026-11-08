@@ -64,6 +64,7 @@ complete -c gw -n '__worktrees_on remove rm' -l explain -d 'print every git comm
 complete -c gw -n '__worktrees_on remove rm' -s h -l help -d 'show the help and exit'
 
 complete -c gw -n '__worktrees_on fast-forward ff' -l from -x -d 'start that branch from this branch or commit'
+complete -c gw -n '__worktrees_on fast-forward ff' -l autostash -d 'carry uncommitted changes across'
 complete -c gw -n '__worktrees_on fast-forward ff' -l json -d 'the result as data'
 complete -c gw -n '__worktrees_on fast-forward ff' -s q -l quiet -d 'omit summaries and progress'
 complete -c gw -n '__worktrees_on fast-forward ff' -s v -l verbose -d 'print every git command'
