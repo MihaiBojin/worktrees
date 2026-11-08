@@ -61,6 +61,28 @@ Keep, exactly as written:
 - Issue keywords such as `Fixes #123`, and the lines a harness or template
   adds, such as a `Generated with` footer or a session link.
 - Sections the repository's template requires, filled in.
+- An auto-resolution block, below.
+
+## Auto-resolution block
+
+The ship-it skill adds one when it fixed CI on the way to a merge: one row
+per problem, with the check, the cause, the fix and the commit that carries
+it, above the `release-note` block.
+
+```
+<details>
+<summary>Auto-resolution</summary>
+
+| check | cause | fix | commit |
+| --- | --- | --- | --- |
+| `lint` | unused import in `ci.py` | removed it | `3f2a9c1` |
+
+</details>
+```
+
+It records how the change got through CI, so it belongs on the review page
+and the squash body leaves it out, as it leaves out a `Generated with`
+footer.
 
 ## What makes a description wrong
 

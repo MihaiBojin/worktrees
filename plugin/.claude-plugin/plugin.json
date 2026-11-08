@@ -1,7 +1,7 @@
 {
   "name": "worktrees",
   "version": "0.7.0",
-  "description": "Start branches, read CI, rebase onto the head branch, describe and merge pull requests, and prune finished worktrees through the worktrees CLI",
+  "description": "Start branches, read CI, rebase onto the head branch, describe, ship and merge pull requests, and prune finished worktrees through the worktrees CLI",
   "author": {
     "name": "Mihai Bojin",
     "url": "https://github.com/MihaiBojin"

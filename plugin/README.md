@@ -1,6 +1,6 @@
 # worktrees, as an agent plugin
 
-Six skills for Claude Code and Codex over the worktrees CLI. Each is
+Seven skills for Claude Code and Codex over the worktrees CLI. Each is
 `/worktrees:NAME` in Claude Code and `$worktrees:NAME` in Codex, and an agent
 reaches for one on its own when a task matches its description.
 
@@ -11,6 +11,7 @@ reaches for one on its own when a task matches its description.
 | `ci-checks` | reads a pull request's checks as JSON, and waits for them |
 | `describe-pr` | checks a pull request's title and body against its diff, and fixes them |
 | `merge` | fixes failing checks, waits for green, merges, then reports what it fixed |
+| `ship-it` | commits, pushes, opens the pull request, fixes CI and merges, unassisted |
 | `prune` | removes the worktrees and branches the CLI proves finished, after asking |
 
 ## Install
@@ -46,11 +47,20 @@ is on. The plugin installs none of them. Skills call `gw` from `$PATH`.
 ## What runs without asking
 
 Each skill pre-approves the reads it makes, `gw sync` and `gw branch create`.
-Two go further, because the extra step is the skill's job: `describe-pr`
-edits a pull request's title and body, and `fast-forward` runs
-`gw fast-forward` and its conflict loop. Nothing pre-approves a merge, a
-push, a CI rerun or a removal: those reach the client's own permission
-prompt.
+Three go further, because the extra step is the skill's job: `describe-pr`
+edits a pull request's title and body, `fast-forward` runs
+`gw fast-forward` and its conflict loop, and `ship-it` commits, pushes,
+opens and edits the pull request, reruns CI and merges. No skill
+pre-approves a removal, and outside `ship-it` nothing pre-approves a merge,
+a push or a CI rerun: those reach the client's own permission prompt.
+
+A skill's own pre-approval does not reach far enough for `ship-it`. In
+Claude Code it lasts only the turn that invoked the skill, and auto mode
+blocks merging a pull request no human approved; in Codex a skill has none,
+and the sandbox has no network and a read-only `.git`. Neither client lets a
+plugin grant more, so [the rules ship-it needs](skills/ship-it/rights.md)
+go in your own Claude Code settings or Codex rules, once. `ship-it` checks
+for them before it starts and names any that are missing.
 
 ## CI
 
@@ -80,6 +90,21 @@ and the branch's commit trailers, and `--match-head-commit` refuses a head
 that moved after CI passed. It never uses `--admin`, `--auto` or
 `--delete-branch`, and reports a queued merge as queued. The report ends
 with one row per problem: the pull request, what was wrong, what fixed it.
+
+## Ship it
+
+`/worktrees:ship-it` takes the change in the checkout from uncommitted work
+to a merged pull request, and asking for it approves every step for that
+change: a branch off the head branch when you stand on it, commits by path,
+`gw fast-forward --autostash`, a leased or plain push, the pull request and
+its description, a release note through `release-notes:write` when the
+release-notes plugin is installed, the CI fixes the merge skill makes, and
+the merge. It stops and reports where a person has to decide, such as a
+conflict whose sides want incompatible things, a push the lease rejects or a
+blocked merge. When it fixed CI, the pull request carries an auto-resolution
+block, one row per problem, which the squash message leaves out.
+`--hold-merge` does everything but the merge, and prints the one `gh` or
+`glab` command that makes it with the prepared subject and body.
 
 ## Cleanup
 
