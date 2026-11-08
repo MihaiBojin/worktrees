@@ -4,7 +4,7 @@ The CLI assesses the branches and worktrees of the current repository, removes t
 finished, and reads remote evidence that only `gw sync` fetches. The agent plugin runs the same commands
 a person does and shows the CLI's verdicts.
 
-Status: implemented in #123 to #130. Follow-ups are #163 to #166.
+Status: implemented in #123 to #130 and revised through #175. Open follow-ups: #164 and #165.
 
 ## 1. Terms
 
@@ -28,22 +28,26 @@ worktree root are neither assessed nor removed.
 | --- | --- | --- |
 | `gw` | Print the command guide, as `gw --help` does. | No |
 | `gw list [QUERY] [flags]` | Terminal navigation; metadata for all matches without a terminal or with `--json` or `--table`. | No |
-| `gwp` with nonterminal input, `--json`, `--table` or `--only`, without `--yes` | Print the assessment table or JSON, preserving stale records and repository state. | No |
-| `gwp` with terminal input | Clear stale worktree records, show the full table, disclose eligible targets, confirm, then remove. | Stale records first; removal after approval |
-| `gwp --yes` | Remove eligible targets without prompting, including with nonterminal input, `--json` or `--table`. Grants no deletion category. | Yes |
-| `gwr PATH\|NAME` | Remove one worktree (sections 9 and 10). | Yes |
-| `gwbs` | Assess local branches that have no worktree. Rejects `--delete`. | No |
-| `gwbd NAME...` | Delete eligible loose branches. | Yes |
-| `gw sync`, `gws` | Fetch the default remote and forge evidence. The only command that uses the network. | Refs, cache |
+| `gw prune` with nonterminal input, `--json`, `--table` or `--only`, without `--yes` | Print the assessment table or JSON, preserving stale records and repository state. | No |
+| `gw prune` with terminal input | Clear stale worktree records, show the full table, disclose eligible targets, confirm, then remove. | Stale records first; removal after approval |
+| `gw prune --yes` | Remove eligible targets without prompting, including with nonterminal input, `--json` or `--table`. Grants no deletion category. | Yes |
+| `gw remove PATH\|NAME` | Remove one worktree (sections 9 and 10). | Yes |
+| `gw branch status` | Assess local branches that have no worktree. Rejects `--delete`. | No |
+| `gw branch prune NAME...` | Delete eligible loose branches. | Yes |
+| `gw sync` | Fetch every remote, then the default remote's head and forge evidence (section 11). The only command that uses the network. | Refs, cache |
 
-`gwp` takes no target and no `--branch`; a single target goes through `gwr`. A checked-out branch
-appears only as its worktree, never as a loose branch. `gw --help` and bare `gw` show help. `gwbd NAME` naming a checked-out branch,
-the current one included, shows it as kept with the protection `checked out in a worktree` and exits 3.
+`gw` is the only console script, and `worktrees` is its long name. Every command is a `gw`
+subcommand; the shell plugin's shortcuts (section 17) are other spellings of them.
+
+`gw prune` takes no target and no `--branch`; a single target goes through `gw remove`. A
+checked-out branch appears only as its worktree, never as a loose branch. `gw --help` and bare `gw`
+show help. `gw branch prune NAME` naming a checked-out branch, the current one included, shows it as
+kept with the protection `checked out in a worktree` and exits 3.
 
 `--table` prints an uncoloured table. `--only VERDICT` always selects assessment
 and rejects `--yes` before repository preflight. Pruning accepts `--quiet` and
 `--verbose` in every mode, but rejects their combination. There is no pruning
-`--dry-run`; `gwbd --dry-run` remains available. Mutation JSON includes actual
+`--dry-run`; `gw branch prune --dry-run` remains available. Mutation JSON includes actual
 assessment verdicts, removal outcomes, head and sync metadata in one object.
 
 ## 3. Head ref
@@ -59,8 +63,8 @@ The head ref is the first of these that applies:
    2. Both exist: the one whose tip has the newer committer date; `main` on a tie.
    3. Neither exists: `main`, which does not resolve.
 
-When the head ref does not resolve, every row is `unknown`, mutating commands refuse, and `gwa`, `gwbc`
-and `gwrot` fail. The message suggests `gw sync`, or says `No main or master branch.` when inference
+When the head ref does not resolve, every row is `unknown`, mutating commands refuse, and `gw add`,
+`gw branch create` and `gw rotate` fail. The message suggests `gw sync`, or says `No main or master branch.` when inference
 was used.
 
 Human-readable commands print the head and its source to stderr, for example
@@ -93,9 +97,9 @@ the assessed head ref once per run. A divergent local counterpart does not exten
 None of these is ever eligible:
 
 1. The branches `main` and `master`, and the head branch. No command deletes them, with any `--delete`
-   value, with or without `--yes`. `gwbd main` refuses and names the rule.
+   value, with or without `--yes`. `gw branch prune main` refuses and names the rule.
 2. The main checkout.
-3. The current worktree, for `gwp`. `gwr` handles it in section 9.
+3. The current worktree, for `gw prune`. `gw remove` handles it in section 9.
 4. A locked worktree. One whose directory is missing is assessed from its record and kept.
 5. A worktree with uncommitted changes to tracked files, or with untracked files.
 6. A worktree with an initialized submodule, or with the submodule store git keeps for it
@@ -104,12 +108,12 @@ None of these is ever eligible:
    directory once nothing in it is needed.
 7. A worktree with ignored files, unless `ignored-files` is permitted.
 8. A branch with stashes, or a worktree whose branch has them, unless `stashes` is permitted or
-   `gwr --keep-branch` preserves the branch and its stashes.
-9. An `empty` branch and its worktree, unless `empty` is permitted or `gwr --keep-branch` preserves
-   the branch.
+   `gw remove --keep-branch` preserves the branch and its stashes.
+9. An `empty` branch and its worktree, unless `empty` is permitted or `gw remove --keep-branch`
+   preserves the branch.
 
-A linked worktree whose branch is protected by rule 1 is not eligible for `gwp`;
-`gwr --keep-branch` can remove it and keeps the branch. A detached worktree has no branch to keep
+A linked worktree whose branch is protected by rule 1 is not eligible for `gw prune`;
+`gw remove --keep-branch` can remove it and keeps the branch. A detached worktree has no branch to keep
 its commits, so `--keep-branch` does not waive its completion proof. Detached worktrees get the same checks as
 attached ones. A finished branch does not make a protected worktree eligible.
 
@@ -118,17 +122,17 @@ attached ones. A finished branch does not make a protected worktree eligible.
 `--delete VALUE` is repeatable and the values combine. An unknown value, or a value the command does not
 take, is a usage error before anything changes. `--yes` never adds a permission.
 
-| Value | `gwp`, `gwr` | `gwbd` |
+| Value | `gw prune`, `gw remove` | `gw branch prune` |
 | --- | --- | --- |
 | `empty` | Allows an `empty` branch and its worktree | Allows an `empty` branch |
 | `ignored-files` | Allows deleting the worktree's ignored paths | Usage error |
 | `stashes` | Allows dropping the branch's stashes | Same |
 | `all` | All three | `empty` and `stashes` |
 
-A verdict stays `empty` when `--delete empty` is given; only `eligible` changes. `gwbs` does not take
+A verdict stays `empty` when `--delete empty` is given; only `eligible` changes. `gw branch status` does not take
 `--delete`, so its `eligible` field reflects verdicts and protections only.
 
-`gwr --keep-branch` always preserves the selected branch, including one proved finished or named
+`gw remove --keep-branch` always preserves the selected branch, including one proved finished or named
 `main` or `master`. It can remove an otherwise unprotected worktree without completion proof. It
 grants no ignored-file permission. Stashes remain intact and do not block worktree-only removal.
 The only `--delete` value `--keep-branch` accepts is `ignored-files`. `empty`, `stashes` and `all`
@@ -184,28 +188,29 @@ For each target:
    since step 4 is skipped. A failed ref deletion preserves its stashes.
 8. Report the worktree, branch and stash outcomes separately. A failed step is reported as failed.
 
-`gwbd` uses the same disclosure, recheck, ref deletion and stash sequence without removing a
-worktree. With `--keep-branch`, disclosure identifies the branch and stashes as retained.
+`gw branch prune` uses the same disclosure, recheck, ref deletion and stash sequence without
+removing a worktree. With `--keep-branch`, disclosure identifies the branch and stashes as retained.
 
-`git branch -D` is never used. Terminal `gwp` and `gwp --yes` run `git worktree prune` for stale
+`git branch -D` is never used. Terminal `gw prune` and `gw prune --yes` run `git worktree prune` for stale
 bookkeeping before assessment, whether or not the user approves a removal. The preview modes never do,
 and assessment never writes refs, the cache or any directory.
 
 ## 9. Removing the current worktree
 
-1. `gwr` asks a second confirmation naming the path before removing the current worktree. `--yes` skips
-   only the first. Without a terminal, `gwr` refuses.
-2. Before removal the `gwr` process changes into the main checkout, so its own working directory
-   survives. After successful removal the binary prints that path. Only the fish and zsh `gwr`
-   functions move the caller's shell, by changing into it.
-3. `gwp` never removes the current worktree (section 5).
+1. `gw remove` asks a second confirmation naming the path before removing the current worktree.
+   `--yes` skips only the first. Without a terminal, `gw remove` refuses.
+2. Before removal the process changes into the main checkout, so its own working directory survives.
+   After the checkout is removed, `gw` prints that path. Only the fish and zsh `gw` function moves the
+   caller's shell, by changing into it, and it lands there even when a later cleanup step failed,
+   keeping that failure's status.
+3. `gw prune` never removes the current worktree (section 5).
 
 ## 10. Name resolution
 
 | Command | Matching | Several matches, terminal | Several matches, no terminal |
 | --- | --- | --- | --- |
-| `gwr NAME` | Exact name; an exact path always resolves to one worktree | Picker limited to the exact matches | Refuse and list the paths |
-| `gw list [QUERY]` | Exact/substring/subsequence matching | Existing picker, unique query selects directly | Metadata for every match |
+| `gw remove NAME` | Exact name; an exact path always resolves to one worktree | Picker limited to the exact matches | Refuse and list the paths |
+| `gw list [QUERY]` | Exact, then substring, then subsequence matching | Picker filtered as you type; a unique query selects directly | Metadata for every match |
 
 An unmatched name fails without changing anything.
 
@@ -301,8 +306,8 @@ leaves JSON on stdout intact. Passing both is a usage error before anything chan
 
 | Command | `-q` | `-v` |
 | --- | --- | --- |
-| `gw sync`, `gwp`, `gwr`, `gwbd`, `gwa`, `gwbc`, `gwrot` | yes | yes |
-| `gwbs` | yes | no |
+| `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw rotate` | yes | yes |
+| `gw branch status` | yes | no |
 | `gw list` | no | no |
 
 Commands outside this matrix retain their existing output flags. Help, version and completion output
@@ -310,50 +315,80 @@ remain usable without repository assessment. Head and sync notices never enter J
 
 ## 16. Navigation
 
-1. Bare `gw` prints the command guide. A first word that is not a command is a
-   usage error at exit 2 suggesting `gw list WORD`, so a worktree name never
-   collides with a command or a shorthand.
-2. Terminal input uses the existing picker and current-worktree protections.
-   A unique query selects directly. Main remains offered when it is the only
-   worktree: no query prompts with that row, and an exact query selects it
-   directly, including from a subdirectory. Without a terminal, or with `--json` or
-   `--table`, print all matching metadata and never select a destination.
-3. The fish and zsh adapters change directory for terminal selections and
-   preserve metadata stdout and status. They read commands from `gw --complete`.
-   Worktree completions use `gw list --complete`.
-4. `gwl`, `gwh`, list aliases `l`/`ls`, `gw help` and alias `h` are absent.
-   Every command supports `-h`/`--help`. Root help prints the full guide and
-   identifies listing as the default. `gw list -h` prints list flags.
-   Help works outside a repository without assessment or network calls.
+1. Bare `gw` prints the command guide. A first word that is neither a command
+   nor an alias is a usage error at exit 2 suggesting `gw list WORD`, so a
+   worktree name never collides with a command or a shorthand.
+2. On terminal input, `gw list` opens the picker with the current-worktree
+   protections. Typing filters the rows, up and down move, enter takes the
+   highlighted row and esc cancels. A unique query selects directly. Main
+   remains offered when it is the only worktree: no query prompts with that
+   row, and an exact query selects it directly, including from a
+   subdirectory. Without a terminal, or with `--json` or `--table`, it prints
+   all matching metadata and never selects a destination.
+3. The fish and zsh `gw` function changes directory for a terminal `gw list`
+   or `gw l`, for `gw add` and for `gw remove`. With `--json`, `--table`,
+   `--help`, `--complete` or `--explain` it prints the data and keeps the
+   status, and every other subcommand passes straight through. Completions
+   read subcommands from `gw --complete` and worktrees from
+   `gw list --complete`, or `gw remove --complete` for removal.
+4. `gw l` is an alias of `gw list`, and `gwl` is its shortcut (section 17).
+   `gwh`, `gw ls`, `gw help` and `gw h` are absent. Every command supports
+   `-h`/`--help`. Root help prints every command with its shortcuts indented
+   beneath it, then the shell plugin's release line. `gw list -h` prints list
+   flags. Help works outside a repository without assessment or network calls.
 
 ## 17. Shortcuts
 
-Defined in fish and zsh:
+A shortcut is a one-line fish and zsh function that runs `gw` with fixed words and the caller's
+arguments, so it completes as that command does. Each command's row in `cli.py` lists its shortcuts,
+and `gw --help` and the command's own `--help` print them.
 
-- `gwp!` runs `gwp --yes "$@"`.
-- `gwp!!` runs `gwp --delete all --yes "$@"`, which deletes `empty` branches, ignored files and branch
-  stashes. Its help says so.
-- `gwr!` runs `gwr --delete ignored-files "$@"`.
-- `gws` runs `gw sync "$@"`.
+| Shortcut | Runs |
+| --- | --- |
+| `gws` | `gw sync` |
+| `gwp` | `gw prune` |
+| `gwp!` | `gw prune --yes` |
+| `gwpa` | `gw prune --delete all`, which permits deleting `empty` branches, ignored files and branch stashes, and still asks at a terminal |
+| `gwpa!` | `gw prune --delete all --yes` |
+| `gwa` | `gw add` |
+| `gwl` | `gw list` |
+| `gwr` | `gw remove` |
+| `gwr!` | `gw remove --delete ignored-files` |
+| `gwrot` | `gw rotate` |
+| `gwbc` | `gw branch create` |
+| `gwbs` | `gw branch status` |
+| `gwbp` | `gw branch prune` |
 
 ## 18. Agent plugin
 
-1. Run `gwp --json` and `gwbs --json`. Show the head line and the sync state first. Never run
+1. Run `gw prune --json` and `gw branch status --json`. Show the head line and the sync state first. Never run
    `gw sync` unless the user asks; when the repository is never synced or stale, ask whether to sync
    before going on.
 2. List eligible rows. List `empty` rows and rows held back by stashes separately, and offer them only
    when the user asks.
 3. Ask before any removal. For each chosen worktree, call the binary with the quoted path from the JSON:
-   `command gwr 'PATH' --yes`, adding `--delete` values only for categories the user approved. Then call
-   `command gwbd NAME... --yes` for chosen loose branches.
-4. The plugin cannot remove the worktree it runs in: `gwr` refuses without a terminal (section 9).
+   `command gw remove 'PATH' --yes`, adding `--delete` values only for categories the user approved.
+   Then call `command gw branch prune NAME... --yes` for chosen loose branches. `command` skips the
+   shell's `gw` function, which would change directory.
+4. The plugin cannot remove the worktree it runs in: `gw remove` refuses without a terminal
+   (section 9).
 5. Report each removal, refusal and restore command.
+
+The skill pre-approves `gw sync`, `gw list --json`, `gw list --table`, `gw prune --json`,
+`gw branch status --json`, `jq` and `git remote`. `/prune` also pre-approves `command gw remove` and
+`command gw branch prune`, which it runs only after the user approves. No pattern in either covers
+`gw prune --yes`.
 
 ## 19. Breaking changes
 
-- Removed: `gwl`, `gwh`, `gwm` and `gw move`/`m`/`mv`, list aliases `l`/`ls`, `gw help`, `gw h`, `gw status`, `gw s`, `gw st`, `gwp --branch`, `--delete-ignored`,
-  `--no-fetch`, `--no-forge`, `--force-refresh` and its aliases.
-- `gwr --force` is now `gwr --keep-branch`.
+- Removed: the `gwa`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwbc` and `gwrot` console scripts, `gwh`, `gwm`
+  and `gw move`/`m`/`mv`, list alias `ls`, `gw help`, `gw h`, `gw status`, `gw s`, `gw st`,
+  `gwp --branch`, `--delete-ignored`, `--no-fetch`, `--no-forge`, `--force-refresh` and its aliases.
+- Shortcuts are shell plugin functions that run `gw` (section 17). `gwl` and `gw l` reach
+  `gw list`.
+- `gwp!!` is now `gwpa!`.
+- `gw branch delete` and `gwbd` are now `gw branch prune` and `gwbp`.
+- `gwr --force` is now `gw remove --keep-branch`.
 - `--list` is now `--table`, with no short form.
 - `gws` runs `gw sync`, which fetches, instead of assessing.
 - New verdict `empty`; new `--delete` values; `main` and `master` always protected.
@@ -362,7 +397,8 @@ Defined in fish and zsh:
 
 Help, examples, fish and zsh completions, shortcut tests, plugin filters and command documentation
 change with the code. `MihaiBojin/agent-plugins` at `8390c6d` has five Origin
-help prose references to `gwl`; those references should use `gw` under this
-interface. It has no runtime invocation or metadata consumer to migrate.
+help prose references to `gwl`. `gwl` is the `gw list` shortcut, so they work
+wherever the shell plugin is installed. It has no runtime invocation or
+metadata consumer to migrate.
 The checked release-tools plugin repository has no active affected references.
 The CLI and `worktrees/plugin/` ship together.
