@@ -215,6 +215,7 @@ def test_a_shortcut_forwards_its_words_arguments_and_exit_code(tmp_path, shell, 
     "words",
     [
         ["gw", "list", "x"],
+        ["gwm"],
         ["gw", "add", "x"],
         ["gw", "a", "x"],
         ["gwa", "x"],
@@ -455,6 +456,19 @@ def test_gw_navigates_through_list_matching(world, shell, query):
     words = ["gw", "list", str(target) if query == "path" else query]
     process, cwd = _drive(
         shell, _cli_binaries(world), words, world.repo, env_for(world), answer=b""
+    )
+    assert process.returncode == 0, process.stderr
+    assert process.stdout == b""
+    assert cwd == os.fsencode(target.resolve())
+
+
+@pytest.mark.parametrize("shell", ["fish", "zsh"])
+def test_gwm_lands_in_the_worktree_on_the_head_branch(world, shell):
+    world.git("switch", "--quiet", "-c", "topic")
+    target = world.root / "main checkout"
+    world.git("worktree", "add", "--quiet", str(target), "main")
+    process, cwd = _drive(
+        shell, _cli_binaries(world), ["gwm"], world.repo, env_for(world), answer=b""
     )
     assert process.returncode == 0, process.stderr
     assert process.stdout == b""

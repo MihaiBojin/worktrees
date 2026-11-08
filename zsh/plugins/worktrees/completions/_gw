@@ -1,4 +1,4 @@
-#compdef gw worktrees gwa gwbc gwbp gwbs gwff gwl gwp gwp! gwpa gwpa! gwr gwr! gws
+#compdef gw worktrees gwa gwbc gwbp gwbs gwff gwl gwm gwp gwp! gwpa gwpa! gwr gwr! gws
 
 # Flags as `gw <command> --help` lists them, and candidates from the CLI.
 # A shortcut completes as the gw command it runs: gwa as `gw add`.
@@ -53,6 +53,7 @@ __worktrees_add() {
 
 __worktrees_list() {
     _arguments -s \
+        '(1)--head[the worktree on the head branch]' \
         '--table[print them all and pick none]' \
         '--json[the result as data]' \
         '--explain[print every git command and exit]' \
@@ -138,6 +139,7 @@ _gw() {
         gwbs) fixed=(branch status) ;;
         gwff) fixed=(fast-forward) ;;
         gwl) fixed=(list) ;;
+        gwm) fixed=(list --head) ;;
         gwp) fixed=(prune) ;;
         'gwp!') fixed=(prune --yes) ;;
         gwpa) fixed=(prune --delete all) ;;

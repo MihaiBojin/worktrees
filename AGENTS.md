@@ -310,7 +310,8 @@ word that is not a command is a usage error at exit 2 that suggests
 `gw list WORD`, so a worktree name never competes with a shorthand. `gw list
 [QUERY]` uses the picker on terminal input; without a terminal, or with
 `--json` or `--table`, it prints matching metadata. `gw l` is `gw list`, and
-`gwl` is its shortcut. `gwh`, `gw ls` and the help subcommand are absent.
+`gwl` is its shortcut. `gwm` is `gw list --head`, the worktree with the head
+branch checked out. `gwh`, `gw ls` and the help subcommand are absent.
 
 A tool's version is asked through the tool's name, so `gw version` and `gw v` are the two spellings and no parser
 carries a `--version` flag.

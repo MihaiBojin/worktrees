@@ -37,8 +37,8 @@ repositories under the same worktree root are outside their scope.
 
 `gw` is the one command installed on `$PATH`, and `worktrees` is its long
 name. A shortcut is a function from the fish or zsh plugin that runs the `gw`
-command beside it and completes as that command does. `gwp!`, `gwpa`, `gwpa!`
-and `gwr!` add fixed flags, as [Shortcuts](#shortcuts) lists. A subcommand takes
+command beside it and completes as that command does. `gwm`, `gwp!`, `gwpa`,
+`gwpa!` and `gwr!` add fixed flags, as [Shortcuts](#shortcuts) lists. A subcommand takes
 precedence over a worktree name: use `gw list sync` to reach a worktree named
 `sync`.
 
@@ -308,6 +308,7 @@ JSON carries it in `path` and `outcome.destination`.
 
 | Shortcut | Runs |
 | --- | --- |
+| `gwm` | `gw list --head` |
 | `gwp!` | `gw prune --yes` |
 | `gwpa` | `gw prune --delete all` |
 | `gwpa!` | `gw prune --delete all --yes` |
@@ -388,6 +389,15 @@ path: substring matching comes first, then ordered-letter matching on the
 name and branch. An exact name, branch or path wins over a partial match. In
 a terminal, a query with one match selects it without a prompt; several open
 the picker filtered by the query, and no query asks.
+
+`gw list --head` and the `gwm` shortcut take the worktree that has the head
+branch checked out, whichever branch the [head ref](#head-and-synchronization)
+names in this repository. It is taken from inside that worktree too, which
+brings you back to its top from a subdirectory. `--table` and nonterminal
+input print that worktree's row, and `--json` puts it in `worktrees`. When no
+worktree has the branch, `--json` prints an empty array; otherwise the command
+exits 1 and suggests `gw add BRANCH`. An unresolved head exits 3, and `--head`
+takes no query.
 
 In the picker, typing filters the rows, digits included, and Backspace
 removes a character. Arrow keys wrap and Enter selects. Escape clears the

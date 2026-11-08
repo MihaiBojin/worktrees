@@ -3,6 +3,8 @@
 Bare `gw` and `gw --help` print the command guide, outside a repository too.
 `gw list` selects a destination on terminal input; nonterminal input prints
 matching worktree metadata. `--json` and `--table` always print metadata.
+`gw list --head` matches only the worktree with the head branch checked out,
+and on a terminal takes it even from inside it.
 `gw WORD` with a word that is not a command exits 2 and suggests
 `gw list WORD`. `gw prune` assesses worktrees and asks before removal on a
 terminal. Nonterminal input, `--json` and `--table` assess without mutation;
