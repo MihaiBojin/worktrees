@@ -188,7 +188,10 @@ needs one gives `unknown`, and human output warns once, naming
 Every JSON result is an object with `lastSync` and `head`. `lastSync.refs`
 and `lastSync.forge` are UTC RFC 3339 timestamps or null. A non-null time
 does not mean every branch has evidence. `head.source` is `remote`, `clone`
-or `inferred`; `head.ref` is null when unresolved.
+or `inferred`. `head.ref` is the ref the head resolves to, never a `HEAD`:
+the target of a symbolic `refs/remotes/<remote>/HEAD`, the one
+remote-tracking branch at a plain one's commit, or `refs/heads/main` or
+`refs/heads/master` when inferred. It is null when unresolved.
 
 Worktree and branch assessment put rows in `verdicts`. Both retain
 `verdict`, `eligible`, `proof`, `request`, `protections`, `stashes`, `branch`,

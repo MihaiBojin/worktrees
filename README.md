@@ -419,12 +419,14 @@ Every JSON result is an object with `lastSync` and `head`:
 ```json
 {
   "lastSync": {"refs": "2026-11-05T10:00:00Z", "forge": null},
-  "head": {"ref": "refs/remotes/origin/HEAD", "source": "remote"}
+  "head": {"ref": "refs/remotes/origin/main", "source": "remote"}
 }
 ```
 
 Times are UTC RFC 3339 or null. A time does not mean every branch has forge
-evidence. Head source is `remote`, `clone` or `inferred`; unresolved `ref` is
+evidence. Head source is `remote`, `clone` or `inferred`. `ref` is the branch
+the head resolves to: the remote-tracking ref a remote HEAD points at, or
+`refs/heads/main` or `refs/heads/master` when inferred. Unresolved `ref` is
 null. Worktree assessment has `verdicts`, with `verdict`, `eligible`,
 `protections`, `stashes`, exact `path`, `branch`, `sha` and proof fields.
 `gw list --json` puts its rows in `worktrees`.

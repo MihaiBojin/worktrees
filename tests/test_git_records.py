@@ -82,7 +82,7 @@ def test_configured_default_remote_name_is_exact(world, separator):
     world.git("symbolic-ref", f"refs/remotes/{name}/HEAD", f"refs/remotes/{name}/trunk")
     result = run(world, "gw", "list", "--json")
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["head"]["ref"] == f"refs/remotes/{name}/HEAD"
+    assert json.loads(result.stdout)["head"]["ref"] == f"refs/remotes/{name}/trunk"
 
 
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085", "\u00a0"])
@@ -97,7 +97,9 @@ def test_branch_start_uses_exact_symbolic_head(world, separator):
     result = run(world, "gw branch create", "next", "--json")
     assert result.returncode == 0, result.stderr
     assert world.git("rev-parse", "next") == after
-    assert json.loads(result.stdout)["base"] == f"refs/remotes/origin/{name}"
+    started = json.loads(result.stdout)
+    assert started["base"] == f"refs/remotes/origin/{name}"
+    assert started["head"]["ref"] == f"refs/remotes/origin/{name}"
 
 
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085", "\u00a0"])
@@ -122,8 +124,9 @@ def test_plain_remote_head_names_the_one_branch_at_its_commit(world, separator):
     result = run(world, "gw branch create", "next", "--json")
     assert result.returncode == 0, result.stderr
     assert world.git("rev-parse", "next") == tip
+    # The branch the CLI chose, which nothing reading the JSON could repeat.
     assert json.loads(result.stdout)["head"] == {
-        "ref": "refs/remotes/origin/HEAD",
+        "ref": f"refs/remotes/origin/{name}",
         "source": "clone",
     }
     listed = run(world, "gw", "list", "--table")

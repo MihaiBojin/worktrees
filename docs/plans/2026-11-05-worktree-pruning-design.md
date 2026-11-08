@@ -285,13 +285,15 @@ Every `--json` result is an object carrying:
 ```json
 {
   "lastSync": {"refs": "2026-11-05T10:00:00Z", "forge": null},
-  "head": {"ref": "refs/remotes/origin/HEAD", "source": "remote"}
+  "head": {"ref": "refs/remotes/origin/main", "source": "remote"}
 }
 ```
 
 - `lastSync` values are UTC RFC 3339 times of the last successful sync of each component, or `null`
   when none succeeded or the component does not apply. A time does not mean every branch has evidence.
-- `head.source` is `remote`, `clone` or `inferred`. `head.ref` is `null` when unresolved.
+- `head.source` is `remote`, `clone` or `inferred`. `head.ref` is the ref the head resolves to: the
+  target of a symbolic remote HEAD, the one remote-tracking branch at a plain one's commit, or
+  `refs/heads/main` or `refs/heads/master` when inferred. It is `null` when unresolved.
 - Assessment rows carry `verdict`, `eligible` and `stashes` (the matching stash SHAs). `--only empty`
   filters by verdict. Worktree rows carry `ignoredPaths`, the grouped ignored paths (section 8), and
   `ignored`, their count, before any permission is given.
