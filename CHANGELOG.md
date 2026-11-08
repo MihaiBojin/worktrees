@@ -145,9 +145,8 @@ at once. `gw prune --branch` and `gw prune --dry-run`: use `gw remove` for
 one worktree, and `gw prune --json` or `gw prune --table` to assess.
 `gw branch prune --dry-run` remains.
 
-`gw move`, `gw m` and `gw mv`: use `git branch --move` and
-`git worktree move`. `gwh`, `gw help`, `gw h`, `gw ls`, `gw status`,
-`gw s` and `gw st`.
+`gw move` and `gw mv`; `gwm` and `gw m` now run `gw select-main`.
+`gwh`, `gw help`, `gw h`, `gw ls`, `gw status`, `gw s` and `gw st`.
 
 `gw rotate`, `gw rot` and `gwrot`: use `gw fast-forward`, `gw ff` or
 `gwff`.
@@ -167,12 +166,14 @@ directory name now finds it. `gw l` is `gw list`.
 function, as a terminal `gw list` does, so `gw a NAME` lands you in the
 new worktree.
 
-`gwm`, and `gw list --head` behind it, change into the worktree that has
-the head branch checked out: `main`, `master` or whichever branch the
-remote's HEAD names. It works from inside that worktree too, which brings
-you back to its top. When no worktree has the branch it exits 1 and
-suggests `gw add BRANCH`. `--json` and `--table` print that worktree's
-row.
+`gw select-main`, or `gw main` and `gw m` for short, changes into the
+worktree that has the head branch checked out: `main`, `master` or
+whichever branch the remote's HEAD names. `gwm` runs it through the shell
+plugin. It works from inside that worktree too, which brings you back to
+its top. Without a terminal it prints the path, so
+`cd "$(gw select-main)"` works in a script, and `--json` prints the
+worktree's row under `worktrees`. When no worktree has the branch it
+exits 1 and suggests `gw add BRANCH`.
 
 `gw sync` refuses a remote whose fetch refspec writes outside
 `refs/remotes/<name>/`, such as the one `git clone --mirror` sets, because
