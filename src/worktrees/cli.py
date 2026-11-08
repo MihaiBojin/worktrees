@@ -1254,7 +1254,7 @@ _BRANCH_COMMANDS: dict[str, _Command] = {
         _add_branch_delete_flags,
         "delete local branches proved finished",
         usage="[NAME ...]",
-        shortcuts={"gwbd": ""},
+        shortcuts={"gbwp": ""},
     ),
 }
 
