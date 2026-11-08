@@ -22,10 +22,10 @@ the reader's time: what was chosen, and what the alternative failed to do.
 ### Changed
 
 `gw` and `worktrees` are the only commands `uv tool install` puts on
-`$PATH`. `gwa`, `gwl`, `gwp`, `gwr`, `gwbs`, `gwbc` and `gwrot` are fish
-and zsh plugin functions that run `gw add`, `gw list`, `gw prune`,
-`gw remove`, `gw branch status`, `gw branch create` and `gw rotate`, and
-complete as those do. `gwbp` replaces `gwbd` and runs `gw branch prune`.
+`$PATH`. `gwa`, `gwl`, `gwp`, `gwr`, `gwbs` and `gwbc` are fish and zsh
+plugin functions that run `gw add`, `gw list`, `gw prune`, `gw remove`,
+`gw branch status` and `gw branch create`, and complete as those do.
+`gwbp` replaces `gwbd` and runs `gw branch prune`.
 A script or an agent that ran one of them as a binary, such as
 `gwp --json`, needs the `gw` form instead: `gw prune --json`. Upgrade the
 shell plugin to this release with the CLI, because the previous plugin's
@@ -61,7 +61,9 @@ ignored-files` deleting a worktree's gitignored files in place of
 `--delete-ignored`, and `--delete all` every category. `--yes` grants
 none of them. `gwp!` runs `gw prune --yes`. `gwpa` runs
 `gw prune --delete all` and still asks at a terminal, and `gwpa!` adds
-`--yes`.
+`--yes`. `gwr!` now runs `gw remove --yes`, matching `gwp!`; in 0.7.0 it
+permitted deleting the worktree's ignored files, which
+`gw remove --delete ignored-files` does now.
 
 Assessment separates what the evidence proves from what may be deleted.
 Each row carries a `verdict`, which can now be `empty` for a branch whose
@@ -74,6 +76,13 @@ only branches without a worktree.
 replaces `--force`: it removes the checkout and keeps the branch and its
 stashes. Removing the checkout you are standing in asks a second time,
 even with `--yes`.
+
+`gw remove` follows the same rules as `gw prune`. Without `--yes`, a run
+without a terminal, or with `--json` or `--table`, prints the matching
+worktree's assessment row and removes nothing, at exit 0, where it used to
+refuse at exit 3. `--json` prints the same `verdicts` rows as
+`gw prune --json`. `--yes` approves removal in every mode, and `-q` prints
+the verdicts only.
 
 `gw branch prune` replaces `gw branch delete`. Scripts calling the old
 name must use the new one.
