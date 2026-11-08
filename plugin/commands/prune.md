@@ -5,6 +5,7 @@ argument-hint: "[NAMES]"
 allowed-tools:
   - Bash(gw sync)
   - Bash(gw list --json)
+  - Bash(gw list --list)
   - Bash(gw prune --json)
   - Bash(gw branch status:*)
   - Bash(command gw remove:*)

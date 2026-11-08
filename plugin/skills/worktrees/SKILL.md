@@ -3,6 +3,14 @@ name: worktrees
 description: >
   Use when the user asks to clean up, tidy or prune finished, merged or
   squash-merged git worktrees or local branches, or asks which are done.
+allowed-tools:
+  - Bash(gw sync)
+  - Bash(gw list --json)
+  - Bash(gw list --list)
+  - Bash(gw prune --json)
+  - Bash(gw branch status --json)
+  - Bash(jq:*)
+  - Bash(git remote)
 ---
 
 # Clean up worktrees and loose branches
