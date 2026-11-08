@@ -150,17 +150,39 @@ watching. A shortcut has no completion file of its own.
 
 ## The agent plugin reads `--json`
 
-`plugin/` ships with the CLI. Its skill reads `gw prune --json` and
+`plugin/` ships with the CLI: six skills, each a directory under
+`plugin/skills/` named as its command is, `/worktrees:<name>` in Claude Code
+and `$worktrees:<name>` in Codex. Skills call `gw` from `$PATH`; nothing
+assumes a plugin root or a checkout at a known path.
+
+| skill | runs |
+| --- | --- |
+| `new-branch` | `gw sync`, then `gw branch create` |
+| `fast-forward` | `gw fast-forward --json`, then each rebase conflict until the branch is level |
+| `ci-checks` | `gw ci-checks --json`, `--wait` to wait without polling |
+| `describe-pr` | checks a review's title and body against its diff, and edits them |
+| `merge` | `describe-pr`, `ci-checks`, fixes on the branch, `gh pr merge`, then `fast-forward` in the head branch's checkout |
+| `prune` | `gw prune --json` and `gw branch status --json`, then the removals approved |
+
+`describe-pr` and `merge` share `describe-pr/format.md`: the review's title
+and body are the squash commit's subject and body, so one set of rules
+writes both. `tests/test_plugin.py` holds every skill's `allowed-tools`
+to reads, `gw sync` and `gw branch create`: no pattern covers a removal, a
+merge, a push, a rerun or a checkout that moves. Two exceptions are each
+skill's job: `describe-pr` alone may edit a review, and `fast-forward` alone
+runs `gw fast-forward` and the conflict loop its own test lists.
+
+The prune skill reads `gw prune --json` and
 `gw branch status --json`, preserving head/sync state and full rows for eligible, empty,
 stash-blocked and ignored-file cases. `tests/test_plugin.py` extracts the
 actual jq filters and applies them to real CLI output. Checked-out branches
 are absent from the loose-branch list. Paths and restore commands must retain
 exact quoting.
 
-The assessments it reads sync first when one is due. The skill asks before
-syncing state that is still stale or never synced after that, and runs
-`gw sync` only on the user's answer; under `WORKTREES_OFFLINE` that command
-refuses, and the skill goes on with the evidence there is. Removal approval covers chosen targets
+The prune skill's assessments sync first when one is due. The skill asks
+before syncing state that is still stale or never synced after that, and
+runs `gw sync` only on the user's answer; under `WORKTREES_OFFLINE` that
+command refuses, and the skill goes on with the evidence there is. Removal approval covers chosen targets
 and explicit deletion categories. Each worktree goes through
 `command gw remove` with its exact quoted JSON path, then selected loose
 branches through `command gw branch prune`. The plugin never targets its current checkout. It reports
@@ -353,7 +375,8 @@ when eight threads are asking at once.
 `gw sync` fetches every remote with `--prune --tags --no-prune-tags`, the
 default first, updates the default remote's HEAD and queries the forge for
 every local branch tip on eight threads. Every other command but
-`gw version`, help and completion runs the same `sync.run` first when
+`gw version`, `gw ci-checks`, help and completion runs the same `sync.run`
+first when
 `sync.due` says so: the default remote's refs time is null or at least
 `WORKTREES_SYNC_TTL` seconds old, 60 by default. The forge time is not read,
 since a forge that keeps failing would sync before every command. Without a
@@ -365,9 +388,13 @@ reaches stdout, so `cd $(gw add x)` and `jq` never see it. A TTL that is not
 whole seconds is a usage error at exit 2.
 
 `WORKTREES_OFFLINE`, when non-empty, turns sync off everywhere: nothing syncs
-first and `gw sync` refuses at exit 3. Every notice that would end
+first, and `gw sync` and `gw ci-checks` refuse at exit 3. Every notice that would end
 `Run: gw sync` goes through `sync.hint`, which leaves that off offline,
 since it names a command that refuses there.
+
+`gw ci-checks` reads one review and its checks from the forge each time it
+runs and writes nothing, the sync cache included. It never syncs first: its
+answer comes from the forge, not from local evidence.
 
 Sync refuses, before fetching, any remote whose refspec writes outside its own
 `refs/remotes/<name>/`, since a mirror refspec with `--prune` deletes local
@@ -393,6 +420,17 @@ full clones keep older Git compatibility. Offline proof uses read-only
 patch-id input and creates no synthetic commits.
 
 The per-worktree checks run on eight threads. Mutations remain serial.
+
+`gw ci-checks` takes GitHub's review and checks from one `gh pr view` with
+`statusCheckRollup`, so both describe one head and nothing can go stale
+between them. It keeps the newest run per workflow and name, and a run with
+no start time counts as newest, so a queued re-run supersedes the failure it
+repeats. GitLab needs several calls: the pipeline is read from the project
+that ran it, its jobs across every page, and the merge request again
+afterwards, and a change between the two reads is `stale`. A pipeline for
+another SHA is stale unless it is the merged-result pipeline whose parents
+are the current head and the target's tip. `ci.wait` takes its clock and
+sleep as arguments, so its tests run in-process without waiting.
 
 ## Every git command is one spec
 

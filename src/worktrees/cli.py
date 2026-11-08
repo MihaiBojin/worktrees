@@ -707,6 +707,105 @@ def _commits(n: int) -> str:
 
 
 # --------------------------------------------------------------------------
+# ci
+# --------------------------------------------------------------------------
+
+
+def _review_number(text: str) -> int:
+    if not text.isdigit() or not int(text):
+        raise argparse.ArgumentTypeError(f"{text!r} is not a pull request number")
+    return int(text)
+
+
+def _add_ci_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "number",
+        nargs="?",
+        type=_review_number,
+        metavar="NUMBER",
+        help="the pull or merge request; the current branch's without one",
+    )
+    p.add_argument("--json", action="store_true", help="the snapshot as data")
+    p.add_argument(
+        "--wait",
+        action="store_true",
+        help="read again every 30 seconds until no check is running, "
+        "for up to 30 minutes",
+    )
+    p.add_argument(
+        "-v", "--verbose", action="store_true", help="print every forge command"
+    )
+
+
+# Failures first, so the row worth reading is the one at the top.
+_BUCKETS = ("fail", "cancel", "blocked", "pending", "unknown", "skipping", "pass")
+_BUCKET_INK = {
+    "fail": RED,
+    "cancel": RED,
+    "blocked": YELLOW,
+    "pending": YELLOW,
+    "unknown": YELLOW,
+    "skipping": DIM,
+    "pass": GREEN,
+}
+
+
+def run_ci(args: argparse.Namespace) -> int:
+    from . import ci, sync
+    from .git import options
+
+    if sync.offline():
+        raise Refused(f"gw ci-checks reads the forge, and {sync.OFFLINE} is set")
+    options.verbose = args.verbose
+
+    def reader() -> dict:
+        snapshot = ci.read(args.number)
+        running = sum(c["bucket"] == "pending" for c in snapshot["checks"])
+        progress.say(f"#{snapshot['pr']['number']}: {running} running")
+        return snapshot
+
+    try:
+        with progress.running(not args.verbose):
+            progress.say("reading checks")
+            snapshot = ci.wait(reader) if args.wait else reader()
+    except ci.Unreadable as exc:
+        _err(render.fail(str(exc)))
+        return 1
+
+    if snapshot["stale"]:
+        _warn("the review changed while it was read; run gw ci-checks again")
+    elif args.wait and snapshot["checksState"] == "pending":
+        _warn("checks are still running after 30 minutes")
+    if args.json:
+        print(_json(snapshot))
+        return 0
+
+    pr = snapshot["pr"]
+    rows: list[Row] = [
+        (Cell("STATE", BOLD), Cell("CHECK", BOLD), Cell("LINK", BOLD)),
+        *(
+            (
+                Cell(c["bucket"], _BUCKET_INK.get(c["bucket"], "")),
+                Cell(" / ".join(part for part in (c["workflow"], c["name"]) if part)),
+                Cell(c["link"], DIM),
+            )
+            for c in sorted(
+                snapshot["checks"],
+                key=lambda c: (_BUCKETS.index(c["bucket"]), c["workflow"], c["name"]),
+            )
+        ),
+    ]
+    if snapshot["checks"]:
+        print(table(rows))
+    o = render.out
+    print(
+        f"{o(pr['url'], BOLD)}: {o(pr['headRef'], render.BRANCH)} at "
+        f"{o(pr['headSha'][:7], YELLOW)}, checks {snapshot['checksState']}"
+    )
+    return 0
+
+
+# --------------------------------------------------------------------------
 # the four that land you somewhere
 # --------------------------------------------------------------------------
 
@@ -1432,6 +1531,16 @@ _COMMANDS: dict[str, _Command] = {
         aliases=("ff",),
         shortcuts={"gwff": ""},
     ),
+    "ci-checks": _Command(
+        run_ci,
+        _add_ci_flags,
+        "a pull request's checks, read from the forge",
+        "Read one pull or merge request and its checks from GitHub or GitLab, "
+        "without syncing first or changing anything. It exits 0 whenever it "
+        "read a snapshot, failing checks included.",
+        usage="[NUMBER]",
+        aliases=("ci",),
+    ),
     "version": _Command(
         run_version,
         None,
@@ -1587,8 +1696,11 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
         )
         if run is run_prune and args.only and args.yes:
             raise _Stop("--only cannot be combined with --yes", 2)
+        # sync and ci-checks talk to the network and assess nothing, so
+        # neither syncs first, needs the offline guard or a word about how
+        # fresh the evidence is.
         if (
-            run not in (run_version, run_sync)
+            run not in (run_version, run_sync, run_ci)
             and not getattr(args, "explain", False)
             and not getattr(args, "complete", False)
             and not (hasattr(args, "name") and not args.name)

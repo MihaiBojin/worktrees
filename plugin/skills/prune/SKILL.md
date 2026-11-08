@@ -1,14 +1,17 @@
 ---
-name: worktrees
+name: prune
 description: >
-  Use when the user asks to clean up, tidy or prune finished, merged or
-  squash-merged git worktrees or local branches, or asks which are done.
+  Assess git worktrees and loose local branches, then remove the finished
+  ones the user approves. Use when the user asks to clean up, tidy or prune
+  finished, merged or squash-merged worktrees or branches, or asks which
+  are done.
+argument-hint: "[NAME ...]"
 allowed-tools:
   - Bash(gw sync)
   - Bash(gw list --json)
   - Bash(gw list --table)
   - Bash(gw prune --json)
-  - Bash(gw branch status --json)
+  - Bash(gw branch status:*)
   - Bash(jq:*)
   - Bash(git remote)
 ---
@@ -18,6 +21,10 @@ allowed-tools:
 The `gw` CLI supplies completion proofs and deletion protections.
 It comes from `uv tool install git-worktrees`; if `gw` or `jq` is
 missing, report that and stop. Work inside the requested repository.
+
+In Codex, `$ARGUMENTS` means the arguments supplied with the skill. Names
+there are the worktrees or branches to consider; keep that scope, and any
+choice the user already made about sync, targets or deletion categories.
 
 ## Assess and show sync state first
 

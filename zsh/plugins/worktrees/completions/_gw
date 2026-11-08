@@ -86,6 +86,14 @@ __worktrees_fast-forward() {
         '(-h --help)'{-h,--help}'[show the help and exit]'
 }
 
+__worktrees_ci-checks() {
+    _arguments -s \
+        '--json[the snapshot as data]' \
+        '--wait[read again until no check is running]' \
+        '(-v --verbose)'{-v,--verbose}'[print every forge command]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]'
+}
+
 __worktrees_branch_create() {
     _arguments -s \
         '--json[the result as data]' \
@@ -160,6 +168,7 @@ _gw() {
                 list|l) __worktrees_list ;;
                 remove|rm) __worktrees_remove ;;
                 fast-forward|ff) __worktrees_fast-forward ;;
+                ci-checks|ci) __worktrees_ci-checks ;;
                 branch)
                     _arguments -C \
                         '(-h --help)'{-h,--help}'[show the help and exit]' \
