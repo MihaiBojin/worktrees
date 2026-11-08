@@ -90,8 +90,12 @@ non-zero exit code.
 
 `gw fast-forward` starts a branch only when the one you stand on is proved
 finished, by the same `merged.branch_proof` that `gw prune` reads, or when
-its first commits are: `merged.boundary` asks each commit below the tip, from
-the tip down, since the first of a squashed pair is not upstream on its own.
+its first commits are and its own request merged them: `merged.boundary`
+asks each commit below the tip, from the tip down, since the first of a
+squashed pair is not upstream on its own. A branch whose merged part is
+another branch's, a stacked one whose parent merged, keeps its name and its
+open request, and drops the merged commits in place with the same
+`git rebase --onto`.
 A merged branch's name stays with its merged request on the forge, so the
 finished branch keeps its name and commits and the checkout moves to
 `YYYY-MM-DDThh-mm-ssZ/<stem>` in UTC, or to the NAME given, from the head

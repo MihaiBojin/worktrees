@@ -428,9 +428,10 @@ commits of its own fast-forwards, the head branch included; one with commits
 is rebased, and the first conflict stops the rebase with the files left for
 you to resolve. A branch proved finished keeps its name, and the checkout
 moves to a new branch from the head ref or `--from`, named
-`YYYY-MM-DDThh-mm-ssZ/NAME` unless you name it. A branch whose first commits
-were squash-merged moves the same way, carrying only the commits made after
-the merge. `--autostash` carries uncommitted changes across. A branch
+`YYYY-MM-DDThh-mm-ssZ/NAME` unless you name it. A branch whose own pull
+request squash-merged its first commits moves the same way, carrying only
+the commits made after the merge; a stacked branch whose parent merged keeps
+its name and drops the merged commits in place. `--autostash` carries uncommitted changes across. A branch
 already level exits 0 and changes nothing. [Fast-forward](docs/commands/fast-forward.md) gives the
 order of the checks, the JSON and the conflict loop.
 

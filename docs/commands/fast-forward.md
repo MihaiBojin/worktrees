@@ -52,12 +52,16 @@ What it does depends on the branch, checked in this order:
    keeps its name and its commits. The checkout moves to a new branch from
    the head ref: `rotated`.
 7. A branch whose first commits are in the head ref and which went on
-   afterwards keeps its name and its commits too. The newest commit below the
-   tip with a proof is the boundary, searched from the tip down, since the
-   first of a squashed pair is not upstream on its own; a verified merged
-   request whose source commit is one of the branch's names it directly. The
-   commits after the boundary are replayed onto the new branch with
-   `git rebase --onto`: `rotated`, with `carried` above zero.
+   afterwards has a boundary: the newest commit below the tip with a proof,
+   searched from the tip down, since the first of a squashed pair is not
+   upstream on its own, or the source commit of a verified merged request.
+   When the branch's own request merged, it keeps its name and its commits,
+   and the commits after the boundary are replayed onto a new branch with
+   `git rebase --onto`: `rotated`, with `carried` above zero. When another
+   branch's did, as with a stacked branch whose parent merged, or offline,
+   where nothing says whose it was, the branch keeps its name and any
+   request open from it, and drops the merged commits in place with the same
+   `git rebase --onto`: `rebased`, with `carried` above zero.
 8. A branch whose tip is on the head ref's first-parent history has no commits
    of its own and fast-forwards: `fast-forwarded`.
 9. A branch with commits of its own is rebased onto the head ref: `rebased`.
@@ -77,7 +81,8 @@ The new branch has no upstream.
 
 A replayed commit that conflicts stops the rebase on the new branch.
 `git rebase --abort` leaves the new branch at the old tip, and the source
-branch never moves.
+branch never moves. A branch rebased in place has a remote copy to update:
+push it with `--force-with-lease --force-if-includes`.
 
 ## Uncommitted changes
 
@@ -85,7 +90,7 @@ Without `--autostash`, the merge and the rebase run with `--no-autostash`, so
 uncommitted changes stay in the checkout or git refuses; they never go to the
 stash list every worktree shares. Moving a finished branch uses
 `git switch --create`, which carries the changes it can and refuses the rest.
-A partly merged branch with uncommitted changes is refused before the new
+A partly merged branch with uncommitted changes is refused before any new
 branch is made. A refusal leaves the branch and the checkout as they were.
 
 `--autostash` passes git's own `--autostash` instead, which keeps the work off
@@ -97,9 +102,10 @@ can renumber a sha.
 
 ## Stashes
 
-A rotated branch keeps its stashes, the ones whose subject names it and whose
-commit is on it. `stashes` lists them with `after` true for one made on a
-commit after the boundary, which is work done after the merge. One made on
+A partly merged or rotated branch keeps its stashes, the ones whose subject
+names it and whose commit is on it. `stashes` lists them with `after` true
+for one made on a commit after the boundary, which is work done after the
+merge. One made on
 the boundary or before it may hold work the merge already took.
 
 ## Conflicts
@@ -123,12 +129,12 @@ command again reports the stopped rebase until it finishes, then `current`.
 | `ahead` | commits of its own on top of `base` after the run |
 | `behind` | commits of `base` it lacked before the run |
 | `proof`, `why` | how a rotated branch, or its merged part, was proved |
-| `boundary` | a rotated branch's last commit in the head ref |
-| `carried` | commits after `boundary` replayed onto the new branch |
+| `boundary` | the branch's last commit already in the head ref |
+| `carried` | commits after `boundary`, the ones replayed |
 | `stopped_at`, `subject` | the commit the rebase stopped at |
 | `paths` | files with conflicts, from the top level; empty once all are staged |
 | `stash` | the stash entry holding changes that did not re-apply |
-| `stashes` | a rotated branch's stashes: `sha`, `subject`, `after` |
+| `stashes` | a partly merged or rotated branch's stashes: `sha`, `subject`, `after` |
 
 Exit 0 means the branch is level. Exit 1 is a `conflict` or a
 `stash-conflict`, with the JSON above, or a refusal, with nothing on stdout

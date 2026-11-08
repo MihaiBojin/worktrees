@@ -130,8 +130,11 @@ Name the branch and its commit before and after. For `rotated`, say the
 finished branch is kept as it was, how it was proved finished, and the new
 branch's name; the new branch has no upstream until it is pushed. With
 `carried` above zero, say that the commits up to `boundary` were merged and
-the `carried` ones after it moved to the new branch. List `stashes` made
-after the merged part: they stay with the old branch. For a rebase that
+the `carried` ones after it moved to the new branch. For `rebased` with
+`carried` above zero, say that the commits up to `boundary` were already in
+the head branch, merged through another branch's request, and were dropped.
+List `stashes` made after the merged part: they stay with the branch they
+were made on. For a rebase that
 stopped, list each commit it stopped at with its subject, and for each file,
 what each side changed and how the two were combined.
 
@@ -145,7 +148,9 @@ git push --force-with-lease --force-if-includes REMOTE BRANCH
 git push --set-upstream REMOTE BRANCH
 ```
 
-Give the one that applies after a rebase or a rotation, and run it when the
-user asked for the branch to be pushed; the client asks before either runs.
+After a `rebased` result on a branch the remote has, push it with the lease,
+so its open request shows the rebased commits. After a rotation, give the
+plain push and run it when the user asked for the branch to be pushed. The
+client asks before either runs unless the user's own rules allow it.
 A push the lease rejects means the remote has commits this clone never had:
 report it, and never retry with `--force`.

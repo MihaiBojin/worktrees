@@ -602,24 +602,54 @@ def test_raw_git_rebase_replays_the_merged_commits_and_stops(world) -> None:
     assert rebasing(world)
 
 
-def test_a_partly_merged_branch_carries_only_its_later_commits(world) -> None:
+def test_a_partly_merged_branch_drops_its_merged_commits_in_place(world) -> None:
+    """Offline, nothing says whose request merged the first commits, so the
+    branch keeps its name and any request open from it."""
     merged_up_to, tip = partly_merged(world)
     head = world.git("rev-parse", "main")
 
     p = gw_ff(world, "--json")
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
-    assert payload["result"] == "rotated"
+    assert payload["result"] == "rebased"
+    assert payload["branch"] == "fix-parser"
     assert payload["proof"] == "squash"
     assert payload["boundary"] == world.git("rev-parse", "--short", merged_up_to)
     assert (payload["carried"], payload["ahead"]) == (1, 1)
-    assert payload["previous"] == "fix-parser"
-    assert STAMP.match(payload["branch"])
-    assert world.git("symbolic-ref", "--short", "HEAD") == payload["branch"]
+    assert payload["previous_sha"] == world.git("rev-parse", "--short", tip)
+    assert world.git("symbolic-ref", "--short", "HEAD") == "fix-parser"
     assert world.git("rev-parse", "HEAD~1") == head
     assert world.git("log", "-1", "--format=%s") == "y.txt"
-    # The source branch is left exactly where it was.
-    assert world.git("rev-parse", "refs/heads/fix-parser") == tip
+
+
+def stacked(world) -> str:
+    """parent adds a.txt, child stacked on it adds b.txt, and main squash-merges
+    parent. Returns main's tip."""
+    world.git("switch", "--quiet", "--create", "parent")
+    world.commit("a.txt", "a\n")
+    world.git("switch", "--quiet", "--create", "child")
+    world.commit("b.txt", "b\n")
+    world.git("switch", "--quiet", "main")
+    world.git("merge", "--quiet", "--squash", "parent")
+    world.git("commit", "--quiet", "-m", "parent (#1)")
+    head = world.git("rev-parse", "HEAD")
+    world.git("switch", "--quiet", "child")
+    return head
+
+
+def test_a_stacked_branch_whose_parent_merged_keeps_its_name(world) -> None:
+    head = stacked(world)
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["branch"], payload["carried"]) == (
+        "rebased",
+        "child",
+        1,
+    )
+    assert world.git("rev-parse", "HEAD~1") == head
+    assert world.git("log", "-1", "--format=%s") == "b.txt"
 
 
 def test_the_boundary_is_found_from_the_tip_down(world) -> None:
@@ -636,42 +666,38 @@ def test_the_boundary_is_found_from_the_tip_down(world) -> None:
     assert not merged.content_matches(first, head, repo=world.repo)
 
 
-def test_a_partly_merged_branch_takes_the_name_given(world) -> None:
+def test_naming_a_branch_that_keeps_its_name_is_refused(world) -> None:
     partly_merged(world)
-    p = gw_ff(world, "next-parser", "--json")
-    assert p.returncode == 0, p.stderr
-    assert json.loads(p.stdout)["branch"] == "next-parser"
-    assert world.git("symbolic-ref", "--short", "HEAD") == "next-parser"
+    p = gw_ff(world, "next-parser")
+    assert p.returncode == 1
+    assert "keeps its name, since no merged request of its own marks" in p.stderr
+    assert world.git("symbolic-ref", "--short", "HEAD") == "fix-parser"
 
 
-def test_a_carried_commit_that_conflicts_stops_on_the_new_branch(world) -> None:
+def test_a_later_commit_that_conflicts_stops_in_place(world) -> None:
     _, tip = partly_merged(world)
     advance(world, "y.txt", "main\n")
 
-    p = gw_ff(world, "next-parser", "--json")
+    p = gw_ff(world, "--json")
     assert p.returncode == 1
     payload = json.loads(p.stdout)
     assert payload["result"] == "conflict"
-    assert payload["branch"] == "next-parser"
+    assert payload["branch"] == "fix-parser"
     assert payload["paths"] == ["y.txt"]
     world.git("rebase", "--abort")
-    assert world.git("symbolic-ref", "--short", "HEAD") == "next-parser"
-    assert world.git("rev-parse", "next-parser") == tip
     assert world.git("rev-parse", "fix-parser") == tip
 
 
 def test_a_dirty_partly_merged_branch_is_refused_without_autostash(world) -> None:
-    partly_merged(world)
+    _, tip = partly_merged(world)
     (world.repo / "README").write_text("uncommitted\n")
-    branches = world.git("for-each-ref", "--format=%(refname)", "refs/heads")
 
     p = gw_ff(world, "--json")
     assert p.returncode == 1
     assert p.stdout == ""
-    assert "--autostash carries the changes across" in p.stderr
-    assert world.git("for-each-ref", "--format=%(refname)", "refs/heads") == branches
+    assert "unstaged changes" in p.stderr
+    assert world.git("rev-parse", "fix-parser") == tip
     assert world.git("stash", "list") == ""
-    assert world.git("symbolic-ref", "--short", "HEAD") == "fix-parser"
     assert (world.repo / "README").read_text() == "uncommitted\n"
 
 
@@ -717,8 +743,10 @@ def test_the_source_branch_stashes_are_listed_split_at_the_boundary(world) -> No
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("shape", ["partly merged", "finished"])
-def test_autostash_carries_uncommitted_work_to_the_new_branch(world, shape) -> None:
+@pytest.mark.parametrize(
+    "shape, result", [("partly merged", "rebased"), ("finished", "rotated")]
+)
+def test_autostash_carries_uncommitted_work_across(world, shape, result) -> None:
     if shape == "finished":
         squashed(world)
     else:
@@ -729,7 +757,7 @@ def test_autostash_carries_uncommitted_work_to_the_new_branch(world, shape) -> N
     p = gw_ff(world, "--autostash", "--json")
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
-    assert payload["result"] == "rotated"
+    assert payload["result"] == result
     assert world.git("symbolic-ref", "--short", "HEAD") == payload["branch"]
     assert (world.repo / "README").read_text() == "uncommitted\n"
     assert (world.repo / "loose.txt").read_text() == "untracked\n"
@@ -997,3 +1025,90 @@ def test_a_merge_after_the_last_sync_is_fetched_within_the_ttl(world) -> None:
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
     assert (payload["result"], payload["proof"]) == ("rotated", "squash")
+
+
+# --------------------------------------------------------------------------
+# a partly merged branch whose own request merged
+# --------------------------------------------------------------------------
+
+
+def own_merge(world, network, source: str, merge: str = "main") -> None:
+    """fix-parser's own pull request, from `source`, squash-merged as `merge`."""
+    on_forge(world)
+    squash = world.git("rev-parse", merge)
+    network.answer({"fix-parser": [merged_row("fix-parser", source, squash)]})
+
+
+def test_a_branch_whose_own_request_merged_carries_the_rest(world, network) -> None:
+    """The name stays with the merged request, so the commits after it move."""
+    merged_up_to, tip = partly_merged(world)
+    head = world.git("rev-parse", "main")
+    own_merge(world, network, merged_up_to)
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["proof"]) == ("rotated", "forge")
+    assert payload["boundary"] == world.git("rev-parse", "--short", merged_up_to)
+    assert (payload["carried"], payload["ahead"]) == (1, 1)
+    assert payload["previous"] == "fix-parser"
+    assert STAMP.match(payload["branch"])
+    assert world.git("symbolic-ref", "--short", "HEAD") == payload["branch"]
+    assert world.git("rev-parse", "HEAD~1") == head
+    # The source branch is left exactly where it was.
+    assert world.git("rev-parse", "refs/heads/fix-parser") == tip
+
+
+def test_a_carry_takes_the_name_given(world, network) -> None:
+    merged_up_to, _ = partly_merged(world)
+    own_merge(world, network, merged_up_to)
+    p = gw_ff_online(world, network, "next-parser", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["branch"] == "next-parser"
+
+
+def test_a_carried_commit_that_conflicts_stops_on_the_new_branch(
+    world, network
+) -> None:
+    merged_up_to, tip = partly_merged(world)
+    squash = world.git("rev-parse", "main")
+    advance(world, "y.txt", "main\n")
+    own_merge(world, network, merged_up_to, squash)
+
+    p = gw_ff_online(world, network, "next-parser", "--json")
+    assert p.returncode == 1
+    payload = json.loads(p.stdout)
+    assert payload["result"] == "conflict"
+    assert payload["branch"] == "next-parser"
+    assert payload["paths"] == ["y.txt"]
+    world.git("rebase", "--abort")
+    assert world.git("symbolic-ref", "--short", "HEAD") == "next-parser"
+    assert world.git("rev-parse", "next-parser") == tip
+    assert world.git("rev-parse", "fix-parser") == tip
+
+
+def test_a_dirty_carry_is_refused_before_the_new_branch(world, network) -> None:
+    merged_up_to, _ = partly_merged(world)
+    own_merge(world, network, merged_up_to)
+    (world.repo / "README").write_text("uncommitted\n")
+    branches = world.git("for-each-ref", "--format=%(refname)", "refs/heads")
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 1
+    assert p.stdout == ""
+    assert "--autostash carries the changes across" in p.stderr
+    assert world.git("for-each-ref", "--format=%(refname)", "refs/heads") == branches
+    assert world.git("stash", "list") == ""
+    assert (world.repo / "README").read_text() == "uncommitted\n"
+
+
+def test_a_stacked_branch_with_no_merged_request_keeps_its_name(world, network) -> None:
+    """Its parent's request merged, not its own."""
+    head = stacked(world)
+    on_forge(world)
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["branch"]) == ("rebased", "child")
+    assert world.git("rev-parse", "HEAD~1") == head

@@ -6,8 +6,10 @@ ref, proved the way `gw prune` proves one, keeps its name and its commits, and
 the checkout moves to a new branch started from the head ref. A merged
 branch's name stays with its merged request on the forge, so the next change
 gets a name of its own. A branch whose first commits are in the head ref and
-which went on afterwards moves the same way, carrying only the commits after
-the merged part. The head branch itself only ever fast-forwards.
+which went on afterwards moves the same way when its own request merged them,
+carrying only the commits after the merged part; when another branch's did,
+as with a stacked branch whose parent merged, it keeps its name and drops the
+merged commits in place. The head branch itself only ever fast-forwards.
 """
 
 from __future__ import annotations
@@ -127,13 +129,13 @@ class Moved:
     behind: int = 0  # commits of `base` it lacked before the run
     proof: str = ""  # how a rotated branch, or its merged part, was proved
     why: str = ""
-    boundary: str = ""  # a rotated branch's last commit in `base`
-    carried: int = 0  # its commits after `boundary`, replayed onto the new one
+    boundary: str = ""  # the branch's last commit already in `base`
+    carried: int = 0  # its commits after `boundary`, the ones replayed
     stopped_at: str = ""  # the commit a stopped rebase could not replay
     subject: str = ""
     paths: list[str] = field(default_factory=list)  # files left with conflicts
     stash: str = ""  # the entry holding uncommitted work that did not re-apply
-    # A rotated branch's stashes, each made after `boundary` or not.
+    # A partly merged branch's stashes, each made after `boundary` or not.
     stashes: list[dict] = field(default_factory=list)
 
     def data(self) -> dict:
@@ -229,7 +231,12 @@ def fast_forward(
         found = _forge_boundary(
             request, branch, tip, head_sha, resolved.branch, repo
         ) or merged.boundary(tip, head_sha, repo)
-    if found:
+    # A finished branch moves to a new one, and so does a partly merged one
+    # whose own request merged, since the name stays with that request. One
+    # whose merged part is another branch's, a stacked branch whose parent
+    # merged, keeps its name and its open request, and drops the merged
+    # commits in place.
+    if found and (verdict == "remove" or request is not None):
         point, proof, why = found
         return _rotate(
             branch, base, name, start, proof, why, remote, repo, now, point, stash
@@ -238,6 +245,13 @@ def fast_forward(
         raise Refusal(
             f"cannot tell whether {render.branch(branch)} is finished, so it is "
             f"left as it is: {why}"
+        )
+    if found:
+        _unnamed(
+            name,
+            start,
+            f"{render.branch(branch)} keeps its name, since no merged request "
+            f"of its own marks {_short(found[0], repo=repo)}",
         )
     _unnamed(name, start, f"{render.branch(branch)} is not finished: {why}")
 
@@ -257,7 +271,11 @@ def fast_forward(
         )
         return _reapplied(moved, before, tip, repo)
 
-    replayed = rebase(stash, base, repo=repo)
+    replayed = (
+        rebase_onto(stash, base, found[0], branch, repo=repo)
+        if found
+        else rebase(stash, base, repo=repo)
+    )
     if not replayed:
         stopped = stopped_rebase(repo)
         if stopped:
@@ -273,6 +291,11 @@ def fast_forward(
         ahead=_count(base, local, repo),
         behind=behind,
     )
+    if found:
+        point, moved.proof, moved.why = found
+        moved.boundary = _short(point, repo=repo)
+        moved.carried = _count(point, tip, repo)
+        moved.stashes = _branch_stashes(branch, tip, point, repo)
     return _reapplied(moved, before, tip, repo)
 
 
