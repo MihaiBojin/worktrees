@@ -35,8 +35,9 @@ The plugin needs `jq` too. It installs neither tool.
 
 ## Cleanup
 
-The skill reads `gw prune --json` and `gw branch status --json`. These
-commands stay offline. If remote state is never synced or older than 10 minutes, it asks
+The skill reads `gw prune --json` and `gw branch status --json`. Both sync
+first once the last sync is a minute old, unless `WORKTREES_OFFLINE` is set.
+If remote state is still never synced or older than 10 minutes, it asks
 whether to run `gw sync`; it runs sync only on your answer. A previous
 approval or refusal remains in force for that cleanup. The skill and
 `/prune` run `gw sync`, `gw list --json`, `gw list --table`,

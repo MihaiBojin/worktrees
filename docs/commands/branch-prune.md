@@ -2,7 +2,8 @@
 
 `gw branch prune` deletes eligible loose local branches after confirmation
 and a fresh assessment, and the shell plugin's `gwbp` runs it. It uses local
-refs and cached forge evidence; only `gw sync` refreshes them. Checked-out
+refs and cached forge evidence, which a sync refreshes first when one is
+due. Checked-out
 branches cannot be deleted here.
 
 ```console

@@ -1,4 +1,4 @@
-"""Start a branch from the locally resolved head ref without fetching."""
+"""Start a branch from the locally resolved head ref."""
 
 from __future__ import annotations
 

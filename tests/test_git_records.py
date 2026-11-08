@@ -142,8 +142,5 @@ def test_plain_remote_head_at_two_branches_does_not_resolve(world):
     result = run(world, "gw branch status", "--json")
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["head"]["ref"] is None
-    assert (
-        "Head: unresolved (clone). Run: gw sync"
-        in run(world, "gw branch status").stderr
-    )
+    assert "Head: unresolved (clone)\n" in run(world, "gw branch status").stderr
     assert run(world, "gw branch create", "next").returncode != 0

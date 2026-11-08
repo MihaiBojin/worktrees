@@ -12,9 +12,12 @@ gw prune                # confirm and remove eligible worktrees
 gw remove fix-parser    # remove one worktree and its finished branch
 ```
 
-Only `gw sync` uses the network. Every other command uses local refs and the
-last sync's evidence. Run commands inside the repository you want assessed;
-other repositories under the same worktree root are outside their scope.
+`gw sync` fetches every remote and asks the forge about each local branch.
+Every other command but `gw version`, help and completion runs it first once
+the last sync is a minute old, then works from local refs and that sync's
+evidence. With `WORKTREES_OFFLINE` set, nothing touches the network. Run commands inside the repository you want
+assessed; other repositories under the same worktree root are outside their
+scope.
 
 | Command | Shortcut | What it does |
 | --- | --- | --- |
@@ -327,7 +330,8 @@ and says so on stderr even with `-q` or `--json`, so a script acting on the
 verdicts hears it too. Stale sync state, older than 10 minutes, produces an
 age warning; exactly 10 minutes is fresh. `-q` and `--json` omit the age
 warning and the head line, and JSON carries both states in `lastSync` and
-`head`. Repositories without remotes have neither sync warning.
+`head`. Repositories without remotes have neither sync warning. Offline, no
+notice suggests `gw sync`.
 
 The default remote is `checkout.defaultRemote`, or the only remote. Several
 remotes without that setting are all fetched, then sync fails and prints the
@@ -353,10 +357,21 @@ records remote name/URL, successful sync times and forge evidence keyed by
 branch and source tip. Sync replaces it atomically. Changing the remote's
 name or URL invalidates it. Malformed or mismatched evidence proves nothing.
 A moved branch needs another sync for forge evidence; local proof still works.
-There is no automatic refresh or expiration-based network access.
 
-Offline commands in partial clones need Git 2.45.1 or newer, or a patched
-maintenance release:
+Every command except `gw sync`, `gw version`, help and completion syncs first
+when the default remote's refs have never synced or last synced 60 seconds
+ago or more. `WORKTREES_SYNC_TTL` sets that window in whole seconds, and `0`
+syncs before every command. The forge time does not count, so a forge that
+keeps failing does not make every command sync. A failed sync warns, `-q` and
+`--json` hide the warning, and the command goes on with the evidence it had.
+Without a default remote nothing syncs first. An unreachable remote costs
+every command its fetch timeout, which `WORKTREES_OFFLINE` skips.
+
+`WORKTREES_OFFLINE`, set to anything but the empty string, keeps every
+command off the network: nothing syncs first, and `gw sync` refuses at exit 3.
+
+Commands that read objects in a partial clone need Git 2.45.1 or newer, or a
+patched maintenance release:
 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4 or 2.44.1 and later patches in those
 series. The CLI refuses lower reported versions even if a vendor backported
 the fix, because it cannot verify that patch. Ordinary full clones keep
@@ -401,7 +416,8 @@ Results go to stdout; diagnostics and prompts go to stderr. JSON and
 `gw list --table` never contain colour. A pipe, nonempty `NO_COLOR`, or `TERM=dumb`
 disables colour on its stream. `NO_COLOR=` does not disable it.
 
-`-q` suppresses summaries, progress, stale warnings and the head line while
+`-q` suppresses summaries, progress, stale warnings, a failed sync's warnings
+before the command, and the head line while
 keeping results, errors, never-synced notices and deletion disclosures, which
 repeat an inferred head.
 It keeps `gw branch create`'s branch/base/SHA result and both `gw rotate`
@@ -451,7 +467,7 @@ gw list --json | jq -r '.worktrees[].path'
 | `gwp --branch NAME` | `gw remove NAME` or a quoted exact path |
 | `--delete-ignored` | `--delete ignored-files` |
 | `gwr --force`, `gwr -f` | `gw remove --keep-branch` |
-| `--no-fetch`, `--no-forge`, `--force-refresh`, refresh `-f` | offline by default; run `gw sync` explicitly |
+| `--no-fetch`, `--no-forge`, `--force-refresh`, refresh `-f` | `WORKTREES_OFFLINE=1` to stay offline; `gw sync` to refresh now |
 | `gw ls`, `gw NAME` | `gw list`, `gw list NAME` |
 | `gwh`, `gw help`, `gw h` | `gw --help` or `gw -h` |
 | a `--json` listing as an array, `.[]` | `gw list --json` object, `.worktrees[]` |
