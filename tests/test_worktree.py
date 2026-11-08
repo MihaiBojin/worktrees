@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import termios
+import threading
 import time
 import tty
 from pathlib import Path
@@ -191,7 +192,7 @@ def test_list_with_a_query_still_takes_the_one_match_outright(world) -> None:
 
 def test_list_marks_the_one_you_stand_in(world) -> None:
     wt = world.worktree("one")
-    p = run(world, "gw", "list", "--list", at=wt)
+    p = run(world, "gw", "list", "--table", at=wt)
     assert p.returncode == 0, p.stderr
     head, *body = p.stdout.splitlines()
     assert head.split() == ["WORKTREE", "BRANCH", "PATH"]
@@ -202,7 +203,7 @@ def test_list_marks_the_one_you_stand_in(world) -> None:
 def test_the_main_checkout_says_so_without_saying_it_twice(world) -> None:
     world.git("branch", "--move", "main", "trunk")
     world.worktree("one", base="trunk")
-    p = run(world, "gw", "list", "--list")
+    p = run(world, "gw", "list", "--table")
     assert "trunk (main)" in p.stdout
 
 
@@ -603,7 +604,51 @@ def test_the_spinner_says_what_is_being_checked_and_clears_its_line(
         time.sleep(0.35)
     out = err.getvalue()
     assert "one: reading its status" in out
-    assert out.endswith("\r\033[2K")
+    assert out.endswith("\r\033[J")
+
+
+def test_the_spinner_gives_each_running_thread_its_own_line(monkeypatch) -> None:
+    from worktrees import progress
+
+    err = _Tty()
+    monkeypatch.setattr(sys, "stderr", err)
+    monkeypatch.setenv("TERM", "xterm")
+    release = threading.Event()
+
+    def work(name: str) -> None:
+        progress.say(f"{name}: reading forge evidence")
+        release.wait(5)
+
+    def drawn(wanted, since: int = 0) -> None:
+        """Wait for a frame that `wanted` accepts, polling rather than sleeping."""
+        deadline = time.monotonic() + 5
+        while not any(wanted(f) for f in err.getvalue()[since:].split("\033[J")):
+            assert time.monotonic() < deadline, err.getvalue()
+            time.sleep(0.02)
+
+    def both(frame: str) -> bool:
+        return (
+            frame.count("\n") == 2 and "a: reading" in frame and "b: reading" in frame
+        )
+
+    def main_alone(frame: str) -> bool:
+        return "for 2 branches" in frame and ": reading forge" not in frame
+
+    with progress.running():
+        progress.say("reading forge evidence for 2 branches")
+        workers = [threading.Thread(target=work, args=(n,)) for n in ("a", "b")]
+        for worker in workers:
+            worker.start()
+        drawn(both)
+        release.set()
+        for worker in workers:
+            worker.join()
+        # Once the workers end, only the main thread's line is drawn.
+        drawn(main_alone, since=len(err.getvalue()))
+    frames = err.getvalue().split("\033[J")
+    # Three rows were drawn, so the erase climbs two before clearing.
+    assert any(f.endswith("\033[2A") for f in frames)
+    assert frames[-1] == ""
 
 
 def test_the_spinner_stays_off_where_it_cannot_clear_a_line(monkeypatch) -> None:

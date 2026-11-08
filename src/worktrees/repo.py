@@ -121,6 +121,16 @@ def config_get(key: str) -> None:
     """One config value. Exit 1 means unset, not broken."""
 
 
+@git("config --get-all $key", ok=(0, 1))
+def config_all(key: str) -> None:
+    """Every value of a key that repeats, such as remote.<name>.fetch."""
+
+
+@git("config --type=bool --get $key", ok=(0, 1))
+def config_bool(key: str) -> None:
+    """A boolean key as true or false. Exit 1 means unset."""
+
+
 @git("symbolic-ref --quiet $ref", ok=(0, 1, 128))
 def symbolic_ref(ref: str) -> None:
     """What a symbolic ref points at."""
@@ -201,13 +211,23 @@ def ignore_sources() -> None:
     """The ignore file, line and pattern behind each path read from stdin."""
 
 
-# 128 is what git exits when it cannot reach the remote, and that is an
-# answer rather than a failure: the caller carries on with the refs already
-# here and says so. Asserted on what comes back, not on the code, because an
-# ok= this wide would otherwise swallow a typo in one of the flags.
-@git("fetch --prune $remote", ok=(0, 128), mutates=True)
+# 128 is what git exits when it cannot reach the remote, and 1 when it
+# refused to update a ref. Both are answers rather than failures: sync reads
+# stderr to tell a moved tag from anything else, so it runs in the C locale.
+# Asserted on what comes back, not on the code, because an ok= this wide would
+# otherwise swallow a typo in one of the flags. --no-prune-tags overrides
+# fetch.pruneTags, which would delete every local tag a remote lacks.
+@git(
+    "fetch --prune --tags --no-prune-tags $remote",
+    ok=(0, 1, 128),
+    mutates=True,
+    env={"LC_ALL": "C"},
+)
 def fetch(remote: str) -> None:
-    """Refresh every remote-tracking ref, dropping the ones that are gone."""
+    """Refresh a remote's tracking refs and every tag it has.
+
+    Prunes only the tracking refs that are gone; local tags are never pruned.
+    """
 
 
 # Sync reads both network calls' results before it records a successful time.

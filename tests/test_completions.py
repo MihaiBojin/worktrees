@@ -306,7 +306,7 @@ COMMAND_COMPLETIONS = [
     ("gw sync", "main sync"),
     ("gw prune", "gw prune"),
     ("gw p", "gw prune"),
-    ("gw prune --list", "gw prune"),
+    ("gw prune --table", "gw prune"),
     ("gw add", "gw add"),
     ("gw a", "gw add"),
     ("gw list", "gw list"),
@@ -319,7 +319,7 @@ COMMAND_COMPLETIONS = [
     ("gw branch create", "gw branch create"),
     ("gw branch status", "gw branch status"),
     ("gw branch prune", "gw branch prune"),
-    ("gwp --list", "gw prune"),
+    ("gwp --table", "gw prune"),
     *((name, " ".join(words)) for name, words in SHORTCUTS.items()),
 ]
 # Options zsh still offers once given, and the short spelling it drops with

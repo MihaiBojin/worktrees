@@ -27,20 +27,20 @@ worktree root are neither assessed nor removed.
 | Command | Role | Mutates |
 | --- | --- | --- |
 | `gw` | Print the command guide, as `gw --help` does. | No |
-| `gw list [QUERY] [flags]` | Terminal navigation; metadata for all matches without a terminal or with `--json` or `--list`. | No |
-| `gwp` with nonterminal input, `--json`, `--list` or `--only`, without `--yes` | Print the assessment table or JSON, preserving stale records and repository state. | No |
+| `gw list [QUERY] [flags]` | Terminal navigation; metadata for all matches without a terminal or with `--json` or `--table`. | No |
+| `gwp` with nonterminal input, `--json`, `--table` or `--only`, without `--yes` | Print the assessment table or JSON, preserving stale records and repository state. | No |
 | `gwp` with terminal input | Clear stale worktree records, show the full table, disclose eligible targets, confirm, then remove. | Stale records first; removal after approval |
-| `gwp --yes` | Remove eligible targets without prompting, including with nonterminal input, `--json` or `--list`. Grants no deletion category. | Yes |
+| `gwp --yes` | Remove eligible targets without prompting, including with nonterminal input, `--json` or `--table`. Grants no deletion category. | Yes |
 | `gwr PATH\|NAME` | Remove one worktree (sections 9 and 10). | Yes |
 | `gwbs` | Assess local branches that have no worktree. Rejects `--delete`. | No |
 | `gwbd NAME...` | Delete eligible loose branches. | Yes |
-| `gw sync` | Fetch the default remote and forge evidence. The only command that uses the network. | Refs, cache |
+| `gw sync`, `gws` | Fetch the default remote and forge evidence. The only command that uses the network. | Refs, cache |
 
 `gwp` takes no target and no `--branch`; a single target goes through `gwr`. A checked-out branch
 appears only as its worktree, never as a loose branch. `gw --help` and bare `gw` show help. `gwbd NAME` naming a checked-out branch,
 the current one included, shows it as kept with the protection `checked out in a worktree` and exits 3.
 
-`--list` prints an uncoloured table. `--only VERDICT` always selects assessment
+`--table` prints an uncoloured table. `--only VERDICT` always selects assessment
 and rejects `--yes` before repository preflight. Pruning accepts `--quiet` and
 `--verbose` in every mode, but rejects their combination. There is no pruning
 `--dry-run`; `gwbd --dry-run` remains available. Mutation JSON includes actual
@@ -211,9 +211,20 @@ An unmatched name fails without changing anything.
 
 ## 11. Synchronization and cache
 
-`gw sync` fetches the default remote, runs `git remote set-head <remote> --auto`, and queries the forge
-for every local branch tip, including branches checked out in worktrees. Other remotes are not fetched
-and play no part in verdicts.
+`gw sync` fetches every remote `git fetch --all` would, the default remote first and always, each with
+`git fetch --prune --tags --no-prune-tags`. It then runs `git remote set-head <remote> --auto` for the
+default remote and queries the forge for every local branch tip, including branches checked out in
+worktrees, on eight threads. Only the default remote plays a part in verdicts.
+
+Fetching prunes remote-tracking refs and never local tags, whatever `fetch.pruneTags` says. A tag that
+moved on the remote stays at its local commit: Git refuses to move it, and sync warns, names it and
+prints `git fetch --tags --force <remote>`. Any other ref Git refuses fails that remote's fetch.
+
+Before fetching anything, sync refuses a remote whose `remote.<name>.fetch` writes outside
+`refs/remotes/<name>/`. `git clone --mirror` sets `+refs/*:refs/*`, and with `--prune` that deletes
+every local branch the remote lacks, including one checked out in a linked worktree, at exit 0. It
+also refuses a default remote whose refspecs update nothing in `refs/remotes/<name>/`, as `git clone
+--bare` leaves it. The refusal prints the `git config` command that fixes the refspec.
 
 The cache is one file in the Git common directory, shared by every worktree and replaced atomically. It
 records the default remote's name and URL; if either changes, the cache is ignored and the repository
@@ -226,14 +237,19 @@ the last sync has no forge evidence until the next one; local proof still applie
 | --- | --- | --- | --- | --- |
 | Fetch and queries succeed | advances | advances | 0 | yes |
 | Query finds no request | advances | advances | 0 | none, recorded as "no request" |
-| Fetch fails | unchanged | unchanged | nonzero | previous evidence only |
+| Default remote's fetch fails | unchanged | unchanged | nonzero | previous evidence only |
+| Another remote's fetch fails | advances | advances | nonzero | yes |
+| A remote tag moved | advances | advances | 0, with a warning | yes |
+| `set-head` fails | advances | advances | nonzero | yes |
+| A refspec writes outside `refs/remotes/<name>/` | unchanged | unchanged | nonzero | previous evidence only; nothing fetched |
 | Host is not a known forge | advances | `null` | 0 | none |
 | `gh` or `glab` missing or unauthenticated | advances | unchanged | nonzero | previous evidence only |
 | Query fails for a branch | advances | unchanged | nonzero | none for that branch |
 | No remote | `null` | `null` | 0 | none; head inferred |
-| Several remotes, no `checkout.defaultRemote` | unchanged | unchanged | nonzero | none |
+| Several remotes, no `checkout.defaultRemote` | unchanged | unchanged | nonzero | none; every remote fetched |
 
-The last row's message lists the remotes and prints `git config checkout.defaultRemote <name>`.
+With no remote, sync prints `No remote to sync.` With several remotes and no default, it fetches them all,
+then lists them and prints `git config checkout.defaultRemote <name>`.
 Missing, malformed or mismatched cache entries are never proof.
 
 ## 12. Offline rule
@@ -247,15 +263,15 @@ and `--json` omit the warning.
 
 ## 13. Sync warnings
 
-1. **Never synced:** a repository with a remote whose `refs` time is `null`. Every human-readable
-   command first prints to stderr
-   `Never synced: verdicts use refs from the clone or last fetch and no forge evidence. Run: gw sync`.
-   `-q` suppresses it; the deletion disclosure repeats it.
+1. **Never synced:** a repository with a remote whose `refs` time is `null`. Every command that
+   assesses first prints to stderr
+   `Never synced: verdicts use refs from the clone or last fetch and no forge evidence. Run: gw sync`,
+   with `-q` and with `--json` too, since a caller acting on the verdicts needs to know no sync
+   stands behind them. The deletion disclosure repeats it.
 2. **Stale:** the older applicable sync time is more than 10 minutes old. Exactly 10 minutes is fresh.
    Human-readable commands print one stderr line with the age in minutes, hours or days and suggest
-   `gw sync`.
-3. Neither appears for `gw sync`, for `--json` (which carries `lastSync` instead), or for a repository
-   without a remote. `-q` suppresses both.
+   `gw sync`. `-q` and `--json` (which carries `lastSync`) omit it.
+3. Neither appears for `gw sync` or for a repository without a remote, the local case.
 
 ## 14. JSON
 
@@ -279,8 +295,8 @@ Every `--json` result is an object carrying:
 
 ## 15. Output flags
 
-`--quiet` / `-q` suppresses summaries, progress and every warning and notice, the head line and the
-never-synced line included. It keeps results, errors, the disclosure and the confirmation prompt. `--verbose` / `-v` traces Git and forge subprocesses to stderr and
+`--quiet` / `-q` suppresses summaries, progress and every warning and notice, the head line
+included. It keeps results, errors, the never-synced line, the disclosure and the confirmation prompt. `--verbose` / `-v` traces Git and forge subprocesses to stderr and
 leaves JSON on stdout intact. Passing both is a usage error before anything changes.
 
 | Command | `-q` | `-v` |
@@ -301,7 +317,7 @@ remain usable without repository assessment. Head and sync notices never enter J
    A unique query selects directly. Main remains offered when it is the only
    worktree: no query prompts with that row, and an exact query selects it
    directly, including from a subdirectory. Without a terminal, or with `--json` or
-   `--list`, print all matching metadata and never select a destination.
+   `--table`, print all matching metadata and never select a destination.
 3. The fish and zsh adapters change directory for terminal selections and
    preserve metadata stdout and status. They read commands from `gw --complete`.
    Worktree completions use `gw list --complete`.
@@ -318,6 +334,7 @@ Defined in fish and zsh:
 - `gwp!!` runs `gwp --delete all --yes "$@"`, which deletes `empty` branches, ignored files and branch
   stashes. Its help says so.
 - `gwr!` runs `gwr --delete ignored-files "$@"`.
+- `gws` runs `gw sync "$@"`.
 
 ## 18. Agent plugin
 
@@ -334,9 +351,11 @@ Defined in fish and zsh:
 
 ## 19. Breaking changes
 
-- Removed: `gwl`, `gwh`, `gwm` and `gw move`/`m`/`mv`, list aliases `l`/`ls`, `gw help`, `gw h`, the `gws` script, `gw status`, `gw s`, `gw st`, `gwp --branch`, `--delete-ignored`,
+- Removed: `gwl`, `gwh`, `gwm` and `gw move`/`m`/`mv`, list aliases `l`/`ls`, `gw help`, `gw h`, `gw status`, `gw s`, `gw st`, `gwp --branch`, `--delete-ignored`,
   `--no-fetch`, `--no-forge`, `--force-refresh` and its aliases.
 - `gwr --force` is now `gwr --keep-branch`.
+- `--list` is now `--table`, with no short form.
+- `gws` runs `gw sync`, which fetches, instead of assessing.
 - New verdict `empty`; new `--delete` values; `main` and `master` always protected.
 - `gw list --json` returns an object with a `worktrees` array; every JSON result carries `lastSync` and `head`.
 - No command except `gw sync` fetches.

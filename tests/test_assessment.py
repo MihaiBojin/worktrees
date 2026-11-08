@@ -283,9 +283,9 @@ def snapshot(path: Path) -> dict[str, bytes]:
     "entry,flags",
     [
         ("gw prune", ()),
-        ("gw prune", ("--list",)),
+        ("gw prune", ("--table",)),
         ("gw", ("prune",)),
-        ("gw", ("prune", "--list")),
+        ("gw", ("prune", "--table")),
     ],
 )
 def test_preview_preserves_repository_files_refs_stashes_and_stale_records(
@@ -744,7 +744,7 @@ def test_validated_forge_proof_precedes_unrelated_history(world, network):
 
 
 @pytest.mark.parametrize("entry,prefix", [("gw prune", ()), ("gw", ("prune",))])
-@pytest.mark.parametrize("mode", [(), ("--json",), ("--list",)])
+@pytest.mark.parametrize("mode", [(), ("--json",), ("--table",)])
 def test_prune_metadata_preserves_eligible_rows_and_stale_registration(
     world, network, entry, prefix, mode
 ):
@@ -787,7 +787,7 @@ def test_prune_metadata_preserves_eligible_rows_and_stale_registration(
         assert str(eligible) in result.stdout and str(blocked) in result.stdout
 
 
-@pytest.mark.parametrize("mode", [(), ("--json",), ("--list",)])
+@pytest.mark.parametrize("mode", [(), ("--json",), ("--table",)])
 @pytest.mark.parametrize("permission", [False, True])
 def test_prune_yes_approves_metadata_modes_with_category_permissions(
     world, mode, permission

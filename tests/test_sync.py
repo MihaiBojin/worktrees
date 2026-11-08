@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from conftest import argv
+from conftest import argv, env_for
 from test_branches import cli, local_branch
 
 
@@ -151,11 +151,11 @@ def test_clone_head_becomes_synced_remote_head(world, network, entry):
     [
         ([], None, []),
         (["upstream"], None, ["upstream"]),
-        (["origin", "upstream"], "upstream", ["upstream"]),
-        (["origin", "upstream"], None, []),
+        (["origin", "upstream"], "upstream", ["upstream", "origin"]),
+        (["origin", "upstream"], None, ["origin", "upstream"]),
     ],
 )
-def test_sync_selects_only_the_default_remote(
+def test_sync_fetches_every_remote_default_first(
     world, network, names, configured, expected
 ):
     for name in names:
@@ -186,7 +186,7 @@ def test_sync_queries_every_tip_including_checked_out_branches(world, network):
     assert proc.returncode == 0, proc.stderr
     calls = network.network_calls()
     assert calls[:2] == [
-        ["git", "fetch", "--prune", "origin"],
+        ["git", "fetch", "--prune", "--tags", "--no-prune-tags", "origin"],
         ["git", "remote", "set-head", "origin", "--auto"],
     ]
     queries = [
@@ -235,8 +235,13 @@ def test_failed_sync_components_keep_previous_times(world, network, failure, pro
     proc = cli(world, "sync", env=env)
     assert proc.returncode != 0
     now = json.loads(cache_path(world).read_text())
-    if failure in ("fetch", "head"):
+    if failure == "fetch":
         assert now == cached
+    elif failure == "head":
+        # The fetch went through, so its time is recorded; only HEAD is stale.
+        assert "git remote set-head origin --auto" in proc.stderr
+        assert now["lastSync"]["refs"] != cached["lastSync"]["refs"]
+        assert now["lastSync"]["forge"] != cached["lastSync"]["forge"]
     else:
         assert now["lastSync"]["refs"] != cached["lastSync"]["refs"]
         assert now["lastSync"]["forge"] == cached["lastSync"]["forge"]
@@ -378,7 +383,10 @@ def test_stale_notice_boundary_and_units(
 
 
 @pytest.mark.parametrize("quiet", [False, True])
-def test_never_synced_and_inferred_notices_yield_only_to_quiet(world, network, quiet):
+def test_never_synced_survives_quiet_and_json_and_inferred_yields(
+    world, network, quiet
+):
+    """A caller acting on these verdicts needs to hear that no sync is behind them."""
     origin(world)
     proc = cli(world, *(["-q"] if quiet else []), entry="gw prune", env=network.env())
     assert proc.returncode == 0, proc.stderr
@@ -386,10 +394,11 @@ def test_never_synced_and_inferred_notices_yield_only_to_quiet(world, network, q
         "Never synced: verdicts use refs from the clone or last fetch "
         "and no forge evidence. Run: gw sync"
     )
-    assert (never in proc.stderr) is not quiet
+    assert proc.stderr.count(never) == 1
     assert ("Head: main (inferred)" in proc.stderr) is not quiet
     data = cli(world, "list", "--json", env=network.env())
-    assert "Never synced:" not in data.stderr and "Head:" not in data.stderr
+    json.loads(data.stdout)
+    assert data.stderr.count(never) == 1 and "Head:" not in data.stderr
     proc = cli(world, "sync", *(["-q"] if quiet else []), env=network.env())
     assert "Never synced:" not in proc.stderr
     assert ("Head: main (remote)" in proc.stderr) is not quiet, proc.stderr
@@ -399,6 +408,10 @@ def test_repository_without_remote_reports_only_inferred_head(world, network):
     proc = cli(world, "list", env=network.env())
     assert "Head: main (inferred)" in proc.stderr
     assert "Never synced:" not in proc.stderr and "Last sync:" not in proc.stderr
+    proc = cli(world, "sync", env=network.env())
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout == "No remote to sync.\n"
+    assert not network.network_calls()
 
 
 @pytest.mark.parametrize("provider", ["github", "gitlab"])
@@ -775,7 +788,7 @@ def test_sync_failure_retains_positive_cached_proof(world, network, provider, fa
     if failure == "fetch":
         assert cache_path(world).read_bytes() == old_bytes
         assert network.network_calls()[before:] == [
-            ["git", "fetch", "--prune", "origin"]
+            ["git", "fetch", "--prune", "--tags", "--no-prune-tags", "origin"]
         ]
     else:
         assert now["lastSync"]["refs"] != cached["lastSync"]["refs"]
@@ -921,7 +934,10 @@ def test_successful_cleanup_rechecks_offline(world, network, provider, entry):
                 for call in actual_calls
             )
     assert network.network_calls() == before
-    assert not any("unselected" in argument for call in before for argument in call)
+    # Sync fetches every remote, and asks the forge about the default one only.
+    asked = [call for call in before if call[0] in ("gh", "glab")]
+    assert asked
+    assert not any("unselected" in argument for call in asked for argument in call)
 
 
 @pytest.mark.parametrize(
@@ -1025,3 +1041,178 @@ def test_the_head_line_names_an_unresolved_remote_head(world, network, state):
     proc = cli(world, entry="gw prune", env=network.env())
     assert proc.returncode == 0, proc.stderr
     assert wanted in proc.stderr
+
+
+def _real_origin(world) -> Path:
+    """A local bare remote, and a second clone that pushes to it.
+
+    Fetch is real here, so what Git prints is what sync reads.
+    """
+    remote = world.root / "remote.git"
+    world.git("clone", "--quiet", "--bare", str(world.repo), str(remote))
+    world.git("remote", "add", "origin", remote.as_uri())
+    world.git("fetch", "--quiet", "origin")
+    pusher = world.root / "pusher"
+    world.git("clone", "--quiet", remote.as_uri(), str(pusher), at=world.root)
+    return pusher
+
+
+def _raw(world, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args], cwd=world.repo, capture_output=True, text=True, check=False
+    )
+
+
+@pytest.mark.parametrize("output", ["full", "compact"])
+def test_a_moved_tag_is_a_warning_and_the_sync_is_recorded(world, output):
+    world.git("config", "fetch.output", output)
+    pusher = _real_origin(world)
+    world.git("tag", "v1")
+    world.git("push", "--quiet", "origin", "v1")
+    local_v1 = world.git("rev-parse", "v1")
+    world.commit("moved", at=pusher)
+    world.git("tag", "--force", "v1", at=pusher)
+    world.git("push", "--quiet", "--force", "origin", "main", "v1", at=pusher)
+    # Git alone refuses the tag and exits 1, with the branch already moved.
+    raw = _raw(world, "fetch", "--tags", "origin")
+    assert raw.returncode == 1, raw.stderr
+    assert "would clobber existing tag" in raw.stderr
+    assert world.git("rev-parse", "origin/main") == world.git(
+        "rev-parse", "main", at=pusher
+    )
+    proc = cli(world, "sync", env=env_for(world))
+    assert proc.returncode == 0, proc.stderr
+    assert "origin moved v1; the local tags are unchanged" in proc.stderr
+    assert "git fetch --tags --force origin" in proc.stderr
+    assert world.git("rev-parse", "v1") == local_v1
+    assert json.loads(cache_path(world).read_text())["lastSync"]["refs"]
+
+
+def test_any_other_refused_ref_fails_the_sync(world):
+    pusher = _real_origin(world)
+    # Without the leading +, Git refuses a remote branch that was rewritten.
+    world.git(
+        "config",
+        "--replace-all",
+        "remote.origin.fetch",
+        "refs/heads/*:refs/remotes/origin/*",
+    )
+    assert cli(world, "sync", env=env_for(world)).returncode == 0
+    before = cache_path(world).read_bytes()
+    world.git("commit", "--quiet", "--amend", "-m", "rewritten", at=pusher)
+    world.git("push", "--quiet", "--force", "origin", "main", at=pusher)
+    proc = cli(world, "sync", env=env_for(world))
+    assert proc.returncode == 1, proc.stderr
+    assert "origin could not be fetched; previous sync evidence retained" in (
+        proc.stderr
+    )
+    assert cache_path(world).read_bytes() == before
+
+
+def test_fetch_prune_tags_config_never_deletes_a_local_tag(world):
+    _real_origin(world)
+    world.git("config", "fetch.pruneTags", "true")
+    world.git("tag", "mine")
+    # Git alone deletes every local tag the remote lacks.
+    raw = _raw(world, "fetch", "--prune", "--tags", "origin")
+    assert raw.returncode == 0, raw.stderr
+    assert world.git("tag", "--list", "mine") == ""
+    world.git("tag", "mine")
+    proc = cli(world, "sync", env=env_for(world))
+    assert proc.returncode == 0, proc.stderr
+    assert world.git("tag", "--list", "mine") == "mine"
+
+
+def test_a_mirror_fetch_deletes_local_branches_so_sync_refuses_it(world, network):
+    # Git alone, in a mirror: the prune deletes a branch the remote lacks.
+    remote = world.root / "remote.git"
+    world.git("clone", "--quiet", "--bare", str(world.repo), str(remote))
+    mirror = world.root / "mirror.git"
+    world.git(
+        "clone", "--quiet", "--mirror", remote.as_uri(), str(mirror), at=world.root
+    )
+    world.git("branch", "loose", "main", at=mirror)
+    world.git("fetch", "--quiet", "--prune", "origin", at=mirror)
+    assert world.git("branch", "--list", "loose", at=mirror) == ""
+
+    origin(world)
+    world.git("config", "--replace-all", "remote.origin.fetch", "+refs/*:refs/*")
+    world.git("branch", "loose")
+    proc = cli(world, "sync", env=network.env())
+    assert proc.returncode == 1
+    assert "remote.origin.fetch writes refs/*, outside refs/remotes/origin/" in (
+        proc.stderr
+    )
+    assert (
+        "git config --replace-all remote.origin.fetch "
+        "'+refs/heads/*:refs/remotes/origin/*'" in proc.stderr
+    )
+    assert not network.network_calls()
+    assert world.git("branch", "--list", "loose").strip() == "loose"
+
+
+@pytest.mark.parametrize(
+    "name, specs, wanted",
+    [
+        ("upstream", ["+refs/heads/*:refs/heads/*"], "writes refs/heads/*"),
+        ("upstream", ["+refs/heads/*:refs/remotes/origin/*"], "outside"),
+        ("origin", [], "updates nothing in refs/remotes/origin/"),
+        ("origin", ["refs/heads/main"], "updates nothing in refs/remotes/origin/"),
+    ],
+)
+def test_every_fetched_remote_writes_only_its_own_tracking_refs(
+    world, network, name, specs, wanted
+):
+    origin(world)
+    origin(world, name="upstream")
+    world.git("config", "checkout.defaultRemote", "origin")
+    world.git("config", "--unset-all", f"remote.{name}.fetch")
+    for spec in specs:
+        world.git("config", "--add", f"remote.{name}.fetch", spec)
+    proc = cli(world, "sync", env=network.env())
+    assert proc.returncode == 1
+    assert f"remote.{name}.fetch" in proc.stderr and wanted in proc.stderr
+    assert not network.network_calls()
+
+
+def test_negative_refspecs_and_skipped_remotes_are_not_refused(world, network):
+    origin(world)
+    origin(world, name="archive")
+    world.git("config", "checkout.defaultRemote", "origin")
+    world.git("config", "--add", "remote.origin.fetch", "^refs/heads/wip/*")
+    world.git("config", "remote.archive.skipFetchAll", "true")
+    world.git("config", "--replace-all", "remote.archive.fetch", "+refs/*:refs/*")
+    proc = cli(world, "sync", env=network.env())
+    assert proc.returncode == 0, proc.stderr
+    fetches = [call[-1] for call in network.network_calls() if call[1:2] == ["fetch"]]
+    assert fetches == ["origin"]
+
+
+def test_the_default_remote_is_fetched_even_when_it_skips_fetch_all(world, network):
+    origin(world)
+    world.git("config", "remote.origin.skipFetchAll", "true")
+    assert cli(world, "sync", env=network.env()).returncode == 0
+    fetches = [call[-1] for call in network.network_calls() if call[1:2] == ["fetch"]]
+    assert fetches == ["origin"]
+
+
+def test_a_failed_other_remote_still_records_the_default_remotes_sync(world, network):
+    origin(world)
+    origin(world, name="upstream")
+    world.git("config", "checkout.defaultRemote", "origin")
+    network.intercept(
+        "    if command[:1] == ['fetch'] and command[-1] == 'upstream':\n"
+        "        sys.exit(128)\n"
+    )
+    proc = cli(world, "sync", env=network.env())
+    assert proc.returncode == 1
+    assert "upstream could not be fetched" in proc.stderr
+    assert "previous sync evidence retained" not in proc.stderr
+    assert json.loads(cache_path(world).read_text())["lastSync"]["refs"]
+
+
+def test_progress_cuts_every_row_to_fit_the_terminal() -> None:
+    from worktrees import progress
+
+    rows = progress.frame(["a" * 50, "short"], "*", 20).split("\n")
+    assert rows == ["* " + "a" * 17, "* short"]

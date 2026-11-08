@@ -1,4 +1,4 @@
-#compdef gw worktrees gwa gwbc gbwp gwbs gwl gwp gwp! gwpa gwpa! gwr gwr! gwrot
+#compdef gw worktrees gwa gwbc gbwp gwbs gwl gwp gwp! gwpa gwpa! gwr gwr! gwrot gws
 
 # Flags as `gw <command> --help` lists them, and candidates from the CLI.
 # A shortcut completes as the gw command it runs: gwa as `gw add`.
@@ -31,9 +31,9 @@ __worktrees_version() {
 
 __worktrees_prune() {
     _arguments -s \
-        '--list[assess without prompting; uncoloured table]' \
+        '--table[assess without prompting; uncoloured table]' \
         '*--only[filter assessment; rejects --yes]:verdict:(remove empty keep unknown)' \
-        '(-y --yes)'{-y,--yes}'[approve removal, including with --json or --list]' \
+        '(-y --yes)'{-y,--yes}'[approve removal, including with --json or --table]' \
         '*--delete[permit deletion categories]:value:(empty ignored-files stashes all)' \
         '--json[assess as JSON; --yes approves removal]' \
         '(-q --quiet)'{-q,--quiet}'[verdicts only]' \
@@ -53,7 +53,7 @@ __worktrees_add() {
 
 __worktrees_list() {
     _arguments -s \
-        '(-l --list)'{-l,--list}'[print them all and pick none]' \
+        '--table[print them all and pick none]' \
         '--json[the result as data]' \
         '--explain[print every git command and exit]' \
         '(-h --help)'{-h,--help}'[show the help and exit]' \
@@ -134,6 +134,7 @@ _gw() {
         gwr) fixed=(remove) ;;
         'gwr!') fixed=(remove --delete ignored-files) ;;
         gwrot) fixed=(rotate) ;;
+        gws) fixed=(sync) ;;
     esac
     if (( $#fixed )); then
         words=(gw $fixed "${(@)words[2,-1]}")

@@ -2,11 +2,11 @@
 
 Bare `gw` and `gw --help` print the command guide, outside a repository too.
 `gw list` selects a destination on terminal input; nonterminal input prints
-matching worktree metadata. `--json` and `--list` always print metadata.
+matching worktree metadata. `--json` and `--table` always print metadata.
 `gw WORD` with a word that is not a command exits 2 and suggests
 `gw list WORD`. `gw prune` assesses worktrees and asks before removal on a
-terminal. Nonterminal input, `--json` and `--list` assess without mutation;
-`--yes` approves removal in any mode. `--list` prints an uncoloured table.
+terminal. Nonterminal input, `--json` and `--table` assess without mutation;
+`--yes` approves removal in any mode. `--table` prints an uncoloured table.
 `--only` filters assessment rows and rejects `--yes`. `gw remove` selects one.
 `gw branch status` assesses loose local branches and `gw branch prune`
 deletes selected eligible refs. A checked-out branch appears only as a
@@ -130,12 +130,20 @@ failed and per-target outcomes in one object with head and sync state.
 
 Only `gw sync` invokes `git fetch`, `git remote set-head`, `gh` or `glab`.
 The default remote is `checkout.defaultRemote` if configured, otherwise the
-only remote. Other remotes are outside assessment. Several remotes without
-a default make sync refuse, list the remotes and print
+only remote. Sync fetches every remote `git fetch --all` would, and the
+default one always, with `--prune --tags --no-prune-tags`. Other remotes are
+outside assessment. Several remotes without a default are all fetched, then
+sync fails, lists the remotes and prints
 `git config checkout.defaultRemote <name>`.
 
-Sync fetches the selected remote with pruning, updates its remote HEAD,
-then queries the forge for every local branch tip. The cache is
+Sync refuses, before fetching anything, a remote whose `remote.<name>.fetch`
+writes outside `refs/remotes/<name>/`, and a default remote whose refspecs
+update nothing there. A moved remote tag is a warning and the local tag
+stays; any other ref Git refuses fails that remote. A failed fetch of
+another remote, or a failed `set-head`, still records the sync and exits 1.
+
+After fetching, sync updates the default remote's HEAD, then queries the
+forge for every local branch tip on eight threads. The cache is
 `git-worktrees-sync.json` in the Git common directory, shared by worktrees
 and replaced atomically. Remote name and URL identify it. A mismatch makes
 the cache unusable and the repository never synced. Forge entries are keyed
@@ -145,20 +153,24 @@ by branch and source SHA; moved or new branches need sync for forge proof.
 | --- | --- | --- | --- | --- |
 | Fetch and queries succeed | advances | advances | 0 | matching requests |
 | Queries find no request | advances | advances | 0 | records no request |
-| Fetch fails | unchanged | unchanged | failure | previous evidence only |
-| Remote HEAD update fails | unchanged | unchanged | failure | previous evidence only |
+| Default remote's fetch fails | unchanged | unchanged | failure | previous evidence only |
+| Another remote's fetch fails | advances | advances | failure | matching requests |
+| A remote tag moved | advances | advances | 0, warning | matching requests |
+| Remote HEAD update fails | advances | advances | failure | matching requests |
+| A refspec writes outside `refs/remotes/<name>/` | unchanged | unchanged | failure, nothing fetched | previous evidence only |
 | Unknown forge host | advances | null | 0 | none |
 | Missing or unauthenticated `gh`/`glab` | advances | unchanged | failure | previous evidence only |
 | One branch query fails | advances | unchanged | failure | none for that branch |
 | No remote | null | null | 0, inferred head | none |
-| Multiple remotes without default | unchanged | unchanged | failure | none |
+| Multiple remotes without default | unchanged | unchanged | failure, every remote fetched | none |
 
-A remote repository with no refs sync time prints a never-synced warning.
-The older non-null sync time is stale after 10 minutes, with exactly
-10 minutes still fresh. Human output prints age and suggests `gw sync`.
-Quiet suppresses every warning, the never-synced and inferred head notices
-included; a removal's disclosure still repeats them. JSON output and
-repositories without remotes omit these warnings. `gw sync` and `gw version`
+A remote repository with no refs sync time prints a never-synced warning on
+stderr, under `-q` and `--json` too, so a caller acting on the verdicts hears
+that no sync stands behind them. The older non-null sync time is stale after
+10 minutes, with exactly 10 minutes still fresh. Human output prints age and
+suggests `gw sync`. Quiet and JSON output suppress the stale warning and the
+inferred head notice; a removal's disclosure still repeats them. Repositories
+without remotes, the local case, have neither warning. `gw sync` and `gw version`
 print the head line, and a head that does not resolve is named in it. JSON provides the state instead. Staleness never causes
 a network call.
 

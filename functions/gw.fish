@@ -8,7 +8,7 @@ function gw --wraps gw --description 'cd to where gw list, add and remove land y
     end
     for arg in $argv
         test "$arg" != --; or break
-        if contains -- "$arg" --json --list -l --help -h --complete --explain; set lands 0; end
+        if contains -- "$arg" --json --table --help -h --complete --explain; set lands 0; end
     end
     if test $lands -eq 0
         command gw $argv

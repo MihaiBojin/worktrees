@@ -38,7 +38,10 @@ The plugin needs `jq` too. It installs neither tool.
 The skill reads `gw prune --json` and `gw branch status --json`. These
 commands stay offline. If remote state is never synced or older than 10 minutes, it asks
 whether to run `gw sync`; it runs sync only on your answer. A previous
-approval or refusal remains in force for that cleanup.
+approval or refusal remains in force for that cleanup. The skill and
+`/prune` run `gw sync`, `gw list --json`, `gw list --table`,
+`gw prune --json`, `gw branch status --json`, `jq` and `git remote` without
+a permission prompt.
 
 It lists eligible worktrees and loose branches, with proofs, and shows empty
 and stash-blocked rows separately. Ignored-file blockers remain visible.

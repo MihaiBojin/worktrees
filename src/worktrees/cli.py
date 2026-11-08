@@ -61,14 +61,17 @@ def run_sync(args: argparse.Namespace) -> int:
 
     options.verbose = args.verbose
     with progress.running(not args.quiet and not args.verbose):
-        code, messages = sync.run()
-    for message in messages:
+        code, failures, warnings = sync.run()
+    for message in failures:
         _err(render.fail(message))
+    if not args.quiet:
+        for message in warnings:
+            _err(render.warn(message))
     if args.json:
         print(_json({}))
     elif not args.quiet:
         if not code:
-            print("Sync complete.")
+            print("Sync complete." if R.remotes().lines else "No remote to sync.")
         _err(render.note(sync.head_line(R.head())))
     return code
 
@@ -419,10 +422,10 @@ def run_prune(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
-    if args.list:
+    if args.table:
         render.out.on = False
     if args.only or (
-        not args.yes and (args.json or args.list or not sys.stdin.isatty())
+        not args.yes and (args.json or args.table or not sys.stdin.isatty())
     ):
         return run_preview(args)
 
@@ -707,11 +710,9 @@ def _add_list_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "query", nargs="?", default="", metavar="QUERY", help="narrow the list"
     )
-    p.add_argument(
-        "-l", "--list", action="store_true", help="print them all and pick none"
-    )
+    p.add_argument("--table", action="store_true", help="print them all and pick none")
     # For the shell completions, which must not hold a candidate of their own.
-    # Hidden because a person has --list, which is the same answer formatted
+    # Hidden because a person has --table, which is the same answer formatted
     # for eyes.
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
     _add_cd_flags(p)
@@ -826,7 +827,7 @@ def run_list(args: argparse.Namespace) -> int:
         )
         return 0
 
-    if args.list or not sys.stdin.isatty():
+    if args.table or not sys.stdin.isatty():
         if not found:
             _err(render.fail("no worktree matches"))
             return 1
@@ -861,7 +862,7 @@ def run_list(args: argparse.Namespace) -> int:
         return 0
 
     # Which repository this is, above the list, so nobody has to run
-    # `git remote -v` to find out. Only where the picker is drawn: --list and
+    # `git remote -v` to find out. Only where the picker is drawn: --table and
     # --json are what a script reads, and a query that narrows to one takes it
     # without showing anything.
     if not (args.query and len(offered) == 1):
@@ -1137,13 +1138,15 @@ def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     add_status_flags(p)
     p.description = _PRUNE_HELP
     p.add_argument(
-        "--list", action="store_true", help="assess without prompting; uncoloured table"
+        "--table",
+        action="store_true",
+        help="assess without prompting; uncoloured table",
     )
     p.add_argument(
         "-y",
         "--yes",
         action="store_true",
-        help="approve removal, including with --json or --list",
+        help="approve removal, including with --json or --table",
     )
 
 
@@ -1261,7 +1264,10 @@ _BRANCH_COMMANDS: dict[str, _Command] = {
 
 _COMMANDS: dict[str, _Command] = {
     "sync": _Command(
-        run_sync, _add_sync_flags, "refresh remote refs and forge evidence"
+        run_sync,
+        _add_sync_flags,
+        "refresh remote refs and forge evidence",
+        shortcuts={"gws": ""},
     ),
     "branch": _Command(
         run_branch, _add_branch_flags, "create, assess and delete local branches"
@@ -1354,7 +1360,7 @@ _CANONICAL = _canonical()
 
 _PRUNE_HELP = (
     "Assess worktrees; terminal input asks before removing eligible ones. "
-    "Nonterminal input, --json and --list assess without removing; "
+    "Nonterminal input, --json and --table assess without removing; "
     "--yes approves removal. "
     "--only always assesses and cannot be combined with --yes."
 )
@@ -1492,11 +1498,13 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
 
             options.verbose = getattr(args, "verbose", False)
             R.require_offline_git()
-            # -q hides every warning, the never-synced and inferred-head
-            # lines included; a removal's disclosure still repeats them.
-            quiet = getattr(args, "quiet", False)
-            if not getattr(args, "json", False) and not quiet and R.toplevel().value:
-                for notice in sync.notices():
+            # The never-synced line is on stderr under -q and --json too: a
+            # caller acting on these verdicts needs to know no sync stands
+            # behind them. -q and --json hide the rest.
+            hushed = getattr(args, "json", False) or getattr(args, "quiet", False)
+            if R.toplevel().value:
+                shown = sync.freshness(quiet=True) if hushed else sync.notices()
+                for notice in shown:
                     _err(render.note(notice))
         code = run(args)
         merged = sys.modules.get("worktrees.merged")

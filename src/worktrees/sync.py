@@ -78,35 +78,43 @@ def envelope(repo: str | os.PathLike[str] | None = None) -> dict:
     return {"lastSync": read(repo)["lastSync"], "head": R.head(repo).data()}
 
 
+def freshness(
+    quiet: bool = False, repo: str | os.PathLike[str] | None = None
+) -> list[str]:
+    """Never synced, or synced too long ago; quiet keeps only never synced.
+
+    A repository without a remote is the local case and has neither.
+    """
+    if not R.remotes(repo=repo).lines:
+        return []
+    times = read(repo)["lastSync"]
+    if not times["refs"]:
+        return [NEVER]
+    if quiet:
+        return []
+    oldest = min(
+        datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        for value in times.values()
+        if value
+    )
+    age = max(0, time.time() - oldest)
+    if age <= _FRESH:
+        return []
+    amount, unit = (
+        (int(age // 86400), "day")
+        if age >= 86400
+        else (int(age // 3600), "hour")
+        if age >= 3600
+        else (int(age // 60), "minute")
+    )
+    return [f"Last sync: {amount} {unit}{'s' if amount != 1 else ''} ago. Run: gw sync"]
+
+
 def notices(
     quiet: bool = False, repo: str | os.PathLike[str] | None = None
 ) -> list[str]:
     """The local head source and the age of the available remote evidence."""
-    lines = []
-    cached = read(repo)
-    times = cached["lastSync"]
-    if R.remotes(repo=repo).lines:
-        if not times["refs"]:
-            lines.append(NEVER)
-        elif not quiet:
-            applicable = [value for value in times.values() if value]
-            oldest = min(
-                datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-                for value in applicable
-            )
-            age = max(0, time.time() - oldest)
-            if age > _FRESH:
-                amount, unit = (
-                    (int(age // 86400), "day")
-                    if age >= 86400
-                    else (int(age // 3600), "hour")
-                    if age >= 3600
-                    else (int(age // 60), "minute")
-                )
-                lines.append(
-                    f"Last sync: {amount} {unit}{'s' if amount != 1 else ''} ago. "
-                    "Run: gw sync"
-                )
+    lines = freshness(quiet, repo)
     head = R.head(repo)
     if head.source == "inferred" or not quiet:
         lines.append(head_line(head))
@@ -150,23 +158,107 @@ def _write(cached: dict, repo: str | os.PathLike[str] | None) -> None:
             temporary.unlink(missing_ok=True)
 
 
-def run(repo: str | os.PathLike[str] | None = None) -> tuple[int, list[str]]:
-    """Fetch the default remote and replace the shared evidence file atomically."""
+# Git refuses to move a tag that already exists here, exits 1, and has
+# updated everything else by then. Compact output writes `*` after the arrow,
+# so the tag's name is the one before it.
+_MOVED_TAG = re.compile(
+    r" ! \[rejected\] +(\S+) +-> \S+ +\(would clobber existing tag\)$"
+)
+
+
+def _fetch(remote: str, repo: str | os.PathLike[str] | None) -> tuple[bool, list[str]]:
+    """Whether the fetch went through, and the tags it left where they were.
+
+    A moved tag is the one refusal that still counts as fetched; any other
+    refused ref, or an unreachable remote, is a failed fetch.
+    """
+    result = R.fetch(remote, repo=repo)
+    if not result:
+        refused = [line for line in result.err.splitlines() if line.startswith(" ! ")]
+        tags = [m[1] for line in refused if (m := _MOVED_TAG.match(line))]
+        return result.code == 1 and bool(tags) and len(tags) == len(refused), tags
+    return True, []
+
+
+def _refspec_refusal(
+    names: list[str], default: str, repo: str | os.PathLike[str] | None
+) -> str:
+    """Why a remote's configured fetch is unsafe to run, or empty.
+
+    `git clone --mirror` fetches `+refs/*:refs/*`. With --prune that deletes
+    every local branch the remote lacks, a linked worktree's included, at
+    exit 0. A remote may write only its own remote-tracking refs.
+    """
+    for name in names:
+        own = f"refs/remotes/{name}/"
+        fix = f"git config --replace-all remote.{name}.fetch '+refs/heads/*:{own}*'"
+        targets = [
+            spec.removeprefix("+").partition(":")[2]
+            for spec in R.config_all(f"remote.{name}.fetch", repo=repo).lines
+            if not spec.startswith("^")
+        ]
+        for target in targets:
+            if target and not target.startswith(own):
+                return f"remote.{name}.fetch writes {target}, outside {own}. Run: {fix}"
+        if name == default and not any(targets):
+            return f"remote.{name}.fetch updates nothing in {own}. Run: {fix}"
+    return ""
+
+
+def run(
+    repo: str | os.PathLike[str] | None = None,
+) -> tuple[int, list[str], list[str]]:
+    """Fetch every remote, then record the default remote's head and evidence.
+
+    Returns the exit code, the failures and the warnings.
+    """
     names = R.remotes(repo=repo).lines
     remote = R.remote(repo)
     if not names:
-        return 0, []
+        return 0, [], []
+    # The remotes `git fetch --all` reaches, the default one first and always.
+    fetched = ([remote] if remote else []) + [
+        name
+        for name in names
+        if name != remote
+        and R.config_bool(f"remote.{name}.skipFetchAll", repo=repo).value != "true"
+    ]
+    refusal = _refspec_refusal(fetched, remote, repo)
+    if refusal:
+        return 1, [refusal], []
+    previous = read(repo)
+    failures: list[str] = []
+    warnings: list[str] = []
+    default_fetched = True
+    for name in fetched:
+        progress.say(f"fetching {name}")
+        succeeded, tags = _fetch(name, repo)
+        if tags:
+            warnings.append(
+                f"{name} moved {', '.join(tags)}; the local tags are unchanged. "
+                f"Run: git fetch --tags --force {name}"
+            )
+        if not succeeded and name == remote:
+            default_fetched = False
+            failures.append(
+                f"{name} could not be fetched; previous sync evidence retained"
+            )
+        elif not succeeded:
+            failures.append(f"{name} could not be fetched")
     if not remote:
-        return 1, [
+        failures.append(
             f"No default remote: {', '.join(names)}. "
             "Run: git config checkout.defaultRemote <name>"
-        ]
-    previous = read(repo)
-    progress.say(f"fetching {remote}")
-    if not R.fetch(remote, repo=repo):
-        return 1, [f"{remote} could not be fetched; previous sync evidence retained"]
+        )
+        return 1, failures, warnings
+    if not default_fetched:
+        return 1, failures, warnings
+    progress.say(f"{remote}: reading its default branch")
     if not R.set_head_auto(remote, repo=repo):
-        return 1, [f"{remote}/HEAD could not be updated. Run: gw sync"]
+        failures.append(
+            f"{remote}/HEAD could not be updated. Run: git remote set-head "
+            f"{remote} --auto"
+        )
     now = (
         datetime.fromtimestamp(time.time(), UTC)
         .isoformat(timespec="seconds")
@@ -181,26 +273,32 @@ def run(repo: str | os.PathLike[str] | None = None) -> tuple[int, list[str]]:
         "branches": {},
     }
     provider = branch_forge.provider(remote, repo)
-    messages = []
-    code = 0
     if provider is None:
         cached["lastSync"]["forge"] = None
     elif not branch_forge.available(provider[0]) or not forge.authenticated(
         provider[0], provider[1].split("/", 1)[0], repo
     ):
         cached["branches"] = previous["branches"]
-        messages.append(
+        failures.append(
             f"{provider[0]} is unavailable or unauthenticated; "
             "previous forge evidence retained"
         )
-        code = 1
     else:
-        tips = R.local_tips(repo=repo).lines
+        tips = [line.split("\0") for line in R.local_tips(repo=repo).lines]
+        progress.say(f"reading forge evidence for {len(tips)} branches")
+
+        def query(numbered: tuple[int, list[str]]):
+            number, (branch, sha) = numbered
+            progress.say(f"{branch}: reading forge evidence ({number} of {len(tips)})")
+            return branch, sha, branch_forge.fetch_request(branch, remote, repo)
+
+        # Imported here, since every command reads this module for its notices.
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            answers = list(pool.map(query, enumerate(tips, 1)))
         failed = []
-        for line in tips:
-            branch, sha = line.split("\0")
-            progress.say(f"{branch}: reading forge evidence")
-            succeeded, request = branch_forge.fetch_request(branch, remote, repo)
+        for branch, sha, (succeeded, request) in answers:
             if succeeded:
                 cached["branches"][branch] = {
                     "sha": sha,
@@ -209,8 +307,7 @@ def run(repo: str | os.PathLike[str] | None = None) -> tuple[int, list[str]]:
             else:
                 failed.append(branch)
         if failed:
-            code = 1
-            messages.append(
+            failures.append(
                 f"Forge queries failed for: {', '.join(failed)}; "
                 "forge sync time unchanged"
             )
@@ -219,5 +316,5 @@ def run(repo: str | os.PathLike[str] | None = None) -> tuple[int, list[str]]:
     try:
         _write(cached, repo)
     except OSError as exc:
-        return 1, [f"cannot save sync evidence: {exc}"]
-    return code, messages
+        return 1, [*failures, f"cannot save sync evidence: {exc}"], warnings
+    return (1 if failures else 0), failures, warnings

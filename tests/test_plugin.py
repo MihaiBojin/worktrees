@@ -9,6 +9,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
+import pytest
 from conftest import argv, env_for
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,18 +52,20 @@ def test_the_portable_manifest_is_the_claude_one_rewritten() -> None:
     assert text == json.dumps(wanted, indent=2, ensure_ascii=False) + "\n"
 
 
-def test_the_prune_command_preapproves_reads_and_sync_alone() -> None:
+@pytest.mark.parametrize("path", [PLUGIN / "commands" / "prune.md", SKILL])
+def test_the_plugin_preapproves_reads_and_sync_alone(path: Path) -> None:
     """`gw prune --yes` removes worktrees, so no pattern may cover it; each
     removal goes through a command the user is asked to approve."""
-    text = (PLUGIN / "commands" / "prune.md").read_text()
-    tools = re.findall(r"^  - (.+)$", text.split("---")[1], re.M)
+    tools = re.findall(r"^  - (.+)$", path.read_text().split("---")[1], re.M)
     prefixes = [m.group(1) for t in tools if (m := re.fullmatch(r"Bash\((.+):\*\)", t))]
     for removal in ("gw prune --yes", "gw p --yes"):
         assert not [p for p in prefixes if removal.startswith(p)], removal
     assert {
         "Bash(gw sync)",
         "Bash(gw list --json)",
+        "Bash(gw list --table)",
         "Bash(gw prune --json)",
+        "Bash(jq:*)",
     } <= set(tools)
 
 

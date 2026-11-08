@@ -31,7 +31,8 @@ use approved values with [gw branch prune](branch-prune.md).
 `protections` and the shell-quoted `undo` command. No table parsing is needed.
 `request` is null when no usable cached request exists.
 
-`-q` suppresses summaries and stale warnings. Inferred-head and never-synced
-notices remain; JSON carries those states instead. `-v` is unsupported.
+`-q` suppresses summaries, stale warnings and the head line. The never-synced
+notice stays on stderr under `-q` and `--json`; JSON also carries it as a null
+`lastSync.refs`. `-v` is unsupported.
 Missing names are usage errors. Unknown evidence does not become permission
 to delete.
