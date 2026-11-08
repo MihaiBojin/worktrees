@@ -16,7 +16,8 @@ under `--yes`, and removing the worktree you stand in still needs a second
 answer at a terminal.
 `gw branch status` assesses loose local branches and `gw branch prune`
 deletes selected eligible refs. A checked-out branch appears only as a
-worktree. Each shell plugin shortcut, such as `gwp!`, runs one of these with
+worktree. `gw ci-checks` reads one pull request's checks from the forge and writes
+nothing. Each shell plugin shortcut, such as `gwp!`, runs one of these with
 fixed words, and `gw --help` lists them under the command they run.
 `gw fast-forward` brings the current branch level with the head ref, and
 [its page](commands/fast-forward.md) gives the order of its checks and its
@@ -238,6 +239,14 @@ Removal JSON reports actual outcomes. `gw prune` has `removed`, `failed` and
 outcome records `worktree_removed`, `branch_removed`, `retained`, `dropped`,
 `skipped`, `failed` and `destination`, along with its path and branch. `gw
 branch prune` reports `removed`, `failed`, `verdicts` and `outcomes`.
+
+`gw ci-checks --json` is the one JSON result the forge answers directly. `pr` has
+`number`, `url`, `state`, `draft`, `headSha`, `headRef`, `baseRef`,
+`repository`, `source`, `mergeable` and `mergeStateStatus`. `checksState`
+is `passed`, `failed`, `pending`, `blocked` or `unknown`, and `stale: true`
+forces `unknown`. Each of `checks` has `name`, `workflow`, `state`, `bucket`
+and `link`. `pipeline` is GitLab's head pipeline with its `association`:
+`head`, `merge-result` or `stale`. It is null on GitHub.
 
 Stdout carries results and destinations; stderr carries diagnostics, prompts
 and disclosures. JSON and list output never contain colour. Colour is decided

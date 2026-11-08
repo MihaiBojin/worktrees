@@ -66,6 +66,11 @@ complete -c gw -n '__worktrees_on fast-forward ff' -s v -l verbose -d 'print eve
 complete -c gw -n '__worktrees_on fast-forward ff' -l explain -d 'print every git command and exit'
 complete -c gw -n '__worktrees_on fast-forward ff' -s h -l help -d 'show the help and exit'
 
+complete -c gw -n '__worktrees_on ci-checks ci' -l json -d 'the snapshot as data'
+complete -c gw -n '__worktrees_on ci-checks ci' -l wait -d 'read again until no check is running'
+complete -c gw -n '__worktrees_on ci-checks ci' -s v -l verbose -d 'print every forge command'
+complete -c gw -n '__worktrees_on ci-checks ci' -s h -l help -d 'show the help and exit'
+
 complete -c gw -n '__worktrees_on branch; and test (count (commandline -opc)) -eq 2' -a '(command gw branch --complete)'
 complete -c gw -n '__worktrees_on branch; and test (count (commandline -opc)) -eq 2' -s h -l help -d 'show the help and exit'
 

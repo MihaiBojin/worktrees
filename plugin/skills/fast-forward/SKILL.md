@@ -4,8 +4,9 @@ description: >
   Use when the user asks to bring a branch up to date with main or the head
   branch, rebase it onto the head branch, fast-forward it, move on from a
   merged branch, or finish a rebase that gw fast-forward stopped at.
+argument-hint: "[NAME] [--from BRANCH|SHA]"
 allowed-tools:
-  - Bash(gw fast-forward --json)
+  - Bash(gw fast-forward:*)
   - Bash(git status:*)
   - Bash(git diff:*)
   - Bash(git log:*)
@@ -14,6 +15,7 @@ allowed-tools:
   - Bash(GIT_EDITOR=true git rebase --continue)
   - Read
   - Edit
+  - AskUserQuestion
 ---
 
 # Bring a branch level with the head ref
@@ -31,6 +33,11 @@ shell has no plugin functions, so call the binary.
 ```sh
 gw fast-forward --json
 ```
+
+In Codex, `$ARGUMENTS` means the arguments supplied with the skill. They
+pass through, quoted for the shell: `gw fast-forward 'NAME' --from 'REF'
+--json` names the branch a finished one moves to and where it starts. The
+CLI refuses both on a branch that is not finished.
 
 Read stdout, stderr and the exit status.
 

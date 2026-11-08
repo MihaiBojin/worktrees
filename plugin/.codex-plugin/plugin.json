@@ -1,7 +1,7 @@
 {
   "name": "worktrees",
   "version": "0.8.0",
-  "description": "Rebase a branch onto the head branch through its conflicts, and remove the git worktrees and branches the worktrees CLI proves finished",
+  "description": "Start branches, read CI, rebase onto the head branch, describe and merge pull requests, and prune finished worktrees through the worktrees CLI",
   "author": {
     "name": "Mihai Bojin",
     "url": "https://github.com/MihaiBojin"
@@ -9,27 +9,38 @@
   "homepage": "https://github.com/MihaiBojin/worktrees/tree/main/plugin#readme",
   "repository": "https://github.com/MihaiBojin/worktrees",
   "license": "Apache-2.0",
-  "keywords": ["git", "worktree", "branch", "prune", "squash-merge", "rebase"],
+  "keywords": [
+    "git",
+    "worktree",
+    "branch",
+    "pull-request",
+    "ci",
+    "merge",
+    "rebase",
+    "prune",
+    "squash-merge"
+  ],
   "skills": "./skills/",
-  "commands": "./commands/",
   "interface": {
     "displayName": "worktrees",
-    "shortDescription": "Rebase onto the head branch; remove finished worktrees",
-    "longDescription": "Ask the worktrees CLI which linked worktrees and local branches are finished, show the ones it proved with the proof it found, and remove only those you choose, through the CLI. A squash merge leaves branches behind that git branch -d calls unmerged; the CLI proves them merged by ancestry, by content or by the forge's merged request, and prints the command that puts each one back. It also rebases the branch you are on onto the head branch, resolving each conflict the rebase stops at, and moves a merged branch's checkout to a new branch.",
+    "shortDescription": "Branches, CI, rebases, pull requests and cleanup, through one CLI",
+    "longDescription": "Start a branch from the freshly fetched head branch, read a pull request's checks as compact JSON, keep its title and description true to its diff, and merge it once CI is green, reporting what was fixed on the way. Rebase the branch you are on onto the head branch, resolving each conflict the rebase stops at, and remove the worktrees and branches the worktrees CLI proves finished, after asking.",
     "developerName": "Mihai Bojin",
     "category": "Developer Tools",
     "capabilities": [
-      "List the worktrees and branches proved finished, with the proof",
-      "Remove only the ones you choose, through the CLI",
-      "Print the command that restores each removed branch",
-      "Rebase this branch onto the head branch and resolve its conflicts"
+      "Read a pull request's CI checks as JSON, and wait for them",
+      "Check and correct a pull request's title and description",
+      "Fix failing checks, then merge with the repository's strategy",
+      "Start branches from the freshly fetched head branch",
+      "Rebase this branch onto the head branch and resolve its conflicts",
+      "Remove only the finished worktrees and branches you choose"
     ],
     "websiteURL": "https://github.com/MihaiBojin/worktrees/tree/main/plugin#readme",
     "defaultPrompt": [
-      "Clean up the finished worktrees and branches here.",
-      "Which of my branches are already merged?",
-      "Prune the squash-merged branches in this repository.",
-      "Bring this branch up to date with main."
+      "Did CI pass on this pull request?",
+      "Merge pull request 42 once it is green.",
+      "Bring this branch up to date with main.",
+      "Clean up the finished worktrees and branches here."
     ]
   }
 }

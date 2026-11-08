@@ -13,11 +13,12 @@ gw remove fix-parser    # remove one worktree and its finished branch
 ```
 
 `gw sync` fetches every remote and asks the forge about each local branch.
-Every other command but `gw version`, help and completion runs it first once
-the last sync is a minute old, then works from local refs and that sync's
-evidence. With `WORKTREES_OFFLINE` set, nothing touches the network. Run commands inside the repository you want
-assessed; other repositories under the same worktree root are outside their
-scope.
+Every other command but `gw version`, `gw ci-checks`, help and completion
+runs it first once the last sync is a minute old, then works from local refs
+and that sync's evidence. `gw ci-checks` reads a pull request's checks from
+the forge each time it runs. With `WORKTREES_OFFLINE` set, nothing touches
+the network. Run commands inside the repository you want assessed; other
+repositories under the same worktree root are outside their scope.
 
 | Command | Shortcut | What it does |
 | --- | --- | --- |
@@ -31,6 +32,7 @@ scope.
 | `gw add NAME [BASE]` | `gwa` | create or enter a worktree |
 | `gw branch create NAME` | `gwbc` | start a branch from the assessed head ref |
 | `gw fast-forward [NAME]` | `gwff` | rebase this branch onto the head ref, or move a merged one to a new branch |
+| `gw ci-checks [NUMBER]` | | read a pull request's checks from GitHub or GitLab; `gw ci` for short |
 | `gw version` | | print the installed version |
 
 `gw` is the one command installed on `$PATH`, and `worktrees` is its long
@@ -416,6 +418,44 @@ the checkout moves to a new branch from the head ref or `--from`, named
 0 and changes nothing. [Fast-forward](docs/commands/fast-forward.md) gives the
 order of the checks, the JSON and the conflict loop.
 
+## Pull request checks
+
+`gw ci-checks`, or `gw ci` for short, reads one pull request, or GitLab merge
+request, and its checks: the current branch's, or the one `NUMBER` names. It
+writes nothing, not even the sync cache, and never syncs first.
+`WORKTREES_OFFLINE` makes it refuse at exit 3, as `gw sync` does.
+
+```console
+gw ci-checks                     # the table, failures first
+gw ci-checks 42 --json           # the snapshot as data
+gw ci-checks 42 --wait --json    # read until no check is running
+```
+
+`checksState` is `passed`, `failed`, `pending`, `blocked` or `unknown`.
+`unknown` means no check reported, or `stale`: the review moved while it was
+read, so read again. Each check carries `name`, `workflow`, the forge's own
+`state`, a `bucket` of `pass`, `fail`, `cancel`, `pending`, `skipping`,
+`blocked` or `unknown`, and a `link` to its log. `pr` holds the review's
+number, URL, state, draft flag, head and base, and its mergeability as the
+forge reports it. `passed` describes the checks, not whether the forge will
+merge: a required review still blocks it.
+
+GitHub answers in one `gh pr view`, so the review and its checks describe
+the same head; a re-run replaces the run it repeats. GitLab reads the merge
+request's head pipeline from the project that ran it, and reads the merge
+request again afterwards. A pipeline for an older head is stale, unless it is
+a merged-result pipeline whose parents are the current head and the target's
+current tip.
+
+`--wait` reads every 30 seconds until no check is running and prints the last
+read. An empty list counts as not started for the first two minutes. It gives
+up after 30 minutes with `checksState` still `pending`.
+
+Exit 0 means a snapshot was read, failing checks included. Exit 1 means no
+snapshot: no default remote, a host that is neither GitHub nor GitLab, a
+missing `gh` or `glab`, or a read that failed or came back without the
+review's identity. A malformed number is a usage error, exit 2.
+
 ## Output and JSON
 
 Results go to stdout; diagnostics and prompts go to stderr. JSON and
@@ -435,6 +475,7 @@ parseable. Passing both is a usage error.
 | `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw fast-forward` | yes | yes |
 | `gw branch status` | yes | no |
 | `gw list` | no | no |
+| `gw ci-checks` | no | yes |
 
 Other commands retain their own flags; use `--help`. Help, version and
 completion work without an assessment. `--only` filters assessment verdicts
@@ -500,10 +541,11 @@ an update-ref delete that names no full sha
 
 ## Agent plugin
 
-[The agent plugin](plugin/README.md) runs the same assessment and removal
-commands. It shows head and sync state first, asks about stale or missing
-sync, then asks which targets and deletion categories you approve. It never
-removes its current checkout.
+[The agent plugin](plugin/README.md) gives Claude Code and Codex six skills
+over these commands: start a branch, bring a branch level with the head
+branch through its rebase conflicts, read CI, keep a pull request's
+description true to its diff, merge a pull request once CI is green, and
+prune finished worktrees and branches after asking.
 
 ## Contributing
 

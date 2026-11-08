@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "worktrees",
   "version": "0.8.0",
-  "description": "Rebase a branch onto the head branch through its conflicts, and remove the git worktrees and branches the worktrees CLI proves finished",
+  "description": "Start branches, read CI, rebase onto the head branch, describe and merge pull requests, and prune finished worktrees through the worktrees CLI",
   "author": {
     "name": "Mihai Bojin",
     "url": "https://github.com/MihaiBojin"
@@ -14,8 +14,11 @@
     "git",
     "worktree",
     "branch",
+    "pull-request",
+    "ci",
+    "merge",
+    "rebase",
     "prune",
-    "squash-merge",
-    "rebase"
+    "squash-merge"
   ]
 }
