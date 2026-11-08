@@ -1,1 +1,1 @@
-gw remove --delete ignored-files "$@"
+gw remove --yes "$@"

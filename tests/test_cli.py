@@ -300,7 +300,8 @@ def test_no_terminal_is_one_exit_code(world) -> None:
     """One condition, one number. 2 is already argparse's and _Stop's."""
     world.merged_worktree("a")
     world.merged_worktree("b")
-    p = run(world, "gw remove")
+    # Approved, with two to pick from and nothing to pick with.
+    p = run(world, "gw remove", "--yes")
     assert p.returncode == 3, p.stderr
     assert "terminal" in p.stderr
 
@@ -1356,8 +1357,10 @@ def test_quiet_omits_stale_age_warning(world, network, flag):
         "forge": "2020-01-01T00:00:00Z",
     }
     cache_path(world).write_text(json.dumps(cached))
-    normal = invoke(world, entry="gw prune", env=network.env())
-    quiet = invoke(world, flag, entry="gw prune", env=network.env())
+    # Offline, since a sync before the command would make the cache fresh.
+    offline = network.env(WORKTREES_OFFLINE="1")
+    normal = invoke(world, entry="gw prune", env=offline)
+    quiet = invoke(world, flag, entry="gw prune", env=offline)
     assert normal.returncode == quiet.returncode == 0
     assert "Last sync:" in normal.stderr
     assert "Last sync:" not in quiet.stderr

@@ -13,7 +13,7 @@ class GitError(RuntimeError):
 
 
 class MissingObjects(GitError):
-    """A partial clone lacks an object, and offline commands never fetch one."""
+    """A partial clone lacks an object, and assessment never fetches one."""
 
 
 class Refused(Exception):

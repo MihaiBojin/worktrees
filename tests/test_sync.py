@@ -1,4 +1,4 @@
-"""Synchronization is explicit, shared by worktrees, and safe to read offline."""
+"""Sync runs when a command is due one, is shared by worktrees, and stops offline."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from conftest import argv, env_for
+from conftest import argv, online
 from test_branches import cli, local_branch
 
 
@@ -18,10 +18,11 @@ def origin(world, host="github.com", name="origin") -> None:
 
 
 def listing(world, network, entry="gw", at=None) -> dict:
+    """What the cache says as it stands, read offline so nothing syncs first."""
     proc = subprocess.run(
         argv(entry, *(["list"] if entry == "gw" else []), "--json"),
         cwd=at or world.repo,
-        env=network.env(),
+        env=network.env(WORKTREES_OFFLINE="1"),
         capture_output=True,
         text=True,
     )
@@ -301,29 +302,179 @@ def test_branch_creation_refuses_unresolved_inferred_head(world, network, entry,
     assert not network.network_calls()
 
 
-@pytest.mark.parametrize(
-    "entry, args",
-    [
-        ("gw", ["prune", "--json"]),
-        ("gw prune", ["--yes", "--json"]),
-        ("gw branch status", ["--json"]),
-        ("gw branch create", ["new", "--json"]),
-        ("gw branch prune", ["--dry-run", "--json"]),
-        ("gw add", ["new", "--json"]),
-        ("gw", ["--json"]),
-        ("gw remove", ["no-such-worktree", "--yes"]),
-        ("gw rotate", ["--json"]),
-    ],
-)
-def test_ordinary_commands_never_use_network(world, network, entry, args):
+ORDINARY = [
+    ("gw", ["prune", "--json"]),
+    ("gw prune", ["--yes", "--json"]),
+    ("gw branch status", ["--json"]),
+    ("gw branch create", ["new", "--json"]),
+    ("gw branch prune", ["--dry-run", "--json"]),
+    ("gw add", ["new", "--json"]),
+    ("gw remove", ["no-such-worktree", "--yes"]),
+    ("gw rotate", ["--json"]),
+    ("gw list", ["--json"]),
+]
+
+
+@pytest.mark.parametrize("entry, args", [*ORDINARY, ("gw", ["--json"])])
+def test_offline_commands_never_use_network(world, network, entry, args):
     origin(world)
     world.git("switch", "-qc", "feature")
     world.commit("work")
-    proc = cli(world, *args, entry=entry, env=network.env())
+    proc = cli(world, *args, entry=entry, env=network.env(WORKTREES_OFFLINE="1"))
     assert not network.network_calls(), (proc.stderr, network.network_calls())
     if proc.returncode == 0 and "--json" in args:
         data = json.loads(proc.stdout)
         assert "lastSync" in data and "head" in data
+
+
+@pytest.mark.parametrize("entry, args", ORDINARY)
+def test_ordinary_commands_sync_first_when_due(world, network, entry, args):
+    origin(world)
+    world.git("switch", "-qc", "feature")
+    world.commit("work")
+    proc = cli(world, *args, entry=entry, env=network.env())
+    fetches = [call for call in network.network_calls() if call[1:2] == ["fetch"]]
+    assert fetches == [
+        ["git", "fetch", "--prune", "--tags", "--no-prune-tags", "origin"]
+    ], proc.stderr
+    if proc.returncode == 0 and "--json" in args:
+        # Nothing the sync said reached stdout.
+        assert json.loads(proc.stdout)["lastSync"]["refs"]
+
+
+def _cache(world, refs: str | None) -> None:
+    """A cache for origin whose forge time is years old, to show it is unread."""
+    cache_path(world).write_text(
+        json.dumps(
+            {
+                "remote": {"name": "origin", "url": "git@github.com:owner/repo.git"},
+                "lastSync": {"refs": refs, "forge": "2020-01-01T00:00:00Z"},
+                "branches": {},
+            }
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "age, ttl, due",
+    [
+        (59, None, False),
+        (60, None, True),
+        (59, "", False),
+        (3599, "3600", False),
+        (3600, "3600", True),
+        (0, "0", True),
+    ],
+)
+def test_sync_is_due_once_the_refs_are_ttl_seconds_old(
+    world, monkeypatch, age, ttl, due
+):
+    from worktrees import sync
+
+    origin(world)
+    _cache(world, "2026-01-01T00:00:00Z")
+    monkeypatch.delenv("WORKTREES_OFFLINE")
+    if ttl is not None:
+        monkeypatch.setenv("WORKTREES_SYNC_TTL", ttl)
+    stamp = datetime(2026, 1, 1, tzinfo=UTC).timestamp()
+    monkeypatch.setattr(sync.time, "time", lambda: stamp + age)
+    assert sync.due() is due
+
+
+@pytest.mark.parametrize("case", ["never", "offline", "no-remote", "no-default"])
+def test_sync_is_due_never_offline_or_without_a_default_remote(
+    world, monkeypatch, case
+):
+    from worktrees import sync
+
+    monkeypatch.delenv("WORKTREES_OFFLINE")
+    if case != "no-remote":
+        origin(world)
+    if case == "offline":
+        monkeypatch.setenv("WORKTREES_OFFLINE", "yes")
+    if case == "no-default":
+        origin(world, name="upstream")
+    assert sync.due() is (case == "never")
+
+
+@pytest.mark.parametrize("value", ["soon", "-1", "1.5", " 60", "\u0663"])
+def test_a_ttl_that_is_not_whole_seconds_is_a_usage_error(world, network, value):
+    origin(world)
+    proc = cli(
+        world, "--json", entry="gw prune", env=network.env(WORKTREES_SYNC_TTL=value)
+    )
+    assert proc.returncode == 2, proc.stderr
+    assert f"WORKTREES_SYNC_TTL takes whole seconds, not {value!r}" in proc.stderr
+    assert not proc.stdout
+    assert not network.network_calls()
+
+
+@pytest.mark.parametrize("args", [[], ["--json"], ["-q"]])
+def test_sync_refuses_offline(world, network, args):
+    origin(world)
+    proc = cli(world, "sync", *args, env=network.env(WORKTREES_OFFLINE="1"))
+    assert proc.returncode == 3
+    assert proc.stdout == ""
+    assert "gw sync uses the network, and WORKTREES_OFFLINE is set" in proc.stderr
+    assert not network.network_calls()
+    assert not cache_path(world).exists()
+
+
+def test_an_empty_offline_value_is_unset(world, network):
+    origin(world)
+    proc = cli(world, "sync", env=network.env(WORKTREES_OFFLINE=""))
+    assert proc.returncode == 0, proc.stderr
+    assert network.network_calls()
+
+
+def test_offline_notices_name_no_command(world, network):
+    origin(world)
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/missing")
+    proc = cli(world, entry="gw prune", env=network.env(WORKTREES_OFFLINE="1"))
+    assert proc.returncode == 0, proc.stderr
+    assert (
+        "Never synced: verdicts use refs from the clone or last fetch "
+        "and no forge evidence\n"
+    ) in proc.stderr
+    assert "Head: missing, which does not resolve (clone)\n" in proc.stderr
+    assert "gw sync" not in proc.stderr
+    offline = network.env(WORKTREES_OFFLINE="1")
+    created = cli(world, "new", entry="gw branch create", env=offline)
+    assert created.returncode == 1
+    assert "The head ref does not resolve\n" in created.stderr
+
+
+def test_a_failed_sync_first_warns_and_the_command_carries_on(world, network):
+    origin(world)
+    _cache(world, "2020-01-01T00:00:00Z")
+    unreachable = network.env(WT_FETCH_CODE="128")
+    proc = cli(world, entry="gw prune", env=unreachable)
+    assert proc.returncode == 0, proc.stderr
+    assert "origin could not be fetched; previous sync evidence retained" in (
+        proc.stderr
+    )
+    assert "ago. Run: gw sync" in proc.stderr
+    data = cli(world, "--json", entry="gw prune", env=unreachable)
+    assert data.returncode == 0, data.stderr
+    assert json.loads(data.stdout)["lastSync"]["refs"] == "2020-01-01T00:00:00Z"
+    assert "could not be fetched" not in data.stderr
+
+
+def test_a_sync_first_leaves_the_destination_alone(world, network):
+    origin(world)
+    proc = cli(world, "new", entry="gw add", env=network.env())
+    assert proc.returncode == 0, proc.stderr
+    assert any(call[1:2] == ["fetch"] for call in network.network_calls())
+    assert proc.stdout.count("\n") == 1
+    assert Path(proc.stdout.removesuffix("\n")).is_dir()
+
+
+def test_a_sync_first_is_traced_under_verbose(world, network):
+    origin(world)
+    proc = cli(world, "-v", "--json", entry="gw prune", env=network.env())
+    assert proc.returncode == 0, proc.stderr
+    assert "git fetch --prune --tags --no-prune-tags origin" in proc.stderr
+    json.loads(proc.stdout)
 
 
 @pytest.mark.parametrize(
@@ -372,7 +523,8 @@ def test_stale_notice_boundary_and_units(
     assert C.gw(["list"]) == 0
     error = capsys.readouterr().err
     if text:
-        assert text in error and "gw sync" in error
+        # Offline, so the line points at no command that would refuse.
+        assert f"Last sync: {text} ago\n" in error and "gw sync" not in error
         assert error.count("Last sync:") == 1
     else:
         assert "Last sync:" not in error
@@ -386,9 +538,13 @@ def test_stale_notice_boundary_and_units(
 def test_never_synced_survives_quiet_and_json_and_inferred_yields(
     world, network, quiet
 ):
-    """A caller acting on these verdicts needs to hear that no sync is behind them."""
+    """A caller acting on these verdicts needs to hear that no sync is behind them.
+
+    Online, that is a repository whose first sync failed.
+    """
     origin(world)
-    proc = cli(world, *(["-q"] if quiet else []), entry="gw prune", env=network.env())
+    unreachable = network.env(WT_FETCH_CODE="128")
+    proc = cli(world, *(["-q"] if quiet else []), entry="gw prune", env=unreachable)
     assert proc.returncode == 0, proc.stderr
     never = (
         "Never synced: verdicts use refs from the clone or last fetch "
@@ -396,7 +552,7 @@ def test_never_synced_survives_quiet_and_json_and_inferred_yields(
     )
     assert proc.stderr.count(never) == 1
     assert ("Head: main (inferred)" in proc.stderr) is not quiet
-    data = cli(world, "list", "--json", env=network.env())
+    data = cli(world, "list", "--json", env=unreachable)
     json.loads(data.stdout)
     assert data.stderr.count(never) == 1 and "Head:" not in data.stderr
     proc = cli(world, "sync", *(["-q"] if quiet else []), env=network.env())
@@ -555,10 +711,10 @@ def test_dangling_clone_head_refuses_branch_creation_with_sync_hint(
     origin(world)
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/missing")
     assert listing(world, network)["head"] == {"ref": None, "source": "clone"}
-    proc = cli(world, *args, entry=entry, env=network.env())
+    proc = cli(world, *args, entry=entry, env=network.env(WT_FETCH_CODE="128"))
     assert proc.returncode != 0
-    assert "gw sync" in proc.stderr
-    assert not network.network_calls()
+    assert "The head ref does not resolve. Run: gw sync" in proc.stderr
+    assert [call[1] for call in network.network_calls()] == ["fetch"]
 
 
 @pytest.mark.parametrize(
@@ -988,7 +1144,12 @@ def test_unresolved_head_marks_real_preview_rows_unknown(world, network, head_so
     refs = world.git("for-each-ref", "--format=%(refname) %(objectname)")
     records = world.git("worktree", "list", "--porcelain")
     preview = cli(
-        world, "--json", "--delete", "all", entry="gw prune", env=network.env()
+        world,
+        "--json",
+        "--delete",
+        "all",
+        entry="gw prune",
+        env=network.env(WORKTREES_OFFLINE="1"),
     )
     assert preview.returncode == 0, preview.stderr
     data = json.loads(preview.stdout)
@@ -1030,6 +1191,8 @@ def test_the_head_line_names_an_unresolved_remote_head(world, network, state):
             "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/missing"
         )
         wanted = "Head: missing, which does not resolve (clone). Run: gw sync"
+        # A sync would repair it, so this is one whose fetch failed.
+        env = network.env(WT_FETCH_CODE="128")
     else:
         assert cli(world, "sync", env=network.env()).returncode == 0
         world.git("update-ref", "--no-deref", "-d", "refs/remotes/origin/HEAD")
@@ -1038,7 +1201,8 @@ def test_the_head_line_names_an_unresolved_remote_head(world, network, state):
             world.git("update-ref", "refs/remotes/origin/release", "main")
             world.git("update-ref", "--no-deref", "refs/remotes/origin/HEAD", "main")
         wanted = "Head: unresolved (remote). Run: gw sync"
-    proc = cli(world, entry="gw prune", env=network.env())
+        env = network.env()
+    proc = cli(world, entry="gw prune", env=env)
     assert proc.returncode == 0, proc.stderr
     assert wanted in proc.stderr
 
@@ -1080,7 +1244,7 @@ def test_a_moved_tag_is_a_warning_and_the_sync_is_recorded(world, output):
     assert world.git("rev-parse", "origin/main") == world.git(
         "rev-parse", "main", at=pusher
     )
-    proc = cli(world, "sync", env=env_for(world))
+    proc = cli(world, "sync", env=online(world))
     assert proc.returncode == 0, proc.stderr
     assert "origin moved v1; the local tags are unchanged" in proc.stderr
     assert "git fetch --tags --force origin" in proc.stderr
@@ -1097,11 +1261,11 @@ def test_any_other_refused_ref_fails_the_sync(world):
         "remote.origin.fetch",
         "refs/heads/*:refs/remotes/origin/*",
     )
-    assert cli(world, "sync", env=env_for(world)).returncode == 0
+    assert cli(world, "sync", env=online(world)).returncode == 0
     before = cache_path(world).read_bytes()
     world.git("commit", "--quiet", "--amend", "-m", "rewritten", at=pusher)
     world.git("push", "--quiet", "--force", "origin", "main", at=pusher)
-    proc = cli(world, "sync", env=env_for(world))
+    proc = cli(world, "sync", env=online(world))
     assert proc.returncode == 1, proc.stderr
     assert "origin could not be fetched; previous sync evidence retained" in (
         proc.stderr
@@ -1118,7 +1282,7 @@ def test_fetch_prune_tags_config_never_deletes_a_local_tag(world):
     assert raw.returncode == 0, raw.stderr
     assert world.git("tag", "--list", "mine") == ""
     world.git("tag", "mine")
-    proc = cli(world, "sync", env=env_for(world))
+    proc = cli(world, "sync", env=online(world))
     assert proc.returncode == 0, proc.stderr
     assert world.git("tag", "--list", "mine") == "mine"
 

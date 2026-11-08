@@ -59,6 +59,8 @@ def run_sync(args: argparse.Namespace) -> int:
     from . import sync
     from .git import options
 
+    if sync.offline():
+        raise Refused(f"gw sync uses the network, and {sync.OFFLINE} is set")
     options.verbose = args.verbose
     with progress.running(not args.quiet and not args.verbose):
         code, failures, warnings = sync.run()
@@ -74,6 +76,28 @@ def run_sync(args: argparse.Namespace) -> int:
             print("Sync complete." if R.remotes().lines else "No remote to sync.")
         _err(render.note(sync.head_line(R.head())))
     return code
+
+
+def _refresh(args: argparse.Namespace) -> None:
+    """Sync first when the shared evidence is due, and carry on if it fails.
+
+    Its failures are warnings, since the command still runs on the evidence
+    it has; quiet and JSON hide them, as they hide the stale line.
+    """
+    from . import sync
+
+    try:
+        due = sync.due()
+    except ValueError as exc:
+        raise _Stop(str(exc), 2) from None
+    if not due:
+        return
+    quiet = getattr(args, "quiet", False)
+    with progress.running(not quiet and not getattr(args, "verbose", False)):
+        _, failures, warnings = sync.run()
+    if not quiet and not getattr(args, "json", False):
+        for message in (*failures, *warnings):
+            _warn(message)
 
 
 def _same(a: str, b: str) -> bool:
@@ -720,6 +744,8 @@ def _add_list_flags(p: argparse.ArgumentParser) -> None:
 
 
 def _add_remove_flags(p: argparse.ArgumentParser) -> None:
+    """gw prune's rules for one target. No --only: one target has one verdict."""
+    p.description = _REMOVE_HELP
     p.add_argument(
         "query", nargs="?", default="", metavar="PATH|QUERY", help="which one"
     )
@@ -728,12 +754,20 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="remove the checkout and retain its branch and stashes",
     )
-    _add_delete_flags(p)
-    p.add_argument("-y", "--yes", action="store_true", help="do not ask")
+    _add_assess_flags(p)
+    p.add_argument(
+        "--table",
+        action="store_true",
+        help="assess without prompting; uncoloured table",
+    )
+    p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="approve removal, including with --json or --table",
+    )
     # Removal candidates omit main, which Git cannot remove.
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
-    _add_cd_flags(p)
-    _add_cd_output_flags(p)
 
 
 def _landed(args: argparse.Namespace, landed: wt_mod.Landed) -> int:
@@ -889,6 +923,28 @@ def run_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _remove_preview(args: argparse.Namespace, rows: list[verdicts.Verdict]) -> int:
+    """The rows gw prune would print for these worktrees, and no removal.
+
+    Never a bare path on stdout: the gw function changes into one.
+    """
+    if args.json:
+        print(_json({"verdicts": _verdict_data(rows)}, indent=2))
+        return 0
+    if args.table:
+        render.out.on = False
+    print(_verdict_table(rows))
+    if args.quiet:
+        return 0
+    print()
+    print(_counted(rows))
+    if len(rows) == 1 and rows[0].eligible:
+        sys.stdout.flush()
+        named = shlex.quote(rows[0].path)
+        _err(render.note(f"gw remove {named} --yes removes it"))
+    return 0
+
+
 def run_remove(args: argparse.Namespace) -> int:
 
     from . import layout, pick, prune
@@ -920,7 +976,6 @@ def run_remove(args: argparse.Namespace) -> int:
             found = [
                 w for w in worktrees if args.query in (layout.name_of(w.path), w.branch)
             ]
-        _refuse_ambiguous(found)
     by_path = {v.path: v for v in rows}
     candidates = [by_path[w.path] for w in found if w.path in by_path]
 
@@ -933,6 +988,13 @@ def run_remove(args: argparse.Namespace) -> int:
             )
         )
         return 1
+
+    # gw prune's rule: without approval, a caller that cannot answer, or asked
+    # for data, gets the assessment and nothing changes.
+    if not args.yes and (args.json or args.table or not sys.stdin.isatty()):
+        return _remove_preview(args, candidates)
+    if args.query:
+        _refuse_ambiguous(found)
 
     # The main checkout is listed and never offered: `git worktree remove`
     # refuses it whatever flag it is given. The worktree you stand in is
@@ -1309,7 +1371,7 @@ _COMMANDS: dict[str, _Command] = {
         "remove a worktree",
         usage="[QUERY]",
         aliases=("rm",),
-        shortcuts={"gwr": "", "gwr!": "--delete ignored-files"},
+        shortcuts={"gwr": "", "gwr!": "--yes"},
         lands=True,
     ),
     "rotate": _Command(
@@ -1365,7 +1427,13 @@ _PRUNE_HELP = (
     "--yes approves removal. "
     "--only always assesses and cannot be combined with --yes."
 )
-_NEW_BRANCH_HELP = "Branch NAME off the head ref and check it out, without fetching."
+_REMOVE_HELP = (
+    "remove a worktree. Terminal input picks and asks; nonterminal input, "
+    "--json and --table assess the match without removing; --yes approves "
+    "removal. Removing the worktree you stand in asks once more, at a "
+    "terminal only."
+)
+_NEW_BRANCH_HELP = "Branch NAME off the head ref and check it out."
 _ROTATE_HELP = (
     "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
     "head branch there is no chain to continue, so it catches that up to the "
@@ -1504,6 +1572,7 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             # behind them. -q and --json hide the rest.
             hushed = getattr(args, "json", False) or getattr(args, "quiet", False)
             if R.toplevel().value:
+                _refresh(args)
                 shown = sync.freshness(quiet=True) if hushed else sync.notices()
                 for notice in shown:
                     _err(render.note(notice))
@@ -1514,7 +1583,7 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             _err(
                 render.warn(
                     "some verdicts are unknown: "
-                    f"{merged.LACKING}, and only gw sync uses the network\n"
+                    f"{merged.LACKING}, and assessment fetches none\n"
                     "git backfill fetches them"
                 )
             )

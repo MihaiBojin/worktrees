@@ -1,3 +1,3 @@
-function gwr! --wraps 'gw remove --delete ignored-files' --description 'gw remove --delete ignored-files'
-    gw remove --delete ignored-files $argv
+function gwr! --wraps 'gw remove --yes' --description 'gw remove --yes'
+    gw remove --yes $argv
 end

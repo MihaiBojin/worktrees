@@ -44,7 +44,7 @@ what to run.
 | `src/worktrees/verdicts.py` | one verdict per worktree, and nothing that mutates |
 | `src/worktrees/prune.py` | removal snapshots, disclosures and stash cleanup |
 | `src/worktrees/branches.py` | loose-branch assessment and deletion |
-| `src/worktrees/sync.py` | explicit sync and shared evidence cache |
+| `src/worktrees/sync.py` | sync, when it is due, and the shared evidence cache |
 | `src/worktrees/new_branch.py` | starting a branch off the head branch |
 | `src/worktrees/rotate.py` | the next branch in a series |
 | `src/worktrees/layout.py` | where a worktree lives, derived from the main checkout |
@@ -137,10 +137,12 @@ calls the `gw` function with fixed words, so `gwa` lands where `gw add` does.
 The `shortcuts` field of each row in `cli.py` is the table `gw --help` prints,
 and `tests/test_shims.py` holds both plugins' files to it.
 
-## Offline assessment
+## Sync and assessment
 
-Only `gw sync` fetches, updates remote HEAD or queries a forge. `sync.py`
-atomically replaces `git-worktrees-sync.json` in the Git common directory.
+Only `sync.run` fetches, updates remote HEAD or queries a forge. `gw sync`
+calls it, and so does `cli._dispatch` before every other command when
+`sync.due` says the refs are older than `WORKTREES_SYNC_TTL`;
+`WORKTREES_OFFLINE` turns both off. `sync.py` atomically replaces `git-worktrees-sync.json` in the Git common directory.
 It records remote identity, successful component times and source-tip
 forge evidence. Assessment uses pinned head state, one first-parent set and
 read-only patch-id input. It creates no synthetic commits.
@@ -160,7 +162,10 @@ per-test, and the prompt tests drive a real pty.
 The fixture needs no global git config, no signing key, no forge and no
 network. `GIT_CONFIG_GLOBAL` carries that: without it git still reads
 `$HOME/.gitconfig`, and setting `HOME` alone still leaves
-`$XDG_CONFIG_HOME/git/config`.
+`$XDG_CONFIG_HOME/git/config`. `WORKTREES_OFFLINE=1` in `conftest.ENV` stops
+a command syncing first, which would fetch a remote at `github.com` for
+real. `Network.env` clears it for the fake network, and `conftest.online`
+for a remote on disk.
 
 ## Publishing a version
 
