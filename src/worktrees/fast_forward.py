@@ -23,6 +23,8 @@ from pathlib import Path
 
 from . import branch_forge, forge, merged, prune, render
 from . import repo as R
+from .errors import GitError
+from .errors import Refused as Unsafe
 from .git import git
 from .new_branch import Refusal, check_ref_format, short_sha, switch_create
 
@@ -114,6 +116,35 @@ def unmerged_paths() -> None:
     """The files left with conflicts, from the top level."""
 
 
+@git("rev-parse $commit^@")
+def parents_of(commit: str) -> None:
+    """A commit's parents, first to last."""
+
+
+# Writes the tree and touches no checkout. --merge-base needs git 2.40.
+@git("merge-tree --write-tree --merge-base=$base $onto $commit", ok=(0, 1))
+def merge_tree(base: str, onto: str, commit: str) -> None:
+    """The tree `commit`'s changes since `base` make on `onto`; 1 is a conflict."""
+
+
+# No context lines, so a replayed commit keeps its patch-id when the head ref
+# edited the lines around its change.
+@git(
+    "log --no-merges --format=%H -p --no-ext-diff --no-textconv --no-renames "
+    "--full-index --binary --no-color --no-relative --ignore-submodules=none "
+    "--submodule=short --unified=0 --diff-algorithm=myers --no-indent-heuristic "
+    "$base..$tip --",
+    env={"GIT_DIFF_OPTS": ""},
+)
+def bare_patches(base: str, tip: str) -> None:
+    """Each commit's patch in `base..tip`, its changed lines alone."""
+
+
+@git("commit-tree --no-gpg-sign -m $message $*parents $tree", mutates=True)
+def commit_tree(message: str, parents: list[str], tree: str) -> None:
+    """A commit of `tree`, with `-p SHA` in `parents` for each parent."""
+
+
 @dataclass
 class Moved:
     """Where the checkout stands after one run, and how it got there."""
@@ -135,7 +166,8 @@ class Moved:
     subject: str = ""
     paths: list[str] = field(default_factory=list)  # files left with conflicts
     stash: str = ""  # the entry holding uncommitted work that did not re-apply
-    # A partly merged branch's stashes, each made after `boundary` or not.
+    # A partly merged branch's stashes, each made after `boundary` or not,
+    # the copy one made after it moved to, and why one made after it stayed.
     stashes: list[dict] = field(default_factory=list)
 
     def data(self) -> dict:
@@ -285,6 +317,8 @@ def fast_forward(
     if not replayed:
         stopped = stopped_rebase(repo)
         if stopped:
+            if found:
+                stopped.stashes = _left(_branch_stashes(branch, tip, found[0], repo))
             return stopped
         raise Refusal(replayed.err.strip() or f"git rebase exited {replayed.code}")
     moved = Moved(
@@ -297,12 +331,22 @@ def fast_forward(
         ahead=_count(base, local, repo),
         behind=behind,
     )
-    if found:
-        point, moved.proof, moved.why = found
-        moved.boundary = _short(point, repo=repo)
-        moved.carried = _count(point, tip, repo)
-        moved.stashes = _branch_stashes(branch, tip, point, repo)
-    return _reapplied(moved, before, tip, repo)
+    if not found:
+        return _reapplied(moved, before, tip, repo)
+    point, moved.proof, moved.why = found
+    moved.boundary = _short(point, repo=repo)
+    moved.carried = _count(point, tip, repo)
+    moved = _reapplied(moved, before, tip, repo)
+    moved.stashes = _move_stashes(
+        _branch_stashes(branch, tip, point, repo),
+        branch,
+        branch,
+        point,
+        tip,
+        base,
+        repo,
+    )
+    return moved
 
 
 def merged_request(
@@ -573,14 +617,24 @@ def _rotate(
     if not replayed:
         stopped = stopped_rebase(repo)
         if stopped:
+            stopped.stashes = _left(_branch_stashes(branch, tip, boundary, repo))
             return stopped
         if R.current_branch(repo=repo).value != chosen:
             delete_ref(f"refs/heads/{chosen}", tip, repo=repo)
         raise Refusal(replayed.err.strip() or f"git rebase exited {replayed.code}")
     moved.sha = _short("HEAD", repo=repo)
     moved.ahead = _count(origin, f"refs/heads/{chosen}", repo)
-    moved.stashes = _branch_stashes(branch, tip, boundary, repo)
-    return _reapplied(moved, before, tip, repo)
+    moved = _reapplied(moved, before, tip, repo)
+    moved.stashes = _move_stashes(
+        _branch_stashes(branch, tip, boundary, repo),
+        branch,
+        chosen,
+        boundary,
+        tip,
+        origin,
+        repo,
+    )
+    return moved
 
 
 def _catch_up(
@@ -674,7 +728,125 @@ def _branch_stashes(
         after = parent != boundary and bool(
             merged.is_ancestor(boundary, parent, repo=repo)
         )
-        found.append({"sha": sha, "subject": subjects.get(sha, ""), "after": after})
+        found.append(
+            {
+                "sha": sha,
+                "subject": subjects.get(sha, ""),
+                "after": after,
+                "moved": "",
+                "kept": "",
+            }
+        )
+    return found
+
+
+def _left(stashes: list[dict]) -> list[dict]:
+    """The stashes of a carry that stopped, which moves none of them."""
+    for entry in stashes:
+        if entry["after"]:
+            entry["kept"] = "the rebase stopped before any stash moved"
+    return stashes
+
+
+def _move_stashes(
+    stashes: list[dict],
+    branch: str,
+    to: str,
+    boundary: str,
+    tip: str,
+    onto: str,
+    repo: str | os.PathLike[str] | None,
+) -> list[dict]:
+    """Move each stash made after the boundary onto the replayed copy of the
+    commit it was made on, under `to`, the branch now holding the commits.
+
+    The replayed copy is the one with the same patch-id; a commit the rebase
+    dropped, a merge among them, has none, and its stashes stay where they
+    are. Oldest first, so the moved ones keep their order.
+    """
+    if not any(entry["after"] for entry in stashes):
+        return stashes
+    made_on = {sha: pid for pid, sha in _by_patch_id(boundary, tip, repo).items()}
+    replayed = _by_patch_id(onto, f"refs/heads/{to}", repo)
+    for entry in reversed(stashes):
+        if not entry["after"]:
+            continue
+        target = replayed.get(made_on.get(_parent(entry["sha"], repo), ""), "")
+        if not target:
+            entry["kept"] = "no replayed commit matches the one it was made on"
+            continue
+        try:
+            entry["moved"], entry["kept"] = _restash(
+                entry["sha"], entry["subject"], target, branch, to, repo
+            )
+        except GitError as exc:
+            # The first line is the command, painted for a terminal; the
+            # second is the first thing git said.
+            entry["kept"] = f"git could not copy it: {str(exc).splitlines()[1]}"
+    return stashes
+
+
+def _restash(
+    sha: str,
+    subject: str,
+    target: str,
+    branch: str,
+    to: str,
+    repo: str | os.PathLike[str] | None,
+) -> tuple[str, str]:
+    """Copy stash `sha` onto `target`, then drop it once the copy is listed.
+
+    The copy's index and work tree are the original's changes merged onto
+    `target`, and its untracked files are the original's. The copy's sha,
+    and why the original is still on the list.
+    """
+    parents = parents_of(sha, repo=repo).lines
+    if len(parents) < 2:
+        return "", "git stash did not make it: it has no index commit"
+    made_on, index, *untracked = parents
+    trees = []
+    for commit in (index, sha):
+        merge = merge_tree(made_on, target, commit, repo=repo)
+        if not merge:
+            return "", f"it does not apply cleanly to {_short(target, repo=repo)}"
+        trees.append(merge.lines[0])
+    index_subject = _renamed(prune.stash_subject(index, repo=repo).value, branch, to)
+    copied_index = commit_tree(
+        index_subject, ["-p", target], trees[0], repo=repo
+    ).out.strip()
+    flags = ["-p", target, "-p", copied_index]
+    for commit in untracked:
+        flags += ["-p", commit]
+    copy = commit_tree(
+        _renamed(subject, branch, to), flags, trees[1], repo=repo
+    ).out.strip()
+    prune.stash_store(_renamed(subject, branch, to), copy, repo=repo)
+    if copy not in _stash_shas(repo):
+        return "", "the copy did not reach the stash list"
+    try:
+        prune.drop_stash(sha, repo)
+    except Unsafe as exc:
+        return copy, str(exc)
+    return copy, ""
+
+
+def _renamed(subject: str, branch: str, to: str) -> str:
+    """A stash subject naming `to` where it named `branch`."""
+    for lead in ("On ", "WIP on ", "index on "):
+        if subject.startswith(f"{lead}{branch}:"):
+            return f"{lead}{to}:{subject[len(lead) + len(branch) + 1 :]}"
+    return subject
+
+
+def _by_patch_id(
+    base: str, tip: str, repo: str | os.PathLike[str] | None
+) -> dict[str, str]:
+    """Each commit in `base..tip` by its patch-id, or '' where two share one."""
+    patches = bare_patches(base, tip, repo=repo).out
+    found: dict[str, str] = {}
+    for line in merged.patch_ids(input=patches, repo=repo).lines:
+        pid, sha = line.split()
+        found[pid] = "" if pid in found else sha
     return found
 
 

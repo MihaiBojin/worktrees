@@ -348,6 +348,10 @@ def carried_by(
     content can recognise once the parent gained commits of its own, and the
     parent's request names them. False when the forge could not be asked; no
     forge this reads is an empty answer.
+
+    Each request's commits come from one page of 100, by choice: a parent
+    seldom drifts further from the branch stacked on it, and a longer list
+    that misses the shared commits leaves a rebase that stops on them.
     """
     selected = provider(remote, repo)
     if selected is None:

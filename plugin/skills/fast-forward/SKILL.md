@@ -84,7 +84,7 @@ The result's fields:
 - `stopped_at`, `subject`: the commit the rebase stopped at
 - `paths`: files with conflicts, relative to the top level
 - `stash`: the stash entry holding changes that did not re-apply
-- `stashes`: a rotated branch's stashes, each with `sha`, `subject` and `after`, true for one made after the merged part
+- `stashes`: a partly merged or rotated branch's stashes, each with `sha`, `subject`, `after`, true for one made after the merged part, `moved`, the copy such a stash moved to, and `kept`, why one did not move
 
 ## Resolve a conflict
 
@@ -133,8 +133,10 @@ branch's name; the new branch has no upstream until it is pushed. With
 the `carried` ones after it moved to the new branch. For `rebased` with
 `carried` above zero, say that the commits up to `boundary` were already in
 the head branch, merged through another branch's request, and were dropped.
-List `stashes` made after the merged part: they stay with the branch they
-were made on. For a rebase that
+List `stashes` made after the merged part. Each `moved` one is on the branch
+holding the commits now, under the sha in `moved`. Give each `kept` reason,
+and its `sha` for `git stash apply`: after a rebase in place, a kept stash
+matches no branch. For a rebase that
 stopped, list each commit it stopped at with its subject, and for each file,
 what each side changed and how the two were combined.
 

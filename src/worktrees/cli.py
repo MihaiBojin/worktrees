@@ -683,9 +683,13 @@ def run_fast_forward(args: argparse.Namespace) -> int:
         # On stderr whatever the format, as every failure is: --json has
         # already put the same facts on stdout.
         _stopped(moved)
+        if not args.json:
+            _stashes(moved)
         return 1
     if moved.result == ff.STASH_CONFLICT:
         _unapplied(moved)
+        if not args.json:
+            _stashes(moved)
         return 1
     if not args.json:
         print(_moved(moved))
@@ -714,19 +718,21 @@ def _unapplied(moved: fast_forward.Moved) -> None:
 
 
 def _stashes(moved: fast_forward.Moved) -> None:
-    """A rotated branch's stashes, which stay with it."""
+    """A partly merged or rotated branch's stashes: where each one made after
+    the merged part went, or why it stayed."""
     if not moved.stashes:
         return
     after = sum(1 for entry in moved.stashes if entry["after"])
     listed = "".join(
         f"\n  {entry['sha']} {entry['subject']}"
-        + ("  (made after the merged part)" if entry["after"] else "")
+        + (f"  moved as {entry['moved']}" if entry["moved"] else "")
+        + (f"  kept: {entry['kept']}" if entry["kept"] else "")
         for entry in moved.stashes
     )
     _err(
         render.note(
-            f"{render.branch(moved.previous)} keeps {len(moved.stashes)} "
-            f"stash(es), {after} made after the merged part:{listed}"
+            f"{len(moved.stashes)} stash(es) match the branch, {after} made after "
+            f"the merged part:{listed}"
         )
     )
 
