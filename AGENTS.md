@@ -146,8 +146,10 @@ actual jq filters and applies them to real CLI output. Checked-out branches
 are absent from the loose-branch list. Paths and restore commands must retain
 exact quoting.
 
-The skill asks before syncing stale or never-synced remote state, and runs
-`gw sync` only on the user's answer. Removal approval covers chosen targets
+The assessments it reads sync first when one is due. The skill asks before
+syncing state that is still stale or never synced after that, and runs
+`gw sync` only on the user's answer; under `WORKTREES_OFFLINE` that command
+refuses, and the skill goes on with the evidence there is. Removal approval covers chosen targets
 and explicit deletion categories. Each worktree goes through
 `command gw remove` with its exact quoted JSON path, then selected loose
 branches through `command gw branch prune`. The plugin never targets its current checkout. It reports
@@ -335,12 +337,28 @@ indented, its exit code when that is not 0 or is the only answer, then a
 blank line. Printing after the run keeps a command and its answer together
 when eight threads are asking at once.
 
-## Only explicit sync uses the network
+## Sync runs before a command that is due one
 
 `gw sync` fetches every remote with `--prune --tags --no-prune-tags`, the
 default first, updates the default remote's HEAD and queries the forge for
-every local branch tip on eight threads. Every other command stays offline.
-It refuses, before fetching, any remote whose refspec writes outside its own
+every local branch tip on eight threads. Every other command but
+`gw version`, help and completion runs the same `sync.run` first when
+`sync.due` says so: the default remote's refs time is null or at least
+`WORKTREES_SYNC_TTL` seconds old, 60 by default. The forge time is not read,
+since a forge that keeps failing would sync before every command. Without a
+default remote nothing syncs first, because sync records nothing there.
+
+A failed sync before a command is a warning, and the command goes on with
+the evidence it has; quiet and JSON hide the warning. Nothing it prints
+reaches stdout, so `cd $(gw add x)` and `jq` never see it. A TTL that is not
+whole seconds is a usage error at exit 2.
+
+`WORKTREES_OFFLINE`, when non-empty, turns sync off everywhere: nothing syncs
+first and `gw sync` refuses at exit 3. Every notice that would end
+`Run: gw sync` goes through `sync.hint`, which leaves that off offline,
+since it names a command that refuses there.
+
+Sync refuses, before fetching, any remote whose refspec writes outside its own
 `refs/remotes/<name>/`, since a mirror refspec with `--prune` deletes local
 branches. Git refusing a moved tag is a warning; any other refused ref fails
 that remote. The fetch runs in the C locale so sync can read which it was. The
@@ -417,7 +435,7 @@ tested on what it returns rather than on its exit code. `upstream_of` takes
 `ok=(0, 1, 128)`, so a typo in one of its flags exits 128, reads as "no
 upstream", and turns every branch into `unknown` with nothing failing.
 
-The network calls belong to explicit sync. Their results distinguish failed
+The network calls belong to sync. Their results distinguish failed
 refs refresh from partial forge refresh; assessments retain usable local
 proof without asking the network. The cache records each successful
 component's time separately.
@@ -440,7 +458,9 @@ is a rule that goes quiet: the hand-written footer fell a rule behind the
 moment `update-ref` was added, and nothing failed.
 
 `verdicts.py` declares no mutating command. A read-only command may not call
-one: a test reads the verbose log and asserts it.
+one, the fetch and `set-head` of the sync it runs first aside, which write
+remote-tracking refs and the remote's new tags: a test reads the verbose log
+and asserts it.
 
 ## Verdicts and deletion are separate
 
@@ -501,4 +521,7 @@ code forever.
 The fixture needs no global git config, no signing key, no forge and no
 network. `GIT_CONFIG_GLOBAL` carries that: without it git still reads
 `$HOME/.gitconfig`, and setting `HOME` alone still leaves
-`$XDG_CONFIG_HOME/git/config`.
+`$XDG_CONFIG_HOME/git/config`. `WORKTREES_OFFLINE=1` in `conftest.ENV` stops
+a command syncing first, which would fetch a remote at `github.com` for
+real. `Network.env` clears it for the fake network, and `conftest.online`
+for a remote on disk.

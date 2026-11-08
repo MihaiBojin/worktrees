@@ -370,7 +370,10 @@ def confirm(
 def never_synced(go: Sequence[Verdict | branches.Verdict]) -> bool:
     from . import sync
 
-    return any(v.snapshot and sync.NEVER in v.snapshot.head.notices for v in go)
+    return any(
+        v.snapshot and any(n.startswith(sync.NEVER) for n in v.snapshot.head.notices)
+        for v in go
+    )
 
 
 def sweep(go: list[Verdict], say: Callable[[str], None], repo=None) -> list[Outcome]:

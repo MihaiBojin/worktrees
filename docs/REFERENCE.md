@@ -128,13 +128,16 @@ current checkout.
 Terminal `gw prune` and `gw prune --yes` clear stale Git worktree bookkeeping
 before assessment, whether or not removal is approved. `gw list` and pruning
 assessment modes never write refs, cache files or directories; they return
-before stale-record pruning, deletion disclosure and confirmation. Pruning
+before stale-record pruning, deletion disclosure and confirmation. The sync
+that runs before them when one is due writes remote-tracking refs, the
+remote's new tags and the sync cache, and nothing else. Pruning
 JSON with `--yes` includes the assessment verdicts and the actual removed,
 failed and per-target outcomes in one object with head and sync state.
 
 ## Sync cache
 
-Only `gw sync` invokes `git fetch`, `git remote set-head`, `gh` or `glab`.
+Only sync invokes `git fetch`, `git remote set-head`, `gh` or `glab`:
+`gw sync`, or the sync another command runs first when one is due.
 The default remote is `checkout.defaultRemote` if configured, otherwise the
 only remote. Sync fetches every remote `git fetch --all` would, and the
 default one always, with `--prune --tags --no-prune-tags`. Other remotes are
@@ -177,15 +180,30 @@ that no sync stands behind them. The older non-null sync time is stale after
 suggests `gw sync`. Quiet and JSON output suppress the stale warning and the
 inferred head notice; a removal's disclosure still repeats them. Repositories
 without remotes, the local case, have neither warning. `gw sync` and `gw version`
-print the head line, and a head that does not resolve is named in it. JSON provides the state instead. Staleness never causes
-a network call.
+print the head line, and a head that does not resolve is named in it. JSON provides the state instead. The 10 minutes
+hold whatever `WORKTREES_SYNC_TTL` says, so a longer TTL lets the age
+warning print before the next sync is due.
 
-Offline commands in partial clones need a Git release whose lazy-fetch guard covers patch
+Every command except `gw sync`, `gw version`, help and completion runs sync
+first when one is due: the default remote's refs time is null, or at least
+`WORKTREES_SYNC_TTL` seconds old. The TTL is 60 when the variable is unset or
+empty, takes whole seconds with `0` meaning every command, and anything else
+is a usage error at exit 2. The forge time is not read. Without a default
+remote nothing syncs first, since sync records nothing there. That sync's
+failures and warnings go to stderr as warnings, hidden under `-q` and
+`--json`; the command keeps its own stdout and exit status.
+
+`WORKTREES_OFFLINE` with a non-empty value turns every sync off. No command
+syncs first, `WORKTREES_SYNC_TTL` goes unread, and `gw sync` refuses at
+exit 3 with nothing on stdout, `--json` included. The never-synced, age and
+unresolved-head lines then end without `Run: gw sync`.
+
+Commands that read objects in a partial clone need a Git release whose lazy-fetch guard covers patch
 prefetch: 2.45.1 or newer, or maintenance series 2.39.4, 2.40.2, 2.41.1,
 2.42.2, 2.43.4 or 2.44.1 and later patches in each series. Lower reported
 vendor versions are refused even when a vendor may have backported the fix.
-Full clones do not have this version restriction. Missing local objects
-cannot trigger implicit network access from an offline command: a proof that
+Full clones do not have this version restriction. A missing local object
+never makes assessment fetch it: a proof that
 needs one gives `unknown`, and human output warns once, naming
 `git backfill`. Quiet and JSON omit the warning.
 
@@ -233,7 +251,7 @@ an argument list. No value receives shell parsing. The guard checks resolved
 argv and refuses destructive Git operations, including unqualified ref
 deletions without a full expected SHA.
 
-Offline assessment uses read-only patch-id input, not synthetic commits.
+Assessment uses read-only patch-id input, not synthetic commits.
 `verdicts.py` declares no mutating commands. Per-worktree checks use eight
 threads; mutations remain serial. `progress.py` renders on capable stderr
 terminals only, and stays off under quiet or verbose output.

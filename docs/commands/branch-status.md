@@ -1,9 +1,9 @@
 # worktrees branch status
 
 `gw branch status` assesses local branches with no worktree, and the shell
-plugin's `gwbs` runs it. It changes nothing and uses
-local refs plus cached forge evidence. Run `gw sync` explicitly to refresh
-that evidence. A checked-out branch appears in `gw prune --json`, not here.
+plugin's `gwbs` runs it. It changes no branch or worktree and uses local
+refs plus cached forge evidence, which a sync refreshes first when one is
+due. A checked-out branch appears in `gw prune --json`, not here.
 
 ```console
 gw branch status

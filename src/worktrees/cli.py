@@ -59,6 +59,8 @@ def run_sync(args: argparse.Namespace) -> int:
     from . import sync
     from .git import options
 
+    if sync.offline():
+        raise Refused(f"gw sync uses the network, and {sync.OFFLINE} is set")
     options.verbose = args.verbose
     with progress.running(not args.quiet and not args.verbose):
         code, failures, warnings = sync.run()
@@ -74,6 +76,28 @@ def run_sync(args: argparse.Namespace) -> int:
             print("Sync complete." if R.remotes().lines else "No remote to sync.")
         _err(render.note(sync.head_line(R.head())))
     return code
+
+
+def _refresh(args: argparse.Namespace) -> None:
+    """Sync first when the shared evidence is due, and carry on if it fails.
+
+    Its failures are warnings, since the command still runs on the evidence
+    it has; quiet and JSON hide them, as they hide the stale line.
+    """
+    from . import sync
+
+    try:
+        due = sync.due()
+    except ValueError as exc:
+        raise _Stop(str(exc), 2) from None
+    if not due:
+        return
+    quiet = getattr(args, "quiet", False)
+    with progress.running(not quiet and not getattr(args, "verbose", False)):
+        _, failures, warnings = sync.run()
+    if not quiet and not getattr(args, "json", False):
+        for message in (*failures, *warnings):
+            _warn(message)
 
 
 def _same(a: str, b: str) -> bool:
@@ -1409,7 +1433,7 @@ _REMOVE_HELP = (
     "removal. Removing the worktree you stand in asks once more, at a "
     "terminal only."
 )
-_NEW_BRANCH_HELP = "Branch NAME off the head ref and check it out, without fetching."
+_NEW_BRANCH_HELP = "Branch NAME off the head ref and check it out."
 _ROTATE_HELP = (
     "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
     "head branch there is no chain to continue, so it catches that up to the "
@@ -1548,6 +1572,7 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             # behind them. -q and --json hide the rest.
             hushed = getattr(args, "json", False) or getattr(args, "quiet", False)
             if R.toplevel().value:
+                _refresh(args)
                 shown = sync.freshness(quiet=True) if hushed else sync.notices()
                 for notice in shown:
                     _err(render.note(notice))
@@ -1558,7 +1583,7 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             _err(
                 render.warn(
                     "some verdicts are unknown: "
-                    f"{merged.LACKING}, and only gw sync uses the network\n"
+                    f"{merged.LACKING}, and assessment fetches none\n"
                     "git backfill fetches them"
                 )
             )

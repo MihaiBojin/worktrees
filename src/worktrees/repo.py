@@ -444,10 +444,12 @@ class Head:
 
     @property
     def unresolved(self) -> str:
+        from . import sync
+
         return (
             "No main or master branch."
             if self.source == "inferred"
-            else "The head ref does not resolve. Run: gw sync"
+            else sync.hint("The head ref does not resolve")
         )
 
 
