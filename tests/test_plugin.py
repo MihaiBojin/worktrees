@@ -127,6 +127,7 @@ def test_filters_preserve_exact_targets_permissions_and_restore_commands(world) 
     assert row == next(v for v in raw["verdicts"] if v["path"] == str(exact))
     assert row["path"] == str(exact)
     assert row["proof"] == "squash"
+    assert shlex.split(row["undo"]) == ["git", "branch", "finished'quoted", row["sha"]]
     assert not row["protections"] and not row["stashes"]
     # The main checkout is empty too, but no permission makes it removable.
     assert [v["path"] for v in out["empty"]] == [str(empty)]

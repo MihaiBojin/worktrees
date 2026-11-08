@@ -195,9 +195,10 @@ remote-tracking branch at a plain one's commit, or `refs/heads/main` or
 
 Worktree and branch assessment put rows in `verdicts`. Both retain
 `verdict`, `eligible`, `proof`, `request`, `protections`, `stashes`, `branch`,
-`sha` and `why`. Worktree rows add exact `path`, the grouped ignored paths in
-`ignoredPaths` and their count in `ignored`;
-branch rows add `paths`, `error` and shell-quoted `undo`. `gw prune --json` also
+`sha`, `why` and `undo`, the shell-quoted `git branch NAME SHA` that restores
+the branch; a detached worktree's `undo` is null. Worktree rows add exact
+`path`, the grouped ignored paths in `ignoredPaths` and their count in
+`ignored`; branch rows add `paths` and `error`. `gw prune --json` also
 carries `stale`, the paths of worktree records whose directories are gone, and
 `neighbours`, the count of worktrees under the shared root that belong to
 another repository.
