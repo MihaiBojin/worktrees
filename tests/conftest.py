@@ -46,7 +46,8 @@ def _path() -> str:
 PATH = _path()
 
 # Fixed dates make the first commit's sha a constant, so a test may assert on
-# a literal one.
+# a literal one. WORKTREES_OFFLINE stops a command syncing before it runs,
+# which would fetch a remote at github.com for real; `Network.env` clears it.
 ENV = {
     "GIT_AUTHOR_NAME": "T",
     "GIT_AUTHOR_EMAIL": "t@localhost",
@@ -54,6 +55,7 @@ ENV = {
     "GIT_COMMITTER_NAME": "T",
     "GIT_COMMITTER_EMAIL": "t@localhost",
     "GIT_COMMITTER_DATE": "@1700000000 +0000",
+    "WORKTREES_OFFLINE": "1",
 }
 
 
@@ -148,6 +150,13 @@ def env_for(world: World) -> dict[str, str]:
         "GIT_CONFIG_NOSYSTEM": "1",
         **ENV,
     }
+
+
+def online(world: World) -> dict[str, str]:
+    """`env_for` with sync allowed, for a test whose remotes are on this disk."""
+    env = env_for(world)
+    del env["WORKTREES_OFFLINE"]
+    return env
 
 
 @pytest.fixture
@@ -296,7 +305,8 @@ class Network:
         )
 
     def env(self, **extra: str) -> dict[str, str]:
-        env = env_for(self.world)
+        """Online, since every network call lands on these wrappers."""
+        env = online(self.world)
         return {**env, "PATH": f"{self.bin}{os.pathsep}{env['PATH']}", **extra}
 
     def answer(self, responses: dict) -> None:

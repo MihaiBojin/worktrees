@@ -1,4 +1,4 @@
-#compdef gw worktrees gwa gwbc gwbp gwbs gwl gwp gwp! gwpa gwpa! gwr gwr! gwrot gws
+#compdef gw worktrees gwa gwbc gwbp gwbs gwff gwl gwp gwp! gwpa gwpa! gwr gwr! gws
 
 # Flags as `gw <command> --help` lists them, and candidates from the CLI.
 # A shortcut completes as the gw command it runs: gwa as `gw add`.
@@ -66,17 +66,19 @@ __worktrees_remove() {
     _arguments -s \
         '--keep-branch[retain the branch and its stashes]' \
         '*--delete[permit deletion categories]:value:(empty ignored-files stashes all)' \
-        '(-y --yes)'{-y,--yes}'[do not ask]' \
-        '--json[the result as data]' \
-        '(-q --quiet)'{-q,--quiet}'[the path alone]' \
+        '--table[assess without prompting; uncoloured table]' \
+        '(-y --yes)'{-y,--yes}'[approve removal, including with --json or --table]' \
+        '--json[assess as JSON; --yes approves removal]' \
+        '(-q --quiet)'{-q,--quiet}'[verdicts only]' \
         '(-v --verbose)'{-v,--verbose}'[print every git command]' \
         '--explain[print every git command and exit]' \
         '(-h --help)'{-h,--help}'[show the help and exit]' \
         '1:worktree:{__worktrees_candidates worktrees worktree remove}'
 }
 
-__worktrees_rotate() {
+__worktrees_fast-forward() {
     _arguments -s \
+        '--from[start that branch from this branch or commit]:branch or commit: ' \
         '--json[the result as data]' \
         '(-q --quiet)'{-q,--quiet}'[omit summaries and progress]' \
         '(-v --verbose)'{-v,--verbose}'[print every git command]' \
@@ -84,7 +86,7 @@ __worktrees_rotate() {
         '(-h --help)'{-h,--help}'[show the help and exit]'
 }
 
-__worktrees_ci() {
+__worktrees_ci-checks() {
     _arguments -s \
         '--json[the snapshot as data]' \
         '--wait[read again until no check is running]' \
@@ -134,14 +136,14 @@ _gw() {
         gwbc) fixed=(branch create) ;;
         gwbp) fixed=(branch prune) ;;
         gwbs) fixed=(branch status) ;;
+        gwff) fixed=(fast-forward) ;;
         gwl) fixed=(list) ;;
         gwp) fixed=(prune) ;;
         'gwp!') fixed=(prune --yes) ;;
         gwpa) fixed=(prune --delete all) ;;
         'gwpa!') fixed=(prune --delete all --yes) ;;
         gwr) fixed=(remove) ;;
-        'gwr!') fixed=(remove --delete ignored-files) ;;
-        gwrot) fixed=(rotate) ;;
+        'gwr!') fixed=(remove --yes) ;;
         gws) fixed=(sync) ;;
     esac
     if (( $#fixed )); then
@@ -165,8 +167,8 @@ _gw() {
                 add|a) __worktrees_add ;;
                 list|l) __worktrees_list ;;
                 remove|rm) __worktrees_remove ;;
-                rotate|rot) __worktrees_rotate ;;
-                ci) __worktrees_ci ;;
+                fast-forward|ff) __worktrees_fast-forward ;;
+                ci-checks|ci) __worktrees_ci-checks ;;
                 branch)
                     _arguments -C \
                         '(-h --help)'{-h,--help}'[show the help and exit]' \

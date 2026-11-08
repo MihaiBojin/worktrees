@@ -1,62 +1,115 @@
 ---
 name: fast-forward
 description: >
-  Fetch, then fast-forward the checkout that holds the head branch (main or
-  master, usually the main checkout) to the remote's tip, refusing when that
-  would drop a local commit. Use at the start of a task, after a pull
-  request merges, or when the user asks to update, pull or fast-forward main.
+  Use when the user asks to bring a branch up to date with main or the head
+  branch, rebase it onto the head branch, fast-forward it, move on from a
+  merged branch, or finish a rebase that gw fast-forward stopped at.
+argument-hint: "[NAME] [--from BRANCH|SHA]"
 allowed-tools:
-  - Bash(gw sync)
-  - Bash(gw list --json)
-  - Bash(jq:*)
+  - Bash(gw fast-forward:*)
+  - Bash(git status:*)
+  - Bash(git diff:*)
+  - Bash(git log:*)
+  - Bash(git show:*)
+  - Bash(git add:*)
+  - Bash(GIT_EDITOR=true git rebase --continue)
+  - Read
+  - Edit
+  - AskUserQuestion
 ---
 
-# Fast-forward the head branch
+# Bring a branch level with the head ref
 
-`gw` comes from `uv tool install git-worktrees`; if it is missing, report
-that and stop.
+The `gw` CLI decides what happens to the branch. This skill resolves the
+conflicts its rebase stops at. `gw` comes from `uv tool install
+git-worktrees`; if it is missing, report that and stop. Work in the checkout
+the user is in.
 
-## Fetch
+`gwff` is a shell plugin function that runs `gw fast-forward`. An agent's
+shell has no plugin functions, so call the binary.
 
-```sh
-gw sync
-```
-
-It fetches every remote and records the default remote's head branch. A
-failure on the default remote is the answer: report it and stop, since
-there is nothing newer to move to.
-
-## Find the checkout
+## Run it
 
 ```sh
-gw list --json | jq -c '(.head.ref // "" | sub("^refs/remotes/[^/]+/|^refs/heads/"; "")) as $b
-  | {head, branch: $b, path: [.worktrees[] | select($b != "" and .branch == $b) | .path][0]}'
+gw fast-forward --json
 ```
 
-`head.ref` is the branch the head resolves to, such as
-`refs/remotes/origin/main`, and `branch` is its name. `head.ref: null` means
-the head branch does not resolve; report that and stop.
+In Codex, `$ARGUMENTS` means the arguments supplied with the skill. They
+pass through, quoted for the shell: `gw fast-forward 'NAME' --from 'REF'
+--json` names the branch a finished one moves to and where it starts. The
+CLI refuses both on a branch that is not finished.
 
-`path` is the checkout that holds the head branch, usually the main
-checkout. A null `path` means no checkout holds it, and there is nothing to
-move: new branches start from the remote's tip, which `gw sync` just
-fetched. Say so and stop.
+Read stdout, stderr and the exit status.
 
-## Move it
+- Exit 0: the branch is level. Report the result.
+- Exit 1 with `"result": "conflict"` on stdout: resolve it, below.
+- Any other non-zero exit leaves stdout empty. That is a refusal, and the
+  branch is unchanged. Report stderr as the CLI wrote it and stop. Do not
+  work around it with `git rebase`, `git merge`, `git switch` or `git stash`.
 
-Only in that `path`. In a checkout on any other branch `gw rotate` starts
-a new branch instead, which is not what was asked.
+A `conflict` from the first run of a request is a rebase that was stopped
+before you ran anything, perhaps one the user paused in `git rebase -i`.
+Show its `stopped_at`, `subject` and `paths`, and ask before resolving or
+continuing it. Continue on your own only a rebase this request started.
+
+The command syncs first once the last sync is a minute old, so the head ref
+is the remote's unless that sync failed or `WORKTREES_OFFLINE` is set. When
+`lastSync.refs` is null, or more than 10 minutes old, after the run, say the
+head ref can be behind the remote. Do not run `gw sync` yourself.
+
+The result's fields:
+
+- `result`: `current`, `fast-forwarded`, `rebased`, `rotated` or `conflict`
+- `branch`, `sha`: the branch checked out now and its commit
+- `base`: what it was brought level with
+- `previous`, `previous_sha`: the branch and commit before the run
+- `ahead`, `behind`: its own commits after, the head ref's it lacked before
+- `proof`, `why`: how a rotated branch was proved finished
+- `stopped_at`, `subject`: the commit the rebase stopped at
+- `paths`: files with conflicts, relative to the top level
+
+## Resolve a conflict
+
+The rebase is replaying `stopped_at` onto the head ref's work. In each file
+in `paths`, the side above `=======` is the head ref plus the commits already
+replayed; the side below is `stopped_at`. Under `merge.conflictStyle` diff3
+or zdiff3, the lines after `|||||||` are what both sides started from.
+
+For each path:
+
+1. Read the file, every conflicted hunk of it.
+2. Find what each side meant. `git show STOPPED_AT -- PATH` shows the
+   branch's change; `git log -p PREVIOUS_SHA..BASE -- PATH` shows what the
+   head ref changed there since the branch left it.
+3. Edit the file so it carries both changes, and remove every marker. When
+   the two sides want incompatible things and the code and commit messages
+   do not say which wins, ask the user rather than pick one.
+4. `git add PATH`, naming only paths from `paths`. Never `git add -A`,
+   `git add .` or `git add -u`: untracked files can sit in the checkout
+   during a rebase, and those would sweep them into a rewritten commit.
+
+When every path is staged, continue with the editor pinned, so git does not
+wait on a commit message nobody can type:
 
 ```sh
-(cd 'PATH' && command gw rotate --json)
+GIT_EDITOR=true git rebase --continue
 ```
 
-Quote `PATH` exactly as the JSON gives it. Then report one of:
+Then run `gw fast-forward --json` again. A new `conflict` is the next commit
+stopping: repeat. `paths: []` means everything is staged and the rebase
+still needs continuing. `current` means it finished.
 
-- exit 0: the branch moved from `previous_sha` to `sha`.
-- exit 1, "already at": it was up to date.
-- exit 1, "ahead": the checkout holds commits the remote does not. List
-  them from the message. They are a change of their own; nothing here
-  moves or drops them.
-- anything else: the message, as git gave it. A dirty file that the
-  fast-forward would overwrite stops it, and the file stays as it was.
+If `git rebase --continue` fails without leaving conflicts, report its
+stderr and stop with the rebase in progress. `git rebase --abort` puts the
+branch back at `previous_sha`; run it only when the user asks. Never run
+`git rebase --skip`, which drops the branch's commit, and never take one
+side of a file wholesale, as `git checkout --ours` or `--theirs` does,
+without telling the user that is what you did.
+
+## Report what happened
+
+Name the branch and its commit before and after. For `rotated`, say the
+finished branch is kept as it was, how it was proved finished, and the new
+branch's name; the new branch has no upstream until it is pushed. For a
+rebase that stopped, list each commit it stopped at with its subject, and
+for each file, what each side changed and how the two were combined.

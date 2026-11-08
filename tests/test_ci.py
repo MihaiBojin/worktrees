@@ -1,4 +1,4 @@
-"""`gw ci` reads one review and its checks, and nothing else.
+"""`gw ci-checks` reads one review and its checks, and nothing else.
 
 The forge is the stand-in from conftest: `$view` answers `gh pr view` and
 `glab mr view`, `$api` answers `glab api`. Nothing reaches the network.
@@ -52,7 +52,7 @@ def _pr(**extra) -> dict:
 
 
 def _read(world, network, *args: str, code: int = 0) -> dict:
-    proc = cli(world, "ci", *args, "--json", env=network.env())
+    proc = cli(world, "ci-checks", *args, "--json", env=network.env())
     assert proc.returncode == code, proc.stderr
     return json.loads(proc.stdout) if code == 0 else {}
 
@@ -67,7 +67,7 @@ def github(world, network):
 
 def test_reads_identity_and_checks_without_touching_git(world, github) -> None:
     before = world.git("rev-parse", "HEAD")
-    proc = cli(world, "ci", "7", "--json", env=github.env())
+    proc = cli(world, "ci-checks", "7", "--json", env=github.env())
     assert proc.returncode == 0, proc.stderr
     assert not proc.stderr
     out = json.loads(proc.stdout)
@@ -106,7 +106,9 @@ def test_reads_identity_and_checks_without_touching_git(world, github) -> None:
 def test_reads_the_current_branch_without_the_callers_repo_redirect(
     world, github
 ) -> None:
-    proc = cli(world, "ci", "--json", env=github.env(GH_REPO="github.com/else/where"))
+    proc = cli(
+        world, "ci-checks", "--json", env=github.env(GH_REPO="github.com/else/where")
+    )
     assert proc.returncode == 0, proc.stderr
     call = next(c for c in github.network_calls() if c[0] == "gh")
     assert call[3:6] == ["feature", "--repo", "github.com/owner/repo"]
@@ -209,7 +211,7 @@ def test_no_checks_is_unknown_rather_than_passed(world, github) -> None:
 )
 def test_no_snapshot_without_a_whole_identity(world, github, answer) -> None:
     github.answer({"$view": answer})
-    proc = cli(world, "ci", "7", "--json", env=github.env())
+    proc = cli(world, "ci-checks", "7", "--json", env=github.env())
     assert proc.returncode == 1
     assert not proc.stdout
     assert proc.stderr
@@ -217,28 +219,47 @@ def test_no_snapshot_without_a_whole_identity(world, github, answer) -> None:
 
 def test_a_review_for_another_branch_is_not_this_branchs(world, github) -> None:
     github.answer({"$view": _pr(headRefName="other")})
-    proc = cli(world, "ci", "--json", env=github.env())
+    proc = cli(world, "ci-checks", "--json", env=github.env())
     assert proc.returncode == 1
     assert "another branch" in proc.stderr
 
 
+def test_ci_is_the_shorthand_for_ci_checks(world, github) -> None:
+    proc = cli(world, "ci", "7", "--json", env=github.env())
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout) == _read(world, github, "7")
+
+
+def test_offline_refuses_before_any_forge_call(world, github) -> None:
+    proc = cli(world, "ci-checks", "7", env=github.env(WORKTREES_OFFLINE="1"))
+    assert proc.returncode == 3
+    assert "WORKTREES_OFFLINE" in proc.stderr
+    assert not github.network_calls()
+
+
+def test_reading_checks_never_syncs_first(world, github) -> None:
+    proc = cli(world, "ci-checks", "7", env=github.env(WORKTREES_SYNC_TTL="0"))
+    assert proc.returncode == 0, proc.stderr
+    assert [c[:3] for c in github.network_calls()] == [["gh", "pr", "view"]]
+
+
 def test_detached_head_needs_a_number(world, github) -> None:
     world.git("checkout", "-q", "--detach")
-    proc = cli(world, "ci", env=github.env())
+    proc = cli(world, "ci-checks", env=github.env())
     assert proc.returncode == 1
-    assert "gw ci NUMBER" in proc.stderr
+    assert "gw ci-checks NUMBER" in proc.stderr
     assert not github.network_calls()
 
 
 @pytest.mark.parametrize("args", [["7", "8"], ["7oops"], ["0"]])
 def test_a_malformed_number_is_a_usage_error(world, github, args) -> None:
-    assert cli(world, "ci", *args, env=github.env()).returncode == 2
+    assert cli(world, "ci-checks", *args, env=github.env()).returncode == 2
     assert not github.network_calls()
 
 
 def test_no_recognised_forge_is_an_answer_not_a_guess(world, network) -> None:
     origin(world, host="example.com")
-    proc = cli(world, "ci", "7", env=network.env())
+    proc = cli(world, "ci-checks", "7", env=network.env())
     assert proc.returncode == 1
     assert "GitHub or GitLab" in proc.stderr
     assert not network.network_calls()
@@ -255,7 +276,7 @@ def test_the_table_puts_failures_first(world, github) -> None:
             )
         }
     )
-    proc = cli(world, "ci", "7", env=github.env())
+    proc = cli(world, "ci-checks", "7", env=github.env())
     assert proc.returncode == 0, proc.stderr
     lines = proc.stdout.splitlines()
     assert lines[0].split() == ["STATE", "CHECK", "LINK"]
@@ -457,7 +478,7 @@ def test_gitlab_pipeline_and_job_errors_give_no_snapshot(
     world, gitlab, records
 ) -> None:
     gitlab.answer({"$view": _mr(), "$api": records})
-    proc = cli(world, "ci", "7", "--json", env=gitlab.env())
+    proc = cli(world, "ci-checks", "7", "--json", env=gitlab.env())
     assert proc.returncode == 1
     assert not proc.stdout
 

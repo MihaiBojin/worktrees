@@ -32,7 +32,8 @@ gw branch create 'NAME' --json
 
 `gw sync` first, every time, so the branch starts on what the remote has
 now. If it fails on the default remote, say so and ask whether to branch
-from the last fetched head instead.
+from the last fetched head instead. Under `WORKTREES_OFFLINE` it refuses at
+exit 3: branch from the last fetched head and say that it was not fetched.
 
 `gw branch create` branches off the remote's head with `--no-track`, so a
 plain `git push` cannot land on the head branch, and checks it out here.

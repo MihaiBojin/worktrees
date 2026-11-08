@@ -74,8 +74,8 @@ MUTATIONS = (
     "command gw branch prune x --yes",
     "gw add x",
     "command gw add x",
-    "gw rotate",
-    "command gw rotate",
+    "gw fast-forward --json",
+    "command gw fast-forward --json",
     "gh pr merge 1",
     "gh pr update-branch 1",
     "gh run rerun 1",
@@ -92,7 +92,7 @@ MUTATIONS = (
 
 def test_every_skill_is_named_for_its_directory() -> None:
     assert [p.parent.name for p in SKILLS] == [
-        "ci",
+        "ci-checks",
         "describe-pr",
         "fast-forward",
         "merge",
@@ -113,6 +113,11 @@ def test_no_skill_preapproves_a_mutation(path: Path) -> None:
             continue
         prefix, wildcard = found.groups()
         for mutation in MUTATIONS:
+            # Its own command is the fast-forward skill's job, and
+            # test_fast_forward_preapproves_the_conflict_loop_alone holds
+            # the rest of its list.
+            if path.parent.name == "fast-forward" and "fast-forward" in mutation:
+                continue
             covered = mutation.startswith(prefix) if wildcard else mutation == prefix
             assert not covered, (tool, mutation)
 
@@ -268,15 +273,89 @@ def test_branch_filter_preserves_sync_and_empty_rows(world) -> None:
     assert out["branches"] == [v for v in raw["verdicts"] if v["eligible"]]
 
 
-def _skill_filter(skill: str, command: str) -> tuple[list[str], str]:
-    """The flags and program a skill pipes `command`'s JSON through."""
-    found = re.search(
+FAST_FORWARD = PLUGIN / "skills" / "fast-forward" / "SKILL.md"
+
+
+def _covers(tools: list[str], command: str) -> bool:
+    """Would one of these allowed-tools patterns run `command` unasked?"""
+    for tool in tools:
+        found = re.fullmatch(r"Bash\((.+?)(:\*)?\)", tool)
+        if found and (
+            command == found.group(1)
+            or (found.group(2) and command.startswith(found.group(1)))
+        ):
+            return True
+    return False
+
+
+def test_fast_forward_preapproves_the_conflict_loop_alone() -> None:
+    """The loop the issue asks for runs unasked; anything that drops a
+    commit, discards a resolution or leaves the checkout does not."""
+    tools = _tools(FAST_FORWARD)
+    for wanted in (
+        "gw fast-forward --json",
+        "git add README",
+        "GIT_EDITOR=true git rebase --continue",
+    ):
+        assert _covers(tools, wanted), wanted
+    for refused in (
+        "git rebase --skip",
+        "git rebase --abort",
+        "git rebase main",
+        "git reset --hard",
+        "git checkout --theirs README",
+        "git stash",
+        "git switch main",
+        "git push",
+        "gw sync",
+    ):
+        assert not _covers(tools, refused), refused
+
+
+def test_the_skill_names_the_fields_fast_forward_prints(world) -> None:
+    """Every field and result the skill reads is one the CLI prints."""
+    from worktrees import fast_forward
+
+    listed = FAST_FORWARD.read_text().split("The result's fields:")[1]
+    listed = listed.split("\n\n")[1]
+    bullets = [line.removeprefix("- ").split(": ", 1) for line in listed.splitlines()]
+    fields = {name for names, _ in bullets for name in re.findall(r"`(\w+)`", names)}
+    results = set(re.findall(r"`([a-z-]+)`", bullets[0][1]))
+
+    world.git("switch", "--quiet", "--create", "fix-parser")
+    world.commit("README", "branch\n")
+    world.git("switch", "--quiet", "main")
+    world.commit("README", "main\n")
+    world.git("switch", "--quiet", "fix-parser")
+    proc = subprocess.run(
+        argv("gw fast-forward", "--json"),
+        cwd=world.repo,
+        env=env_for(world),
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 1, proc.stderr
+    printed = json.loads(proc.stdout)
+    assert fields == set(printed) - {"head", "lastSync"}
+    assert results == {
+        fast_forward.CURRENT,
+        fast_forward.FAST_FORWARDED,
+        fast_forward.REBASED,
+        fast_forward.ROTATED,
+        fast_forward.CONFLICT,
+    }
+
+
+def _skill_filter(skill: str, command: str, nth: int = 0) -> tuple[list[str], str]:
+    """The flags and program the skill's `nth` pipe of `command`'s JSON uses."""
+    found = re.findall(
         rf"^{re.escape(command)} \| jq ((?:-[cr] ?|--arg \w+ '\w+' ?)+)'(.*?)'$",
         (PLUGIN / "skills" / skill / "SKILL.md").read_text(),
         re.S | re.M,
     )
-    assert found, f"the {skill} skill's {command} pipeline is missing"
-    return shlex.split(found.group(1)), found.group(2)
+    assert len(found) > nth, f"the {skill} skill's {command} pipeline is missing"
+    flags, program = found[nth]
+    return shlex.split(flags), program
 
 
 def _run_jq(flags: list[str], program: str, piped: str, **args: str) -> str:
@@ -289,15 +368,15 @@ def _run_jq(flags: list[str], program: str, piped: str, **args: str) -> str:
     return proc.stdout
 
 
-def test_fast_forward_finds_the_checkout_holding_the_head_branch(world) -> None:
+def test_merge_finds_the_checkout_holding_the_head_branch(world) -> None:
     from test_sync import origin
 
     world.worktree("feature")
     raw = json.loads(_json(world, "gw list"))
-    flags, program = _skill_filter("fast-forward", "gw list --json")
+    flags, program = _skill_filter("merge", "gw list --json", nth=1)
     out = json.loads(_run_jq(flags, program, json.dumps(raw)))
     main = next(row for row in raw["worktrees"] if row["main"])
-    assert out == {"head": raw["head"], "branch": "main", "path": main["path"]}
+    assert out == {"branch": "main", "path": main["path"]}
 
     origin(world)
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
@@ -305,7 +384,7 @@ def test_fast_forward_finds_the_checkout_holding_the_head_branch(world) -> None:
     raw = json.loads(_json(world, "gw list"))
     assert raw["head"]["ref"] == "refs/remotes/origin/main"
     out = json.loads(_run_jq(flags, program, json.dumps(raw)))
-    assert out == {"head": raw["head"], "branch": "main", "path": None}
+    assert out == {"branch": "main", "path": None}
 
 
 def test_merge_finds_the_worktree_holding_a_branch(world) -> None:
@@ -337,14 +416,14 @@ def test_ci_projection_keeps_the_failures_and_the_head(world, network) -> None:
         }
     )
     proc = subprocess.run(
-        argv("gw ci", "42", "--json"),
+        argv("gw ci-checks", "42", "--json"),
         cwd=world.repo,
         env=network.env(),
         capture_output=True,
         text=True,
     )
     assert proc.returncode == 0, proc.stderr
-    flags, program = _skill_filter("ci", "gw ci 42 --json")
+    flags, program = _skill_filter("ci-checks", "gw ci-checks 42 --json")
     out = json.loads(_run_jq(flags, program, proc.stdout))
     raw = json.loads(proc.stdout)
     assert out["pr"] == {

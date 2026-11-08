@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from conftest import World, env_for
+from conftest import World, env_for, online
 from test_branches import cli
 
 
@@ -231,7 +231,7 @@ def test_explicit_sync_still_fetches_a_real_local_remote(world):
         "sync",
         "--json",
         env={
-            **env_for(world),
+            **online(world),
             "GIT_TRACE2_EVENT": str(trace),
             "GIT_NO_LAZY_FETCH": "0",
         },
@@ -353,7 +353,7 @@ def test_command_environment_cannot_enable_lazy_fetch(world, monkeypatch):
 def test_explicit_sync_is_allowed_on_older_partial_clones(world):
     partial = partial_clone(world)
     stub = git_version_stub(world, "2.43.0")
-    env = env_for(partial)
+    env = online(partial)
     trace = world.root / "old-sync-trace.jsonl"
     result = cli(
         partial,

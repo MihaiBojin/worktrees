@@ -9,7 +9,7 @@ description: >
 argument-hint: "[NUMBER ...]"
 allowed-tools:
   - Bash(gw sync)
-  - Bash(gw ci:*)
+  - Bash(gw ci-checks:*)
   - Bash(gw list --json)
   - Bash(jq:*)
   - Bash(gh pr view:*)
@@ -43,10 +43,10 @@ wrong, what fixed it. It is the report at the end.
 ## 1. Read it
 
 ```sh
-gw ci NUMBER --json
+gw ci-checks NUMBER --json
 ```
 
-[The ci skill](../ci/SKILL.md) explains the snapshot. A closed or merged
+[The ci-checks skill](../ci-checks/SKILL.md) explains the snapshot. A closed or merged
 `pr.state` ends this pull request's run: report it. A draft is the user's to
 mark ready; report it and move on.
 
@@ -59,7 +59,7 @@ it corrects is a problem for the record.
 
 With `checksState` of:
 
-- `pending`: `gw ci NUMBER --wait --json`, in the background where the host
+- `pending`: `gw ci-checks NUMBER --wait --json`, in the background where the host
   can.
 - `passed`: go to step 4.
 - `failed`: fix it, below.
@@ -102,13 +102,13 @@ trailers, never `git add -A`, then `git push` to the branch's remote. A
 push the remote refuses is a blocker, not a reason to force.
 
 After a push the old snapshot is about a commit that is no longer the head:
-run step 2 again for the new commits, then `gw ci NUMBER --wait --json`.
+run step 2 again for the new commits, then `gw ci-checks NUMBER --wait --json`.
 Three remedies that fail on one cause make it a blocker: report what was
 tried.
 
 ## 4. Merge it
 
-Read `pr.mergeStateStatus` in a fresh `gw ci NUMBER --json`. `CLEAN`,
+Read `pr.mergeStateStatus` in a fresh `gw ci-checks NUMBER --json`. `CLEAN`,
 `HAS_HOOKS` and `UNSTABLE` merge. `BLOCKED` is a required review or rule,
 `DIRTY` a conflict, `BEHIND` a base that moved (step 3's last row): report
 the first two as blockers. `DRAFT` is step 1's draft. `UNKNOWN` means
@@ -160,10 +160,21 @@ merge is not tried again in another way.
 
 ## 5. Afterwards
 
-Once the last pull request has merged, run
-[the fast-forward skill](../fast-forward/SKILL.md) so the head branch's
-checkout has what landed. Offer [the prune skill](../prune/SKILL.md) for
-the merged branches' worktrees; removing them waits for the user.
+Once the last pull request has merged, bring the checkout that holds the
+head branch up to what landed, usually the main checkout:
+
+```sh
+gw list --json | jq -c '(.head.ref // "" | sub("^refs/remotes/[^/]+/|^refs/heads/"; "")) as $b
+  | {branch: $b, path: [.worktrees[] | select($b != "" and .branch == $b) | .path][0]}'
+```
+
+A null `path` means no checkout holds it, and nothing needs moving. Else
+follow [the fast-forward skill](../fast-forward/SKILL.md) in that
+checkout, with `(cd 'PATH' && command gw fast-forward --json)`. On the head
+branch it only fast-forwards; a refusal that the branch is ahead of the
+remote is reported, never worked around. Offer
+[the prune skill](../prune/SKILL.md) for the merged branches' worktrees;
+removing them waits for the user.
 
 ## 6. Report
 

@@ -15,10 +15,32 @@ from . import repo as R
 
 _CACHE = "git-worktrees-sync.json"
 _FRESH = 10 * 60
+OFFLINE = "WORKTREES_OFFLINE"
+TTL = "WORKTREES_SYNC_TTL"
+_TTL = 60
 NEVER = (
-    "Never synced: verdicts use refs from the clone or last fetch and no forge "
-    "evidence. Run: gw sync"
+    "Never synced: verdicts use refs from the clone or last fetch and no forge evidence"
 )
+
+
+def offline() -> bool:
+    """Whether every command stays off the network. An empty value is unset."""
+    return bool(os.environ.get(OFFLINE))
+
+
+def ttl() -> int:
+    """How many seconds one sync serves the commands that run after it."""
+    value = os.environ.get(TTL, "")
+    if not value:
+        return _TTL
+    if not re.fullmatch(r"[0-9]+", value):
+        raise ValueError(f"{TTL} takes whole seconds, not {value!r}")
+    return int(value)
+
+
+def hint(text: str) -> str:
+    """The text, and the command that refreshes evidence while there is one."""
+    return text if offline() else f"{text}. Run: gw sync"
 
 
 def _empty() -> dict:
@@ -74,6 +96,27 @@ def read(repo: str | os.PathLike[str] | None = None) -> dict:
     }
 
 
+def _seconds(value: str) -> float:
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+
+
+def due(repo: str | os.PathLike[str] | None = None) -> bool:
+    """Whether a command syncs before it reads remote evidence.
+
+    Never offline, and never without a default remote, since sync records
+    nothing then. Otherwise when the refs were last synced TTL seconds ago or
+    longer, or never. The forge time is left out: a forge that keeps failing
+    would sync before every command.
+    """
+    if offline():
+        return False
+    window = ttl()
+    if not R.remote(repo):
+        return False
+    refs = read(repo)["lastSync"]["refs"]
+    return refs is None or time.time() - _seconds(refs) >= window
+
+
 def envelope(repo: str | os.PathLike[str] | None = None) -> dict:
     return {"lastSync": read(repo)["lastSync"], "head": R.head(repo).data()}
 
@@ -89,14 +132,10 @@ def freshness(
         return []
     times = read(repo)["lastSync"]
     if not times["refs"]:
-        return [NEVER]
+        return [hint(NEVER)]
     if quiet:
         return []
-    oldest = min(
-        datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-        for value in times.values()
-        if value
-    )
+    oldest = min(_seconds(value) for value in times.values() if value)
     age = max(0, time.time() - oldest)
     if age <= _FRESH:
         return []
@@ -107,7 +146,7 @@ def freshness(
         if age >= 3600
         else (int(age // 60), "minute")
     )
-    return [f"Last sync: {amount} {unit}{'s' if amount != 1 else ''} ago. Run: gw sync"]
+    return [hint(f"Last sync: {amount} {unit}{'s' if amount != 1 else ''} ago")]
 
 
 def notices(
@@ -132,7 +171,7 @@ def head_line(head: R.Head) -> str:
             if head.branch
             else "unresolved"
         )
-        return f"Head: {named} ({head.source}). Run: gw sync"
+        return hint(f"Head: {named} ({head.source})")
     if head.source == "inferred":
         other_name = render.branch("master" if head.branch == "main" else "main")
         other = f"; {other_name} also exists" if head.other else ""

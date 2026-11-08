@@ -300,7 +300,8 @@ def test_no_terminal_is_one_exit_code(world) -> None:
     """One condition, one number. 2 is already argparse's and _Stop's."""
     world.merged_worktree("a")
     world.merged_worktree("b")
-    p = run(world, "gw remove")
+    # Approved, with two to pick from and nothing to pick with.
+    p = run(world, "gw remove", "--yes")
     assert p.returncode == 3, p.stderr
     assert "terminal" in p.stderr
 
@@ -540,7 +541,7 @@ def test_retired_status_spellings_select_worktree_metadata_through_list(
         ("p", "prune"),
         ("a", "add"),
         ("rm", "remove"),
-        ("rot", "rotate"),
+        ("ff", "fast-forward"),
     ],
 )
 def test_a_shorthand_names_the_command_it_stands_for(
@@ -549,6 +550,22 @@ def test_a_shorthand_names_the_command_it_stands_for(
     from worktrees import cli
 
     assert cli._CANONICAL[spelling] == canonical
+
+
+@pytest.mark.parametrize("path", ["branch", *(path for path, _ in cli.command_rows())])
+def test_every_command_says_what_it_does_in_its_help(world, path: str) -> None:
+    """One or two sentences above the flags, from the row `gw --help` reads,
+    so no command answers -h with its flags alone."""
+    words = path.split()
+    command = cli._BRANCH_COMMANDS[words[1]] if len(words) > 1 else cli._COMMANDS[path]
+    sentences = re.findall(r"[^.]+\.(?:\s|$)", command.description)
+    assert 1 <= len(sentences) <= 2, command.description
+    assert "".join(sentences) == command.description
+
+    p = run(world, "gw", *words, "--help")
+    assert p.returncode == 0, p.stderr
+    # argparse rewraps the paragraph to the terminal's width.
+    assert command.description in " ".join((p.stdout + p.stderr).split())
 
 
 def test_no_two_commands_answer_to_the_same_name() -> None:
@@ -1240,13 +1257,13 @@ def test_list_rejects_quiet_before_repository_preflight(world, network, flag, ar
         ("gw branch prune", ("topic", "--yes")),
         ("gw add", ("new",)),
         ("gw branch create", ("new",)),
-        ("gw rotate", ()),
+        ("gw fast-forward", ()),
         ("gw", ("branch", "prune", "topic", "--yes")),
         ("gw", ("branch", "create", "new")),
         ("gw", ("p", "--yes")),
         ("gw", ("a", "new")),
         ("gw", ("rm", "topic", "--yes")),
-        ("gw", ("rot",)),
+        ("gw", ("ff",)),
     ],
 )
 def test_output_flags_conflict_before_repository_preflight(
@@ -1291,7 +1308,7 @@ def test_sync_verbose_traces_git_and_forge_to_stderr_with_json(world, network, f
         "gw remove",
         "gw branch prune",
         "gw branch create",
-        "gw rotate",
+        "gw fast-forward",
         "gw prune",
     ],
 )
@@ -1356,8 +1373,10 @@ def test_quiet_omits_stale_age_warning(world, network, flag):
         "forge": "2020-01-01T00:00:00Z",
     }
     cache_path(world).write_text(json.dumps(cached))
-    normal = invoke(world, entry="gw prune", env=network.env())
-    quiet = invoke(world, flag, entry="gw prune", env=network.env())
+    # Offline, since a sync before the command would make the cache fresh.
+    offline = network.env(WORKTREES_OFFLINE="1")
+    normal = invoke(world, entry="gw prune", env=offline)
+    quiet = invoke(world, flag, entry="gw prune", env=offline)
     assert normal.returncode == quiet.returncode == 0
     assert "Last sync:" in normal.stderr
     assert "Last sync:" not in quiet.stderr

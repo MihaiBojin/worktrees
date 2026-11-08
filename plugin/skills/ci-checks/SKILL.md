@@ -1,14 +1,14 @@
 ---
-name: ci
+name: ci-checks
 description: >
   Read a pull request's or merge request's CI checks as compact JSON with
-  `gw ci`, and wait for them to finish. Use it whenever you need to know
+  `gw ci-checks`, and wait for them to finish. Use it whenever you need to know
   whether CI passed, which check failed, or when running checks finish,
   instead of `gh pr checks`, `gh pr view --json statusCheckRollup`,
   `gh run list` or `glab ci status`.
 argument-hint: "[NUMBER] [--wait]"
 allowed-tools:
-  - Bash(gw ci:*)
+  - Bash(gw ci-checks:*)
   - Bash(jq:*)
   - Bash(gh run view:*)
   - Bash(glab ci trace:*)
@@ -16,14 +16,14 @@ allowed-tools:
 
 # Read CI
 
-`gw ci` asks GitHub or GitLab for one review and its checks and prints one
+`gw ci-checks` asks GitHub or GitLab for one review and its checks and prints one
 snapshot. It changes nothing. It comes from `uv tool install git-worktrees`;
 if `gw` is missing, report that and stop.
 
 ```sh
-gw ci --json            # the current branch's pull request
-gw ci 42 --json         # pull request 42
-gw ci 42 --wait --json  # read until no check is running, up to 30 minutes
+gw ci-checks --json            # the current branch's pull request
+gw ci-checks 42 --json         # pull request 42
+gw ci-checks 42 --wait --json  # read until no check is running, up to 30 minutes
 ```
 
 The snapshot:
@@ -39,12 +39,13 @@ The snapshot:
 `bucket` is `pass`, `fail`, `cancel`, `pending`, `skipping`, `blocked` or
 `unknown`. Exit 0 means a snapshot was read, failing checks included; exit 1
 means no snapshot, and its message says why. Report that message as a read
-failure, not as a CI failure.
+failure, not as a CI failure. Exit 3 means `WORKTREES_OFFLINE` is set and
+nothing was read. `gw ci` is the same command.
 
 Read only what the question needs:
 
 ```sh
-gw ci 42 --json | jq -c '{pr: .pr | {number, headSha, mergeStateStatus}, checksState, stale,
+gw ci-checks 42 --json | jq -c '{pr: .pr | {number, headSha, mergeStateStatus}, checksState, stale,
   failing: [.checks[] | select(.bucket == "fail" or .bucket == "cancel") | {name, workflow, link}]}'
 ```
 

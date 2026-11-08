@@ -64,8 +64,10 @@ by the refs and forge sync times from `lastSync`. Null means no successful
 sync for that component or that it does not apply. An unresolved head
 (`ref: null`) prevents removal; report it.
 
-Use `git remote` only to distinguish no remotes from never-synced remote
-state. With remotes and `lastSync.refs: null`, say never synced and ask
+Both assessments sync first once the last sync is a minute old, so remote
+state that is still never synced or stale means that sync failed or
+`WORKTREES_OFFLINE` is set. Use `git remote` only to distinguish no remotes
+from never-synced remote state. With remotes and `lastSync.refs: null`, say never synced and ask
 whether to run `gw sync` before continuing. Otherwise, with remotes, use the
 older non-null sync time: more than 10 minutes old is stale, exactly
 10 minutes is fresh. Ask whether to sync only for never-synced or stale
@@ -80,7 +82,9 @@ An existing sync approval or refusal already answers this stage.
 Run `gw sync` only when the user asks or answers yes. Keep an existing sync
 approval or refusal for this cleanup request. On approval, show the command's
 actual outcome and rerun both assessments, including after a partial sync
-failure. On refusal, continue with the existing evidence. A selective
+failure. `gw sync` refuses at exit 3 while `WORKTREES_OFFLINE` is set; report
+that and continue with the existing evidence. On refusal, continue with the
+existing evidence. A selective
 removal reply does not erase that sync choice or require asking again.
 
 ## Show candidates and ask what to remove

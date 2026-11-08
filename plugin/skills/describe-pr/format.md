@@ -9,8 +9,8 @@ on the head branch follows. What follows applies where they say nothing.
 
 ## Title
 
-- What the change does, in the imperative: `Add gw ci`, not `Added gw ci`
-  or `gw ci command`.
+- What the change does, in the imperative: `Add gw ci-checks`, not `Added gw ci-checks`
+  or `gw ci-checks command`.
 - The history's prefix convention when it has one, such as Conventional
   Commits' `feat:`, `fix!:` or `docs(readme):`. Mark a breaking change the
   way that convention does.

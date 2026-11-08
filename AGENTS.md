@@ -72,7 +72,7 @@ failed.
 
 A shortcut is one call to the `gw` function with fixed words, by its plain
 name so a shortcut to a command that lands still lands: `gwa` calls `gw add`,
-`gwl` calls `gw list`, `gwr!` calls `gw remove --delete ignored-files`, and
+`gwl` calls `gw list`, `gwr!` calls `gw remove --yes`, and
 `gwpa!` calls `gw prune --delete all --yes`. No shortcut has a console script.
 The `shortcuts` field of a row in `cli.py` lists that command's; `gw --help`
 prints them under it, and `tests/test_shims.py` holds every function file in
@@ -83,16 +83,27 @@ of the line alone, so no shortcut meets history expansion. `!!` would.
 
 ## Two commands start branches
 
-`gw branch create` and `gw rotate` start branches, not worktrees, and do the job
-`origin new-branch` and `origin rotate` do. The name format, the
-stem-stripping and the remote-aware collision check are the same in both, so
-a branch either one names is one the other would have named.
+`gw branch create` and `gw fast-forward` start branches, not worktrees.
+`gw branch create NAME` starts NAME off the head ref, as `origin new-branch`
+does, and keeps argparse's 2 for a usage error where `origin` has a single
+non-zero exit code.
 
-Two divergences are deliberate. `origin` has a single non-zero exit code and
-draws no line between a usage error and a runtime one; this CLI keeps
-argparse's 2 for a usage error. And `gw rotate` refuses, at exit 1, a rotation or
-catch-up that would change nothing, where `origin rotate` makes a branch at
-the same commit under a new name.
+`gw fast-forward` starts a branch only when the one you stand on is proved
+finished, by the same `merged.branch_proof` that `gw prune` reads. A merged
+branch's name stays with its merged request on the forge, so the finished
+branch keeps its name and commits and the checkout moves to
+`YYYY-MM-DDThh-mm-ssZ/<stem>` in UTC, or to the NAME given, from the head
+ref or `--from`. The stem drops a time an earlier rotation put in front, and
+a name held here or on the default remote is refused.
+
+Every other branch keeps its name. One with no commits of its own
+fast-forwards and one with commits is rebased, both with `--no-autostash`:
+`merge.autoStash` and `rebase.autoStash` would move a dirty tree into the
+stash list every worktree shares. The first conflict stops the rebase and leaves it in progress, at
+exit 1 with the stopped commit and files in `--json`, for a person or the
+agent plugin to finish with `git rebase --continue`. A branch already level
+exits 0. The head branch only fast-forwards.
+[fast-forward](docs/commands/fast-forward.md) gives the order of the checks.
 
 ## Where shell code goes
 
@@ -147,18 +158,19 @@ assumes a plugin root or a checkout at a known path.
 | skill | runs |
 | --- | --- |
 | `new-branch` | `gw sync`, then `gw branch create` |
-| `fast-forward` | `gw sync`, then `gw rotate` in the checkout that holds the head branch |
-| `ci` | `gw ci --json`, `--wait` to wait without polling |
+| `fast-forward` | `gw fast-forward --json`, then each rebase conflict until the branch is level |
+| `ci-checks` | `gw ci-checks --json`, `--wait` to wait without polling |
 | `describe-pr` | checks a review's title and body against its diff, and edits them |
-| `merge` | `describe-pr`, `ci`, fixes on the branch, `gh pr merge`, then `fast-forward` |
+| `merge` | `describe-pr`, `ci-checks`, fixes on the branch, `gh pr merge`, then `fast-forward` in the head branch's checkout |
 | `prune` | `gw prune --json` and `gw branch status --json`, then the removals approved |
 
 `describe-pr` and `merge` share `describe-pr/format.md`: the review's title
 and body are the squash commit's subject and body, so one set of rules
 writes both. `tests/test_plugin.py` holds every skill's `allowed-tools`
 to reads, `gw sync` and `gw branch create`: no pattern covers a removal, a
-merge, a push, a rerun or a checkout that moves. `describe-pr` alone may
-edit a review, because correcting a description without a prompt is its job.
+merge, a push, a rerun or a checkout that moves. Two exceptions are each
+skill's job: `describe-pr` alone may edit a review, and `fast-forward` alone
+runs `gw fast-forward` and the conflict loop its own test lists.
 
 The prune skill reads `gw prune --json` and
 `gw branch status --json`, preserving head/sync state and full rows for eligible, empty,
@@ -167,8 +179,10 @@ actual jq filters and applies them to real CLI output. Checked-out branches
 are absent from the loose-branch list. Paths and restore commands must retain
 exact quoting.
 
-The prune skill asks before syncing stale or never-synced remote state, and runs
-`gw sync` only on the user's answer. Removal approval covers chosen targets
+The prune skill's assessments sync first when one is due. The skill asks
+before syncing state that is still stale or never synced after that, and
+runs `gw sync` only on the user's answer; under `WORKTREES_OFFLINE` that
+command refuses, and the skill goes on with the evidence there is. Removal approval covers chosen targets
 and explicit deletion categories. Each worktree goes through
 `command gw remove` with its exact quoted JSON path, then selected loose
 branches through `command gw branch prune`. The plugin never targets its current checkout. It reports
@@ -198,7 +212,7 @@ which? [type to filter, up/down and enter, esc to cancel]
 ```
 
 Every printable key goes into the filter, digits included, because names
-carry them: `release-0.6.2`, and every branch `gw rotate` names. Rows carry no
+carry them: `release-0.6.2`, and every branch `gw fast-forward` names. Rows carry no
 numbers for the same reason. Backspace takes a letter back, up and down move
 the highlight and wrap, and enter takes it. Esc clears the filter; on an
 empty filter it cancels, as ctrl-d does, and the hint names which of the two
@@ -229,7 +243,11 @@ leaves, so nothing writes a cursor code where it would show up as text.
 A query that is exactly one worktree's name, branch or path is that worktree
 alone. `gw list one` beside `one-more` is not a question, and neither is
 `gw remove "$(gw list two --json | jq -r '.worktrees[0].path')"`.
-`gw remove NAME` uses exact names, with an exact path resolving one worktree; several name matches need a picker or a nonterminal refusal.
+`gw remove NAME` uses exact names, with an exact path resolving one worktree.
+It takes `gw prune`'s rules for that one: nonterminal input, `--json` and
+`--table` print the match's rows and remove nothing, so an assessment never
+asks and never refuses. With `--yes`, several name matches need a picker or a
+nonterminal refusal. It has no `--only`: one target has one verdict.
 
 Dropping `fzf` is less code, not more. It removes the spawn and the fallback
 branch a machine without `fzf` would otherwise need.
@@ -352,12 +370,33 @@ indented, its exit code when that is not 0 or is the only answer, then a
 blank line. Printing after the run keeps a command and its answer together
 when eight threads are asking at once.
 
-## Only explicit sync and ci use the network
+## Sync runs before a command that is due one
 
 `gw sync` fetches every remote with `--prune --tags --no-prune-tags`, the
 default first, updates the default remote's HEAD and queries the forge for
-every local branch tip on eight threads. `gw ci` reads one review and its
-checks and writes nothing. Every other command stays offline. Sync refuses, before fetching, any remote whose refspec writes outside its own
+every local branch tip on eight threads. Every other command but
+`gw version`, `gw ci-checks`, help and completion runs the same `sync.run`
+first when
+`sync.due` says so: the default remote's refs time is null or at least
+`WORKTREES_SYNC_TTL` seconds old, 60 by default. The forge time is not read,
+since a forge that keeps failing would sync before every command. Without a
+default remote nothing syncs first, because sync records nothing there.
+
+A failed sync before a command is a warning, and the command goes on with
+the evidence it has; quiet and JSON hide the warning. Nothing it prints
+reaches stdout, so `cd $(gw add x)` and `jq` never see it. A TTL that is not
+whole seconds is a usage error at exit 2.
+
+`WORKTREES_OFFLINE`, when non-empty, turns sync off everywhere: nothing syncs
+first, and `gw sync` and `gw ci-checks` refuse at exit 3. Every notice that would end
+`Run: gw sync` goes through `sync.hint`, which leaves that off offline,
+since it names a command that refuses there.
+
+`gw ci-checks` reads one review and its checks from the forge each time it
+runs and writes nothing, the sync cache included. It never syncs first: its
+answer comes from the forge, not from local evidence.
+
+Sync refuses, before fetching, any remote whose refspec writes outside its own
 `refs/remotes/<name>/`, since a mirror refspec with `--prune` deletes local
 branches. Git refusing a moved tag is a warning; any other refused ref fails
 that remote. The fetch runs in the C locale so sync can read which it was. The
@@ -382,7 +421,7 @@ patch-id input and creates no synthetic commits.
 
 The per-worktree checks run on eight threads. Mutations remain serial.
 
-`gw ci` takes GitHub's review and checks from one `gh pr view` with
+`gw ci-checks` takes GitHub's review and checks from one `gh pr view` with
 `statusCheckRollup`, so both describe one head and nothing can go stale
 between them. It keeps the newest run per workflow and name, and a run with
 no start time counts as newest, so a queued re-run supersedes the failure it
@@ -445,7 +484,7 @@ tested on what it returns rather than on its exit code. `upstream_of` takes
 `ok=(0, 1, 128)`, so a typo in one of its flags exits 128, reads as "no
 upstream", and turns every branch into `unknown` with nothing failing.
 
-The network calls belong to explicit sync. Their results distinguish failed
+The network calls belong to sync. Their results distinguish failed
 refs refresh from partial forge refresh; assessments retain usable local
 proof without asking the network. The cache records each successful
 component's time separately.
@@ -468,7 +507,9 @@ is a rule that goes quiet: the hand-written footer fell a rule behind the
 moment `update-ref` was added, and nothing failed.
 
 `verdicts.py` declares no mutating command. A read-only command may not call
-one: a test reads the verbose log and asserts it.
+one, the fetch and `set-head` of the sync it runs first aside, which write
+remote-tracking refs and the remote's new tags: a test reads the verbose log
+and asserts it.
 
 ## Verdicts and deletion are separate
 
@@ -529,4 +570,7 @@ code forever.
 The fixture needs no global git config, no signing key, no forge and no
 network. `GIT_CONFIG_GLOBAL` carries that: without it git still reads
 `$HOME/.gitconfig`, and setting `HOME` alone still leaves
-`$XDG_CONFIG_HOME/git/config`.
+`$XDG_CONFIG_HOME/git/config`. `WORKTREES_OFFLINE=1` in `conftest.ENV` stops
+a command syncing first, which would fetch a remote at `github.com` for
+real. `Network.env` clears it for the fake network, and `conftest.online`
+for a remote on disk.

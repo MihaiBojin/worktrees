@@ -103,14 +103,14 @@ def test_branch_start_uses_exact_symbolic_head(world, separator):
 
 
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085", "\u00a0"])
-def test_rotate_reads_exact_current_branch(world, separator):
+def test_fast_forward_reads_exact_current_branch(world, separator):
     name = "topic" + separator
     path = world.worktree(name)
     world.git("branch", "topic")
     tip = world.commit("feature", at=path)
-    result = run(world, "gw rotate", "--json", at=path)
+    result = run(world, "gw fast-forward", "--json", at=path)
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["previous"] == name
+    assert json.loads(result.stdout)["branch"] == name
     assert world.git("rev-parse", f"refs/heads/{name}") == tip
 
 
@@ -142,8 +142,5 @@ def test_plain_remote_head_at_two_branches_does_not_resolve(world):
     result = run(world, "gw branch status", "--json")
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["head"]["ref"] is None
-    assert (
-        "Head: unresolved (clone). Run: gw sync"
-        in run(world, "gw branch status").stderr
-    )
+    assert "Head: unresolved (clone)\n" in run(world, "gw branch status").stderr
     assert run(world, "gw branch create", "next").returncode != 0

@@ -15,8 +15,8 @@ from .errors import GitError, Refused
 from .render import BLUE, BOLD, DIM, GREEN, RED, YELLOW, Cell, Row, table
 
 if TYPE_CHECKING:  # names used in annotations, which never run
+    from . import fast_forward, verdicts
     from . import repo as R
-    from . import verdicts
     from . import worktree as wt_mod
 
 
@@ -59,6 +59,8 @@ def run_sync(args: argparse.Namespace) -> int:
     from . import sync
     from .git import options
 
+    if sync.offline():
+        raise Refused(f"gw sync uses the network, and {sync.OFFLINE} is set")
     options.verbose = args.verbose
     with progress.running(not args.quiet and not args.verbose):
         code, failures, warnings = sync.run()
@@ -74,6 +76,28 @@ def run_sync(args: argparse.Namespace) -> int:
             print("Sync complete." if R.remotes().lines else "No remote to sync.")
         _err(render.note(sync.head_line(R.head())))
     return code
+
+
+def _refresh(args: argparse.Namespace) -> None:
+    """Sync first when the shared evidence is due, and carry on if it fails.
+
+    Its failures are warnings, since the command still runs on the evidence
+    it has; quiet and JSON hide them, as they hide the stale line.
+    """
+    from . import sync
+
+    try:
+        due = sync.due()
+    except ValueError as exc:
+        raise _Stop(str(exc), 2) from None
+    if not due:
+        return
+    quiet = getattr(args, "quiet", False)
+    with progress.running(not quiet and not getattr(args, "verbose", False)):
+        _, failures, warnings = sync.run()
+    if not quiet and not getattr(args, "json", False):
+        for message in (*failures, *warnings):
+            _warn(message)
 
 
 def _same(a: str, b: str) -> bool:
@@ -177,11 +201,11 @@ def _explain() -> int:
     """Every git command the program can issue."""
     from . import (  # noqa: F401
         branches,
+        fast_forward,
         merged,
         new_branch,
         prune,
         repo,
-        rotate,
         verdicts,
         worktree,
     )
@@ -509,7 +533,6 @@ def run_prune(args: argparse.Namespace) -> int:
 
 
 def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
-    p.description = _NEW_BRANCH_HELP
     p.add_argument(
         "name", nargs="?", default="", metavar="NAME", help="the branch to start"
     )
@@ -562,12 +585,28 @@ def run_new_branch(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
-# rotate
+# fast-forward
 # --------------------------------------------------------------------------
 
 
-def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
-    p.description = _ROTATE_HELP
+def _add_fast_forward_flags(p: argparse.ArgumentParser) -> None:
+    # Not `name`: _dispatch reads an empty `name` as a missing argument and
+    # skips the preflight, and this one is optional.
+    p.add_argument(
+        "new_name",
+        nargs="?",
+        default="",
+        metavar="NAME",
+        help="the branch a finished one moves to; a dated copy of its name "
+        "when omitted",
+    )
+    p.add_argument(
+        "--from",
+        dest="start",
+        default="",
+        metavar="REF",
+        help="start that branch from this branch or commit, not the head ref",
+    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument(
         "-q", "--quiet", action="store_true", help="omit summaries and progress"
@@ -580,11 +619,10 @@ def _add_rotate_flags(p: argparse.ArgumentParser) -> None:
     )
 
 
-def run_rotate(args: argparse.Namespace) -> int:
+def run_fast_forward(args: argparse.Namespace) -> int:
 
+    from . import fast_forward as ff
     from . import new_branch
-    from . import repo as R
-    from . import rotate as rotate_mod
     from .git import options
 
     options.verbose = args.verbose
@@ -592,85 +630,76 @@ def run_rotate(args: argparse.Namespace) -> int:
         return _explain()
 
     try:
-        result = rotate_mod.rotate()
+        moved = ff.fast_forward(args.new_name, args.start)
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
 
-    if isinstance(result, rotate_mod.CaughtUp):
-        if args.json:
-            print(
-                _json(
-                    {
-                        "branch": result.branch,
-                        "at": result.at,
-                        "previous_sha": result.previous_sha,
-                        "sha": result.sha,
-                    },
-                    indent=2,
-                )
-            )
-        else:
-            print(
-                _was_now(
-                    (result.branch, result.previous_sha, ""),
-                    (
-                        result.branch,
-                        result.sha,
-                        f"fast-forwarded by {_commits(result.count)} to {result.at}",
-                    ),
-                )
-            )
-        return 0
-
     if args.json:
-        print(
-            _json(
-                {
-                    "branch": result.branch,
-                    "stem": result.stem,
-                    "base": result.base,
-                    "sha": result.sha,
-                    "previous": result.previous,
-                    "previous_sha": result.previous_sha,
-                },
-                indent=2,
-            )
-        )
-    else:
-        base = R.ref_name(result.base)
-        kept = (
-            f"kept, {_commits(result.ahead)} not on {base}"
-            if result.ahead
-            else "kept, no commits of its own"
-        )
-        print(
-            _was_now(
-                (result.previous, result.previous_sha, kept),
-                (result.branch, result.sha, f"new, from {base}"),
-            )
-        )
+        print(_json(moved.data(), indent=2))
+    if moved.result == ff.CONFLICT:
+        # On stderr whatever the format, as every failure is: --json has
+        # already put the same facts on stdout.
+        _stopped(moved)
+        return 1
+    if not args.json:
+        print(_moved(moved))
     return 0
 
 
-def _was_now(was: tuple[str, str, str], now: tuple[str, str, str]) -> str:
-    """Where HEAD stood before and stands after: branch, sha and a note."""
-    return table(
-        [
-            (
-                Cell("was", DIM),
-                Cell(was[0], render.BRANCH),
-                Cell(was[1], YELLOW),
-                Cell(was[2], DIM),
-            ),
-            (
-                Cell("now", BOLD),
-                Cell(now[0], render.BRANCH),
-                Cell(now[1], YELLOW),
-                Cell(now[2], DIM),
-            ),
-        ]
+def _stopped(moved: fast_forward.Moved) -> None:
+    """The commit a rebase stopped at, the files to fix, and the two ways on."""
+    at = f" at {moved.stopped_at} ({moved.subject})" if moved.stopped_at else ""
+    stopped = f"{render.branch(moved.branch)} stopped rebasing onto {moved.base}{at}"
+    if moved.paths:
+        files = "".join(f"\n  {path}" for path in moved.paths)
+        _err(render.fail(f"{stopped}, with conflicts in:{files}"))
+    else:
+        _err(render.fail(f"{stopped}, with no conflicts left unstaged"))
+    _err(
+        render.note(
+            "resolve each file and git add it, then git rebase --continue; "
+            f"git rebase --abort puts {render.branch(moved.branch)} back at "
+            f"{moved.previous_sha}"
+        )
     )
+
+
+def _moved(moved: fast_forward.Moved) -> str:
+    """Where HEAD stood before the run and stands after: branch, sha, note."""
+    from . import fast_forward as ff
+    from . import repo as R
+
+    base = R.ref_name(moved.base)
+    now: dict[str, str] = {
+        ff.CURRENT: f"already on {base}",
+        ff.FAST_FORWARDED: f"fast-forwarded by {_commits(moved.behind)} to {base}",
+        ff.REBASED: f"rebased onto {base}",
+        ff.ROTATED: f"new, from {base}",
+    }
+    note = now[moved.result]
+    if moved.ahead:
+        note += f", {_commits(moved.ahead)} of its own"
+    after = (
+        Cell("now", BOLD),
+        Cell(moved.branch, render.BRANCH),
+        Cell(moved.sha, YELLOW),
+        Cell(note, DIM),
+    )
+    if moved.result == ff.CURRENT:
+        return table([after])
+    was = {
+        ff.FAST_FORWARDED: "",
+        ff.REBASED: f"{_commits(moved.behind)} behind {base}",
+        ff.ROTATED: f"kept, finished: {moved.why}",
+    }
+    before = (
+        Cell("was", DIM),
+        Cell(moved.previous, render.BRANCH),
+        Cell(moved.previous_sha, YELLOW),
+        Cell(was[moved.result], DIM),
+    )
+    return table([before, after])
 
 
 def _commits(n: int) -> str:
@@ -689,7 +718,6 @@ def _review_number(text: str) -> int:
 
 
 def _add_ci_flags(p: argparse.ArgumentParser) -> None:
-    p.description = _CI_HELP
     p.add_argument(
         "number",
         nargs="?",
@@ -723,9 +751,11 @@ _BUCKET_INK = {
 
 
 def run_ci(args: argparse.Namespace) -> int:
-    from . import ci
+    from . import ci, sync
     from .git import options
 
+    if sync.offline():
+        raise Refused(f"gw ci-checks reads the forge, and {sync.OFFLINE} is set")
     options.verbose = args.verbose
 
     def reader() -> dict:
@@ -743,7 +773,7 @@ def run_ci(args: argparse.Namespace) -> int:
         return 1
 
     if snapshot["stale"]:
-        _warn("the review changed while it was read; run gw ci again")
+        _warn("the review changed while it was read; run gw ci-checks again")
     elif args.wait and snapshot["checksState"] == "pending":
         _warn("checks are still running after 30 minutes")
     if args.json:
@@ -818,6 +848,7 @@ def _add_list_flags(p: argparse.ArgumentParser) -> None:
 
 
 def _add_remove_flags(p: argparse.ArgumentParser) -> None:
+    """gw prune's rules for one target. No --only: one target has one verdict."""
     p.add_argument(
         "query", nargs="?", default="", metavar="PATH|QUERY", help="which one"
     )
@@ -826,12 +857,20 @@ def _add_remove_flags(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="remove the checkout and retain its branch and stashes",
     )
-    _add_delete_flags(p)
-    p.add_argument("-y", "--yes", action="store_true", help="do not ask")
+    _add_assess_flags(p)
+    p.add_argument(
+        "--table",
+        action="store_true",
+        help="assess without prompting; uncoloured table",
+    )
+    p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="approve removal, including with --json or --table",
+    )
     # Removal candidates omit main, which Git cannot remove.
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
-    _add_cd_flags(p)
-    _add_cd_output_flags(p)
 
 
 def _landed(args: argparse.Namespace, landed: wt_mod.Landed) -> int:
@@ -987,6 +1026,28 @@ def run_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _remove_preview(args: argparse.Namespace, rows: list[verdicts.Verdict]) -> int:
+    """The rows gw prune would print for these worktrees, and no removal.
+
+    Never a bare path on stdout: the gw function changes into one.
+    """
+    if args.json:
+        print(_json({"verdicts": _verdict_data(rows)}, indent=2))
+        return 0
+    if args.table:
+        render.out.on = False
+    print(_verdict_table(rows))
+    if args.quiet:
+        return 0
+    print()
+    print(_counted(rows))
+    if len(rows) == 1 and rows[0].eligible:
+        sys.stdout.flush()
+        named = shlex.quote(rows[0].path)
+        _err(render.note(f"gw remove {named} --yes removes it"))
+    return 0
+
+
 def run_remove(args: argparse.Namespace) -> int:
 
     from . import layout, pick, prune
@@ -1018,7 +1079,6 @@ def run_remove(args: argparse.Namespace) -> int:
             found = [
                 w for w in worktrees if args.query in (layout.name_of(w.path), w.branch)
             ]
-        _refuse_ambiguous(found)
     by_path = {v.path: v for v in rows}
     candidates = [by_path[w.path] for w in found if w.path in by_path]
 
@@ -1031,6 +1091,13 @@ def run_remove(args: argparse.Namespace) -> int:
             )
         )
         return 1
+
+    # gw prune's rule: without approval, a caller that cannot answer, or asked
+    # for data, gets the assessment and nothing changes.
+    if not args.yes and (args.json or args.table or not sys.stdin.isatty()):
+        return _remove_preview(args, candidates)
+    if args.query:
+        _refuse_ambiguous(found)
 
     # The main checkout is listed and never offered: `git worktree remove`
     # refuses it whatever flag it is given. The worktree you stand in is
@@ -1235,7 +1302,6 @@ def _complete_commands() -> int:
 def _add_prune_flags(p: argparse.ArgumentParser) -> None:
     _add_assess_flags(p)
     add_status_flags(p)
-    p.description = _PRUNE_HELP
     p.add_argument(
         "--table",
         action="store_true",
@@ -1268,7 +1334,7 @@ def _add_branch_flags(p: argparse.ArgumentParser) -> None:
         child = subs.add_parser(
             name,
             help=command.about,
-            description=command.about,
+            description=command.description,
             epilog=_shortcuts_epilog(f"branch {name}", command),
         )
         if command.flags:
@@ -1294,7 +1360,7 @@ def run_branch(args: argparse.Namespace) -> int:
         for name, command in _BRANCH_COMMANDS.items():
             print(f"{name}\t{command.about}")
         return 0
-    p = _parser(args.prog, "Create, assess and delete local branches.")
+    p = _parser(args.prog, _COMMANDS["branch"].description)
     _add_branch_flags(p)
     p.print_help()
     return 0
@@ -1303,14 +1369,26 @@ def run_branch(args: argparse.Namespace) -> int:
 class _Command:
     """One command, every shorthand for it, and the shell plugin's shortcuts.
 
-    Every alias reaches the row's function. Help prints these rows.
+    Every alias reaches the row's function. Help prints these rows: `about`
+    in the table `gw --help` prints, `description` at the top of the
+    command's own --help.
     """
 
-    __slots__ = ("about", "aliases", "flags", "lands", "run", "shortcuts", "usage")
+    __slots__ = (
+        "about",
+        "aliases",
+        "description",
+        "flags",
+        "lands",
+        "run",
+        "shortcuts",
+        "usage",
+    )
 
     run: Callable[[argparse.Namespace], int]
     flags: Callable[[argparse.ArgumentParser], None] | None
     about: str
+    description: str  # one or two sentences saying what the command does
     usage: str
     aliases: tuple[str, ...]
     # A shell function's name, and the flags it adds to `gw <command>`.
@@ -1322,6 +1400,7 @@ class _Command:
         run: Callable[[argparse.Namespace], int],
         flags: Callable[[argparse.ArgumentParser], None] | None,
         about: str,
+        description: str,
         usage: str = "",
         aliases: tuple[str, ...] = (),
         shortcuts: dict[str, str] | None = None,
@@ -1330,6 +1409,7 @@ class _Command:
         self.run = run
         self.flags = flags
         self.about = about
+        self.description = description
         self.usage = usage
         self.aliases = aliases
         self.shortcuts = shortcuts or {}
@@ -1341,6 +1421,8 @@ _BRANCH_COMMANDS: dict[str, _Command] = {
         run_new_branch,
         _add_new_branch_flags,
         "branch off the head branch",
+        "Branch NAME off the head ref and check it out. The branch has no "
+        "upstream, so a push never targets the head branch.",
         usage="NAME",
         shortcuts={"gwbc": ""},
     ),
@@ -1348,6 +1430,8 @@ _BRANCH_COMMANDS: dict[str, _Command] = {
         run_branch_status,
         _add_branch_status_flags,
         "which branches are finished, and why",
+        "Assess each local branch no worktree has checked out and say whether "
+        "it is finished, with the proof. Name branches to assess only those.",
         usage="[NAME ...]",
         shortcuts={"gwbs": ""},
     ),
@@ -1355,6 +1439,9 @@ _BRANCH_COMMANDS: dict[str, _Command] = {
         run_branch_delete,
         _add_branch_delete_flags,
         "delete local branches proved finished",
+        "Delete local branches proved finished, asking first unless --yes; "
+        "--dry-run reports without deleting. Name the branches, pick them on a "
+        "terminal, or pass --all for every one.",
         usage="[NAME ...]",
         shortcuts={"gwbp": ""},
     ),
@@ -1366,15 +1453,26 @@ _COMMANDS: dict[str, _Command] = {
         run_sync,
         _add_sync_flags,
         "refresh remote refs and forge evidence",
+        "Fetch every remote and its tags, and record which local branch tips "
+        "the forge has merged. Every other command runs it first once the last "
+        "sync is WORKTREES_SYNC_TTL seconds old, 60 by default.",
         shortcuts={"gws": ""},
     ),
     "branch": _Command(
-        run_branch, _add_branch_flags, "create, assess and delete local branches"
+        run_branch,
+        _add_branch_flags,
+        "create, assess and delete local branches",
+        "Start a branch off the head ref, or assess and delete local branches "
+        "no worktree has checked out.",
     ),
     "prune": _Command(
         run_prune,
         _add_prune_flags,
         "assess worktrees and remove eligible ones",
+        "Assess every worktree, and on a terminal ask before removing the "
+        "eligible ones. Nonterminal input, --json, --table and --only assess "
+        "without removing; --yes approves removal and cannot be combined with "
+        "--only.",
         aliases=("p",),
         shortcuts={
             "gwp": "",
@@ -1387,6 +1485,9 @@ _COMMANDS: dict[str, _Command] = {
         run_add,
         _add_add_flags,
         "create a worktree and land you in it",
+        "Create a worktree for branch NAME and change into it, checking out the "
+        "branch if it exists. A new branch starts from BASE, or from the head "
+        "ref without one.",
         usage="NAME [BASE]",
         aliases=("a",),
         shortcuts={"gwa": ""},
@@ -1396,6 +1497,9 @@ _COMMANDS: dict[str, _Command] = {
         run_list,
         _add_list_flags,
         "list worktrees or pick a destination",
+        "Pick a worktree on a terminal and change into it; QUERY narrows the "
+        "list, and takes the one worktree it matches outright. Without a "
+        "terminal, or with --json or --table, print the matching worktrees.",
         usage="[QUERY]",
         aliases=("l",),
         shortcuts={"gwl": ""},
@@ -1405,28 +1509,44 @@ _COMMANDS: dict[str, _Command] = {
         run_remove,
         _add_remove_flags,
         "remove a worktree",
+        "Remove one worktree and its branch once the branch is proved finished; "
+        "a terminal picks and asks, and --keep-branch keeps the branch. "
+        "Nonterminal input, --json and --table assess the match without "
+        "removing; --yes approves removal, except of the worktree you stand in, "
+        "which needs a second answer at a terminal.",
         usage="[QUERY]",
         aliases=("rm",),
-        shortcuts={"gwr": "", "gwr!": "--delete ignored-files"},
+        shortcuts={"gwr": "", "gwr!": "--yes"},
         lands=True,
     ),
-    "rotate": _Command(
-        run_rotate,
-        _add_rotate_flags,
-        "the next branch in a series",
-        aliases=("rot",),
-        shortcuts={"gwrot": ""},
+    "fast-forward": _Command(
+        run_fast_forward,
+        _add_fast_forward_flags,
+        "bring this branch level with the head ref",
+        "Bring the branch you stand on level with the head ref: fast-forward "
+        "it, or rebase its own commits and stop at the first conflict. A branch "
+        "already merged there keeps its name, and the checkout moves to a new "
+        "branch started from the head ref or --from.",
+        usage="[NAME]",
+        aliases=("ff",),
+        shortcuts={"gwff": ""},
     ),
-    "ci": _Command(
+    "ci-checks": _Command(
         run_ci,
         _add_ci_flags,
         "a pull request's checks, read from the forge",
+        "Read one pull or merge request and its checks from GitHub or GitLab, "
+        "without syncing first or changing anything. It exits 0 whenever it "
+        "read a snapshot, failing checks included.",
         usage="[NUMBER]",
+        aliases=("ci",),
     ),
     "version": _Command(
         run_version,
         None,
         "the version this package installs",
+        "Print this package's version on stdout, and on stderr whether the "
+        "shell plugin is the same release.",
         aliases=("v",),
     ),
 }
@@ -1461,26 +1581,6 @@ _CANONICAL = _canonical()
 # --------------------------------------------------------------------------
 # entry points
 # --------------------------------------------------------------------------
-
-
-_PRUNE_HELP = (
-    "Assess worktrees; terminal input asks before removing eligible ones. "
-    "Nonterminal input, --json and --table assess without removing; "
-    "--yes approves removal. "
-    "--only always assesses and cannot be combined with --yes."
-)
-_NEW_BRANCH_HELP = "Branch NAME off the head ref and check it out, without fetching."
-_ROTATE_HELP = (
-    "Start the next branch after this one, named <stem>-YYYY-MM-DD_NNN. On the "
-    "head branch there is no chain to continue, so it catches that up to the "
-    "remote instead. Exits 1 when either would change nothing."
-)
-_CI_HELP = (
-    "Read one pull or merge request and its checks from GitHub or GitLab, "
-    "without changing anything. checksState is passed, failed, pending, "
-    "blocked or unknown; stale means the review moved during the read. "
-    "Exits 0 whenever it read a snapshot, failing checks included."
-)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -1564,7 +1664,7 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
         name,
         aliases=list(command.aliases),
         help=command.about,
-        description=command.about,
+        description=command.description,
         epilog=_shortcuts_epilog(name, command),
         lands=command.lands,
     )
@@ -1596,8 +1696,9 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
         )
         if run is run_prune and args.only and args.yes:
             raise _Stop("--only cannot be combined with --yes", 2)
-        # sync and ci talk to the network and assess nothing, so neither needs
-        # the offline guard or a word about how fresh the evidence is.
+        # sync and ci-checks talk to the network and assess nothing, so
+        # neither syncs first, needs the offline guard or a word about how
+        # fresh the evidence is.
         if (
             run not in (run_version, run_sync, run_ci)
             and not getattr(args, "explain", False)
@@ -1616,6 +1717,7 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             # behind them. -q and --json hide the rest.
             hushed = getattr(args, "json", False) or getattr(args, "quiet", False)
             if R.toplevel().value:
+                _refresh(args)
                 shown = sync.freshness(quiet=True) if hushed else sync.notices()
                 for notice in shown:
                     _err(render.note(notice))
@@ -1626,7 +1728,7 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             _err(
                 render.warn(
                     "some verdicts are unknown: "
-                    f"{merged.LACKING}, and assessment never fetches\n"
+                    f"{merged.LACKING}, and assessment fetches none\n"
                     "git backfill fetches them"
                 )
             )

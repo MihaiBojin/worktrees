@@ -26,8 +26,8 @@ def synced_worktree(world, network) -> Path:
     return wt
 
 
-def worktree_status(world, network) -> dict:
-    proc = cli(world, "--json", entry="gw prune", env=network.env())
+def worktree_status(world, network, **env: str) -> dict:
+    proc = cli(world, "--json", entry="gw prune", env=network.env(**env))
     assert proc.returncode == 0, proc.stderr
     return next(
         row for row in json.loads(proc.stdout)["verdicts"] if row["branch"] == "feature"
@@ -89,11 +89,13 @@ def test_invalid_cache_cannot_prove_worktree_completion(world, network, change):
         else:
             row["merge_sha"] = "0" * 40
         cache_path(world).write_text(json.dumps(cached))
-    assert worktree_status(world, network)["verdict"] != "remove"
+    # Offline, since the sync a broken cache makes due would rebuild it.
+    offline = {"WORKTREES_OFFLINE": "1"}
+    assert worktree_status(world, network, **offline)["verdict"] != "remove"
     assert wt.exists()
 
 
-def test_explicit_sync_is_the_only_forge_query_for_repeated_assessment(world, network):
+def test_a_fresh_sync_serves_repeated_assessment(world, network):
     synced_worktree(world, network)
     calls = network.network_calls()
     for _ in range(2):

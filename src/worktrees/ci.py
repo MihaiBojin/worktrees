@@ -101,7 +101,7 @@ def read(number: int | None = None, repo: str | os.PathLike[str] | None = None) 
     if number is None:
         branch = R.current_branch(repo=repo).value
         if not branch:
-            raise Unreadable("HEAD is detached. Run: gw ci NUMBER")
+            raise Unreadable("HEAD is detached. Run: gw ci-checks NUMBER")
     selector = str(number) if number is not None else branch
     if tool == "gh":
         snapshot = _github(selector, repository, repo)
