@@ -323,7 +323,7 @@ The other top-level fields depend on the command:
 | `gw branch prune` | `head_sha`, `verdicts`, `removed`, `failed` and `outcomes`. `--dry-run` has `dry_run: true` and no `outcomes` |
 | `gw add` | `path`, `branch` and `created` |
 | `gw branch create` | `branch`, `base` and `sha` |
-| `gw rotate` | `branch`, `stem`, `base`, `sha`, `previous` and `previous_sha`. A catch-up has `branch`, `at`, `previous_sha` and `sha` |
+| `gw fast-forward` | `result`, `branch`, `base`, `sha`, `previous`, `previous_sha`, `ahead`, `behind`, `proof`, `why`, `stopped_at`, `subject` and `paths`. A `conflict` prints them at exit 1 |
 
 Rows in `verdicts` carry the same fields for a worktree and for a loose branch:
 
