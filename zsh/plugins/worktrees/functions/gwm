@@ -1,1 +1,1 @@
-gw list --head "$@"
+gw select-main "$@"
