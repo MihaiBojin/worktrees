@@ -34,7 +34,7 @@ worktree root are neither assessed nor removed.
 | `gwr PATH\|NAME` | Remove one worktree (sections 9 and 10). | Yes |
 | `gwbs` | Assess local branches that have no worktree. Rejects `--delete`. | No |
 | `gwbd NAME...` | Delete eligible loose branches. | Yes |
-| `gw sync` | Fetch the default remote and forge evidence. The only command that uses the network. | Refs, cache |
+| `gw sync`, `gws` | Fetch the default remote and forge evidence. The only command that uses the network. | Refs, cache |
 
 `gwp` takes no target and no `--branch`; a single target goes through `gwr`. A checked-out branch
 appears only as its worktree, never as a loose branch. `gw --help` and bare `gw` show help. `gwbd NAME` naming a checked-out branch,
@@ -318,6 +318,7 @@ Defined in fish and zsh:
 - `gwp!!` runs `gwp --delete all --yes "$@"`, which deletes `empty` branches, ignored files and branch
   stashes. Its help says so.
 - `gwr!` runs `gwr --delete ignored-files "$@"`.
+- `gws` runs `gw sync "$@"`.
 
 ## 18. Agent plugin
 
@@ -334,9 +335,10 @@ Defined in fish and zsh:
 
 ## 19. Breaking changes
 
-- Removed: `gwl`, `gwh`, `gwm` and `gw move`/`m`/`mv`, list aliases `l`/`ls`, `gw help`, `gw h`, the `gws` script, `gw status`, `gw s`, `gw st`, `gwp --branch`, `--delete-ignored`,
+- Removed: `gwl`, `gwh`, `gwm` and `gw move`/`m`/`mv`, list aliases `l`/`ls`, `gw help`, `gw h`, `gw status`, `gw s`, `gw st`, `gwp --branch`, `--delete-ignored`,
   `--no-fetch`, `--no-forge`, `--force-refresh` and its aliases.
 - `gwr --force` is now `gwr --keep-branch`.
+- `gws` runs `gw sync`, which fetches, instead of assessing.
 - New verdict `empty`; new `--delete` values; `main` and `master` always protected.
 - `gw list --json` returns an object with a `worktrees` array; every JSON result carries `lastSync` and `head`.
 - No command except `gw sync` fetches.

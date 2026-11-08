@@ -20,7 +20,7 @@ other repositories under the same worktree root are outside their scope.
 | --- | --- | --- |
 | `gw`, `gw --help` | | print every command, its aliases and its shortcuts |
 | `gw list [QUERY] [flags]` | `gwl` | list worktrees or choose a destination in a terminal |
-| `gw sync` | | fetch the default remote and refresh forge evidence |
+| `gw sync` | `gws` | fetch the default remote and refresh forge evidence |
 | `gw prune` | `gwp` | confirm and remove eligible worktrees |
 | `gw remove [NAME\|PATH]` | `gwr` | remove one worktree and its finished branch |
 | `gw branch status [NAME ...]` | `gwbs` | assess local branches without worktrees |
@@ -431,7 +431,7 @@ gw list --json | jq -r '.worktrees[].path'
 | Removed interface | Current interface |
 | --- | --- |
 | `gwa`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwbc`, `gwrot` binaries | `gw` subcommands, or the plugin's shortcuts |
-| `gws`, `gw status`, `gw s`, `gw st` | `gw prune --json` |
+| `gws` as assessment, `gw status`, `gw s`, `gw st` | `gw prune --json`; `gws` now runs `gw sync` |
 | `gwp --dry-run` | `gw prune --json` or `gw prune --list` |
 | `gwp --branch NAME` | `gw remove NAME` or a quoted exact path |
 | `--delete-ignored` | `--delete ignored-files` |

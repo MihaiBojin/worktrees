@@ -1261,7 +1261,10 @@ _BRANCH_COMMANDS: dict[str, _Command] = {
 
 _COMMANDS: dict[str, _Command] = {
     "sync": _Command(
-        run_sync, _add_sync_flags, "refresh remote refs and forge evidence"
+        run_sync,
+        _add_sync_flags,
+        "refresh remote refs and forge evidence",
+        shortcuts={"gws": ""},
     ),
     "branch": _Command(
         run_branch, _add_branch_flags, "create, assess and delete local branches"
