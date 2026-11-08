@@ -32,6 +32,11 @@ A script or an agent that ran one of them as a binary, such as
 shell plugin to this release with the CLI, because the previous plugin's
 shortcuts call binaries this release no longer installs.
 
+The agent plugin installs as `worktrees@mihaibojin`, from the marketplace
+that `claude plugin marketplace add MihaiBojin/agent-plugins` or
+`codex plugin marketplace add MihaiBojin/agent-plugins` adds.
+`worktrees@release-tools` is no longer listed.
+
 `gw sync` fetches every remote and all their tags, updates the default
 remote's HEAD, and asks the forge about every local branch, eight at a
 time, with a line per branch in progress. `gws` runs it through the shell
