@@ -31,12 +31,13 @@ def _warn(text: str) -> None:
     _err(render.warn(text))
 
 
-def _require_head() -> None:
+def _require_head() -> R.Head:
     from . import repo as R
 
     resolved = R.head()
     if not resolved.ref:
         raise Refused(resolved.unresolved)
+    return resolved
 
 
 def _json(value: dict | list, *, indent: int = 2) -> str:
@@ -839,6 +840,9 @@ def _add_list_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "query", nargs="?", default="", metavar="QUERY", help="narrow the list"
     )
+    p.add_argument(
+        "--head", action="store_true", help="the worktree on the head branch"
+    )
     p.add_argument("--table", action="store_true", help="print them all and pick none")
     # For the shell completions, which must not hold a candidate of their own.
     # Hidden because a person has --table, which is the same answer formatted
@@ -922,7 +926,8 @@ def run_list(args: argparse.Namespace) -> int:
     of the list is leaving out the only destination that is always there, and
     it is offered even from inside it. Any other worktree you are standing in
     is listed and never offered: picking it is the one answer that cannot take
-    you anywhere.
+    you anywhere. `--head` takes the worktree on the head branch, wherever you
+    stand.
     """
 
     from . import layout, pick
@@ -945,7 +950,16 @@ def run_list(args: argparse.Namespace) -> int:
                 print(f"{w.label}\t{w.path}")
         return 0
 
-    found = pick.matches(args.query, rows)
+    if args.head:
+        branch = _require_head().branch
+        found = [w for w in rows if w.branch == branch]
+        missing = (
+            f"no worktree has {render.branch(branch)} checked out; "
+            f"gw add {shlex.quote(branch)} checks it out"
+        )
+    else:
+        found = pick.matches(args.query, rows)
+        missing = "no worktree matches"
 
     if args.json:
         print(
@@ -965,10 +979,11 @@ def run_list(args: argparse.Namespace) -> int:
         )
         return 0
 
+    if not found:
+        _err(render.fail(missing))
+        return 1
+
     if args.table or not sys.stdin.isatty():
-        if not found:
-            _err(render.fail("no worktree matches"))
-            return 1
         # The picker's columns, without its numbers: `*` marks where you are.
         # Never coloured: like --json, it is what a script reads.
         head: Row = ("", "WORKTREE", "BRANCH", "PATH")
@@ -984,9 +999,11 @@ def run_list(args: argparse.Namespace) -> int:
         print(table([head, *body]))
         return 0
 
-    if not found:
-        _err(render.fail("no worktree matches"))
-        return 1
+    if args.head:
+        # Taken from inside it too: from a subdirectory it is the way back to
+        # the top. Only a forced checkout puts one branch in two worktrees,
+        # and then the picker asks which.
+        return _land(pick.choose(found))
 
     # The main checkout is offered even to somebody standing in it: from a
     # subdirectory it is the way back to the top. Any other worktree you
@@ -1019,6 +1036,11 @@ def run_list(args: argparse.Namespace) -> int:
         here=next((w for w in everyone if _same(w.path, here)), None),
         query=args.query or "",
     )
+    return _land(chosen)
+
+
+def _land(chosen: R.Worktree | None) -> int:
+    """The picked worktree's path on stdout, for the gw function to enter."""
     if chosen is None:
         _err(render.note("nothing picked"))
         return 0
@@ -1498,11 +1520,12 @@ _COMMANDS: dict[str, _Command] = {
         _add_list_flags,
         "list worktrees or pick a destination",
         "Pick a worktree on a terminal and change into it; QUERY narrows the "
-        "list, and takes the one worktree it matches outright. Without a "
-        "terminal, or with --json or --table, print the matching worktrees.",
+        "list, and takes the one worktree it matches outright; --head takes "
+        "the worktree on the head branch. Without a terminal, or with --json "
+        "or --table, print the matching worktrees.",
         usage="[QUERY]",
         aliases=("l",),
-        shortcuts={"gwl": ""},
+        shortcuts={"gwl": "", "gwm": "--head"},
         lands=True,
     ),
     "remove": _Command(
@@ -1696,6 +1719,8 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
         )
         if run is run_prune and args.only and args.yes:
             raise _Stop("--only cannot be combined with --yes", 2)
+        if run is run_list and args.head and args.query:
+            raise _Stop("--head cannot be combined with QUERY", 2)
         # sync and ci-checks talk to the network and assess nothing, so
         # neither syncs first, needs the offline guard or a word about how
         # fresh the evidence is.
