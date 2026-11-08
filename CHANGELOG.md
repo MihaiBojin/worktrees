@@ -31,13 +31,24 @@ A script or an agent that ran one of them as a binary, such as
 shell plugin to this release with the CLI, because the previous plugin's
 shortcuts call binaries this release no longer installs.
 
-Only `gw sync` fetches. It fetches every remote and all their tags,
-updates the default remote's HEAD, and asks the forge about every local
-branch, eight at a time, with a line per branch in progress. Every other
-command but `gw ci` runs offline from local refs and the last sync's
-evidence, so run `gw sync` when you want fresh evidence. `gws` runs it
-through the shell plugin. In 0.7.0 `gws` assessed worktrees without
-changing anything; `gw prune --json` does that now.
+`gw sync` fetches every remote and all their tags, updates the default
+remote's HEAD, and asks the forge about every local branch, eight at a
+time, with a line per branch in progress. `gws` runs it through the shell
+plugin. In 0.7.0 `gws` assessed worktrees without changing anything;
+`gw prune --json` does that now.
+
+Every command except `gw sync`, `gw version`, help and completion now
+runs `gw sync` first when the last sync is 60 seconds old or more, or
+has never run: it fetches every remote and asks GitHub or GitLab about
+each local branch. `WORKTREES_SYNC_TTL` sets that window in whole
+seconds, and `0` syncs before every command. A failed sync prints a
+warning, hidden under `-q` and `--json`, and the command carries on with
+the evidence it had.
+
+`WORKTREES_OFFLINE`, set to any non-empty value, keeps every command off
+the network. `gw sync` then refuses at exit 3, and the never-synced, age
+and unresolved-head notices stop suggesting it. A script or agent that
+relied on assessment never touching the network should set it.
 
 `gw prune` prints the full assessment, protected worktrees included, and
 asks before removing anything on a terminal. With `--json`, `--table` or
@@ -97,8 +108,9 @@ needs a missing object is `unknown`, with a warning, rather than fetched.
 
 ### Removed
 
-`--no-fetch`, `--no-forge` and `--force-refresh`, since only `gw sync`
-fetches. `gw prune --branch` and `gw prune --dry-run`: use `gw remove` for
+`--no-fetch`, `--no-forge` and `--force-refresh`: `WORKTREES_OFFLINE`
+keeps every command off the network, and `gw sync` refreshes the evidence
+at once. `gw prune --branch` and `gw prune --dry-run`: use `gw remove` for
 one worktree, and `gw prune --json` or `gw prune --table` to assess.
 `gw branch prune --dry-run` remains.
 
@@ -144,8 +156,7 @@ the forge: the current branch's, or the one `gw ci NUMBER` names. It prints
 the checks with failures first, or with `--json` the review, every check
 with a link to its log, and one `checksState` of `passed`, `failed`,
 `pending`, `blocked` or `unknown`. `--wait` reads every 30 seconds until no
-check is running, for up to 30 minutes. It needs `gh` or `glab` signed in,
-and it is the one command besides `gw sync` that uses the network.
+check is running, for up to 30 minutes. It needs `gh` or `glab` signed in.
 
 The agent plugin adds five skills. `new-branch` starts a branch from the
 freshly fetched head, `fast-forward` brings the checkout holding the head
