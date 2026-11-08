@@ -1091,61 +1091,70 @@ def _head_elsewhere(world) -> Path:
     return path
 
 
-def test_head_lands_in_the_worktree_on_the_head_branch(world) -> None:
+@pytest.mark.parametrize("word", ["select-main", "main", "m"])
+def test_select_main_lands_in_the_worktree_on_the_head_branch(world, word) -> None:
     """Outright, with no picker, though the main checkout is a candidate."""
     path = _head_elsewhere(world)
     world.worktree("other")
-    code, out = run_on_a_terminal(world, "gw", "list", "--head", answer="")
+    code, out = run_on_a_terminal(world, "gw", word, answer="")
     assert code == 0, out
     assert "which?" not in out
     assert Path(out.splitlines()[-1]).resolve() == path.resolve()
 
 
-def test_head_lands_from_a_subdirectory_of_that_worktree(world) -> None:
-    """`gw list` never offers the linked worktree you stand in; `--head` is
-    asked for one worktree, and from a subdirectory it is the way to its top."""
+def test_select_main_lands_from_a_subdirectory_of_that_worktree(world) -> None:
+    """`gw list` never offers the linked worktree you stand in; this is asked
+    for one worktree, and from a subdirectory it is the way to its top."""
     path = _head_elsewhere(world)
     inside = path / "sub"
     inside.mkdir()
-    code, out = run_on_a_terminal_at(world, inside, "gw", "list", "--head", answer="")
+    code, out = run_on_a_terminal_at(world, inside, "gw", "select-main", answer="")
     assert code == 0, out
     assert Path(out.splitlines()[-1]).resolve() == path.resolve()
 
 
-def test_head_follows_the_branch_the_remote_head_names(world) -> None:
+def test_select_main_prints_the_path_without_a_terminal(world) -> None:
+    """As `gw add` does, so `cd "$(gw select-main)"` works in a script."""
+    path = _head_elsewhere(world)
+    p = run(world, "gw", "select-main")
+    assert p.returncode == 0, p.stderr
+    assert Path(p.stdout.rstrip("\n")).resolve() == path.resolve()
+
+
+def test_select_main_follows_the_branch_the_remote_head_names(world) -> None:
     """The head ref is this repository's, so a remote whose HEAD is trunk
     makes the trunk worktree the answer and leaves main out."""
     world.git("remote", "add", "origin", "git@github.com:org/repo.git")
     trunk = world.worktree("trunk")
     world.git("update-ref", "refs/remotes/origin/trunk", "refs/heads/trunk")
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
-    p = run(world, "gw", "list", "--head", "--json")
+    p = run(world, "gw", "select-main", "--json")
     assert p.returncode == 0, p.stderr
     rows = json.loads(p.stdout)["worktrees"]
     assert [row["branch"] for row in rows] == ["trunk"]
     assert Path(rows[0]["path"]).resolve() == trunk.resolve()
 
 
-def test_head_names_the_command_that_checks_the_branch_out(world) -> None:
+def test_select_main_names_the_command_that_checks_the_branch_out(world) -> None:
     world.git("switch", "--quiet", "-c", "topic")
-    p = run(world, "gw", "list", "--head")
+    p = run(world, "gw", "select-main")
     assert p.returncode == 1
     assert p.stdout == ""
     assert "no worktree has main checked out; gw add main checks it out" in p.stderr
 
 
-def test_head_refuses_a_head_that_does_not_resolve(world) -> None:
+def test_select_main_refuses_a_head_that_does_not_resolve(world) -> None:
     world.git("branch", "--move", "main", "trunk")
-    p = run(world, "gw", "list", "--head")
+    p = run(world, "gw", "select-main")
     assert p.returncode == 3
     assert p.stdout == ""
     assert "No main or master branch." in p.stderr
 
 
-def test_head_takes_no_query(world) -> None:
-    p = run(world, "gw", "list", "--head", "one")
+def test_select_main_takes_no_argument(world) -> None:
+    p = run(world, "gw", "select-main", "one")
     assert p.returncode == 2
-    assert "--head cannot be combined with QUERY" in p.stderr
+    assert p.stdout == ""
 
 
 def test_status_only_shows_the_verdicts_asked_for(world) -> None:

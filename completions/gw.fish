@@ -40,12 +40,15 @@ complete -c gw -n '__worktrees_on add a' -s v -l verbose -d 'print every git com
 complete -c gw -n '__worktrees_on add a' -l explain -d 'print every git command and exit'
 complete -c gw -n '__worktrees_on add a' -s h -l help -d 'show the help and exit'
 
-complete -c gw -n '__worktrees_on list l; and not contains -- --head (commandline -opc)' -a '(command gw list --complete)'
-complete -c gw -n '__worktrees_on list l' -l head -d 'the worktree on the head branch'
+complete -c gw -n '__worktrees_on list l' -a '(command gw list --complete)'
 complete -c gw -n '__worktrees_on list l' -l table -d 'print them all and pick none'
 complete -c gw -n '__worktrees_on list l' -l json -d 'the result as data'
 complete -c gw -n '__worktrees_on list l' -l explain -d 'print every git command and exit'
 complete -c gw -n '__worktrees_on list l' -s h -l help -d 'show the help and exit'
+
+complete -c gw -n '__worktrees_on select-main main m' -l json -d 'the result as data'
+complete -c gw -n '__worktrees_on select-main main m' -l explain -d 'print every git command and exit'
+complete -c gw -n '__worktrees_on select-main main m' -s h -l help -d 'show the help and exit'
 
 # `gw remove --complete` prints the worktrees remove can reach, which is not
 # list's list: the main checkout is never one.

@@ -840,9 +840,6 @@ def _add_list_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "query", nargs="?", default="", metavar="QUERY", help="narrow the list"
     )
-    p.add_argument(
-        "--head", action="store_true", help="the worktree on the head branch"
-    )
     p.add_argument("--table", action="store_true", help="print them all and pick none")
     # For the shell completions, which must not hold a candidate of their own.
     # Hidden because a person has --table, which is the same answer formatted
@@ -926,8 +923,7 @@ def run_list(args: argparse.Namespace) -> int:
     of the list is leaving out the only destination that is always there, and
     it is offered even from inside it. Any other worktree you are standing in
     is listed and never offered: picking it is the one answer that cannot take
-    you anywhere. `--head` takes the worktree on the head branch, wherever you
-    stand.
+    you anywhere.
     """
 
     from . import layout, pick
@@ -950,37 +946,14 @@ def run_list(args: argparse.Namespace) -> int:
                 print(f"{w.label}\t{w.path}")
         return 0
 
-    if args.head:
-        branch = _require_head().branch
-        found = [w for w in rows if w.branch == branch]
-        missing = (
-            f"no worktree has {render.branch(branch)} checked out; "
-            f"gw add {shlex.quote(branch)} checks it out"
-        )
-    else:
-        found = pick.matches(args.query, rows)
-        missing = "no worktree matches"
+    found = pick.matches(args.query, rows)
 
     if args.json:
-        print(
-            _json(
-                [
-                    {
-                        "branch": w.branch,
-                        "path": w.path,
-                        "main": w.main,
-                        "here": _same(w.path, here),
-                        "flags": sorted(w.flags),
-                    }
-                    for w in found
-                ],
-                indent=2,
-            )
-        )
+        print(_json(_worktree_rows(found, here), indent=2))
         return 0
 
     if not found:
-        _err(render.fail(missing))
+        _err(render.fail("no worktree matches"))
         return 1
 
     if args.table or not sys.stdin.isatty():
@@ -998,12 +971,6 @@ def run_list(args: argparse.Namespace) -> int:
         ]
         print(table([head, *body]))
         return 0
-
-    if args.head:
-        # Taken from inside it too: from a subdirectory it is the way back to
-        # the top. Only a forced checkout puts one branch in two worktrees,
-        # and then the picker asks which.
-        return _land(pick.choose(found))
 
     # The main checkout is offered even to somebody standing in it: from a
     # subdirectory it is the way back to the top. Any other worktree you
@@ -1037,6 +1004,53 @@ def run_list(args: argparse.Namespace) -> int:
         query=args.query or "",
     )
     return _land(chosen)
+
+
+def run_select_main(args: argparse.Namespace) -> int:
+    """Land in the worktree that has the head branch checked out.
+
+    Taken from inside it too: from a subdirectory it is the way back to the
+    top. The path is printed with or without a terminal, as `gw add` prints
+    its own, so `cd "$(gw select-main)"` works in a script.
+    """
+    from . import pick
+    from . import repo as R
+    from .git import options
+
+    options.verbose = args.verbose
+    if args.explain:
+        return _explain()
+
+    branch = _require_head().branch
+    found = [w for w in R.worktrees() if "bare" not in w.flags and w.branch == branch]
+    if args.json:
+        print(_json(_worktree_rows(found, R.toplevel().value), indent=2))
+        return 0
+    if not found:
+        _err(
+            render.fail(
+                f"no worktree has {render.branch(branch)} checked out; "
+                f"gw add {shlex.quote(branch)} checks it out"
+            )
+        )
+        return 1
+    # Only a forced checkout puts one branch in two worktrees, and then the
+    # picker asks which.
+    return _land(pick.choose(found))
+
+
+def _worktree_rows(found: list[R.Worktree], here: str) -> list[dict]:
+    """The rows `--json` prints under `worktrees`."""
+    return [
+        {
+            "branch": w.branch,
+            "path": w.path,
+            "main": w.main,
+            "here": _same(w.path, here),
+            "flags": sorted(w.flags),
+        }
+        for w in found
+    ]
 
 
 def _land(chosen: R.Worktree | None) -> int:
@@ -1520,12 +1534,22 @@ _COMMANDS: dict[str, _Command] = {
         _add_list_flags,
         "list worktrees or pick a destination",
         "Pick a worktree on a terminal and change into it; QUERY narrows the "
-        "list, and takes the one worktree it matches outright; --head takes "
-        "the worktree on the head branch. Without a terminal, or with --json "
-        "or --table, print the matching worktrees.",
+        "list, and takes the one worktree it matches outright. Without a "
+        "terminal, or with --json or --table, print the matching worktrees.",
         usage="[QUERY]",
         aliases=("l",),
-        shortcuts={"gwl": "", "gwm": "--head"},
+        shortcuts={"gwl": ""},
+        lands=True,
+    ),
+    "select-main": _Command(
+        run_select_main,
+        _add_cd_flags,
+        "change into the worktree on the head branch",
+        "Change into the worktree that has the head branch checked out, from "
+        "anywhere, the one you stand in included. Without a terminal it prints "
+        "the path, and with --json the worktree's row.",
+        aliases=("main", "m"),
+        shortcuts={"gwm": ""},
         lands=True,
     ),
     "remove": _Command(
@@ -1719,8 +1743,6 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
         )
         if run is run_prune and args.only and args.yes:
             raise _Stop("--only cannot be combined with --yes", 2)
-        if run is run_list and args.head and args.query:
-            raise _Stop("--head cannot be combined with QUERY", 2)
         # sync and ci-checks talk to the network and assess nothing, so
         # neither syncs first, needs the offline guard or a word about how
         # fresh the evidence is.
