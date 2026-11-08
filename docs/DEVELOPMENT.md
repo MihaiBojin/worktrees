@@ -115,9 +115,10 @@ and ref deletion without a full expected SHA are refused.
 ## Commands that land you somewhere need a shell function
 
 A binary cannot `cd` its caller. The plugin's `gw` function captures stdout
-for `gw add`, `gw remove` and a terminal `gw list`, changes directory when it
-receives a destination, and prints data otherwise. It lives under
-`functions/` for fish and `zsh/plugins/worktrees/functions/` for zsh.
+for `gw add`, `gw remove`, `gw select-main` and a terminal `gw list`, changes
+directory when it receives a destination, and prints data otherwise. It
+lives under `functions/` for fish and `zsh/plugins/worktrees/functions/` for
+zsh.
 
 The [fish function](../functions/gw.fish) captures bytes with
 `string collect -N` and reads the command status from `$pipestatus[1]`.

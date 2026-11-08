@@ -1,3 +1,3 @@
-function gwm --wraps 'gw list --head' --description 'gw list --head'
-    gw list --head $argv
+function gwm --wraps 'gw select-main' --description 'gw select-main'
+    gw select-main $argv
 end

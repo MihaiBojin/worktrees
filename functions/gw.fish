@@ -1,9 +1,9 @@
-function gw --wraps gw --description 'cd to where gw list, add and remove land you'
+function gw --wraps gw --description 'cd to where gw list, add, remove and select-main land you'
     set -l lands 0
     switch "$argv[1]"
         case list l
             isatty stdin; and set lands 1
-        case add a remove rm
+        case add a remove rm select-main main m
             set lands 1
     end
     for arg in $argv

@@ -81,9 +81,8 @@ def _zsh_flags(path: str) -> set[str]:
     found = re.search(rf"^{name}\(\) \{{\n(.*?)^\}}", ZSH_GW.read_text(), re.S | re.M)
     assert found, f"_gw has no {name}"
     body = found.group(1)
-    # A leading `*` is zsh for an option that may be given more than once,
-    # and `(1)` for one that rules out the first argument.
-    flags = set(re.findall(r"'(?:\([^)]*\))?\*?(--[a-z][a-z-]+)\[", body))
+    # A leading `*` is zsh for an option that may be given more than once.
+    flags = set(re.findall(r"'\*?(--[a-z][a-z-]+)\[", body))
     flags |= set(re.findall(r"\{(?:-[a-z],)?(--[a-z][a-z-]+)\}", body))
     return flags
 
@@ -313,6 +312,9 @@ COMMAND_COMPLETIONS = [
     ("gw list", "gw list"),
     ("gw list sync", "gw list"),
     ("gw l", "gw list"),
+    ("gw select-main", "gw select-main"),
+    ("gw main", "gw select-main"),
+    ("gw m", "gw select-main"),
     ("gw remove", "gw remove"),
     ("gw rm", "gw remove"),
     ("gw fast-forward", "gw fast-forward"),
@@ -462,7 +464,7 @@ CANDIDATES = [
     ("gw list ", {"main", "one"}),
     ("gw l ", {"main", "one"}),
     ("gwl ", {"main", "one"}),
-    ("gw list --head ", set()),
+    ("gw select-main ", set()),
     ("gwm ", set()),
     ("gw remove ", {"one"}),
     ("gwr ", {"one"}),

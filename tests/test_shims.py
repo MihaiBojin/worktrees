@@ -78,7 +78,7 @@ def test_gw_lands_for_exactly_the_commands_that_land() -> None:
     fish = (FISH / "gw.fish").read_text()
     zsh = (ZSH / "gw").read_text()
     fish_cases = re.findall(r"^\s*case (.+)$", fish, re.M)
-    zsh_cases = re.findall(r"^\s*([a-z|]+)\) ", zsh, re.M)
+    zsh_cases = re.findall(r"^\s*([a-z|-]+)\) ", zsh, re.M)
     assert {w for case in fish_cases for w in case.split()} == LANDS
     assert {w for case in zsh_cases for w in case.split("|")} == LANDS
     after_failure = re.search(r'contains -- "\$argv\[1\]" (.+)$', fish, re.M)
@@ -216,6 +216,8 @@ def test_a_shortcut_forwards_its_words_arguments_and_exit_code(tmp_path, shell, 
     [
         ["gw", "list", "x"],
         ["gwm"],
+        ["gw", "select-main"],
+        ["gw", "m"],
         ["gw", "add", "x"],
         ["gw", "a", "x"],
         ["gwa", "x"],
@@ -324,6 +326,7 @@ def test_data_output_passes_through_on_failure(tmp_path, shell, words):
         ["version"],
         ["list", "x"],
         ["list", "--json"],
+        ["select-main", "--json"],
         ["add", "--json"],
         ["add", "x", "--help"],
         ["rm", "-h"],

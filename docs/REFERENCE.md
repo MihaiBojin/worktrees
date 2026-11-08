@@ -3,8 +3,8 @@
 Bare `gw` and `gw --help` print the command guide, outside a repository too.
 `gw list` selects a destination on terminal input; nonterminal input prints
 matching worktree metadata. `--json` and `--table` always print metadata.
-`gw list --head` matches only the worktree with the head branch checked out,
-and on a terminal takes it even from inside it.
+`gw select-main` prints the worktree with the head branch checked out, with or
+without a terminal, and takes it even from inside it.
 `gw WORD` with a word that is not a command exits 2 and suggests
 `gw list WORD`. `gw prune` assesses worktrees and asks before removal on a
 terminal. Nonterminal input, `--json` and `--table` assess without mutation;
@@ -233,8 +233,9 @@ carries `stale`, the paths of worktree records whose directories are gone, and
 another repository. `gw branch status --json` and `gw branch prune --json`
 carry `head_sha`, the commit the head ref named when the branches were
 assessed, or an empty string when the head does not resolve.
-`gw list --json` puts navigation rows in `worktrees`, with `branch`, `path`,
-`main`, `here` and `flags`. Do not apply a top-level array filter.
+`gw list --json` and `gw select-main --json` put navigation rows in
+`worktrees`, with `branch`, `path`, `main`, `here` and `flags`. Do not apply
+a top-level array filter.
 
 Removal JSON reports actual outcomes. `gw prune` has `removed`, `failed` and
 `outcomes`; `gw remove` has `removed`, destination `path` and `outcome`. Each
@@ -274,7 +275,8 @@ terminals only, and stays off under quiet or verbose output.
 The command registry owns functions, names, aliases, flags and directory
 behavior. Help and completions read it. Shell functions handle directory
 changes and fixed-flag shortcuts; they hold no assessment or deletion logic.
-The `gw` adapter navigates only for `gw list` and `gw l`; every other call passes
-stdout and status through. Completion tests compare shell flags with real CLI help.
+The `gw` adapter navigates only for `gw add`, `gw remove`, `gw select-main` and
+a terminal `gw list`; every other call passes stdout and status through.
+Completion tests compare shell flags with real CLI help.
 Plugin tests extract the actual skill jq filters and apply them to real CLI
 JSON, including exact paths and permission-blocked rows.
