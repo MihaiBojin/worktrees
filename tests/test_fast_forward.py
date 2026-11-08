@@ -567,3 +567,433 @@ def test_the_old_names_are_gone(world, word: str) -> None:
     )
     assert p.returncode == 2
     assert "is not a command" in p.stderr
+
+
+# --------------------------------------------------------------------------
+# a partly merged branch
+# --------------------------------------------------------------------------
+
+
+def partly_merged(world, branch: str = "fix-parser") -> tuple[str, str]:
+    """A adds x.txt and B changes it; main squash-merges both; then C.
+
+    Returns B, the last merged commit, and C, the tip.
+    """
+    world.git("switch", "--quiet", "--create", branch)
+    world.commit("x.txt", "1\n")
+    merged_up_to = world.commit("x.txt", "2\n")
+    world.git("switch", "--quiet", "main")
+    world.git("merge", "--quiet", "--squash", branch)
+    world.git("commit", "--quiet", "-m", f"{branch} (#1)")
+    world.git("switch", "--quiet", branch)
+    return merged_up_to, world.commit("y.txt", "c\n")
+
+
+def test_raw_git_rebase_replays_the_merged_commits_and_stops(world) -> None:
+    """What the carry below exists for: A is replayed onto a main that has it."""
+    partly_merged(world)
+    raw = subprocess.run(
+        ["git", "rebase", "--no-autostash", "main"],
+        cwd=world.repo,
+        capture_output=True,
+        text=True,
+    )
+    assert raw.returncode != 0
+    assert rebasing(world)
+
+
+def test_a_partly_merged_branch_carries_only_its_later_commits(world) -> None:
+    merged_up_to, tip = partly_merged(world)
+    head = world.git("rev-parse", "main")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert payload["result"] == "rotated"
+    assert payload["proof"] == "squash"
+    assert payload["boundary"] == world.git("rev-parse", "--short", merged_up_to)
+    assert (payload["carried"], payload["ahead"]) == (1, 1)
+    assert payload["previous"] == "fix-parser"
+    assert STAMP.match(payload["branch"])
+    assert world.git("symbolic-ref", "--short", "HEAD") == payload["branch"]
+    assert world.git("rev-parse", "HEAD~1") == head
+    assert world.git("log", "-1", "--format=%s") == "y.txt"
+    # The source branch is left exactly where it was.
+    assert world.git("rev-parse", "refs/heads/fix-parser") == tip
+
+
+def test_the_boundary_is_found_from_the_tip_down(world) -> None:
+    """A alone is not upstream, while A and B together are."""
+    from worktrees import merged
+
+    merged_up_to, tip = partly_merged(world)
+    head = world.git("rev-parse", "main")
+    first = world.git("rev-parse", f"{merged_up_to}~1")
+    found = merged.boundary(tip, head, repo=world.repo)
+    assert found is not None
+    assert found[0] == merged_up_to
+    assert not merged.squash_matches(first, head, repo=world.repo)
+    assert not merged.content_matches(first, head, repo=world.repo)
+
+
+def test_a_partly_merged_branch_takes_the_name_given(world) -> None:
+    partly_merged(world)
+    p = gw_ff(world, "next-parser", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["branch"] == "next-parser"
+    assert world.git("symbolic-ref", "--short", "HEAD") == "next-parser"
+
+
+def test_a_carried_commit_that_conflicts_stops_on_the_new_branch(world) -> None:
+    _, tip = partly_merged(world)
+    advance(world, "y.txt", "main\n")
+
+    p = gw_ff(world, "next-parser", "--json")
+    assert p.returncode == 1
+    payload = json.loads(p.stdout)
+    assert payload["result"] == "conflict"
+    assert payload["branch"] == "next-parser"
+    assert payload["paths"] == ["y.txt"]
+    world.git("rebase", "--abort")
+    assert world.git("symbolic-ref", "--short", "HEAD") == "next-parser"
+    assert world.git("rev-parse", "next-parser") == tip
+    assert world.git("rev-parse", "fix-parser") == tip
+
+
+def test_a_dirty_partly_merged_branch_is_refused_without_autostash(world) -> None:
+    partly_merged(world)
+    (world.repo / "README").write_text("uncommitted\n")
+    branches = world.git("for-each-ref", "--format=%(refname)", "refs/heads")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 1
+    assert p.stdout == ""
+    assert "--autostash carries the changes across" in p.stderr
+    assert world.git("for-each-ref", "--format=%(refname)", "refs/heads") == branches
+    assert world.git("stash", "list") == ""
+    assert world.git("symbolic-ref", "--short", "HEAD") == "fix-parser"
+    assert (world.repo / "README").read_text() == "uncommitted\n"
+
+
+def test_a_finished_branch_is_found_by_content_alone(world) -> None:
+    """Main took the branch's file alongside an edit of its own, so neither
+    ancestry nor a patch matches."""
+    tip = with_work(world)
+    world.git("switch", "--quiet", "main")
+    (world.repo / "fix-parser.txt").write_text("w\n")
+    (world.repo / "other.txt").write_text("o\n")
+    world.git("add", "--", "fix-parser.txt", "other.txt")
+    world.git("commit", "--quiet", "-m", "re-import")
+    world.git("switch", "--quiet", "fix-parser")
+
+    moved = F.fast_forward(now=NOW)
+    assert (moved.result, moved.proof) == (F.ROTATED, "content")
+    assert world.git("rev-parse", "refs/heads/fix-parser") == tip
+
+
+def test_the_source_branch_stashes_are_listed_split_at_the_boundary(world) -> None:
+    world.git("switch", "--quiet", "--create", "fix-parser")
+    world.commit("x.txt", "1\n")
+    world.commit("x.txt", "2\n")
+    (world.repo / "README").write_text("early\n")
+    world.git("stash", "push", "--quiet", "-m", "early")
+    world.git("switch", "--quiet", "main")
+    world.git("merge", "--quiet", "--squash", "fix-parser")
+    world.git("commit", "--quiet", "-m", "fix-parser (#1)")
+    world.git("switch", "--quiet", "fix-parser")
+    world.commit("y.txt", "c\n")
+    (world.repo / "README").write_text("late\n")
+    world.git("stash", "push", "--quiet", "-m", "late")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    found = {e["subject"]: e["after"] for e in json.loads(p.stdout)["stashes"]}
+    assert found == {"On fix-parser: early": False, "On fix-parser: late": True}
+    assert len(world.git("stash", "list").splitlines()) == 2
+
+
+# --------------------------------------------------------------------------
+# --autostash
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("shape", ["partly merged", "finished"])
+def test_autostash_carries_uncommitted_work_to_the_new_branch(world, shape) -> None:
+    if shape == "finished":
+        squashed(world)
+    else:
+        partly_merged(world)
+    (world.repo / "README").write_text("uncommitted\n")
+    (world.repo / "loose.txt").write_text("untracked\n")
+
+    p = gw_ff(world, "--autostash", "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert payload["result"] == "rotated"
+    assert world.git("symbolic-ref", "--short", "HEAD") == payload["branch"]
+    assert (world.repo / "README").read_text() == "uncommitted\n"
+    assert (world.repo / "loose.txt").read_text() == "untracked\n"
+    assert world.git("stash", "list") == ""
+
+
+def test_autostash_carries_uncommitted_work_through_a_rebase(world) -> None:
+    with_work(world)
+    advance(world)
+    (world.repo / "README").write_text("uncommitted\n")
+
+    p = gw_ff(world, "--autostash", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["result"] == "rebased"
+    assert (world.repo / "README").read_text() == "uncommitted\n"
+    assert world.git("stash", "list") == ""
+
+
+def test_an_autostash_that_conflicts_is_reported_by_sha(world) -> None:
+    dirty_and_behind(world)
+    tip = world.git("rev-parse", "HEAD")
+
+    p = gw_ff(world, "--autostash", "--json")
+    assert p.returncode == 1
+    payload = json.loads(p.stdout)
+    assert payload["result"] == "stash-conflict"
+    assert payload["paths"] == ["README"]
+    sha = payload["stash"]
+    assert world.git("rev-parse", f"{sha}^1") == tip
+    assert world.git("stash", "list", "--format=%H") == sha
+    assert f"git stash apply {sha}" in p.stderr
+    assert "stash pop" not in p.stderr
+    assert "stash@{" not in p.stderr
+
+
+def test_an_autostash_that_conflicts_on_the_head_branch_is_reported(world) -> None:
+    with_remote(world)
+    world.git("switch", "--quiet", "--create", "upstream", "main")
+    moved_to = world.commit("README", "remote\n")
+    world.git("update-ref", "refs/remotes/origin/main", moved_to)
+    world.git("switch", "--quiet", "main")
+    before = world.git("rev-parse", "HEAD")
+    (world.repo / "README").write_text("uncommitted\n")
+
+    p = gw_ff(world, "--autostash", "--json")
+    assert p.returncode == 1
+    payload = json.loads(p.stdout)
+    assert payload["result"] == "stash-conflict"
+    assert world.git("rev-parse", f"{payload['stash']}^1") == before
+    assert world.git("rev-parse", "HEAD") == moved_to
+
+
+def test_an_autostash_left_by_rebase_continue_is_reported_next_run(world) -> None:
+    """The skill finishes a stopped rebase with git rebase --continue, which
+    re-applies the autostash after gw has returned."""
+    world.commit("notes.txt", "base\n")
+    tip = conflicting(world)
+    advance(world, "notes.txt", "main\n")
+    (world.repo / "notes.txt").write_text("uncommitted\n")
+
+    stopped = gw_ff(world, "--autostash", "--json")
+    assert json.loads(stopped.stdout)["result"] == "conflict"
+    (world.repo / "README").write_text("both\n")
+    world.git("add", "--", "README")
+    subprocess.run(
+        ["git", "rebase", "--continue"],
+        cwd=world.repo,
+        capture_output=True,
+        env={**os.environ, "GIT_EDITOR": "true"},
+    )
+    assert not rebasing(world)
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 1
+    payload = json.loads(p.stdout)
+    assert payload["result"] == "stash-conflict"
+    assert payload["paths"] == ["notes.txt"]
+    assert world.git("rev-parse", f"{payload['stash']}^1") == tip
+
+
+# --------------------------------------------------------------------------
+# live evidence
+# --------------------------------------------------------------------------
+
+
+def on_forge(world, host: str = "github.com") -> None:
+    world.git("remote", "add", "origin", f"git@{host}:owner/repo.git")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+
+def merged_row(branch: str, source: str, merge: str) -> dict:
+    """A GitHub pull request from `branch` at `source`, merged as `merge`."""
+    return {
+        "number": 17,
+        "state": "MERGED",
+        "url": "https://github.com/owner/repo/pull/17",
+        "headRefName": branch,
+        "headRefOid": source,
+        "baseRefName": "main",
+        "mergedAt": "2026-09-28T00:00:00Z",
+        "mergeCommit": {"oid": merge},
+        "headRepository": {"nameWithOwner": "owner/repo"},
+        "isCrossRepository": False,
+    }
+
+
+def gw_ff_online(world, network, *args: str, **extra: str):
+    return subprocess.run(
+        argv("gw fast-forward", *args),
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=network.env(**extra),
+    )
+
+
+def test_a_branch_the_forge_merged_moves_on_where_local_proof_fails(
+    world, network
+) -> None:
+    """The file was edited as the pull request merged, so nothing local
+    matches."""
+    tip = with_work(world)
+    world.git("switch", "--quiet", "main")
+    squash = world.commit("fix-parser.txt", "edited at merge\n")
+    world.git("switch", "--quiet", "fix-parser")
+    on_forge(world)
+    network.answer({"fix-parser": [merged_row("fix-parser", tip, squash)]})
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["proof"]) == ("rotated", "forge")
+    assert world.git("rev-parse", "refs/heads/fix-parser") == tip
+
+
+def test_the_forge_marks_where_a_squash_merge_ended(world, network) -> None:
+    """Main edited a line inside A's diff context before A merged, so the
+    patch no longer matches and the file differs: only the forge knows."""
+    from worktrees import merged
+
+    world.commit("f.txt", "".join(f"{n}\n" for n in range(1, 11)))
+    world.git("switch", "--quiet", "--create", "fix-parser")
+    first = world.commit(
+        "f.txt", (world.repo / "f.txt").read_text().replace("6\n", "six\n")
+    )
+    world.git("switch", "--quiet", "main")
+    world.commit("f.txt", (world.repo / "f.txt").read_text().replace("3\n", "three\n"))
+    world.git("merge", "--quiet", "--squash", "fix-parser")
+    world.git("commit", "--quiet", "-m", "fix-parser (#17)")
+    squash = world.git("rev-parse", "HEAD")
+    world.git("switch", "--quiet", "fix-parser")
+    tip = world.commit("y.txt", "c\n")
+    assert merged.boundary(tip, squash, repo=world.repo) is None
+    on_forge(world)
+    network.answer({"fix-parser": [merged_row("fix-parser", first, squash)]})
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert payload["result"] == "rotated"
+    assert payload["proof"] == "forge"
+    assert payload["boundary"] == world.git("rev-parse", "--short", first)
+    assert payload["carried"] == 1
+    assert world.git("rev-parse", "HEAD~1") == squash
+
+
+@pytest.mark.parametrize("host", ["github.com", "gitlab.com"])
+def test_the_live_query_asks_for_merged_requests(world, network, host) -> None:
+    """--limit 1 of any state would hide a merged request behind a newer one
+    opened from the same branch."""
+    with_work(world)
+    advance(world)
+    on_forge(world, host)
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    queries = [
+        c for c in network.network_calls() if c[1:3] in (["pr", "list"], ["mr", "list"])
+    ]
+    assert len(queries) == 1, network.network_calls()
+    query = queries[0]
+    if host == "github.com":
+        assert query[query.index("--state") + 1] == "merged"
+    else:
+        assert "--merged" in query and "--all" not in query
+
+
+def test_a_failed_fetch_refuses_with_the_same_run_offline(world, network) -> None:
+    squashed(world)
+    on_forge(world)
+    before = world.git("rev-parse", "HEAD")
+
+    p = gw_ff_online(world, network, "next", "--from", "has space", WT_FETCH_CODE="128")
+    assert p.returncode == 1
+    assert p.stdout == ""
+    assert "origin could not be fetched" in p.stderr
+    assert p.stderr.rstrip().endswith(
+        "Run: WORKTREES_OFFLINE=1 gw fast-forward next --from 'has space'"
+    )
+    assert world.git("rev-parse", "HEAD") == before
+
+    offline = gw_ff_online(world, network, "next", "--json", WORKTREES_OFFLINE="1")
+    assert offline.returncode == 0, offline.stderr
+    assert json.loads(offline.stdout)["result"] == "rotated"
+
+
+@pytest.mark.parametrize("failure", ["signed out", "query"])
+def test_a_forge_that_cannot_be_asked_refuses(world, network, failure) -> None:
+    with_work(world)
+    advance(world)
+    on_forge(world)
+    before = world.git("rev-parse", "HEAD")
+    extra = {"WT_AUTH_CODE": "1"} if failure == "signed out" else {}
+    if failure == "query":
+        network.answer({"fix-parser": 1})
+
+    p = gw_ff_online(world, network, **extra)
+    assert p.returncode == 1
+    assert p.stdout == ""
+    reason = (
+        "gh is unavailable or signed out"
+        if failure == "signed out"
+        else "the forge could not be asked"
+    )
+    assert reason in p.stderr
+    assert p.stderr.rstrip().endswith("Run: WORKTREES_OFFLINE=1 gw fast-forward")
+    assert world.git("rev-parse", "HEAD") == before
+
+
+def test_a_merge_after_the_last_sync_is_fetched_within_the_ttl(world) -> None:
+    """A pull request merged a moment ago is the usual reason to run this, so
+    it fetches whatever the last sync's age."""
+    from conftest import online
+
+    upstream = world.root / "upstream.git"
+    world.git("init", "--quiet", "--bare", str(upstream))
+    world.git("remote", "add", "origin", str(upstream))
+    world.git("push", "--quiet", "origin", "main")
+    world.git("fetch", "--quiet", "origin")
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    with_work(world)
+    env = online(world)
+    synced = subprocess.run(
+        argv("gw sync"), cwd=world.repo, env=env, capture_output=True, text=True
+    )
+    assert synced.returncode == 0, synced.stderr
+
+    other = world.root / "other"
+    world.git("clone", "--quiet", str(upstream), str(other))
+    # A squash of its own: under the fixture's fixed dates, a commit with the
+    # branch's message would be the branch's commit.
+    (other / "fix-parser.txt").write_text("w\n")
+    world.git("add", "--", "fix-parser.txt", at=other)
+    world.git("commit", "--quiet", "-m", "fix-parser (#1)", at=other)
+    world.git("push", "--quiet", "origin", "main", at=other)
+
+    p = subprocess.run(
+        argv("gw fast-forward", "--json"),
+        cwd=world.repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["proof"]) == ("rotated", "squash")

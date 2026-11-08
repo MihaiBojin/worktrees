@@ -121,28 +121,43 @@ def request_for(
         )
     ):
         return None
-    selected = provider(remote, repo)
-    if selected is None or request.repository.lower() != selected[1].lower():
-        return None
-    source_host, _, source_path = request.source_repository.partition("/")
-    target_host = selected[1].split("/", 1)[0]
-    if (
-        request.source_repository.lower() != request.verified_source_repository.lower()
-        or request.repository.lower() != request.verified_target_repository.lower()
-        or source_host.lower() != target_host.lower()
-        or not re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+", source_path)
-        or any(part in (".", "..") for part in source_path.split("/"))
-    ):
+    if not identified(request, remote, repo):
         return None
     if request.source_branch != branch or request.source_sha != sha:
         return None
     return request
 
 
+def identified(
+    request: Request, remote: str, repo: str | os.PathLike[str] | None = None
+) -> bool:
+    """The request is on the default remote's forge, from a source verified there."""
+    selected = provider(remote, repo)
+    if selected is None or request.repository.lower() != selected[1].lower():
+        return False
+    source_host, _, source_path = request.source_repository.partition("/")
+    target_host = selected[1].split("/", 1)[0]
+    return not (
+        request.source_repository.lower() != request.verified_source_repository.lower()
+        or request.repository.lower() != request.verified_target_repository.lower()
+        or source_host.lower() != target_host.lower()
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+", source_path)
+        or any(part in (".", "..") for part in source_path.split("/"))
+    )
+
+
 def fetch_request(
-    branch: str, remote: str, repo: str | os.PathLike[str] | None = None
+    branch: str,
+    remote: str,
+    repo: str | os.PathLike[str] | None = None,
+    merged: bool = False,
 ) -> tuple[bool, Request | None]:
-    """Query one branch during sync and verify its repository identities."""
+    """Query one branch's newest request and verify its repository identities.
+
+    Sync asks for the newest in any state. `merged` asks for the newest merged
+    one, which a newer request opened from the same branch would otherwise
+    hide.
+    """
     selected = provider(remote, repo)
     if selected is None:
         return False, None
@@ -158,7 +173,7 @@ def fetch_request(
             "--head",
             branch,
             "--state",
-            "all",
+            "merged" if merged else "all",
             "--limit",
             "1",
             "--json",
@@ -174,7 +189,7 @@ def fetch_request(
             f"https://{repository}",
             "--source-branch",
             branch,
-            "--all",
+            "--merged" if merged else "--all",
             "--per-page",
             "1",
             "--order",

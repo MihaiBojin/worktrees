@@ -86,6 +86,7 @@ __worktrees_remove() {
 __worktrees_fast-forward() {
     _arguments -s \
         '--from[start that branch from this branch or commit]:branch or commit: ' \
+        '--autostash[carry uncommitted changes across]' \
         '--json[the result as data]' \
         '(-q --quiet)'{-q,--quiet}'[omit summaries and progress]' \
         '(-v --verbose)'{-v,--verbose}'[print every git command]' \

@@ -343,6 +343,7 @@ def test_the_skill_names_the_fields_fast_forward_prints(world) -> None:
         fast_forward.REBASED,
         fast_forward.ROTATED,
         fast_forward.CONFLICT,
+        fast_forward.STASH_CONFLICT,
     }
 
 

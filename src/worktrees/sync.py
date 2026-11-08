@@ -244,6 +244,63 @@ def _refspec_refusal(
     return ""
 
 
+def _moved_tags(name: str, tags: list[str]) -> str:
+    return (
+        f"{name} moved {', '.join(tags)}; the local tags are unchanged. "
+        f"Run: git fetch --tags --force {name}"
+    )
+
+
+def _now() -> str:
+    return (
+        datetime.fromtimestamp(time.time(), UTC)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def fetch(
+    repo: str | os.PathLike[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Fetch the default remote now, whatever the TTL, and record when.
+
+    What `gw fast-forward` runs before it decides, since a pull request
+    merged a moment ago is the usual reason to run it. The forge evidence
+    cached for every branch stays as it was. Returns the failures and the
+    warnings; nothing to fetch is neither.
+    """
+    remote = R.remote(repo)
+    if not remote:
+        return [], []
+    refusal = _refspec_refusal([remote], remote, repo)
+    if refusal:
+        return [refusal], []
+    previous = read(repo)
+    progress.say(f"fetching {remote}")
+    succeeded, tags = _fetch(remote, repo)
+    warnings = [_moved_tags(remote, tags)] if tags else []
+    if not succeeded:
+        return [f"{remote} could not be fetched"], warnings
+    if not R.set_head_auto(remote, repo=repo):
+        warnings.append(
+            f"{remote}/HEAD could not be updated. Run: git remote set-head "
+            f"{remote} --auto"
+        )
+    cached = {
+        "remote": {
+            "name": remote,
+            "url": R.config_get(f"remote.{remote}.url", repo=repo).value,
+        },
+        "lastSync": {**previous["lastSync"], "refs": _now()},
+        "branches": previous["branches"],
+    }
+    try:
+        _write(cached, repo)
+    except OSError as exc:
+        return [f"cannot save sync evidence: {exc}"], warnings
+    return [], warnings
+
+
 def run(
     repo: str | os.PathLike[str] | None = None,
 ) -> tuple[int, list[str], list[str]]:
@@ -273,10 +330,7 @@ def run(
         progress.say(f"fetching {name}")
         succeeded, tags = _fetch(name, repo)
         if tags:
-            warnings.append(
-                f"{name} moved {', '.join(tags)}; the local tags are unchanged. "
-                f"Run: git fetch --tags --force {name}"
-            )
+            warnings.append(_moved_tags(name, tags))
         if not succeeded and name == remote:
             default_fetched = False
             failures.append(
@@ -298,11 +352,7 @@ def run(
             f"{remote}/HEAD could not be updated. Run: git remote set-head "
             f"{remote} --auto"
         )
-    now = (
-        datetime.fromtimestamp(time.time(), UTC)
-        .isoformat(timespec="seconds")
-        .replace("+00:00", "Z")
-    )
+    now = _now()
     cached = {
         "remote": {
             "name": remote,
