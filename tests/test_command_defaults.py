@@ -9,7 +9,7 @@ from test_cli import run
 from test_shims import _cli_binaries, _drive, _fake
 
 
-@pytest.mark.parametrize("suffix", [(), ("--list",), ("--json",)])
+@pytest.mark.parametrize("suffix", [(), ("--table",), ("--json",)])
 def test_listing_returns_all_matches_without_a_terminal(world, suffix):
     targets = [world.worktree(name) for name in ("fix-one", "fix-two")]
     p = run(world, "gw", "list", "fix", *suffix)
@@ -107,7 +107,7 @@ def test_terminal_listing_changes_directory(world, shell, words, answer):
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
 @pytest.mark.parametrize(
     "words",
-    [["list", "topic"], ["list", "topic", "--json"], ["list", "topic", "--list"]],
+    [["list", "topic"], ["list", "topic", "--json"], ["list", "topic", "--table"]],
 )
 def test_nonterminal_listing_keeps_the_callers_directory(world, shell, words):
     target = world.worktree("topic")
@@ -123,14 +123,14 @@ def test_nonterminal_listing_keeps_the_callers_directory(world, shell, words):
 def test_explicit_list_help_lists_its_flags_outside_a_repository(world):
     p = run(world, "gw", "list", "-h", at=world.root)
     assert p.returncode == 0, p.stderr
-    assert "--list" in p.stderr and "--json" in p.stderr
+    assert "--table" in p.stderr and "--json" in p.stderr
     assert "--delete" not in p.stderr
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
 @pytest.mark.parametrize(
     "words",
-    [[], ["--help"], ["list", "--json"], ["list", "--list"], ["list", "x", "-l"]],
+    [[], ["--help"], ["list", "--json"], ["list", "--table"]],
 )
 def test_terminal_metadata_never_treats_directory_text_as_a_destination(
     tmp_path, shell, words
@@ -194,7 +194,7 @@ def test_terminal_list_selects_sole_main(world, shell, words):
 
 
 @pytest.mark.parametrize("shell", ["fish", "zsh"])
-@pytest.mark.parametrize("words", [["list", "--json"], ["list", "--list"]])
+@pytest.mark.parametrize("words", [["list", "--json"], ["list", "--table"]])
 def test_terminal_metadata_preserves_subdirectory_in_sole_main(world, shell, words):
     subdirectory = world.repo / "nested"
     subdirectory.mkdir()

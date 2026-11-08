@@ -995,10 +995,26 @@ def test_remove_rejects_a_partial_name_without_opening_the_picker(world) -> None
     assert one.exists() and two.exists()
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("list", "--list"),
+        ("list", "-l"),
+        ("list", "-t"),
+        ("prune", "--list"),
+        ("p", "--list"),
+    ],
+)
+def test_the_table_flag_is_only_its_long_name(world, args) -> None:
+    p = run(world, "gw", *args)
+    assert p.returncode == 2, p.stderr
+    assert not p.stdout
+
+
 def test_list_is_never_coloured_even_on_a_terminal(world) -> None:
-    """--list, like --json, is what a script reads."""
+    """--table, like --json, is what a script reads."""
     world.worktree("one")
-    code, out = run_with_a_terminal_on_stdout(world, "gw", "list", "--list")
+    code, out = run_with_a_terminal_on_stdout(world, "gw", "list", "--table")
     assert code == 0, out
     assert "WORKTREE" in out
     assert "\x1b[" not in out
@@ -1045,7 +1061,7 @@ def test_list_names_each_remote_above_the_picker(world) -> None:
 def test_list_for_a_script_names_no_remote(world) -> None:
     world.git("remote", "add", "origin", "git@github.com:org/repo.git")
     world.worktree("one")
-    p = run(world, "gw", "list", "--list")
+    p = run(world, "gw", "list", "--table")
     assert p.returncode == 0, p.stderr
     assert "github.com" not in p.stdout + p.stderr
 
@@ -1205,7 +1221,7 @@ def test_verbose_refusal_precedes_repository_preflight(
 
 
 @pytest.mark.parametrize("flag", ["-q", "--quiet"])
-@pytest.mark.parametrize("args", [(), ("main",), ("--list",), ("--json",)])
+@pytest.mark.parametrize("args", [(), ("main",), ("--table",), ("--json",)])
 def test_list_rejects_quiet_before_repository_preflight(world, network, flag, args):
     from test_branches import cli as invoke
 
@@ -1449,7 +1465,7 @@ def test_prune_json_success_is_one_result_object(world, quiet):
     assert empty.exists() and world.repo.exists()
 
 
-@pytest.mark.parametrize("flags", [("--list",), ("--list", "--yes")])
+@pytest.mark.parametrize("flags", [("--table",), ("--table", "--yes")])
 def test_prune_list_stdout_terminal_has_no_colour(world, flags):
     finished = world.merged_worktree("finished")
     code, out = run_with_a_terminal_on_stdout(world, "gw prune", *flags)
@@ -1469,7 +1485,7 @@ def test_prune_only_assesses_on_terminal(world):
     assert finished.exists()
 
 
-@pytest.mark.parametrize("mode", [(), ("--json",), ("--list",), ("--only", "remove")])
+@pytest.mark.parametrize("mode", [(), ("--json",), ("--table",), ("--only", "remove")])
 @pytest.mark.parametrize("flag", ["-v", "--verbose"])
 def test_prune_verbose_assessment_keeps_metadata_and_state(world, network, mode, flag):
     from test_branches import cli as invoke
@@ -1497,7 +1513,7 @@ def test_prune_rejects_retired_dry_run_before_preflight(world, network, entry, p
     assert not network.calls()
 
 
-@pytest.mark.parametrize("mode", ["--json", "--list"])
+@pytest.mark.parametrize("mode", ["--json", "--table"])
 @pytest.mark.parametrize("approved", [False, True])
 def test_prune_metadata_on_terminal_uses_explicit_approval(world, mode, approved):
     from test_assessment import snapshot
@@ -1537,7 +1553,7 @@ def test_prune_metadata_on_terminal_uses_explicit_approval(world, mode, approved
         assert world.git("show-ref") == refs
         assert world.git("worktree", "list", "--porcelain") == records
         assert "git branch finished " not in out
-    if mode == "--list":
+    if mode == "--table":
         assert "VERDICT" in out and str(finished) in out
     else:
         if approved:

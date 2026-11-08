@@ -24,9 +24,9 @@ complete -c gw -n '__worktrees_on sync' -s h -l help -d 'show the help and exit'
 
 complete -c gw -n '__worktrees_on version v' -s h -l help -d 'show the help and exit'
 
-complete -c gw -n '__worktrees_on prune p' -l list -d 'assess without prompting; uncoloured table'
+complete -c gw -n '__worktrees_on prune p' -l table -d 'assess without prompting; uncoloured table'
 complete -c gw -n '__worktrees_on prune p' -l only -x -a 'remove empty keep unknown' -d 'filter assessment; rejects --yes'
-complete -c gw -n '__worktrees_on prune p' -s y -l yes -d 'approve removal, including with --json or --list'
+complete -c gw -n '__worktrees_on prune p' -s y -l yes -d 'approve removal, including with --json or --table'
 complete -c gw -n '__worktrees_on prune p' -l delete -x -a 'empty ignored-files stashes all' -d 'permit deletion categories; repeat to combine'
 complete -c gw -n '__worktrees_on prune p' -l json -d 'assess as JSON; --yes approves removal'
 complete -c gw -n '__worktrees_on prune p' -s q -l quiet -d 'verdicts only'
@@ -41,7 +41,7 @@ complete -c gw -n '__worktrees_on add a' -l explain -d 'print every git command 
 complete -c gw -n '__worktrees_on add a' -s h -l help -d 'show the help and exit'
 
 complete -c gw -n '__worktrees_on list l' -a '(command gw list --complete)'
-complete -c gw -n '__worktrees_on list l' -s l -l list -d 'print them all and pick none'
+complete -c gw -n '__worktrees_on list l' -l table -d 'print them all and pick none'
 complete -c gw -n '__worktrees_on list l' -l json -d 'the result as data'
 complete -c gw -n '__worktrees_on list l' -l explain -d 'print every git command and exit'
 complete -c gw -n '__worktrees_on list l' -s h -l help -d 'show the help and exit'

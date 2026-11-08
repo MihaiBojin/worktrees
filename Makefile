@@ -1,13 +1,13 @@
-.PHONY: local-install reset local-plugin reset-plugin
+.PHONY: install-local reset local-plugin reset-plugin
 
 VERSION := $(shell sed -n 's/^version = "\(.*\)"$$/\1/p' pyproject.toml)
 ZSH_PLUGINS ?= $(or $(ZDOTDIR),$(HOME))/.zsh_plugins.txt
 
 # The working copy, in place of anything published.
-local-install:
+install-local:
 	uv tool install --force --from . git-worktrees
 
-# Undoes local-install: the latest release from PyPI, and only its commands.
+# Undoes install-local: the latest release from PyPI, and only its commands.
 reset:
 	uv tool install --force git-worktrees
 

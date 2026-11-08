@@ -27,10 +27,10 @@ worktree root are neither assessed nor removed.
 | Command | Role | Mutates |
 | --- | --- | --- |
 | `gw` | Print the command guide, as `gw --help` does. | No |
-| `gw list [QUERY] [flags]` | Terminal navigation; metadata for all matches without a terminal or with `--json` or `--list`. | No |
-| `gwp` with nonterminal input, `--json`, `--list` or `--only`, without `--yes` | Print the assessment table or JSON, preserving stale records and repository state. | No |
+| `gw list [QUERY] [flags]` | Terminal navigation; metadata for all matches without a terminal or with `--json` or `--table`. | No |
+| `gwp` with nonterminal input, `--json`, `--table` or `--only`, without `--yes` | Print the assessment table or JSON, preserving stale records and repository state. | No |
 | `gwp` with terminal input | Clear stale worktree records, show the full table, disclose eligible targets, confirm, then remove. | Stale records first; removal after approval |
-| `gwp --yes` | Remove eligible targets without prompting, including with nonterminal input, `--json` or `--list`. Grants no deletion category. | Yes |
+| `gwp --yes` | Remove eligible targets without prompting, including with nonterminal input, `--json` or `--table`. Grants no deletion category. | Yes |
 | `gwr PATH\|NAME` | Remove one worktree (sections 9 and 10). | Yes |
 | `gwbs` | Assess local branches that have no worktree. Rejects `--delete`. | No |
 | `gwbd NAME...` | Delete eligible loose branches. | Yes |
@@ -40,7 +40,7 @@ worktree root are neither assessed nor removed.
 appears only as its worktree, never as a loose branch. `gw --help` and bare `gw` show help. `gwbd NAME` naming a checked-out branch,
 the current one included, shows it as kept with the protection `checked out in a worktree` and exits 3.
 
-`--list` prints an uncoloured table. `--only VERDICT` always selects assessment
+`--table` prints an uncoloured table. `--only VERDICT` always selects assessment
 and rejects `--yes` before repository preflight. Pruning accepts `--quiet` and
 `--verbose` in every mode, but rejects their combination. There is no pruning
 `--dry-run`; `gwbd --dry-run` remains available. Mutation JSON includes actual
@@ -301,7 +301,7 @@ remain usable without repository assessment. Head and sync notices never enter J
    A unique query selects directly. Main remains offered when it is the only
    worktree: no query prompts with that row, and an exact query selects it
    directly, including from a subdirectory. Without a terminal, or with `--json` or
-   `--list`, print all matching metadata and never select a destination.
+   `--table`, print all matching metadata and never select a destination.
 3. The fish and zsh adapters change directory for terminal selections and
    preserve metadata stdout and status. They read commands from `gw --complete`.
    Worktree completions use `gw list --complete`.
@@ -338,6 +338,7 @@ Defined in fish and zsh:
 - Removed: `gwl`, `gwh`, `gwm` and `gw move`/`m`/`mv`, list aliases `l`/`ls`, `gw help`, `gw h`, `gw status`, `gw s`, `gw st`, `gwp --branch`, `--delete-ignored`,
   `--no-fetch`, `--no-forge`, `--force-refresh` and its aliases.
 - `gwr --force` is now `gwr --keep-branch`.
+- `--list` is now `--table`, with no short form.
 - `gws` runs `gw sync`, which fetches, instead of assessing.
 - New verdict `empty`; new `--delete` values; `main` and `master` always protected.
 - `gw list --json` returns an object with a `worktrees` array; every JSON result carries `lastSync` and `head`.

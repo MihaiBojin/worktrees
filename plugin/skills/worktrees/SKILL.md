@@ -6,7 +6,7 @@ description: >
 allowed-tools:
   - Bash(gw sync)
   - Bash(gw list --json)
-  - Bash(gw list --list)
+  - Bash(gw list --table)
   - Bash(gw prune --json)
   - Bash(gw branch status --json)
   - Bash(jq:*)

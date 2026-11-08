@@ -152,7 +152,7 @@ def choose(
         noun = "worktree" if count == 1 else "worktrees"
         raise Refused(
             f"{count} {noun} to choose from and this is not a terminal; "
-            "narrow the query, or use --list or --json"
+            "narrow the query, or use --table or --json"
         )
     fd = sys.stdin.fileno()
     saved = termios.tcgetattr(fd)
