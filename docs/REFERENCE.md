@@ -130,12 +130,20 @@ failed and per-target outcomes in one object with head and sync state.
 
 Only `gw sync` invokes `git fetch`, `git remote set-head`, `gh` or `glab`.
 The default remote is `checkout.defaultRemote` if configured, otherwise the
-only remote. Other remotes are outside assessment. Several remotes without
-a default make sync refuse, list the remotes and print
+only remote. Sync fetches every remote `git fetch --all` would, and the
+default one always, with `--prune --tags --no-prune-tags`. Other remotes are
+outside assessment. Several remotes without a default are all fetched, then
+sync fails, lists the remotes and prints
 `git config checkout.defaultRemote <name>`.
 
-Sync fetches the selected remote with pruning, updates its remote HEAD,
-then queries the forge for every local branch tip. The cache is
+Sync refuses, before fetching anything, a remote whose `remote.<name>.fetch`
+writes outside `refs/remotes/<name>/`, and a default remote whose refspecs
+update nothing there. A moved remote tag is a warning and the local tag
+stays; any other ref Git refuses fails that remote. A failed fetch of
+another remote, or a failed `set-head`, still records the sync and exits 1.
+
+After fetching, sync updates the default remote's HEAD, then queries the
+forge for every local branch tip on eight threads. The cache is
 `git-worktrees-sync.json` in the Git common directory, shared by worktrees
 and replaced atomically. Remote name and URL identify it. A mismatch makes
 the cache unusable and the repository never synced. Forge entries are keyed
@@ -145,13 +153,16 @@ by branch and source SHA; moved or new branches need sync for forge proof.
 | --- | --- | --- | --- | --- |
 | Fetch and queries succeed | advances | advances | 0 | matching requests |
 | Queries find no request | advances | advances | 0 | records no request |
-| Fetch fails | unchanged | unchanged | failure | previous evidence only |
-| Remote HEAD update fails | unchanged | unchanged | failure | previous evidence only |
+| Default remote's fetch fails | unchanged | unchanged | failure | previous evidence only |
+| Another remote's fetch fails | advances | advances | failure | matching requests |
+| A remote tag moved | advances | advances | 0, warning | matching requests |
+| Remote HEAD update fails | advances | advances | failure | matching requests |
+| A refspec writes outside `refs/remotes/<name>/` | unchanged | unchanged | failure, nothing fetched | previous evidence only |
 | Unknown forge host | advances | null | 0 | none |
 | Missing or unauthenticated `gh`/`glab` | advances | unchanged | failure | previous evidence only |
 | One branch query fails | advances | unchanged | failure | none for that branch |
 | No remote | null | null | 0, inferred head | none |
-| Multiple remotes without default | unchanged | unchanged | failure | none |
+| Multiple remotes without default | unchanged | unchanged | failure, every remote fetched | none |
 
 A remote repository with no refs sync time prints a never-synced warning on
 stderr, under `-q` and `--json` too, so a caller acting on the verdicts hears
