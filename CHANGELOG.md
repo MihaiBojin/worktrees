@@ -22,10 +22,11 @@ the reader's time: what was chosen, and what the alternative failed to do.
 ### Changed
 
 `gw` and `worktrees` are the only commands `uv tool install` puts on
-`$PATH`. `gwa`, `gwl`, `gwp`, `gwr`, `gwbs` and `gwbc` are fish and zsh
-plugin functions that run `gw add`, `gw list`, `gw prune`, `gw remove`,
-`gw branch status` and `gw branch create`, and complete as those do.
-`gwbp` replaces `gwbd` and runs `gw branch prune`.
+`$PATH`. `gwa`, `gwl`, `gwp`, `gwr`, `gwbs`, `gwbc` and `gwff` are fish
+and zsh plugin functions that run `gw add`, `gw list`, `gw prune`,
+`gw remove`, `gw branch status`, `gw branch create` and
+`gw fast-forward`, and complete as those do. `gwbp` replaces `gwbd` and
+runs `gw branch prune`.
 A script or an agent that ran one of them as a binary, such as
 `gwp --json`, needs the `gw` form instead: `gw prune --json`. Upgrade the
 shell plugin to this release with the CLI, because the previous plugin's
@@ -87,14 +88,29 @@ the verdicts only.
 `gw branch prune` replaces `gw branch delete`. Scripts calling the old
 name must use the new one.
 
+`gw fast-forward`, its shorthand `gw ff` and the shell shortcut `gwff`
+replace `gw rotate`, `gw rot` and `gwrot`. Where `gwrot` started a new
+branch from the head ref whatever the branch held, `gw fast-forward` keeps
+the branch you are on: it fast-forwards one with no commits of its own,
+and rebases one with commits onto the head ref, stopping at the first
+conflict with the rebase left for you to finish. Only a branch proved
+finished moves to a new branch, named `YYYY-MM-DDThh-mm-ssZ/NAME` rather
+than `NAME-YYYY-MM-DD_NNN`, or the `NAME` you pass, started from the head
+ref or `--from`. A branch already level exits 0, where `gwrot` exited 1.
+The JSON result gains `result` and loses `stem` and `at`. Neither the
+fast-forward nor the rebase autostashes uncommitted changes, whatever
+`merge.autoStash` or `rebase.autoStash` say, so git refuses when they are
+in the way; this needs Git 2.27 or later.
+
 `--table` replaces `--list` on `gw list` and `gw prune`. It has no short
 form, so `gw list -l` is a usage error.
 
 Running `gw` with no command prints every command with its shortcuts
 indented beneath it, and the shell plugin's release. A first word that is
 not a command is a usage error that suggests `gw list WORD`. Every command
-takes `-h` and `--help`, and a command's help ends with its shortcuts. `gw add`
-and `gw remove` print their help on stderr, so `gw add -h | less` needs
+takes `-h` and `--help`, and its help opens with a sentence or two saying
+what it does and ends with its shortcuts. `gw add` and `gw remove` print
+their help on stderr, so `gw add -h | less` needs
 `2>&1`. Without their argument, `gw add` and `gw branch create` say which
 one is missing and print their help, at exit 2.
 
@@ -126,6 +142,9 @@ one worktree, and `gw prune --json` or `gw prune --table` to assess.
 `gwm`, `gw move`, `gw m` and `gw mv`: use `git branch --move` and
 `git worktree move`. `gwh`, `gw help`, `gw h`, `gw ls`, `gw status`,
 `gw s` and `gw st`.
+
+`gw rotate`, `gw rot` and `gwrot`: use `gw fast-forward`, `gw ff` or
+`gwff`.
 
 ### Added
 
@@ -166,6 +185,10 @@ the checks with failures first, or with `--json` the review, every check
 with a link to its log, and one `checksState` of `passed`, `failed`,
 `pending`, `blocked` or `unknown`. `--wait` reads every 30 seconds until no
 check is running, for up to 30 minutes. It needs `gh` or `glab` signed in.
+
+The agent plugin adds `/worktrees:fast-forward`, which runs
+`gw fast-forward --json` and resolves each rebase conflict until the
+branch is level.
 
 The agent plugin adds five skills. `new-branch` starts a branch from the
 freshly fetched head, `fast-forward` brings the checkout holding the head
