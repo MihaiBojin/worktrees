@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -300,7 +301,11 @@ def _catch_up(
     """There is nothing to rebase the head branch onto, so bring it level.
 
     --ff-only refuses when the local copy is ahead, which is the answer: those
-    commits are a change of their own and belong on a branch.
+    commits are a change of their own and belong on a branch. The refusal
+    gives the two commands that put them on one, in the order that keeps
+    them: `gw branch create` would start from the head ref and leave them
+    behind. The full ref, because a tag named `origin/main` is what a bare
+    `origin/main` means to git.
     """
     local = f"refs/heads/{branch}"
     count = _count(base, local, repo)
@@ -311,8 +316,11 @@ def _catch_up(
             f"{render.branch(branch)} is {count} commit(s) ahead of "
             f"{render.ref(R.ref_name(base))}, so it "
             f"cannot be fast-forwarded:\n{lines}\n"
-            "Those commits are a change of their own; "
-            "'gw branch create <name>' puts them on one."
+            "Those commits are a change of their own. The first command puts "
+            f"them on a branch NAME, and the second moves {branch} back to "
+            f"{R.ref_name(base)}:\n"
+            "  git switch --create NAME\n"
+            f"  git branch --force {shlex.quote(branch)} {shlex.quote(base)}"
         )
     behind = _count(local, base, repo)
     previous_sha = _short(local, repo=repo)

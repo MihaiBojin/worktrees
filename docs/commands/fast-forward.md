@@ -19,7 +19,8 @@ What it does depends on the branch, checked in this order:
    started it.
 2. A detached HEAD, or a head ref that does not resolve, is refused.
 3. The head branch fast-forwards with `git merge --ff-only`. Local commits on
-   it are refused and listed, because a rebase would rewrite them.
+   it are refused and listed, because a rebase would rewrite them, with the
+   two commands that move them to a branch of their own.
 4. A branch that already contains the head ref is left alone: `current`.
 5. A branch proved finished, by the checks
    [branch status](branch-status.md) runs, keeps its name and its commits.

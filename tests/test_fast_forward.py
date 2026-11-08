@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 from datetime import UTC, datetime
 
@@ -449,6 +450,35 @@ def test_a_head_branch_ahead_of_the_remote_is_refused(world) -> None:
         F.fast_forward()
     assert "1 commit(s) ahead of origin/main" in str(exc.value)
     assert world.git("rev-parse", "HEAD") == before
+
+
+def test_the_refusal_names_commands_that_keep_the_commits(world) -> None:
+    """Pasted in order, they put the commits on a branch and bring the head
+    branch level, so a second run has nothing to refuse."""
+    with_remote(world)
+    local = world.commit("local.txt", "x\n")
+    level = world.git("rev-parse", "refs/remotes/origin/main")
+
+    p = gw_ff(world)
+    assert p.returncode == 1
+    lines = [line.strip() for line in p.stderr.splitlines()]
+    commands = [line for line in lines if line.startswith("git ")]
+    assert commands == [
+        "git switch --create NAME",
+        "git branch --force main refs/remotes/origin/main",
+    ]
+    for command in commands:
+        subprocess.run(
+            shlex.split(command.replace("NAME", "local-work")),
+            cwd=world.repo,
+            check=True,
+            capture_output=True,
+        )
+
+    assert world.git("rev-parse", "refs/heads/local-work") == local
+    assert world.git("rev-parse", "refs/heads/main") == level
+    world.git("switch", "--quiet", "main")
+    assert F.fast_forward().result == F.CURRENT
 
 
 def test_naming_the_head_branch_is_refused(world) -> None:
