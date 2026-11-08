@@ -178,9 +178,8 @@ That does the whole of it: cut `release/v0.2.0` from `origin/main`,
 wait for main's own run on the merged commit, and only then tag. The tag lands
 on a commit already proved green, so it never has to move.
 
-`/release:cut` is a Claude Code command, and Codex loads a plugin's skills but
-not its commands. In Codex the same release is `$release:release 0.2.0`, the
-skill that command runs.
+In Codex the same release is `$release:cut 0.2.0`, which the release plugin
+offers from 0.4.0.
 
 What each step needs is in `.releasetools.yaml`: the branch, the squash, the
 workflow that has to be green, the workflow the tag starts, the URL that must
