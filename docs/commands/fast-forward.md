@@ -18,7 +18,8 @@ this, so it decides on evidence read in the same run. It fetches the default
 remote on every run, whatever `WORKTREES_SYNC_TTL` says, and asks the forge
 for the branch's newest merged request. The finished-branch proof and the
 search for a merged part both use that answer; neither reads the request
-cached by `gw sync`.
+cached by `gw sync`. When nothing else marks where a merged part ends, it
+also asks which merged request carried the branch's oldest commit.
 
 A failed fetch, or a forge on GitHub or GitLab that cannot be asked, `gh` or
 `glab` missing or signed out included, is a refusal. Its last line is the
@@ -55,6 +56,11 @@ What it does depends on the branch, checked in this order:
    afterwards has a boundary: the newest commit below the tip with a proof,
    searched from the tip down, since the first of a squashed pair is not
    upstream on its own, or the source commit of a verified merged request.
+   When neither marks one, the forge is asked which merged request carried
+   the branch's oldest commit. One from another branch, into the head
+   branch, whose merge commit the fetched head ref holds, marks the newest
+   of the branch's commits it carried: how a stacked branch finds its
+   parent's commits when the parent gained more before it merged.
    When the branch's own request merged, it keeps its name and its commits,
    and the commits after the boundary are replayed onto a new branch with
    `git rebase --onto`: `rotated`, with `carried` above zero. When another

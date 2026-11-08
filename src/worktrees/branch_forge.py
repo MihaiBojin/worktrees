@@ -6,7 +6,7 @@ import os
 import re
 import shutil
 from dataclasses import asdict, dataclass
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from . import forge
 from . import repo as R
@@ -323,3 +323,127 @@ def fetch_request(
         verified_source,
         verified_target,
     )
+
+
+@dataclass(frozen=True)
+class Carried:
+    """A merged request that carried a commit, and every commit it carried."""
+
+    number: int
+    noun: str
+    source_branch: str
+    target_branch: str
+    merge_sha: str
+    commits: frozenset[str]
+
+
+def carried_by(
+    sha: str, remote: str, repo: str | os.PathLike[str] | None = None
+) -> tuple[bool, list[Carried]]:
+    """The merged requests into the default remote's repository that carried
+    `sha`, and the commits each carried.
+
+    For a branch stacked on another whose request squash-merged: the commits
+    the two share are in the head branch in a form neither ancestry nor
+    content can recognise once the parent gained commits of its own, and the
+    parent's request names them. False when the forge could not be asked; no
+    forge this reads is an empty answer.
+    """
+    selected = provider(remote, repo)
+    if selected is None:
+        return True, []
+    tool, repository = selected
+    host, path = repository.split("/", 1)
+    if tool == "gh":
+        rows = forge.query(
+            ["gh", "api", f"repos/{path}/commits/{sha}/pulls", "--hostname", host],
+            repo,
+        )
+        if rows is None:
+            return False, []
+        found = []
+        for row in rows:
+            number, base, head = row.get("number"), row.get("base"), row.get("head")
+            if not isinstance(base, dict) or not isinstance(head, dict):
+                continue
+            target = base.get("repo")
+            target_path = _text(target, "full_name") if isinstance(target, dict) else ""
+            if (
+                type(number) is not int
+                or number <= 0
+                or not _text(row, "merged_at")
+                or target_path.lower() != path.lower()
+            ):
+                continue
+            commits = forge.query(
+                [
+                    "gh",
+                    "api",
+                    f"repos/{path}/pulls/{number}/commits?per_page=100",
+                    "--hostname",
+                    host,
+                ],
+                repo,
+            )
+            if commits is None:
+                return False, []
+            found.append(
+                Carried(
+                    number,
+                    "pull request",
+                    _text(head, "ref"),
+                    _text(base, "ref"),
+                    _text(row, "merge_commit_sha"),
+                    frozenset(_text(commit, "sha") for commit in commits),
+                )
+            )
+        return True, found
+    project = quote(path, safe="")
+    rows = forge.query(
+        [
+            "glab",
+            "api",
+            f"projects/{project}/repository/commits/{sha}/merge_requests",
+            "--hostname",
+            host,
+        ],
+        repo,
+    )
+    if rows is None:
+        return False, []
+    found = []
+    for row in rows:
+        number = row.get("iid")
+        target_host, target_path = _repository(
+            _text(row, "web_url").split("/-/merge_requests/", 1)[0]
+        )
+        if (
+            type(number) is not int
+            or number <= 0
+            or _text(row, "state") != "merged"
+            or f"{target_host}/{target_path}".lower() != repository.lower()
+        ):
+            continue
+        commits = forge.query(
+            [
+                "glab",
+                "api",
+                f"projects/{project}/merge_requests/{number}/commits?per_page=100",
+                "--hostname",
+                host,
+            ],
+            repo,
+        )
+        if commits is None:
+            return False, []
+        found.append(
+            Carried(
+                number,
+                "merge request",
+                _text(row, "source_branch"),
+                _text(row, "target_branch"),
+                _text(row, "merge_commit_sha") or _text(row, "squash_commit_sha"),
+                frozenset(_text(commit, "id") for commit in commits),
+            )
+        )
+    return True, found
