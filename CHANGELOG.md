@@ -38,18 +38,19 @@ time, with a line per branch in progress. `gws` runs it through the shell
 plugin. In 0.7.0 `gws` assessed worktrees without changing anything;
 `gw prune --json` does that now.
 
-Every command except `gw sync`, `gw version`, help and completion now
-runs `gw sync` first when the last sync is 60 seconds old or more, or
-has never run: it fetches every remote and asks GitHub or GitLab about
-each local branch. `WORKTREES_SYNC_TTL` sets that window in whole
-seconds, and `0` syncs before every command. A failed sync prints a
+Every command except `gw sync`, `gw ci-checks`, `gw version`, help and
+completion now runs `gw sync` first when the last sync is 60 seconds old
+or more, or has never run: it fetches every remote and asks GitHub or
+GitLab about each local branch. `WORKTREES_SYNC_TTL` sets that window in
+whole seconds, and `0` syncs before every command. A failed sync prints a
 warning, hidden under `-q` and `--json`, and the command carries on with
 the evidence it had.
 
 `WORKTREES_OFFLINE`, set to any non-empty value, keeps every command off
-the network. `gw sync` then refuses at exit 3, and the never-synced, age
-and unresolved-head notices stop suggesting it. A script or agent that
-relied on assessment never touching the network should set it.
+the network. `gw sync` and `gw ci-checks` then refuse at exit 3, and the
+never-synced, age and unresolved-head notices stop suggesting `gw sync`.
+A script or agent that relied on assessment never touching the network
+should set it.
 
 `gw prune` prints the full assessment, protected worktrees included, and
 asks before removing anything on a terminal. With `--json`, `--table` or
@@ -179,24 +180,24 @@ Removal prints the commands that restore each branch and stash, and checks
 the approved state again before changing anything. `gw sync` and
 `gw version` name the head branch that verdicts are measured against.
 
-`gw ci` reads a pull request's checks, or a GitLab merge request's, from
-the forge: the current branch's, or the one `gw ci NUMBER` names. It prints
-the checks with failures first, or with `--json` the review, every check
-with a link to its log, and one `checksState` of `passed`, `failed`,
-`pending`, `blocked` or `unknown`. `--wait` reads every 30 seconds until no
-check is running, for up to 30 minutes. It needs `gh` or `glab` signed in.
-
-The agent plugin adds `/worktrees:fast-forward`, which runs
-`gw fast-forward --json` and resolves each rebase conflict until the
-branch is level.
+`gw ci-checks`, or `gw ci` for short, reads a pull request's checks, or a
+GitLab merge request's, from the forge: the current branch's, or the one
+`gw ci-checks NUMBER` names. It prints the checks with failures first, or
+with `--json` the review, every check with a link to its log, and one
+`checksState` of `passed`, `failed`, `pending`, `blocked` or `unknown`.
+`--wait` reads every 30 seconds until no check is running, for up to 30
+minutes. It needs `gh` or `glab` signed in. It reads the forge each time
+it runs and never syncs first, and `WORKTREES_OFFLINE` makes it refuse at
+exit 3.
 
 The agent plugin adds five skills. `new-branch` starts a branch from the
-freshly fetched head, `fast-forward` brings the checkout holding the head
-branch up to the remote, `ci` reads checks through `gw ci`, `describe-pr`
-corrects a pull request's title and description against its diff, and
-`merge` fixes failing checks, merges once CI is green and reports what it
-fixed. The cleanup skill is now named `prune` and still runs as
-`/worktrees:prune`.
+freshly fetched head, `fast-forward` runs `gw fast-forward --json` and
+resolves each rebase conflict until the branch is level, `ci-checks` reads
+checks through `gw ci-checks`, `describe-pr` corrects a pull request's
+title and description against its diff, and `merge` fixes failing checks,
+merges once CI is green, brings the head branch's checkout level with what
+landed, and reports what it fixed. The cleanup skill is now named `prune`
+and still runs as `/worktrees:prune`.
 
 The prune skill shows the head and sync state first, asks before syncing
 stale or never-synced evidence, and removes only the worktrees and
