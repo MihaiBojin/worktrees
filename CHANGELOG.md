@@ -31,13 +31,13 @@ A script or an agent that ran one of them as a binary, such as
 shell plugin to this release with the CLI, because the previous plugin's
 shortcuts call binaries this release no longer installs.
 
-Only `gw sync` uses the network. It fetches every remote and all their
-tags, updates the default remote's HEAD, and asks the forge about every
-local branch, eight at a time, with a line per branch in progress. Every
-other command runs offline from local refs and the last sync's evidence,
-so run `gw sync` when you want fresh evidence. `gws` runs it through the
-shell plugin. In 0.7.0 `gws` assessed worktrees without changing
-anything; `gw prune --json` does that now.
+Only `gw sync` fetches. It fetches every remote and all their tags,
+updates the default remote's HEAD, and asks the forge about every local
+branch, eight at a time, with a line per branch in progress. Every other
+command but `gw ci` runs offline from local refs and the last sync's
+evidence, so run `gw sync` when you want fresh evidence. `gws` runs it
+through the shell plugin. In 0.7.0 `gws` assessed worktrees without
+changing anything; `gw prune --json` does that now.
 
 `gw prune` prints the full assessment, protected worktrees included, and
 asks before removing anything on a terminal. With `--json`, `--table` or
@@ -132,16 +132,34 @@ the worktree holds, each cut to its first component below the
 read as `build/`. The removal disclosure lists the same entries, and the
 "it holds N ignored path(s)" protection counts them.
 
+Worktree rows in `gw prune --json` carry `undo`, the `git branch NAME SHA`
+that restores the branch. It is null on a detached worktree.
+
 Removal prints the commands that restore each branch and stash, and checks
 the approved state again before changing anything. `gw sync` and
 `gw version` name the head branch that verdicts are measured against.
 
-The agent plugin shows the head and sync state first, asks before syncing
+`gw ci` reads a pull request's checks, or a GitLab merge request's, from
+the forge: the current branch's, or the one `gw ci NUMBER` names. It prints
+the checks with failures first, or with `--json` the review, every check
+with a link to its log, and one `checksState` of `passed`, `failed`,
+`pending`, `blocked` or `unknown`. `--wait` reads every 30 seconds until no
+check is running, for up to 30 minutes. It needs `gh` or `glab` signed in,
+and it is the one command besides `gw sync` that uses the network.
+
+The agent plugin adds five skills. `new-branch` starts a branch from the
+freshly fetched head, `fast-forward` brings the checkout holding the head
+branch up to the remote, `ci` reads checks through `gw ci`, `describe-pr`
+corrects a pull request's title and description against its diff, and
+`merge` fixes failing checks, merges once CI is green and reports what it
+fixed. The cleanup skill is now named `prune` and still runs as
+`/worktrees:prune`.
+
+The prune skill shows the head and sync state first, asks before syncing
 stale or never-synced evidence, and removes only the worktrees and
-deletion categories you approve, by their exact paths. Its skill runs
+deletion categories you approve, by their exact paths. It runs
 `gw sync`, `gw list --json`, `gw list --table`, `gw prune --json`,
-`gw branch status --json`, `jq` and `git remote` without asking for
-permission.
+`gw branch status`, `jq` and `git remote` without asking for permission.
 
 ### Fixed
 
