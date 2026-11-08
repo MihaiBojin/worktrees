@@ -72,7 +72,7 @@ failed.
 
 A shortcut is one call to the `gw` function with fixed words, by its plain
 name so a shortcut to a command that lands still lands: `gwa` calls `gw add`,
-`gwl` calls `gw list`, `gwr!` calls `gw remove --delete ignored-files`, and
+`gwl` calls `gw list`, `gwr!` calls `gw remove --yes`, and
 `gwpa!` calls `gw prune --delete all --yes`. No shortcut has a console script.
 The `shortcuts` field of a row in `cli.py` lists that command's; `gw --help`
 prints them under it, and `tests/test_shims.py` holds every function file in
@@ -208,7 +208,11 @@ leaves, so nothing writes a cursor code where it would show up as text.
 A query that is exactly one worktree's name, branch or path is that worktree
 alone. `gw list one` beside `one-more` is not a question, and neither is
 `gw remove "$(gw list two --json | jq -r '.worktrees[0].path')"`.
-`gw remove NAME` uses exact names, with an exact path resolving one worktree; several name matches need a picker or a nonterminal refusal.
+`gw remove NAME` uses exact names, with an exact path resolving one worktree.
+It takes `gw prune`'s rules for that one: nonterminal input, `--json` and
+`--table` print the match's rows and remove nothing, so an assessment never
+asks and never refuses. With `--yes`, several name matches need a picker or a
+nonterminal refusal. It has no `--only`: one target has one verdict.
 
 Dropping `fzf` is less code, not more. It removes the spawn and the fallback
 branch a machine without `fzf` would otherwise need.

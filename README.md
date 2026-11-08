@@ -192,10 +192,12 @@ without writing refs, cache entries or directories. `--table` prints an
 uncoloured table. `--yes` and `-y` approve removal in any of those modes and
 grant no deletion category. `--only VERDICT` filters an assessment and cannot
 be combined with `--yes`. `--quiet` and `--verbose` work in every pruning
-mode, separately. `gw remove` selects one exact worktree name or path. Several
-exact name matches open a picker on a terminal; without one, `gw remove`
-refuses and lists the paths. A missing name fails. Use a quoted full path to
-identify a target exactly.
+mode, separately. `gw remove` selects one exact worktree name or path and
+takes the same rules for it: nonterminal input, `--json` and `--table` print
+its row and remove nothing, and `--yes` approves removal. It has no `--only`.
+With `--yes`, several exact name matches open a picker on a terminal; without
+one, `gw remove` refuses and lists the paths. A missing name fails. Use a
+quoted full path to identify a target exactly.
 
 ```console
 gw prune --json
@@ -304,10 +306,12 @@ JSON carries it in `path` and `outcome.destination`.
 | `gwp!` | `gw prune --yes` |
 | `gwpa` | `gw prune --delete all` |
 | `gwpa!` | `gw prune --delete all --yes` |
-| `gwr!` | `gw remove --delete ignored-files` |
+| `gwr!` | `gw remove --yes` |
 
 `gwpa` permits deleting empty branches, ignored files and branch stashes, and
-still asks at a terminal. `gwpa!` skips that question.
+still asks at a terminal. `gwpa!` and `gwr!` skip that question, as `gwp!`
+does. `gwr!` grants no deletion category: ignored files still need
+`gw remove --delete ignored-files`.
 
 ## Head and synchronization
 

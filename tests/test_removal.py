@@ -163,6 +163,8 @@ def test_recheck_refuses_changed_approved_state(world, monkeypatch, capsys, chan
         return True
 
     monkeypatch.setattr(prune, "confirm", confirm)
+    # A terminal, so the patched prompt is reached rather than an assessment.
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     assert cli.gw(["remove", str(path), "--delete", "all"]) != 0
     output = capsys.readouterr()
     assert str(path) in output.err
@@ -477,7 +479,8 @@ def test_never_synced_disclosure_and_confirmation_survive_output_flags(world, en
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     if entry == "gw branch prune":
         world.git("worktree", "remove", str(path))
-    args = [] if entry == "gw prune" else ["topic", "--json"]
+    # --json asks only where it does not mean assess: gw branch prune.
+    args = {"gw prune": [], "gw remove": ["topic"]}.get(entry, ["topic", "--json"])
     code, output = run_on_a_terminal_at(
         world, world.repo, entry, *args, "--quiet", answer="n\n"
     )
@@ -580,6 +583,7 @@ def test_initialized_submodule_after_confirmation_is_preserved(world, monkeypatc
         return True
 
     monkeypatch.setattr(prune, "confirm", initialize)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     assert cli.gw(["remove", "topic", "--delete", "all"]) != 0
     assert (path / "module" / "README").exists()
     assert world.git("rev-parse", "topic")
@@ -966,7 +970,6 @@ def test_removed_ignored_entry_invalidates_approval(world, entry):
             *(["topic"] if entry == "gw remove" else []),
             "--delete",
             "all",
-            *(["--json"] if entry == "gw remove" else []),
         ),
         cwd=world.repo,
         env=env_for(world),
@@ -999,8 +1002,8 @@ def test_removed_ignored_entry_invalidates_approval(world, entry):
     assert proc.returncode == 1, (disclosure + stderr).decode()
     assert "changed after assessment" in (disclosure + stderr).decode()
     if entry == "gw remove":
-        data = json.loads(stdout)
-        assert not data["removed"]
+        # Nothing went, so there is no destination to change into.
+        assert stdout == b""
     else:
         assert b"VERDICT" in stdout and b"ELIGIBLE" in stdout
         assert str(path).encode() in stdout
@@ -1008,3 +1011,75 @@ def test_removed_ignored_entry_invalidates_approval(world, entry):
     assert (path / "merged-topic").read_text() == "x"
     assert not (path / "old.secret").exists()
     assert world.git("rev-parse", "topic") == tip
+
+
+# --------------------------------------------------------------------------
+# gw remove takes gw prune's rules for one target
+# --------------------------------------------------------------------------
+
+
+def test_remove_without_a_terminal_assesses_and_removes_nothing(world):
+    path = world.merged_worktree("topic")
+    p = run(world, "gw remove", "topic")
+    assert p.returncode == 0, p.stderr
+    assert "VERDICT" in p.stdout and str(path) in p.stdout
+    assert f"gw remove {shlex.quote(str(path))} --yes removes it" in p.stderr
+    # A bare path on stdout is what the gw function changes into.
+    assert not any(line == str(path) for line in p.stdout.splitlines())
+    assert path.exists()
+    assert world.git("rev-parse", "topic")
+    quiet = run(world, "gw remove", "topic", "-q")
+    assert quiet.returncode == 0, quiet.stderr
+    assert quiet.stdout.count("\n") == 2  # the header and the one row
+    assert "removes it" not in quiet.stderr
+
+
+@pytest.mark.parametrize("terminal", [False, True])
+def test_remove_json_rows_are_the_rows_gw_prune_prints(world, terminal):
+    path = world.merged_worktree("topic")
+    if terminal:
+        code, output = run_on_a_terminal_at(
+            world, world.repo, "gw remove", "topic", "--json", answer=""
+        )
+        stdout = output[output.index("{") :]
+    else:
+        p = run(world, "gw remove", "topic", "--json")
+        code, stdout = p.returncode, p.stdout
+    assert code == 0, stdout
+    assert "[y/N]" not in stdout
+    data = json.loads(stdout)
+    pruned = json.loads(run(world, "gw prune", "--json").stdout)
+    row = next(v for v in pruned["verdicts"] if v["path"] == str(path))
+    assert data["verdicts"] == [row]
+    assert set(data) == {"verdicts", "head", "lastSync"}
+    assert path.exists()
+
+
+def test_remove_table_assesses_on_a_terminal_without_asking(world):
+    path = world.merged_worktree("topic")
+    code, output = run_on_a_terminal_at(
+        world, world.repo, "gw remove", "topic", "--table", answer="y\n"
+    )
+    assert code == 0, output
+    assert "[y/N]" not in output and "\x1b[" not in output
+    assert "VERDICT" in output and str(path) in output
+    assert path.exists()
+
+
+def test_remove_yes_removes_without_a_terminal_in_every_mode(world):
+    path = world.merged_worktree("topic")
+    p = run(world, "gw remove", "topic", "--yes", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["removed"] == "topic"
+    assert not path.exists()
+    table = world.merged_worktree("other")
+    p = run(world, "gw remove", "other", "--yes", "--table")
+    assert p.returncode == 0, p.stderr
+    assert not table.exists()
+
+
+def test_remove_takes_no_only(world):
+    world.merged_worktree("topic")
+    p = run(world, "gw remove", "topic", "--only", "remove")
+    assert p.returncode == 2
+    assert "--only" in p.stderr

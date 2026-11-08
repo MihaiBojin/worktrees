@@ -300,7 +300,8 @@ def test_no_terminal_is_one_exit_code(world) -> None:
     """One condition, one number. 2 is already argparse's and _Stop's."""
     world.merged_worktree("a")
     world.merged_worktree("b")
-    p = run(world, "gw remove")
+    # Approved, with two to pick from and nothing to pick with.
+    p = run(world, "gw remove", "--yes")
     assert p.returncode == 3, p.stderr
     assert "terminal" in p.stderr
 

@@ -31,7 +31,8 @@ worktree root are neither assessed nor removed.
 | `gwp` with nonterminal input, `--json`, `--table` or `--only`, without `--yes` | Print the assessment table or JSON, preserving stale records and repository state. | No |
 | `gwp` with terminal input | Clear stale worktree records, show the full table, disclose eligible targets, confirm, then remove. | Stale records first; removal after approval |
 | `gwp --yes` | Remove eligible targets without prompting, including with nonterminal input, `--json` or `--table`. Grants no deletion category. | Yes |
-| `gwr PATH\|NAME` | Remove one worktree (sections 9 and 10). | Yes |
+| `gwr PATH\|NAME` with nonterminal input, `--json` or `--table`, without `--yes` | Print the match's assessment row or JSON, as `gwp` does. No `--only`: one target has one verdict. | No |
+| `gwr PATH\|NAME` with terminal input or `--yes` | Remove one worktree (sections 9 and 10). | Yes |
 | `gwbs` | Assess local branches that have no worktree. Rejects `--delete`. | No |
 | `gwbd NAME...` | Delete eligible loose branches. | Yes |
 | `gw sync`, `gws` | Fetch the default remote and forge evidence. The only command that uses the network. | Refs, cache |
@@ -204,7 +205,7 @@ and assessment never writes refs, the cache or any directory.
 
 | Command | Matching | Several matches, terminal | Several matches, no terminal |
 | --- | --- | --- | --- |
-| `gwr NAME` | Exact name; an exact path always resolves to one worktree | Picker limited to the exact matches | Refuse and list the paths |
+| `gwr NAME` | Exact name; an exact path always resolves to one worktree | Picker limited to the exact matches | With `--yes`, refuse and list the paths; without, print every match's row |
 | `gw list [QUERY]` | Exact/substring/subsequence matching | Existing picker, unique query selects directly | Metadata for every match |
 
 An unmatched name fails without changing anything.
@@ -330,10 +331,10 @@ remain usable without repository assessment. Head and sync notices never enter J
 
 Defined in fish and zsh:
 
-- `gwp!` runs `gwp --yes "$@"`.
-- `gwp!!` runs `gwp --delete all --yes "$@"`, which deletes `empty` branches, ignored files and branch
-  stashes. Its help says so.
-- `gwr!` runs `gwr --delete ignored-files "$@"`.
+- `gwp!` runs `gw prune --yes "$@"`.
+- `gwpa` runs `gw prune --delete all "$@"`, which permits deleting `empty` branches, ignored files and
+  branch stashes, and `gwpa!` adds `--yes`. Their help says so.
+- `gwr!` runs `gw remove --yes "$@"`, the same approval `gwp!` gives, and no deletion category.
 - `gws` runs `gw sync "$@"`.
 
 ## 18. Agent plugin
