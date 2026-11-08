@@ -211,6 +211,18 @@ claude plugin install release-notes@release-tools --scope project
 configuration, so the next person to release is offered the same plugins.
 `rt` has to be v0.4.0 or newer, which is where `version::bump` arrived.
 
+`.codex/config.toml` declares the same marketplace and plugins for Codex,
+which reads it once you trust the folder. Codex does not fetch a marketplace
+it finds there, so run this once:
+
+```console
+codex plugin marketplace upgrade release-tools
+```
+
+It clones the marketplace and installs both plugins. Until then, every
+`codex plugin` command in this repository fails with `marketplace root does
+not contain a supported manifest`.
+
 `publish.yml` reads that changelog section back out for the GitHub release,
 and `build` refuses a tag whose version has no section, before anything is
 published. Nothing is generated from pull request titles.

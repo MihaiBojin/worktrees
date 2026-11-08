@@ -1,0 +1,9 @@
+[marketplaces.release-tools]
+source_type = "git"
+source = "https://github.com/releasetools/agent-plugins.git"
+
+[plugins."release@release-tools"]
+enabled = true
+
+[plugins."release-notes@release-tools"]
+enabled = true
