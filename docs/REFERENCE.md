@@ -18,7 +18,9 @@ answer at a terminal.
 deletes selected eligible refs. A checked-out branch appears only as a
 worktree. Each shell plugin shortcut, such as `gwp!`, runs one of these with
 fixed words, and `gw --help` lists them under the command they run.
-[The README](../README.md) covers invocation, permissions and migration.
+`gw fast-forward` brings the current branch level with the head ref, and
+[its page](commands/fast-forward.md) gives the order of its checks and its
+JSON. [The README](../README.md) covers invocation, permissions and migration.
 
 ## Head and evidence
 
@@ -30,7 +32,7 @@ A remote HEAD that is a plain ref rather than a symbolic one takes its
 branch name from the one remote-tracking branch at its commit, and does
 not resolve when several sit there.
 Unresolved head means unknown verdicts and no mutation. `gw add`,
-`gw branch create` and `gw rotate` also fail in that state.
+`gw branch create` and `gw fast-forward` also fail in that state.
 
 Completion checks run in this order:
 
@@ -225,7 +227,9 @@ the branch; a detached worktree's `undo` is null. Worktree rows add exact
 `ignored`; branch rows add `paths` and `error`. `gw prune --json` also
 carries `stale`, the paths of worktree records whose directories are gone, and
 `neighbours`, the count of worktrees under the shared root that belong to
-another repository.
+another repository. `gw branch status --json` and `gw branch prune --json`
+carry `head_sha`, the commit the head ref named when the branches were
+assessed, or an empty string when the head does not resolve.
 `gw list --json` puts navigation rows in `worktrees`, with `branch`, `path`,
 `main`, `here` and `flags`. Do not apply a top-level array filter.
 
@@ -238,8 +242,8 @@ branch prune` reports `removed`, `failed`, `verdicts` and `outcomes`.
 Stdout carries results and destinations; stderr carries diagnostics, prompts
 and disclosures. JSON and list output never contain colour. Colour is decided
 per stream. Nonempty `NO_COLOR` or `TERM=dumb` disables it. Quiet preserves
-results, including `gw branch create`'s branch/base/SHA line and both `gw
-rotate` result tables. Verbose traces subprocesses to stderr; quiet plus
+results, including `gw branch create`'s branch/base/SHA line and `gw
+fast-forward`'s result table. Verbose traces subprocesses to stderr; quiet plus
 verbose fails before mutation. The [README's output
 matrix](../README.md#output-and-json) lists which commands accept each flag.
 

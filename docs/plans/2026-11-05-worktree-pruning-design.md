@@ -52,8 +52,8 @@ kept with the protection `checked out in a worktree` and exits 3.
 `--table` prints an uncoloured table. `--only VERDICT` always selects assessment
 and rejects `--yes` before repository preflight. Pruning accepts `--quiet` and
 `--verbose` in every mode, but rejects their combination. There is no pruning
-`--dry-run`; `gw branch prune --dry-run` remains available. Mutation JSON includes actual
-assessment verdicts, removal outcomes, head and sync metadata in one object.
+`--dry-run`; `gw branch prune --dry-run` remains available. Mutation JSON is one object holding the
+actual outcomes and the head and sync metadata (section 14).
 
 ## 3. Head ref
 
@@ -69,7 +69,7 @@ The head ref is the first of these that applies:
    3. Neither exists: `main`, which does not resolve.
 
 When the head ref does not resolve, every row is `unknown`, mutating commands refuse, and `gw add`,
-`gw branch create` and `gw rotate` fail. The message suggests `gw sync`, or says `No main or master branch.` when inference
+`gw branch create` and `gw fast-forward` fail. The message suggests `gw sync`, or says `No main or master branch.` when inference
 was used.
 
 Human-readable commands print the head and its source to stderr, for example
@@ -308,11 +308,49 @@ Every `--json` result is an object carrying:
 - `head.source` is `remote`, `clone` or `inferred`. `head.ref` is the ref the head resolves to: the
   target of a symbolic remote HEAD, the one remote-tracking branch at a plain one's commit, or
   `refs/heads/main` or `refs/heads/master` when inferred. It is `null` when unresolved.
-- Assessment rows carry `verdict`, `eligible` and `stashes` (the matching stash SHAs). `--only empty`
-  filters by verdict. Worktree rows carry `ignoredPaths`, the grouped ignored paths (section 8), and
-  `ignored`, their count, before any permission is given.
-- `gw list --json` is `{"lastSync": ..., "head": ..., "worktrees": [...]}`.
-- Other commands keep their fields and add these two.
+
+The other top-level fields depend on the command:
+
+| Command | Fields |
+| --- | --- |
+| `gw sync` | None |
+| `gw list` | `worktrees`, each with `branch`, `path`, `main`, `here` and `flags` |
+| `gw prune` without `--yes` | `verdicts`; `stale`, the paths of worktree records whose directories are gone; `neighbours`, how many worktrees under the shared root belong to another repository |
+| `gw prune --yes` | `verdicts`, `removed`, `failed` and `outcomes`. With nothing eligible, `removed` is empty, `failed` is 0 and `outcomes` is absent |
+| `gw remove` without `--yes` | `verdicts`, one row per match |
+| `gw remove --yes` | `removed`, `path` and `outcome` |
+| `gw branch status` | `head_sha` and `verdicts` |
+| `gw branch prune` | `head_sha`, `verdicts`, `removed`, `failed` and `outcomes`. `--dry-run` has `dry_run: true` and no `outcomes` |
+| `gw add` | `path`, `branch` and `created` |
+| `gw branch create` | `branch`, `base` and `sha` |
+| `gw fast-forward` | `result`, `branch`, `base`, `sha`, `previous`, `previous_sha`, `ahead`, `behind`, `proof`, `why`, `stopped_at`, `subject` and `paths`. A `conflict` prints them at exit 1 |
+
+Rows in `verdicts` carry the same fields for a worktree and for a loose branch:
+
+- `verdict` (section 4) and `eligible` (section 1).
+- `proof`, what settled the verdict: `forge`, `first-parent`, `ancestry`, `squash` or `content`. It is
+  empty for `keep` and `unknown`.
+- `request`, the forge request the sync cache holds for the tip, with its number, state, URL, source,
+  target and merge commit, whether or not it proves anything. It is `null` without one.
+- `protections`, one sentence per protection that applies (section 5), and `why`, the verdict's reason
+  followed by those sentences.
+- `stashes`, the SHAs of the branch's stashes (section 7).
+- `branch` and `sha`, the assessed tip. `branch` is empty for a detached worktree.
+- `undo`, the shell-quoted `git branch NAME SHA` the disclosure prints (section 8). It is `null` for a
+  detached worktree, which has no branch to restore.
+
+Worktree rows add `path`, `ignoredPaths`, the grouped ignored paths (section 8), and `ignored`, their
+count, before any permission is given. Branch rows add `paths`, the worktrees that have the branch
+checked out, which only `gw branch prune NAME` fills, and `error`, true when Git failed while assessing
+the branch, with its message in `why`. `--only VERDICT` limits `verdicts` to that verdict.
+
+Each entry in `outcomes`, and `gw remove`'s `outcome`, records the target's `path` and `branch`,
+`worktree_removed`, `branch_removed`, the stash SHAs `retained`, `dropped` and `skipped`, the messages
+of failed steps in `failed`, and `destination`: the main checkout when the removed worktree was the
+current one, empty otherwise. In `gw prune`, `removed` lists the removed worktrees by branch,
+`(detached)` for a detached one, and `failed` counts the targets with a failed step. In `gw remove`,
+`removed` is that label or `null`, and `path` is the `destination`. In `gw branch prune`, `removed`
+lists the deleted branches and `failed` holds a `branch` and a `why` for each failure.
 
 ## 15. Output flags
 
@@ -322,7 +360,7 @@ leaves JSON on stdout intact. Passing both is a usage error before anything chan
 
 | Command | `-q` | `-v` |
 | --- | --- | --- |
-| `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw rotate` | yes | yes |
+| `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw fast-forward` | yes | yes |
 | `gw branch status` | yes | no |
 | `gw list` | no | no |
 
@@ -370,7 +408,7 @@ and `gw --help` and the command's own `--help` print them.
 | `gwl` | `gw list` |
 | `gwr` | `gw remove` |
 | `gwr!` | `gw remove --yes`, the approval `gwp!` gives, and no deletion category |
-| `gwrot` | `gw rotate` |
+| `gwff` | `gw fast-forward` |
 | `gwbc` | `gw branch create` |
 | `gwbs` | `gw branch status` |
 | `gwbp` | `gw branch prune` |
@@ -404,6 +442,7 @@ The skill pre-approves `gw sync`, `gw list --json`, `gw list --table`, `gw prune
   `gw list`.
 - `gwp!!` is now `gwpa!`.
 - `gw branch delete` and `gwbd` are now `gw branch prune` and `gwbp`.
+- `gw rotate`, `gw rot` and `gwrot` are now `gw fast-forward`, `gw ff` and `gwff`.
 - `gwr --force` is now `gw remove --keep-branch`.
 - `gw remove` without a terminal, or with `--json` or `--table`, assesses at exit 0 unless `--yes`
   approves removal, where it refused at exit 3. `gwr!` runs `gw remove --yes`, not

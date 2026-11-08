@@ -30,7 +30,7 @@ scope.
 | `gw branch prune [NAME ...]` | `gwbp` | confirm and delete eligible loose branches |
 | `gw add NAME [BASE]` | `gwa` | create or enter a worktree |
 | `gw branch create NAME` | `gwbc` | start a branch from the assessed head ref |
-| `gw rotate` | `gwrot` | start the next branch in a series, or fast-forward the head branch |
+| `gw fast-forward [NAME]` | `gwff` | rebase this branch onto the head ref, or move a merged one to a new branch |
 | `gw version` | | print the installed version |
 
 `gw` is the one command installed on `$PATH`, and `worktrees` is its long
@@ -322,7 +322,7 @@ Assessment uses the default remote's HEAD after successful sync, or the
 clone's remote HEAD before the first sync. Without either, it infers a local
 head: the only `main` or `master`, the newer tip if both exist, and `main` on
 a tie. With neither, the head is unresolved. Every verdict is then unknown,
-mutation refuses, and branch/worktree creation and rotation fail.
+mutation refuses, and branch/worktree creation and `gw fast-forward` fail.
 
 Human output names the head and its source on stderr. A never-synced
 repository with a remote uses clone or last-fetch refs and no forge evidence,
@@ -405,10 +405,16 @@ terminal selections.
 
 `gw add NAME [BASE]` creates or enters a worktree. `gw branch create NAME`
 creates a branch from the assessed head ref without setting that head as
-upstream. `gw rotate` creates the next `NAME-YYYY-MM-DD_NNN` sibling from the
-head, stripping a previous rotation suffix. Names must be absent from local
-and cached remote refs. On the head branch, rotation fast-forwards it instead.
-An unchanged result or divergent head refuses at exit 1.
+upstream.
+
+`gw fast-forward` brings the branch you stand on level with the head ref. A
+branch with no commits of its own fast-forwards, the head branch included;
+one with commits is rebased, and the first conflict stops the rebase with the
+files left for you to resolve. A branch proved finished keeps its name, and
+the checkout moves to a new branch from the head ref or `--from`, named
+`YYYY-MM-DDThh-mm-ssZ/NAME` unless you name it. A branch already level exits
+0 and changes nothing. [Fast-forward](docs/commands/fast-forward.md) gives the
+order of the checks, the JSON and the conflict loop.
 
 ## Output and JSON
 
@@ -420,13 +426,13 @@ disables colour on its stream. `NO_COLOR=` does not disable it.
 before the command, and the head line while
 keeping results, errors, never-synced notices and deletion disclosures, which
 repeat an inferred head.
-It keeps `gw branch create`'s branch/base/SHA result and both `gw rotate`
-outcome tables. `-v` traces subprocesses on stderr and keeps JSON stdout
+It keeps `gw branch create`'s branch/base/SHA result and `gw fast-forward`'s
+result table. `-v` traces subprocesses on stderr and keeps JSON stdout
 parseable. Passing both is a usage error.
 
 | Commands | `-q` | `-v` |
 | --- | --- | --- |
-| `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw rotate` | yes | yes |
+| `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw fast-forward` | yes | yes |
 | `gw branch status` | yes | no |
 | `gw list` | no | no |
 
@@ -462,6 +468,8 @@ gw list --json | jq -r '.worktrees[].path'
 | --- | --- |
 | `gwa`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwbc`, `gwrot` binaries | `gw` subcommands, or the plugin's shortcuts |
 | `gws` as assessment, `gw status`, `gw s`, `gw st` | `gw prune --json`; `gws` now runs `gw sync` |
+| `gw rotate`, `gw rot`, `gwrot` | `gw fast-forward`, `gw ff`, `gwff` |
+| a rotated branch named `NAME-YYYY-MM-DD_NNN` | `YYYY-MM-DDThh-mm-ssZ/NAME` |
 | `gwp --dry-run` | `gw prune --json` or `gw prune --table` |
 | `gw list --list`, `gw list -l`, `gw prune --list` | `gw list --table`, `gw prune --table` |
 | `gwp --branch NAME` | `gw remove NAME` or a quoted exact path |

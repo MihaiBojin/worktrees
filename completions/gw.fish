@@ -59,11 +59,12 @@ complete -c gw -n '__worktrees_on remove rm' -s v -l verbose -d 'print every git
 complete -c gw -n '__worktrees_on remove rm' -l explain -d 'print every git command and exit'
 complete -c gw -n '__worktrees_on remove rm' -s h -l help -d 'show the help and exit'
 
-complete -c gw -n '__worktrees_on rotate rot' -l json -d 'the result as data'
-complete -c gw -n '__worktrees_on rotate rot' -s q -l quiet -d 'omit summaries and progress'
-complete -c gw -n '__worktrees_on rotate rot' -s v -l verbose -d 'print every git command'
-complete -c gw -n '__worktrees_on rotate rot' -l explain -d 'print every git command and exit'
-complete -c gw -n '__worktrees_on rotate rot' -s h -l help -d 'show the help and exit'
+complete -c gw -n '__worktrees_on fast-forward ff' -l from -x -d 'start that branch from this branch or commit'
+complete -c gw -n '__worktrees_on fast-forward ff' -l json -d 'the result as data'
+complete -c gw -n '__worktrees_on fast-forward ff' -s q -l quiet -d 'omit summaries and progress'
+complete -c gw -n '__worktrees_on fast-forward ff' -s v -l verbose -d 'print every git command'
+complete -c gw -n '__worktrees_on fast-forward ff' -l explain -d 'print every git command and exit'
+complete -c gw -n '__worktrees_on fast-forward ff' -s h -l help -d 'show the help and exit'
 
 complete -c gw -n '__worktrees_on branch; and test (count (commandline -opc)) -eq 2' -a '(command gw branch --complete)'
 complete -c gw -n '__worktrees_on branch; and test (count (commandline -opc)) -eq 2' -s h -l help -d 'show the help and exit'
