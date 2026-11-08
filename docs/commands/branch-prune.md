@@ -54,10 +54,10 @@ as printed.
 
 Partial success is possible. Read each branch and stash outcome: a refused
 branch can remain while another is deleted. JSON includes `removed`,
-`failed`, `verdicts`, `outcomes`, `head` and `lastSync`; each verdict keeps
-its `undo` command. Exit 0 means the requested operation completed or was
-cancelled, exit 1 reports a cleanup failure, exit 2 is a usage error, and
-exit 3 is a refusal. Ctrl-C exits 130.
+`failed`, `verdicts`, `outcomes`, `head`, `head_sha` and `lastSync`; each
+verdict keeps its `undo` command. Exit 0 means the requested operation
+completed or was cancelled, exit 1 reports a cleanup failure, exit 2 is a
+usage error, and exit 3 is a refusal. Ctrl-C exits 130.
 
 `-q` keeps results, errors and disclosures while suppressing summaries and
 stale warnings. `-v` traces subprocesses on stderr without changing JSON
