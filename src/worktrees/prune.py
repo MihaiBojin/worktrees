@@ -18,7 +18,7 @@ from . import render
 from . import repo as R
 from .git import Refused, git
 from .verdicts import REMOVE as REMOVE
-from .verdicts import Verdict
+from .verdicts import Verdict, restore_command
 
 
 @git("worktree prune", mutates=True)
@@ -240,13 +240,9 @@ def restore_line(branch: str, repo: str | os.PathLike[str] | None = None) -> str
     The sha is checked to be a commit. The bug's signature is a correctly
     shaped restore line carrying the wrong sha, so the check is on the object
     and not on the sentence.
-
-    The name is quoted, because this line exists to be pasted and git permits
-    `$`, a backtick and `;` in a branch name. `shlex.quote` writes POSIX
-    single quotes, which bash, zsh and fish all read the same way.
     """
     sha = restore_sha(branch, repo=repo)
-    return f"git branch {shlex.quote(branch)} {sha}" if sha else ""
+    return restore_command(branch, sha) if sha else ""
 
 
 def restore_sha(branch: str, repo: str | os.PathLike[str] | None = None) -> str:

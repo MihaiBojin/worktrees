@@ -128,6 +128,7 @@ def _verdict_data(rows: list[verdicts.Verdict]) -> list[dict]:
             "ignored": v.ignored,
             "ignoredPaths": list(v.ignored_paths),
             "sha": v.sha,
+            "undo": v.undo,
         }
         for v in rows
     ]

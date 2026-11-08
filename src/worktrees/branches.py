@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import shlex
 from dataclasses import dataclass, field, fields
 
 from . import merged, progress, prune
 from . import repo as R
 from .git import GitError, Refused, git
+from .verdicts import restore_command
 
 
 @git("for-each-ref --format='%(refname)%00%(objectname)%00%(symref)' refs/heads/")
@@ -33,7 +33,7 @@ class Verdict:
 
     @property
     def undo(self) -> str:
-        return f"git branch {shlex.quote(self.branch)} {self.sha}"
+        return restore_command(self.branch, self.sha)
 
     def data(self) -> dict:
         return {
