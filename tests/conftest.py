@@ -242,6 +242,11 @@ class Network:
             "    answer = records.get(args[1])\n"
             "    if answer is None: sys.exit(1)\n"
             "    if isinstance(answer, int): sys.exit(answer)\n"
+            # `$fail` is a body printed at exit 1, as gh and glab print an
+            # error response's.
+            "    if isinstance(answer, dict) and '$fail' in answer:\n"
+            "        print(json.dumps(answer['$fail']))\n"
+            "        sys.exit(1)\n"
             "    for page in answer['$pages'] if isinstance(answer, dict) "
             "and '$pages' in answer else [answer]:\n"
             "        print(json.dumps(page))\n"

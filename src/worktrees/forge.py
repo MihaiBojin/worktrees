@@ -17,10 +17,11 @@ def _trace(argv: list[str], code: int, stdout: str, stderr: str) -> None:
         progress.line(render.trace(argv, code, stdout, stderr, failed=code != 0))
 
 
-def _execute(
+def _run(
     argv: list[str], repo: str | os.PathLike[str] | None = None
 ) -> subprocess.CompletedProcess[str] | None:
-    """Run a forge command with repository redirects removed."""
+    """Run a forge command with repository redirects removed, or None when it
+    could not start or ran out of time."""
     options.log.append(tuple(argv))
     try:
         proc = subprocess.run(
@@ -36,10 +37,15 @@ def _execute(
         _trace(argv, 1, "", str(exc))
         return None
     _trace(argv, proc.returncode, proc.stdout, proc.stderr)
-    if proc.returncode != 0:
-        return None
-
     return proc
+
+
+def _execute(
+    argv: list[str], repo: str | os.PathLike[str] | None = None
+) -> subprocess.CompletedProcess[str] | None:
+    """Run a forge command, or None when it did not succeed."""
+    proc = _run(argv, repo)
+    return proc if proc is not None and proc.returncode == 0 else None
 
 
 def authenticated(
@@ -49,17 +55,18 @@ def authenticated(
     return proc is not None
 
 
-def _read(argv: list[str], repo: str | os.PathLike[str] | None = None) -> object:
+def _json(text: str) -> object:
     import json
 
-    proc = _execute(argv, repo)
-    if proc is None:
-        return None
     try:
-        rows = json.loads(proc.stdout or "[]")
+        return json.loads(text or "[]")
     except json.JSONDecodeError:
         return None
-    return rows
+
+
+def _read(argv: list[str], repo: str | os.PathLike[str] | None = None) -> object:
+    proc = _execute(argv, repo)
+    return None if proc is None else _json(proc.stdout)
 
 
 def pages(
@@ -93,10 +100,36 @@ def query(
     argv: list[str], repo: str | os.PathLike[str] | None = None
 ) -> list[dict] | None:
     """Read a list of forge records."""
-    rows = _read(argv, repo)
+    return _records(_read(argv, repo))
+
+
+def _records(rows: object) -> list[dict] | None:
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         return None
     return rows
+
+
+def commit_query(
+    argv: list[str], repo: str | os.PathLike[str] | None = None
+) -> list[dict] | None:
+    """Read a list of forge records about one commit, empty when the forge
+    answers that it holds no such commit, as for one nobody has pushed.
+
+    GitHub answers that with a 422 and GitLab with a 404, each with a body
+    that says so. Any other failure is None.
+    """
+    proc = _run(argv, repo)
+    if proc is None:
+        return None
+    if proc.returncode == 0:
+        return _records(_json(proc.stdout))
+    body = _json(proc.stdout)
+    message = body.get("message") if isinstance(body, dict) else None
+    unknown = isinstance(message, str) and (
+        message.startswith("No commit found for SHA: ")
+        or message == "404 Commit Not Found"
+    )
+    return [] if unknown else None
 
 
 def document(
