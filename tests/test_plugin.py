@@ -97,6 +97,7 @@ def test_every_skill_is_named_for_its_directory() -> None:
         "fast-forward",
         "merge",
         "new-branch",
+        "preflight",
         "prune",
         "ship-it",
     ]
@@ -356,7 +357,8 @@ def test_the_skill_names_the_fields_fast_forward_prints(world) -> None:
 
 
 SHIP_IT = PLUGIN / "skills" / "ship-it" / "SKILL.md"
-RIGHTS = PLUGIN / "skills" / "ship-it" / "rights.md"
+PREFLIGHT = PLUGIN / "skills" / "preflight"
+RULES = PREFLIGHT / "rules.json"
 
 
 def test_ship_it_preapproves_publishing_alone() -> None:
@@ -416,9 +418,9 @@ def test_ship_it_never_writes_a_flag_that_bypasses_or_forces() -> None:
 def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
     """The rules a user adds are for the commands the skill runs, and every
     command it runs that publishes has a rule."""
-    rules = re.findall(r'^  "Bash\((.+?) \*\)",?$', RIGHTS.read_text(), re.M)
-    # The allow list ends where the deny list starts.
-    allow = rules[: rules.index("git push --force")]
+    wanted = json.loads(RULES.read_text())["permissions"]
+    allow = re.findall(r"^Bash\((.+?) \*\)$", "\n".join(wanted["allow"]), re.M)
+    assert len(allow) == len(wanted["allow"])
     tools = {
         found.group(1)
         for tool in _tools(SHIP_IT)
@@ -441,6 +443,88 @@ def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
         "gw branch create",
     ):
         assert publishing in allow, publishing
+
+
+def test_preflight_runs_only_when_called_by_name() -> None:
+    """It changes what runs without asking, so neither client starts it from
+    its description."""
+    front = _frontmatter(PREFLIGHT / "SKILL.md")
+    assert re.search(r"^disable-model-invocation: true$", front, re.M)
+    policy = (PREFLIGHT / "agents" / "openai.yaml").read_text()
+    assert policy == "policy:\n  allow_implicit_invocation: false\n"
+
+
+def test_preflight_preapproves_no_write() -> None:
+    """The copy over a settings file reaches the client's own prompt."""
+    for tool in _tools(PREFLIGHT / "SKILL.md"):
+        assert tool not in ("Write", "Edit"), tool
+        assert not re.match(r"Bash\((cp|mv|tee|mkdir|rm|git commit)\b", tool), tool
+
+
+def _preflight(command: str) -> str:
+    """The jq program the preflight skill runs in `command`'s shape."""
+    found = re.findall(
+        rf"^jq --slurpfile want RULES '(.+)' TARGET{re.escape(command)}$",
+        (PREFLIGHT / "SKILL.md").read_text(),
+        re.M,
+    )
+    assert len(found) == 1, command
+    return found[0]
+
+
+def _preflight_jq(program: str, settings: dict | None, tmp_path: Path) -> dict:
+    if settings is None:
+        flags, files = ["-n"], []
+        program = "{} | " + program
+    else:
+        target = tmp_path / "settings.json"
+        target.write_text(json.dumps(settings))
+        flags, files = [], [str(target)]
+    proc = subprocess.run(
+        ["jq", *flags, "--slurpfile", "want", str(RULES), program, *files],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(proc.stdout)
+
+
+def test_preflight_appends_each_missing_rule_once_and_keeps_the_rest(
+    tmp_path: Path,
+) -> None:
+    wanted = json.loads(RULES.read_text())["permissions"]
+    held = wanted["allow"][4]
+    settings = {
+        "env": {"TOKEN": "x"},
+        "permissions": {"allow": ["Bash(mutex list:*)", held], "ask": ["Bash(rm *)"]},
+        "autoMode": {"environment": ["trusted"]},
+    }
+    missing, merge = _preflight(""), _preflight(" > TEMP")
+
+    assert _preflight_jq(missing, settings, tmp_path) == {
+        "allow": [rule for rule in wanted["allow"] if rule != held],
+        "deny": wanted["deny"],
+    }
+    merged = _preflight_jq(merge, settings, tmp_path)
+    assert list(merged) == ["env", "permissions", "autoMode"]
+    assert merged["env"] == settings["env"]
+    assert merged["autoMode"] == settings["autoMode"]
+    assert merged["permissions"] == {
+        "allow": [
+            "Bash(mutex list:*)",
+            held,
+            *(rule for rule in wanted["allow"] if rule != held),
+        ],
+        "ask": ["Bash(rm *)"],
+        "deny": wanted["deny"],
+    }
+    assert _preflight_jq(merge, merged, tmp_path) == merged
+    assert _preflight_jq(missing, merged, tmp_path) == {"allow": [], "deny": []}
+
+
+def test_preflight_writes_every_rule_into_a_missing_file(tmp_path: Path) -> None:
+    wanted = json.loads(RULES.read_text())
+    assert _preflight_jq(_preflight(" > TEMP"), None, tmp_path) == wanted
 
 
 def _skill_filter(skill: str, command: str, nth: int = 0) -> tuple[list[str], str]:

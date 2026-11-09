@@ -1,8 +1,9 @@
 # worktrees, as an agent plugin
 
-Seven skills for Claude Code and Codex over the worktrees CLI. Each is
+Eight skills for Claude Code and Codex over the worktrees CLI. Each is
 `/worktrees:NAME` in Claude Code and `$worktrees:NAME` in Codex, and an agent
-reaches for one on its own when a task matches its description.
+reaches for one on its own when a task matches its description, except
+`preflight`, which runs only when you call it.
 
 | skill | does |
 | --- | --- |
@@ -13,6 +14,7 @@ reaches for one on its own when a task matches its description.
 | `merge` | fixes failing checks, waits for green, merges, then reports what it fixed |
 | `ship-it` | commits, pushes, opens the pull request, fixes CI and merges, unassisted |
 | `prune` | removes the worktrees and branches the CLI proves finished, after asking |
+| `preflight` | adds the permission rules `ship-it` needs to your Claude Code settings, after asking |
 
 ## Install
 
@@ -61,6 +63,10 @@ and the sandbox has no network and a read-only `.git`. Neither client lets a
 plugin grant more, so [the rules ship-it needs](skills/ship-it/rights.md)
 go in your own Claude Code settings or Codex rules, once. `ship-it` checks
 for them before it starts and names any that are missing.
+`/worktrees:preflight user` adds the Claude Code ones to
+`~/.claude/settings.json`, and `/worktrees:preflight project` to the
+repository's `.claude/settings.json`, which reaches every machine that clones
+it once committed.
 
 ## CI
 

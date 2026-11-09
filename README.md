@@ -558,11 +558,13 @@ an update-ref delete that names no full sha
 
 ## Agent plugin
 
-[The agent plugin](plugin/README.md) gives Claude Code and Codex six skills
+[The agent plugin](plugin/README.md) gives Claude Code and Codex eight skills
 over these commands: start a branch, bring a branch level with the head
 branch through its rebase conflicts, read CI, keep a pull request's
-description true to its diff, merge a pull request once CI is green, and
-prune finished worktrees and branches after asking.
+description true to its diff, merge a pull request once CI is green, ship a
+change from uncommitted work to a merged pull request, prune finished
+worktrees and branches after asking, and add the permission rules shipping
+needs to Claude Code's settings.
 
 ## Contributing
 

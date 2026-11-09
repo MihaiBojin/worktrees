@@ -9,48 +9,22 @@ Each rule matches a command's prefix. A rule for
 `git push --force-with-lease --force-if-includes` also admits a trailing
 `--force`, and one for `gh pr merge` also admits `--admin`. The skill never
 writes either, `tests/test_plugin.py` holds its text to that, and the deny
-rules below refuse the forms a client can match.
+rules refuse the forms a client can match.
 
 ## Claude Code
 
-Add these to `permissions.allow` in `~/.claude/settings.json`, or in the
-project's `.claude/settings.json`. They are what lets a merge through auto
-mode, whose classifier otherwise blocks merging a pull request no human
-approved; a skill's own `allowed-tools` lasts only the turn that invoked it.
+[`preflight/rules.json`](../preflight/rules.json) holds them: the allow
+rules for `permissions.allow` and the deny rules for `permissions.deny`, in
+`~/.claude/settings.json` or the project's `.claude/settings.json`.
+`/worktrees:preflight user` or `/worktrees:preflight project` adds the
+missing ones after showing them. The allow rules are what lets a merge
+through auto mode, whose classifier otherwise blocks merging a pull request
+no human approved; a skill's own `allowed-tools` lasts only the turn that
+invoked it.
 
-```json
-[
-  "Bash(gw branch create *)",
-  "Bash(gw fast-forward *)",
-  "Bash(gw ci-checks *)",
-  "Bash(git add -- *)",
-  "Bash(git commit *)",
-  "Bash(git push --set-upstream *)",
-  "Bash(git push --force-with-lease --force-if-includes *)",
-  "Bash(gh pr create *)",
-  "Bash(gh pr edit *)",
-  "Bash(gh pr merge *)",
-  "Bash(gh run rerun *)",
-  "Bash(glab mr create *)",
-  "Bash(glab mr update *)",
-  "Bash(glab mr merge *)",
-  "Bash(glab ci retry *)"
-]
-```
-
-And these to `permissions.deny`, which no allow rule or skill overrides:
-
-```json
-[
-  "Bash(git push --force *)",
-  "Bash(git push * --force)",
-  "Bash(gh pr merge * --admin)",
-  "Bash(gh pr merge * --admin *)"
-]
-```
-
-A deny rule matches only the position its pattern names, so test one on the
-Claude Code version in use before relying on it.
+No allow rule or skill overrides a deny rule. A deny rule matches only the
+position its pattern names, so test one on the Claude Code version in use
+before relying on it.
 
 ## Codex
 
