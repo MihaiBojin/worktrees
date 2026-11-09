@@ -30,7 +30,9 @@ allowed-tools:
 In Codex, `$ARGUMENTS` means the arguments supplied with the skill. Each
 number is a pull request; with none it is the current branch's. Several
 numbers are merged one at a time, in the order given, and a stack bottom
-first.
+first. One whose `pr.baseRef` is the branch of a pull request in this run
+that did not merge, queued or blocked, is not merged: it would land on that
+branch rather than the head branch. Report it as waiting on that one.
 
 The user asking to merge is the approval to merge each named pull request
 once it is green, to push fixes to its branch, and to correct its
@@ -152,17 +154,22 @@ while a pipeline runs, which `--auto-merge=false` turns off.
 Then read it back:
 
 ```sh
-gh pr view NUMBER --json state,mergeCommit,mergedAt
+gh pr view NUMBER --json state,mergeCommit,mergedAt,autoMergeRequest
 ```
 
-Only `MERGED` is merged. A merge GitHub put in a queue is queued, and is
-reported as queued. A refusal is reported as the forge worded it, and the
-merge is not tried again in another way.
+Only `MERGED` is merged. Where the base branch requires a merge queue,
+`gh pr merge` exits 0 having only queued the pull request. It names the
+queue on stderr: a warning that the queue sets the strategy, or that the
+pull request is already queued. That warning or a non-null
+`autoMergeRequest` is reported as queued. `OPEN` after an exit of 0 with
+neither is reported as still open, never as merged or queued. A refusal is
+reported as the forge worded it, and the merge is not tried again in
+another way.
 
 ## 5. Afterwards
 
-Once the last pull request has merged, bring the checkout that holds the
-head branch up to what landed, usually the main checkout:
+Once the run has merged at least one pull request, bring the checkout that
+holds the head branch up to what landed, usually the main checkout:
 
 ```sh
 gw list --json | jq -c '(.head.ref // "" | sub("^refs/remotes/[^/]+/|^refs/heads/"; "")) as $b
@@ -179,8 +186,9 @@ removing them waits for the user.
 
 ## 6. Report
 
-Lead with each pull request's outcome, merged with its commit, queued, or
-blocked with the reason, and its URL. Then the record, one short row per
+Lead with each pull request's outcome, merged with its commit, queued,
+still open, waiting on the one below it, or blocked with the reason, and its
+URL. Then the record, one short row per
 problem:
 
 | PR | problem | solution |
