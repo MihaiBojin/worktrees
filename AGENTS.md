@@ -177,7 +177,7 @@ watching. A shortcut has no completion file of its own.
 
 ## The agent plugin reads `--json`
 
-`plugin/` ships with the CLI: seven skills, each a directory under
+`plugin/` ships with the CLI: eight skills, each a directory under
 `plugin/skills/` named as its command is, `/worktrees:<name>` in Claude Code
 and `$worktrees:<name>` in Codex. Skills call `gw` from `$PATH`; nothing
 assumes a plugin root or a checkout at a known path.
@@ -191,6 +191,7 @@ assumes a plugin root or a checkout at a known path.
 | `merge` | `describe-pr`, `ci-checks`, fixes on the branch, `gh pr merge`, then `fast-forward` in the head branch's checkout |
 | `prune` | `gw prune --json` and `gw branch status --json`, then the removals approved |
 | `ship-it` | commits, `fast-forward`, a leased or plain push, `gh pr create`, `describe-pr`, the merge skill's fixes and merge, unassisted |
+| `preflight` | `jq` merges `preflight/rules.json` into the user's or the project's `.claude/settings.json`, after asking |
 
 `describe-pr`, `merge` and `ship-it` share `describe-pr/format.md`: the
 review's title and body are the squash commit's subject and body, so one set
@@ -206,7 +207,10 @@ pre-approves a removal.
 A plugin cannot grant a skill more than the turn that invoked it in Claude
 Code, and nothing at all in Codex, so `ship-it/rights.md` lists the rules a
 user adds to their own client configuration, and the skill checks for them
-before it starts. Its allow patterns match prefixes, so a test holds the
+before it starts. The Claude Code ones live once, in `preflight/rules.json`,
+which `preflight` merges into the settings file the user names. It runs only
+when called by name, in both clients, and pre-approves no write, so the copy
+over the settings file reaches the client's own prompt. Its allow patterns match prefixes, so a test holds the
 skill's commands to never writing `--force`, `--admin`, `--auto` or
 `--delete-branch`.
 

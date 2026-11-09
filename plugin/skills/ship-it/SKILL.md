@@ -70,14 +70,17 @@ auto-resolution block.
 A plugin cannot grant its own skill the right to push or merge. Read
 [the rules ship-it needs](rights.md) and the client's configuration:
 
-- Claude Code: `permissions.allow` in `~/.claude/settings.json`, the
-  project's `.claude/settings.json` and `.claude/settings.local.json`.
+- Claude Code: the rules in [rules.json](../preflight/rules.json), against
+  `permissions.allow` and `permissions.deny` in `~/.claude/settings.json`,
+  the project's `.claude/settings.json` and `.claude/settings.local.json`.
 - Codex: the `.rules` files in `~/.codex/rules/` and, once the project is
   trusted, its `.codex/rules/`.
 
 When any rule is missing, name the missing lines and the file they go in
-once, in your reply, then go on. The client will ask before each command
-those rules would have covered. Never edit those files yourself.
+once, in your reply, then go on. In Claude Code, add that
+`/worktrees:preflight user` or `/worktrees:preflight project` writes them.
+The client will ask before each command those rules would have covered.
+Never edit those files yourself.
 
 ## 1. A branch of its own
 
