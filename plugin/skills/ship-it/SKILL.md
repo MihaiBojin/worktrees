@@ -2,17 +2,19 @@
 name: ship-it
 description: >
   Take a change to a merged pull request or merge request, unassisted. With
-  no numbers, the change in this checkout from uncommitted work: commit,
+  no arguments, the change in this checkout from uncommitted work: commit,
   bring the branch level with the head branch, push and open the review.
-  With numbers, those open reviews, a stack bottom first. Then fix failing
-  CI, merge, and report what was fixed. Use when the user asks to ship,
-  merge or land a change or a pull request. With --hold-merge, stop before
-  the merge and print the command that makes it.
-argument-hint: "[NUMBER ...] [--hold-merge]"
+  With branch names, the same for each branch, in the worktree that holds
+  it. With numbers, those open reviews, a stack bottom first. Then fix
+  failing CI, merge, and report what was fixed. Use when the user asks to
+  ship, merge or land a change, a branch or a pull request. With
+  --hold-merge, stop before the merge and print the command that makes it.
+argument-hint: "[NUMBER | BRANCH ...] [--hold-merge]"
 allowed-tools:
   - Bash(gw sync)
   - Bash(gw list --json)
   - Bash(gw branch create:*)
+  - Bash(command gw add:*)
   - Bash(gw fast-forward:*)
   - Bash(gw ci-checks:*)
   - Bash(jq:*)
@@ -23,6 +25,7 @@ allowed-tools:
   - Bash(git log:*)
   - Bash(git show:*)
   - Bash(git rev-parse:*)
+  - Bash(git switch --create:*)
   - Bash(git add --:*)
   - Bash(git commit:*)
   - Bash(GIT_EDITOR=true git rebase --continue)
@@ -51,14 +54,15 @@ allowed-tools:
 # Ship a change, unassisted
 
 In Codex, `$ARGUMENTS` means the arguments supplied with the skill. Each
-number is an open review to ship; with none, the change is the one in this
-checkout. `--hold-merge` does everything below except the merge.
+number, or `#` and a number, is an open review to ship, and any other word a
+branch. With neither, the change is the one in this checkout.
+`--hold-merge` does everything below except the merge.
 
 The user invoking this skill approves every step below for what it ships.
 For this checkout's change, that is the branch, the commits, the pushes,
-the review and its description, the CI fixes and the merge. For each named
-review, it is the fixes pushed to its branch, its description and its
-merge. It approves nothing else: no other branch or review, no removal, no
+the review and its description, the CI fixes and the merge, and the same
+for each named branch. For each named review, it is the fixes pushed to its
+branch, its description and its merge. It approves nothing else: no other branch or review, no removal, no
 admin bypass, no deleted branch, no disabled check. Do not ask for routine
 steps. Where a skill this one follows would ask the user, take the safe
 default below or stop and report.
@@ -89,7 +93,13 @@ Never edit those files yourself.
 
 ## Which change
 
-With no numbers, work in the checkout the user is in, from step 1.
+With no arguments, work in the checkout the user is in, from step 1.
+
+Each named branch goes through steps 2 to 10 on its own, in the worktree
+that holds it, found or made as [fixing a failure](#fixing-a-failure)
+describes, with every command run there as `cd 'PATH' && COMMAND`. A branch
+neither this clone nor the remote has is a blocker. Naming the head branch
+is the same as no argument in the checkout that holds it.
 
 With numbers, each review goes through steps 7 to 10 on its own, one at a
 time in the order given, and a stack bottom first. One whose `pr.baseRef`
@@ -104,16 +114,35 @@ gw list --json | jq -r '.head.ref // "" | sub("^refs/remotes/[^/]+/|^refs/heads/
 git rev-parse --abbrev-ref HEAD
 ```
 
-On the head branch, bring it level first, then start a branch named from
-the change, short and lowercase with hyphens:
+A detached HEAD, printed as `HEAD`, is a blocker: report it. On the head
+branch, see whether it holds commits its remote does not:
+
+```sh
+git log --oneline 'refs/remotes/REMOTE/HEAD_BRANCH..HEAD'
+```
+
+`REMOTE` is the default remote, as step 4 finds it. With none, bring the
+head branch level first, then start a branch named from the change, short
+and lowercase with hyphens:
 
 ```sh
 gw fast-forward --autostash --json
 gw branch create 'NAME' --json
 ```
 
-The uncommitted work comes along, since both start at the same commit. A
-detached HEAD, printed as `HEAD`, is a blocker: report it.
+The uncommitted work comes along, since both start at the same commit.
+
+With some, those commits are the change. Note the commit the head branch is
+at, then start the branch on it, which brings the commits and the
+uncommitted work along:
+
+```sh
+git rev-parse HEAD
+git switch --create 'NAME'
+```
+
+Step 3 replays the commits onto the head branch, and step 10 puts the head
+branch back where its remote is.
 
 ## 2. Commit
 
@@ -346,6 +375,26 @@ remote is reported, never worked around. Offer
 [the prune skill](../prune/SKILL.md) for the merged branches' worktrees;
 removing them waits for the user.
 
+When step 1 started the branch on a head branch that held commits of its
+own, and step 4 pushed it, put the head branch back where its remote is,
+whatever the outcome, since those commits are on the pushed branch now. Do
+it only while no checkout holds the head branch, which the lookup above
+shows as a null `path`:
+
+```sh
+gw sync
+git rev-parse 'refs/remotes/REMOTE/HEAD_BRANCH'
+git update-ref 'refs/heads/HEAD_BRANCH' 'NEW' 'COMMIT'
+```
+
+`COMMIT` is the commit step 1 noted and `NEW` the one `git rev-parse`
+printed, both in full. git refuses when the head branch is no longer at
+`COMMIT`, and the client may ask first. Report both, and the command that
+puts the head branch back: `git update-ref 'refs/heads/HEAD_BRANCH'
+'COMMIT' 'NEW'`, or `git reset --keep 'COMMIT'` from a checkout on the head
+branch. A checkout that holds the head branch, or a run that stopped before
+the push, leaves the head branch where it was: say so.
+
 Lead with each review's outcome, merged with its commit, queued, still
 open, waiting on the one below it, held with the merge command, or blocked
 with the reason, and its URL. Then the record, one short row per problem:
@@ -357,6 +406,6 @@ with the reason, and its URL. Then the record, one short row per problem:
 | #42 | `tests` timed out on the runner | reran the job; passed |
 
 No problems is a line saying so. A blocker names the branch, worktree or
-commit that holds the unfinished work. Then anything left out of the
-commits, the missing rights from step 0, and a release note that was not
-written.
+commit that holds the unfinished work. Then the head branch put back and
+the command that restores it, anything left out of the commits, the missing
+rights from step 0, and a release note that was not written.

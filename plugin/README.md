@@ -11,7 +11,7 @@ reaches for one on its own when a task matches its description, except
 | `fast-forward` | brings this branch level with the head branch, through each rebase conflict |
 | `ci-checks` | reads a pull request's checks as JSON, and waits for them |
 | `describe-pr` | checks a pull request's title and body against its diff, and fixes them |
-| `ship-it` | commits, pushes, opens the pull request, fixes CI and merges, unassisted; or ships the open pull requests it is given |
+| `ship-it` | commits, pushes, opens the pull request, fixes CI and merges, unassisted, for this checkout or the branches it is given; or ships the open pull requests it is given |
 | `prune` | removes the worktrees and branches the CLI proves finished, after asking |
 | `preflight` | adds the permission rules `ship-it` needs to your Claude Code settings, after asking |
 
@@ -92,6 +92,12 @@ change: a branch off the head branch when you stand on it, commits by path,
 `gw fast-forward --autostash`, a leased or plain push, the pull request and
 its description, a release note through `release-notes:write` when the
 release-notes plugin is installed, the CI fixes, and the merge.
+
+`/worktrees:ship-it fix-parser` does the same for the branch `fix-parser`,
+in the worktree that has it checked out, or a new one when none does. On a
+head branch that holds commits its remote does not, it starts the branch on
+them, ships it, then puts the head branch back where its remote is and
+prints the command that undoes that.
 
 `/worktrees:ship-it 41 42` ships open pull requests instead, one at a time
 and a stack bottom first. Asking approves pushing fixes to each one's

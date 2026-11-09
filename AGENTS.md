@@ -189,7 +189,7 @@ assumes a plugin root or a checkout at a known path.
 | `ci-checks` | `gw ci-checks --json`, `--wait` to wait without polling |
 | `describe-pr` | checks a review's title and body against its diff, and edits them |
 | `prune` | `gw prune --json` and `gw branch status --json`, then the removals approved |
-| `ship-it` | commits, `fast-forward`, a leased or plain push, `gh pr create`, `describe-pr`, `ci-checks`, fixes on the branch, `gh pr merge`, then `fast-forward` in the head branch's checkout, unassisted; given numbers, those open reviews from `ci-checks` on |
+| `ship-it` | commits, `fast-forward`, a leased or plain push, `gh pr create`, `describe-pr`, `ci-checks`, fixes on the branch, `gh pr merge`, then `fast-forward` in the head branch's checkout, unassisted, for this checkout or each branch it is named; given numbers, those open reviews from `ci-checks` on |
 | `preflight` | `jq` merges `preflight/rules.json` into the user's or the project's `.claude/settings.json`, after asking |
 
 `describe-pr` and `ship-it` share `describe-pr/format.md`: the
