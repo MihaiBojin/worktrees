@@ -17,6 +17,301 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.8.0 - 2026-11-09
+
+### Changed
+
+`gw` and `worktrees` are the only commands `uv tool install` puts on
+`$PATH`. Every shortcut is a fish and zsh plugin function that runs a `gw`
+command and completes as that command does: `gws`, `gwp`, `gwp!`, `gwpa`,
+`gwpa!`, `gwa`, `gwl`, `gwm`, `gwr`, `gwr!`, `gwff`, `gwbc`, `gwbs` and
+`gwbp`. A script or an agent that ran one of them as a binary, such as
+`gwp --json`, needs the `gw` form instead: `gw prune --json`. Upgrade the
+shell plugin to the same release as the CLI, because the previous plugin's
+shortcuts call binaries this release no longer installs.
+
+Every command except `gw sync`, `gw version`, `gw ci-checks`,
+`gw fast-forward`, help and completion runs `gw sync` first when the last
+sync is 60 seconds old or more, or has never run: it fetches every remote
+and asks GitHub or GitLab about each local branch. `WORKTREES_SYNC_TTL`
+sets that window in whole seconds, and `0` syncs before every command. A
+failed sync prints a warning, hidden under `-q` and `--json`, and the
+command carries on with the evidence it had.
+
+`--no-fetch`, `--no-forge`, `--force-refresh` and its short form `-f` are
+removed from every command. Run `gw sync` when you need fresh evidence.
+
+`WORKTREES_OFFLINE`, set to any non-empty value, keeps every command off
+the network. `gw sync` and `gw ci-checks` then refuse at exit 3,
+`gw fast-forward` decides from local refs alone, and the never-synced, age
+and unresolved-head notices stop suggesting `gw sync`. A script or agent
+that relied on assessment never touching the network should set it.
+
+`gws` runs `gw sync` through the shell plugin. In 0.7.0, `gws` assessed
+worktrees without changing anything; it now fetches.
+
+`gw prune` prints every worktree's verdict and asks for approval on a
+terminal. Without `--yes`, `--json`, `--table` and a run without a
+terminal assess without changing anything, at exit 0, where 0.7.0 refused
+at exit 3 without a terminal. `--only VERDICT`, which was on `gws`, filters
+`gw prune` now, assesses without removing, and cannot be combined with
+`--yes`. `gw prune` takes no target and `--branch` is removed: use
+`gw remove` for one worktree.
+
+Assessment rows separate the verdict from eligibility. A branch whose tip
+is on the head branch's first-parent history is `empty`, a fourth verdict
+beside `remove`, `keep` and `unknown`, and protected worktrees and branches
+remain ineligible even when their changes are upstream. The table gains an
+ELIGIBLE column, and the counts under it read as
+`2 remove, 1 empty, 3 keep, 0 unknown; 2 eligible`. `gw branch status`
+lists loose branches only, the ones no worktree has checked out.
+
+`gw prune`, `gw remove` and `gw branch prune` require permission to delete
+empty branches or branch stashes. Use `--delete empty` and
+`--delete stashes` as needed. For worktrees, `--delete ignored-files`
+replaces `--delete-ignored`. `--delete all` grants every applicable
+category; `--yes` adds none.
+
+`gwp!` runs `gw prune --yes`, and `gwr!` runs `gw remove --yes`. In 0.7.0
+`gwp!` was `gwp --force-refresh --delete-ignored --yes` and `gwr!` was
+`gwr --delete-ignored`. Neither permits deleting ignored files any more:
+add `--delete ignored-files`, or use `gwpa!`, which runs
+`gw prune --delete all --yes`.
+
+`gw remove` follows the same rules as `gw prune`. Without `--yes`, a run
+without a terminal, or with `--json` or `--table`, prints the matching
+worktree's assessment row and removes nothing, at exit 0, where it used to
+refuse at exit 3. `--json` prints the same `verdicts` rows as
+`gw prune --json`. `--yes` approves removal in every mode, and `-q` prints
+the verdicts only. `gw remove` matches exact names or paths. Removing the
+worktree you are standing in asks a second time at a terminal, even with
+`--yes`.
+
+Use `gw remove --keep-branch` for checkout-only removal that retains its
+branch and stashes, including finished branches. The `--force` spelling is
+removed.
+
+Removal prints recovery commands and rechecks the approved state before
+changing it.
+
+`gw branch delete` is now `gw branch prune`, and its shortcut `gwbd` is now
+`gwbp`. Scripts calling `gw branch delete` must use the new name.
+
+`gw fast-forward`, its shorthand `gw ff` and the shell shortcut `gwff`
+replace `gw rotate`, `gw rot` and `gwrot`. Where `gwrot` started a new
+branch from the head ref whatever the branch held, `gw fast-forward` keeps
+the branch you are on: it fast-forwards one with no commits of its own,
+and rebases one with commits onto the head ref, stopping at the first
+conflict with the rebase left for you to finish. Only a branch proved
+finished moves to a new branch, named `YYYY-MM-DDThh-mm-ssZ/NAME` rather
+than `NAME-YYYY-MM-DD_NNN`, or the `NAME` you pass, started from the head
+ref or `--from`. A branch already level exits 0, where `gwrot` exited 1.
+The JSON result gains `result` and loses `stem` and `at`.
+
+`gw fast-forward` fetches the default remote and asks the forge on every
+run, so a pull request merged a moment ago is seen, and refuses at exit 1
+when either fails, ending with the same command under
+`WORKTREES_OFFLINE=1`.
+
+Without `--autostash`, neither the fast-forward nor the rebase autostashes
+uncommitted changes, whatever `merge.autoStash` or `rebase.autoStash` say,
+so git refuses when they are in the way; this needs Git 2.27 or later.
+`--autostash` carries them across, and when they do not re-apply cleanly,
+the result names the stash entry that holds them by sha.
+
+`gw list --list` is now `gw list --table`, and `gw list -l` is removed:
+`--table` has no short form.
+
+`gw list` without a terminal prints the matching worktrees as `--table`
+does, at exit 0. In 0.7.0 `gwl QUERY` printed the path of the one worktree
+it matched and refused at exit 3 when it matched several, so a script that
+ran `cd "$(gwl QUERY)"` needs `gw list QUERY --json` and its
+`.worktrees[0].path` instead.
+
+Every `--json` result is an object carrying `lastSync`, when the refs and
+the forge evidence were last synced, and `head`. `head.ref` names the ref
+the head resolves to, such as `refs/remotes/origin/main`. For a remote HEAD
+that is not symbolic it names the one remote-tracking branch at that
+commit, the branch the verdicts were measured against. An inferred head
+reads `refs/heads/main` or `refs/heads/master`, and an unresolved one is
+`null`. In 0.7.0 `gws --json` printed `head` as a string. `gw list --json`
+returns an object with its rows under `worktrees`, where it printed a bare
+array.
+
+Typing in the `gw list` and `gw remove` pickers filters the rows, matching
+the way `gw list QUERY` does. Backspace removes a character, Escape clears
+the filter, and Escape on an empty filter cancels. Digits are part of the
+filter, since worktree names carry them, so a digit no longer picks a row:
+type to narrow the list, then press Enter.
+
+Running `gw` with no command prints help, as `gw --help` does: the
+commands, each with its shortcuts indented beneath it, and the shell
+plugin's release, and nothing else. Every command accepts `-h` and
+`--help`, and each command's `--help` opens with a sentence or two saying
+what it does and ends with its shortcuts.
+
+A word that is not a command exits 2 and suggests `gw list WORD`, where
+0.7.0 named the closest command.
+
+`gw add` and `gw branch create` without their argument print which one is
+missing and then the command's full help, at exit 2.
+
+`-q` silences warnings in every command except the never-synced one, and
+`-q` with `-v` is refused at exit 2 before any repository work.
+`gw branch status` accepts `-q` and rejects `-v`, and `gw list` accepts
+neither. Quiet mode keeps the result line of `gw branch create` and
+`gw fast-forward`.
+
+Messages that suggest a command name its `gw` form, such as
+`gw prune --yes removes the 2 marked removable`.
+
+In a partial clone, assessment needs Git 2.45.1 or later, or a patched
+maintenance release (2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4 or 2.44.1 and
+later in each series), and refuses an older Git at exit 3 before reading
+any object. Missing objects give `unknown` verdicts with a warning.
+
+The agent plugin installs as `worktrees@mihaibojin`, from the marketplace
+that `claude plugin marketplace add MihaiBojin/agent-plugins` or
+`codex plugin marketplace add MihaiBojin/agent-plugins` adds.
+`worktrees@release-tools` is no longer listed.
+
+The agent plugin's cleanup skill is now named `prune` and still runs as
+`/worktrees:prune`. It shows head and sync state before candidates and
+asks whether to sync before continuing with stale or never-synced
+evidence. Selected worktrees use their exact JSON paths and only the
+deletion categories the user approved. It runs `gw sync`,
+`gw list --json`, `gw list --table`, `gw prune --json`,
+`gw branch status`, `jq` and `git remote` without asking for permission.
+
+### Removed
+
+`gwh`, `gw help` and `gw h` are removed; `gw` or `gw --help` prints the
+command list. `gw ls` is removed, and `gw l` remains.
+
+`gw status`, `gw s` and `gw st` are removed. `gw prune --json`,
+`gw prune --table`, or `gw prune` without a terminal, assesses without
+removing anything.
+
+`gw move` and `gw mv` are removed; `gwm` and `gw m` run `gw select-main`.
+
+### Added
+
+`gw sync` fetches every remote and all their tags, records which local
+branch tips the forge has merged, and queries the forge eight branches at
+a time with a line per branch in progress. A tag that moved on the remote
+keeps its local commit, with a warning that names it. `gw sync` refuses a
+remote whose fetch refspec writes outside `refs/remotes/<name>/`, such as
+the one `git clone --mirror` sets, because fetching with it deletes local
+branches. A failed `git remote set-head` keeps the rest of the sync.
+
+`gw sync` and `gw version` print the head branch the verdicts are measured
+against, such as `Head: main (remote)`.
+
+A repository with a remote that `gw sync` has never fetched prints
+`Never synced: ... Run: gw sync` on stderr even with `-q` or `--json`, so
+scripts and agents see that the verdicts rest on clone or last-fetch refs.
+The stale-sync warning and the head line are hidden by `-q` and `--json`,
+and a repository without a remote prints neither warning.
+
+`gw add`, `gw remove`, `gw select-main` and, at a terminal, `gw list`
+change your directory through the plugin's `gw` shell function, so
+`gw a NAME` lands you in the new worktree.
+
+`gwpa` runs `gw prune --delete all` and still asks at a terminal, and
+`gwpa!` adds `--yes`.
+
+`gw select-main`, or `gw main` and `gw m` for short, changes into the
+worktree that has the head branch checked out: `main`, `master` or
+whichever branch the remote's HEAD names. `gwm` runs it through the shell
+plugin. It works from inside that worktree too, which brings you back to
+its top. Without a terminal it prints the path, so
+`cd "$(gw select-main)"` works in a script, and `--json` prints the
+worktree's row under `worktrees`. When no worktree has the branch it exits
+1 and suggests `gw add BRANCH`.
+
+`gw ci-checks`, or `gw ci` for short, reads a pull request's checks, or a
+GitLab merge request's, from the forge: the current branch's, or the one
+`gw ci-checks NUMBER` names. It prints the checks with failures first, or
+with `--json` the review, every check with a link to its log, and one
+`checksState` of `passed`, `failed`, `pending`, `blocked` or `unknown`.
+`--wait` reads every 30 seconds until no check is running, for up to 30
+minutes. It needs `gh` or `glab` signed in. It reads the forge each time
+it runs and never syncs first.
+
+`gw fast-forward` handles a branch whose first commits were squash-merged
+and which went on afterwards: it finds where the merged part ends and
+carries only the later commits. When the branch's own pull request merged,
+they move to a new branch and the old one stays as it was; a stacked
+branch whose parent merged keeps its name and its open pull request.
+
+When `gw fast-forward` replays the commits a branch made after its merged
+part, each stash made on one of those commits moves to the replayed copy,
+on the branch that holds the commits afterwards, so `git stash list` still
+ties it to that branch. A stash that cannot move, because its commit was
+not replayed or its changes conflict there, stays where it is, and the
+result says why.
+
+`gw list QUERY` with several matches opens the picker filtered by the
+query, and one Escape widens it to every worktree. A query whose letters
+appear in order in a worktree's directory name now finds it, as one
+already did for a branch.
+
+`gw prune --json` worktree rows carry `ignoredPaths`: the ignored paths
+the worktree holds, each cut to its first component below the `.gitignore`
+that ignores it, so `build/out/a.log` and `build/out/b.log` read as
+`build/`. The removal disclosure lists the same entries, and `ignored` and
+the "it holds N ignored path(s)" protection count them rather than every
+path Git lists. A file name holding a newline or an escape character is
+quoted and escaped in the disclosure.
+
+Worktree rows in `gw prune --json` carry `undo`, the `git branch NAME SHA`
+that restores the branch. It is null on a detached worktree.
+
+The agent plugin adds six skills: `new-branch`, `ci-checks`,
+`describe-pr`, `merge`, `fast-forward` and `ship-it`. `new-branch` starts
+a branch from the freshly fetched head, `ci-checks` reads checks through
+`gw ci-checks`, and `describe-pr` corrects a pull request's title and
+description against its diff. `merge` fixes failing checks, merges once
+CI is green, brings the head branch's checkout level with what landed,
+and reports what it fixed. `fast-forward` runs `gw fast-forward --json`
+and resolves each rebase conflict until the branch is level.
+
+`ship-it` runs as `/worktrees:ship-it` in Claude Code and
+`$worktrees:ship-it` in Codex. It takes the change in the checkout from
+uncommitted work to a merged pull request without asking along the way:
+it commits by path, brings the branch level, pushes, opens the pull
+request, fixes failing CI and merges, then reports what it fixed.
+`--hold-merge` stops before the merge and prints the command that makes
+it. Neither client lets a plugin grant itself the right to push or merge,
+so the plugin's `skills/ship-it/rights.md` lists the rules to add to
+Claude Code's settings or Codex's rules, and the skill names any that are
+missing.
+
+### Fixed
+
+`gwa -h`, `gwl -h`, `gwm -h` and `gwr -h` are coloured through the fish
+and zsh functions, as the other commands' help already was. Their help
+now goes to stderr, so `gwa -h | less` needs `2>&1`.
+
+On a terminal narrower than the picker's rows, moving through the list
+stacked a fresh copy of it under the last. Rows are now cut to the
+terminal's width, and a list taller than the screen scrolls with the
+highlight.
+
+Shell functions preserve path newlines and error output. After removing
+the current checkout, `gwr` enters the main checkout even if later cleanup
+fails, and keeps the failure status. `--json` output leaves the caller's
+directory unchanged, even when a relative directory has the same text.
+
+Assessment keeps unrelated histories ineligible.
+
+Worktrees with a leftover submodule store and locked worktrees whose
+directory is missing are kept rather than removed.
+
+Worktree removal preserves current-checkout safeguards for paths ending in
+whitespace. Branch protection and stash ownership retain exact names,
+including Unicode separators.
+
 ## 0.7.0 - 2026-11-05
 
 ### Added
