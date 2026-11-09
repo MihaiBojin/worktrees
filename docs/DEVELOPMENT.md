@@ -170,13 +170,16 @@ for a remote on disk.
 ## Publishing a version
 
 ```console
-/release:cut 0.2.0
+/release:release 0.2.0
 ```
 
 That does the whole of it: cut `release/v0.2.0` from `origin/main`,
 `scripts/bump_version.py 0.2.0`, open the pull request, wait for its checks, squash-merge,
 wait for main's own run on the merged commit, and only then tag. The tag lands
 on a commit already proved green, so it never has to move.
+
+In Codex the same release is `$release:release 0.2.0`, and in either client
+asking to cut a release of 0.2.0 runs it too.
 
 What each step needs is in `.releasetools.yaml`: the branch, the squash, the
 workflow that has to be green, the workflow the tag starts, the URL that must
