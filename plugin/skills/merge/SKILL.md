@@ -30,9 +30,9 @@ allowed-tools:
 In Codex, `$ARGUMENTS` means the arguments supplied with the skill. Each
 number is a pull request; with none it is the current branch's. Several
 numbers are merged one at a time, in the order given, and a stack bottom
-first. One whose `pr.baseRef` is the branch of a pull request in this run
-that did not merge, queued or blocked, is not merged: it would land on that
-branch rather than the head branch. Report it as waiting on that one.
+first. One whose `pr.baseRef` is the branch of a pull request this run did
+not merge, whatever the reason, is not merged: it would land on that branch
+rather than the head branch. Report it as waiting on that one.
 
 The user asking to merge is the approval to merge each named pull request
 once it is green, to push fixes to its branch, and to correct its
