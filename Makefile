@@ -1,25 +1,21 @@
-.PHONY: install-local reset local-plugin reset-plugin
+.PHONY: install install-local
 
 VERSION := $(shell sed -n 's/^version = "\(.*\)"$$/\1/p' pyproject.toml)
 ZSH_PLUGINS ?= $(or $(ZDOTDIR),$(HOME))/.zsh_plugins.txt
 
-# The working copy, in place of anything published.
+# The working copy, in place of anything published: the CLI from this
+# checkout, and Fisher and Antidote pointed at it. Run it again after a
+# change here, since uv and Fisher copy the files at install.
 install-local:
 	uv tool install --force --from . git-worktrees
-
-# Undoes install-local: the latest release from PyPI, and only its commands.
-reset:
-	uv tool install --force git-worktrees
-
-# Points Fisher and Antidote at this checkout. Run it again after a change
-# here, since Fisher copies the files at install.
-local-plugin:
 	$(call fish_plugin,$(CURDIR))
 	$(call zsh_plugin,$(CURDIR)/zsh/plugins/worktrees)
 
-# Undoes local-plugin: the plugin from GitHub, at the tag of this version.
-# The Antidote clone goes first, so the next shell clones it at that tag.
-reset-plugin:
+# This version as published, in place of anything else: the CLI from PyPI
+# and the shell plugin from GitHub at its tag, so the two match. The
+# Antidote clone goes first, so the next shell clones it at that tag.
+install:
+	uv tool install --force git-worktrees==$(VERSION)
 	$(call fish_plugin,MihaiBojin/worktrees@v$(VERSION))
 	-command -v zsh >/dev/null && test -f "$(ZSH_PLUGINS)" && \
 		zsh -ic 'antidote purge MihaiBojin/worktrees' </dev/null

@@ -71,15 +71,23 @@ interpreter comes from uv. [docs/BENCHMARK.md](BENCHMARK.md) is the last run.
 ## Working on a checkout
 
 ```console
-make install-local    # uv tool install --force --from . git-worktrees
-make reset            # uv tool install --force git-worktrees
+make install-local    # this checkout's CLI and shell plugin
+make install          # this version as published: the CLI and the shell plugin
 ```
 
 `make install-local` installs the working copy in place of anything
-published, so `gw` on your `$PATH` is the code in front of you. `make reset`
-undoes it: the latest release from PyPI replaces the working copy, and a
-command only the working copy has, such as one renamed since that release,
-leaves `~/.local/bin` with it.
+published. `gw` on your `$PATH` is the code in front of you, and Fisher and
+Antidote load the shell plugin from this checkout. Run it again after a
+change, since uv and Fisher copy the files at install.
+
+`make install` undoes it: the release `pyproject.toml` names, from PyPI,
+and the shell plugin from GitHub at that release's tag, so the CLI and the
+plugin match. A command only the working copy has, such as one renamed since that
+release, leaves `~/.local/bin` with it.
+
+The fish half is skipped where fish or Fisher is missing, and the zsh half
+where Antidote's list is: `$ZDOTDIR/.zsh_plugins.txt`, else
+`~/.zsh_plugins.txt`, or the file `ZSH_PLUGINS=` names.
 
 The distribution is `git-worktrees` because PyPI already holds `worktrees`.
 The import package is `worktrees`, and so is the long name of `gw`.
