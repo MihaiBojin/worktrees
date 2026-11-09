@@ -76,7 +76,7 @@ the plugin's tag to the same release, as each manager below describes.
 ### fish
 
 ```console
-fisher install MihaiBojin/worktrees@v0.7.0
+fisher install MihaiBojin/worktrees@v0.8.0
 ```
 
 Fisher copies `functions/`, `completions/` and `conf.d/` from the repository
@@ -93,7 +93,7 @@ the untagged one holds the files.
 Antidote takes a `path:` into the repository, and `branch:` takes a tag:
 
 ```
-MihaiBojin/worktrees branch:v0.7.0 path:zsh/plugins/worktrees   # in zsh_plugins.txt
+MihaiBojin/worktrees branch:v0.8.0 path:zsh/plugins/worktrees   # in zsh_plugins.txt
 ```
 
 The plugin puts its own `functions/` and `completions/` on `fpath` and
@@ -168,8 +168,8 @@ its stdout stays the version alone for a script to read.
 An excerpt of `gw --help`'s release lines with matching CLI and shell releases:
 
 ```console
-worktrees 0.7.0: git worktree commands that refuse to lose work
-The shell plugin here is 0.7.0, the same release as these commands.
+worktrees 0.8.0: git worktree commands that refuse to lose work
+The shell plugin here is 0.8.0, the same release as these commands.
 ```
 
 A shell without the variable has no plugin loaded, or one older than the
