@@ -366,6 +366,8 @@ def test_ship_it_preapproves_publishing_alone() -> None:
     tools = _tools(SHIP_IT)
     for wanted in (
         "gw branch create fix-parser --json",
+        "command gw add fix-parser --json",
+        "git switch --create fix-parser",
         "gw fast-forward --autostash --json",
         "gw ci-checks 41 --wait --json",
         "git add -- README",
@@ -398,6 +400,7 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "git rebase --abort",
         "git switch main",
         "git branch -D x",
+        "git update-ref refs/heads/main x y",
         "gh pr update-branch 1",
     ):
         assert not _covers(tools, refused), refused
