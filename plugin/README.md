@@ -88,7 +88,9 @@ the worktree holding the branch, never the main checkout. It merges with
 allows of squash, merge and rebase; a squash keeps GitHub's ` (#NN)` subject
 and the branch's commit trailers, and `--match-head-commit` refuses a head
 that moved after CI passed. It never uses `--admin`, `--auto` or
-`--delete-branch`, and reports a queued merge as queued. The report ends
+`--delete-branch`. It reports a merge queue's entry as queued, never as
+merged, and does not merge a pull request stacked on one that did not
+merge in the same run. The report ends
 with one row per problem: the pull request, what was wrong, what fixed it.
 
 ## Ship it

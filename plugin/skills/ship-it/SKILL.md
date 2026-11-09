@@ -223,8 +223,8 @@ The user may run it, change it, or merge another way.
 After a merge, follow the merge skill's step 5 to bring the head branch's
 checkout level.
 
-Lead with the outcome: merged with its commit, queued, held with the merge
-command, or blocked with the reason, and the review's URL. Then the
+Lead with the outcome: merged with its commit, queued, still open, held
+with the merge command, or blocked with the reason, and the review's URL. Then the
 auto-resolution block, or a line saying CI needed no fixes. Then anything
 left out of the commits, the missing rights from step 0, and a release note
 that was not written.
