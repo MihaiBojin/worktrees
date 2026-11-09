@@ -1429,3 +1429,48 @@ def test_a_forge_that_cannot_say_what_carried_the_branch_refuses(
     assert "the forge could not be asked which request carried" in p.stderr
     assert p.stderr.rstrip().endswith("Run: WORKTREES_OFFLINE=1 gw fast-forward")
     assert world.git("rev-parse", "HEAD") == before
+
+
+def unpushed(world) -> str:
+    """topic commits t.txt nobody pushed, and main goes on. Returns its sha."""
+    world.git("switch", "--quiet", "--create", "topic")
+    sha = world.commit("t.txt", "t\n")
+    world.git("switch", "--quiet", "main")
+    world.commit("m.txt", "m\n")
+    world.git("switch", "--quiet", "topic")
+    return sha
+
+
+@pytest.mark.parametrize(
+    ("host", "body"),
+    [
+        ("github.com", {"message": "No commit found for SHA: {sha}", "status": "422"}),
+        ("gitlab.com", {"message": "404 Commit Not Found"}),
+    ],
+    ids=["github", "gitlab"],
+)
+def test_a_commit_the_forge_does_not_hold_was_carried_by_none(
+    world, network, host, body
+) -> None:
+    """The answer each forge gives for a commit nobody pushed."""
+    sha = unpushed(world)
+    on_forge(world, host)
+    answer = {**body, "message": body["message"].format(sha=sha)}
+    network.answer({"$api": {carriers(host, sha): {"$fail": answer}}})
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["branch"]) == ("rebased", "topic")
+    assert world.git("rev-parse", "HEAD~1") == world.git("rev-parse", "main")
+
+
+def test_another_forge_error_still_refuses(world, network) -> None:
+    sha = unpushed(world)
+    on_forge(world)
+    failure = {"$fail": {"message": "Not Found", "status": "404"}}
+    network.answer({"$api": {carriers("github.com", sha): failure}})
+
+    p = gw_ff_online(world, network)
+    assert p.returncode == 1
+    assert "the forge could not be asked which request carried" in p.stderr

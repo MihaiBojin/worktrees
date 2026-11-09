@@ -57,10 +57,12 @@ What it does depends on the branch, checked in this order:
    searched from the tip down, since the first of a squashed pair is not
    upstream on its own, or the source commit of a verified merged request.
    When neither marks one, the forge is asked which merged request carried
-   the branch's oldest commit. One from another branch, into the head
-   branch, whose merge commit the fetched head ref holds, marks the newest
-   of the branch's commits it carried: how a stacked branch finds its
-   parent's commits when the parent gained more before it merged. The forge
+   the branch's oldest commit. A commit the forge does not hold, as when
+   nobody has pushed the branch, was carried by none. One from another
+   branch, into the head branch, whose merge commit the fetched head ref
+   holds, marks the newest of the branch's commits it carried: how a
+   stacked branch finds its parent's commits when the parent gained more
+   before it merged. The forge
    lists at most 100 of a request's commits here, a choice made because a
    parent seldom drifts that far from the branch stacked on it. A request
    with more can mark the boundary too early or not at all, and the rebase

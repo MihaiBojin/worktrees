@@ -347,7 +347,8 @@ def carried_by(
     the two share are in the head branch in a form neither ancestry nor
     content can recognise once the parent gained commits of its own, and the
     parent's request names them. False when the forge could not be asked; no
-    forge this reads is an empty answer.
+    forge this reads, and a commit the forge does not hold, are an empty
+    answer.
 
     Each request's commits come from one page of 100, by choice: a parent
     seldom drifts further from the branch stacked on it, and a longer list
@@ -359,7 +360,7 @@ def carried_by(
     tool, repository = selected
     host, path = repository.split("/", 1)
     if tool == "gh":
-        rows = forge.query(
+        rows = forge.commit_query(
             ["gh", "api", f"repos/{path}/commits/{sha}/pulls", "--hostname", host],
             repo,
         )
@@ -403,7 +404,7 @@ def carried_by(
             )
         return True, found
     project = quote(path, safe="")
-    rows = forge.query(
+    rows = forge.commit_query(
         [
             "glab",
             "api",
