@@ -1,6 +1,6 @@
 # worktrees, as an agent plugin
 
-Eight skills for Claude Code and Codex over the worktrees CLI. Each is
+Seven skills for Claude Code and Codex over the worktrees CLI. Each is
 `/worktrees:NAME` in Claude Code and `$worktrees:NAME` in Codex, and an agent
 reaches for one on its own when a task matches its description, except
 `preflight`, which runs only when you call it.
@@ -11,8 +11,7 @@ reaches for one on its own when a task matches its description, except
 | `fast-forward` | brings this branch level with the head branch, through each rebase conflict |
 | `ci-checks` | reads a pull request's checks as JSON, and waits for them |
 | `describe-pr` | checks a pull request's title and body against its diff, and fixes them |
-| `merge` | fixes failing checks, waits for green, merges, then reports what it fixed |
-| `ship-it` | commits, pushes, opens the pull request, fixes CI and merges, unassisted |
+| `ship-it` | commits, pushes, opens the pull request, fixes CI and merges, unassisted; or ships the open pull requests it is given |
 | `prune` | removes the worktrees and branches the CLI proves finished, after asking |
 | `preflight` | adds the permission rules `ship-it` needs to your Claude Code settings, after asking |
 
@@ -85,20 +84,6 @@ the diff, the commits or a linked issue. The skill changes only lines that
 are wrong or missing, keeps `release-note` blocks, issue keywords and
 harness footers as they were, and says in its reply what it changed.
 
-## Merge
-
-Asking to merge approves pushing fixes to each named pull request's branch,
-correcting its description, and merging it once green. The skill works in
-the worktree holding the branch, never the main checkout. It merges with
-`.releasetools.yaml`'s `release.merge` or the first strategy the repository
-allows of squash, merge and rebase; a squash keeps GitHub's ` (#NN)` subject
-and the branch's commit trailers, and `--match-head-commit` refuses a head
-that moved after CI passed. It never uses `--admin`, `--auto` or
-`--delete-branch`. It reports a merge queue's entry as queued, never as
-merged, and does not merge a pull request stacked on one that did not
-merge in the same run. The report ends
-with one row per problem: the pull request, what was wrong, what fixed it.
-
 ## Ship it
 
 `/worktrees:ship-it` takes the change in the checkout from uncommitted work
@@ -106,13 +91,27 @@ to a merged pull request, and asking for it approves every step for that
 change: a branch off the head branch when you stand on it, commits by path,
 `gw fast-forward --autostash`, a leased or plain push, the pull request and
 its description, a release note through `release-notes:write` when the
-release-notes plugin is installed, the CI fixes the merge skill makes, and
-the merge. It stops and reports where a person has to decide, such as a
-conflict whose sides want incompatible things, a push the lease rejects or a
-blocked merge. When it fixed CI, the pull request carries an auto-resolution
-block, one row per problem, which the squash message leaves out.
-`--hold-merge` does everything but the merge, and prints the one `gh` or
-`glab` command that makes it with the prepared subject and body.
+release-notes plugin is installed, the CI fixes, and the merge.
+
+`/worktrees:ship-it 41 42` ships open pull requests instead, one at a time
+and a stack bottom first. Asking approves pushing fixes to each one's
+branch, correcting its description and merging it once green, in the
+worktree that holds the branch, never the main checkout. A pull request
+stacked on one that did not merge in the same run is not merged.
+
+It merges with `.releasetools.yaml`'s `release.merge` or the first strategy
+the repository allows of squash, merge and rebase; a squash keeps GitHub's
+` (#NN)` subject and the branch's commit trailers, and
+`--match-head-commit` refuses a head that moved after CI passed. It never
+uses `--admin`, `--auto` or `--delete-branch`, and reports a merge queue's
+entry as queued, never as merged. It stops and reports where a person has
+to decide, such as a conflict whose sides want incompatible things, a push
+the lease rejects or a blocked merge. When it fixed CI, the pull request
+carries an auto-resolution block, one row per problem, which the squash
+message leaves out. The report ends with one row per problem: the pull
+request, what was wrong, what fixed it. `--hold-merge` does everything but
+the merge, and prints the one `gh` or `glab` command that makes it with the
+prepared subject and body.
 
 ## Cleanup
 
@@ -148,7 +147,7 @@ The fast-forward skill runs `gw fast-forward --json`, which is what the
 shell plugin's `gwff` runs; an agent's shell has no plugin functions, so it
 calls the binary. Arguments to `/worktrees:fast-forward` pass through, so
 `/worktrees:fast-forward next-parser --from release-1.2` names the branch a
-finished one moves to and where it starts. The merge skill runs it in the
+finished one moves to and where it starts. The ship-it skill runs it in the
 checkout holding the head branch once its pull requests land.
 
 The CLI decides what happens: fast-forward, rebase, or a new branch when

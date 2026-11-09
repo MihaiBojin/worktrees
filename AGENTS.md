@@ -177,7 +177,7 @@ watching. A shortcut has no completion file of its own.
 
 ## The agent plugin reads `--json`
 
-`plugin/` ships with the CLI: eight skills, each a directory under
+`plugin/` ships with the CLI: seven skills, each a directory under
 `plugin/skills/` named as its command is, `/worktrees:<name>` in Claude Code
 and `$worktrees:<name>` in Codex. Skills call `gw` from `$PATH`; nothing
 assumes a plugin root or a checkout at a known path.
@@ -188,21 +188,20 @@ assumes a plugin root or a checkout at a known path.
 | `fast-forward` | `gw fast-forward --autostash --json`, then each rebase conflict until the branch is level |
 | `ci-checks` | `gw ci-checks --json`, `--wait` to wait without polling |
 | `describe-pr` | checks a review's title and body against its diff, and edits them |
-| `merge` | `describe-pr`, `ci-checks`, fixes on the branch, `gh pr merge`, then `fast-forward` in the head branch's checkout |
 | `prune` | `gw prune --json` and `gw branch status --json`, then the removals approved |
-| `ship-it` | commits, `fast-forward`, a leased or plain push, `gh pr create`, `describe-pr`, the merge skill's fixes and merge, unassisted |
+| `ship-it` | commits, `fast-forward`, a leased or plain push, `gh pr create`, `describe-pr`, `ci-checks`, fixes on the branch, `gh pr merge`, then `fast-forward` in the head branch's checkout, unassisted; given numbers, those open reviews from `ci-checks` on |
 | `preflight` | `jq` merges `preflight/rules.json` into the user's or the project's `.claude/settings.json`, after asking |
 
-`describe-pr`, `merge` and `ship-it` share `describe-pr/format.md`: the
+`describe-pr` and `ship-it` share `describe-pr/format.md`: the
 review's title and body are the squash commit's subject and body, so one set
 of rules writes both. `tests/test_plugin.py` holds every skill's
 `allowed-tools` to reads, `gw sync` and `gw branch create`: no pattern
 covers a removal, a merge, a push, a rerun or a checkout that moves. Three
 exceptions are each skill's job: `describe-pr` may edit a review,
 `fast-forward` runs `gw fast-forward` and the conflict loop its own test
-lists, and `ship-it`, invoked to publish one change, commits, pushes, opens
-and edits the review, reruns CI and merges, as its own test lists. None
-pre-approves a removal.
+lists, and `ship-it`, invoked to publish one change or the reviews it
+names, commits, pushes, opens and edits the review, reruns CI and merges,
+as its own test lists. None pre-approves a removal.
 
 A plugin cannot grant a skill more than the turn that invoked it in Claude
 Code, and nothing at all in Codex, so `ship-it/rights.md` lists the rules a

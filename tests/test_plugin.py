@@ -95,7 +95,6 @@ def test_every_skill_is_named_for_its_directory() -> None:
         "ci-checks",
         "describe-pr",
         "fast-forward",
-        "merge",
         "new-branch",
         "preflight",
         "prune",
@@ -549,12 +548,12 @@ def _run_jq(flags: list[str], program: str, piped: str, **args: str) -> str:
     return proc.stdout
 
 
-def test_merge_finds_the_checkout_holding_the_head_branch(world) -> None:
+def test_ship_it_finds_the_checkout_holding_the_head_branch(world) -> None:
     from test_sync import origin
 
     world.worktree("feature")
     raw = json.loads(_json(world, "gw list"))
-    flags, program = _skill_filter("merge", "gw list --json", nth=1)
+    flags, program = _skill_filter("ship-it", "gw list --json", nth=2)
     out = json.loads(_run_jq(flags, program, json.dumps(raw)))
     main = next(row for row in raw["worktrees"] if row["main"])
     assert out == {"branch": "main", "path": main["path"]}
@@ -568,11 +567,11 @@ def test_merge_finds_the_checkout_holding_the_head_branch(world) -> None:
     assert out == {"branch": "main", "path": None}
 
 
-def test_merge_finds_the_worktree_holding_a_branch(world) -> None:
+def test_ship_it_finds_the_worktree_holding_a_branch(world) -> None:
     world.worktree("feat'quoted")
     world.worktree("other")
     raw = _json(world, "gw list")
-    flags, program = _skill_filter("merge", "gw list --json")
+    flags, program = _skill_filter("ship-it", "gw list --json", nth=1)
     out = _run_jq(flags, program, raw, b="feat'quoted")
     rows = json.loads(raw)["worktrees"]
     assert out.splitlines() == [r["path"] for r in rows if r["branch"] == "feat'quoted"]
