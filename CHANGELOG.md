@@ -17,6 +17,42 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.9.0 - 2026-11-09
+
+### Removed
+
+`/worktrees:merge` is removed. `/worktrees:ship-it 41 42` ships open pull
+requests or merge requests the way it did, one at a time and a stack
+bottom first, but unassisted: it pushes fixes and merges without asking,
+under the rules `ship-it/rights.md` lists, which `/worktrees:preflight`
+adds to Claude Code's settings, where the merge skill asked before each
+push and merge.
+
+### Added
+
+The agent plugin adds `preflight`, run by name as `/worktrees:preflight user`
+or `/worktrees:preflight project`. It adds the permission rules `ship-it`
+needs to `~/.claude/settings.json` or the repository's
+`.claude/settings.json`, after showing every missing line and asking. A
+committed project file reaches every machine that clones the repository.
+
+### Fixed
+
+`/worktrees:ship-it` could report a pull request as queued when no merge
+queue held it. When `gh pr merge` exits 0 and the pull request is still
+open, it now reports it as queued only when gh warned about the merge queue
+or auto-merge is set, and as still open otherwise.
+
+When `/worktrees:ship-it` ships several pull requests and one of them does
+not merge, it no longer merges a pull request stacked on that one, which
+would have landed on its branch instead of the head branch. It reports the
+stacked pull request as waiting.
+
+`gw fast-forward` refused a branch nobody had pushed once the head branch
+moved, saying the forge could not be asked which request carried its first
+commit. It now rebases such a branch, and refuses only when the forge
+fails for another reason.
+
 ## 0.8.0 - 2026-11-09
 
 ### Changed
