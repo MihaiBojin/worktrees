@@ -57,7 +57,7 @@ class Verdict:
         self.path = path
         # What the completion proof found, before any protection.
         self.evidence = why
-        # Grouped below the ignore file that names each one, as people read them.
+        # As the ignore patterns name them, which is how people read them.
         self.ignored_paths = ignored_paths
         self.sha = sha
         self.proof = proof

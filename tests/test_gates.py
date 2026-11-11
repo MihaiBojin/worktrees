@@ -164,8 +164,43 @@ def test_ignored_paths_are_what_the_patterns_name(world) -> None:
     assert sorted(R.ignored_paths(str(wt))) == ["out/a.o", "out/b.o", "sub/gen/"]
 
 
-def test_ignored_paths_group_below_the_file_that_ignores_them(world) -> None:
-    """One entry per first component below the ignore file whose pattern matched."""
+def test_ignored_paths_read_as_the_gitignore_names_them(world) -> None:
+    """A path the patterns match is shown whole, so a tracked directory above
+    it never reads as ignored. A pattern for a directory's contents reads as
+    that directory, and a pattern matching nothing reads as nothing."""
+    world.commit(
+        ".gitignore",
+        "__pycache__\nnode_modules/\npath/to/ignored/*\n"
+        "some-file-that-does-not-exist\nsome-file-that-exists\n",
+    )
+    (world.repo / "src" / "worktrees").mkdir(parents=True)
+    world.commit("src/worktrees/a.py")
+    wt = world.worktree("built")
+    for name in (
+        "src/worktrees/__pycache__/a.pyc",
+        "node_modules/m.js",
+        "some_subdirectory_with/node_modules/m.js",
+        "path/to/ignored/one",
+        "path/to/ignored/sub/two",
+        "some-file-that-exists",
+        "cache/.gitignore",
+        "cache/data",
+    ):
+        (wt / name).parent.mkdir(parents=True, exist_ok=True)
+        (wt / name).write_text("*\n")
+    listed = R.ignored_paths(str(wt))
+    assert R.ignored_groups(str(wt), listed) == [
+        "cache/",
+        "node_modules/",
+        "path/to/ignored/",
+        "some-file-that-exists",
+        "some_subdirectory_with/node_modules/",
+        "src/worktrees/__pycache__/",
+    ]
+
+
+def test_ignored_paths_read_from_every_ignore_file(world) -> None:
+    """A nested .gitignore and .git/info/exclude name paths from the top level."""
     world.commit(".gitignore", "*.log\n**/node_modules\nsub/gen/\n")
     (world.repo / "packages" / "a").mkdir(parents=True)
     world.commit("packages/a/.gitignore", "dist/\n")
@@ -185,13 +220,14 @@ def test_ignored_paths_group_below_the_file_that_ignores_them(world) -> None:
         (wt / name).parent.mkdir(parents=True, exist_ok=True)
         (wt / name).write_text("x\n")
     listed = R.ignored_paths(str(wt))
-    assert sorted(R.ignored_groups(str(wt), listed)) == [
-        "build/",
-        "packages/",
+    assert R.ignored_groups(str(wt), listed) == [
+        "build/out/a.log",
+        "build/out/b.log",
         "packages/a/dist/",
+        "packages/a/node_modules/",
         "secret",
-        "sub/",
-        'we"ird dir/',
+        "sub/gen/",
+        'we"ird dir/café.log',
         "x.log",
     ]
 
@@ -206,7 +242,7 @@ def test_a_staged_rename_is_dirty_and_its_source_is_not_ignored(world) -> None:
     assert status.ignored == []
 
 
-def test_the_disclosure_and_the_count_use_the_groups(world) -> None:
+def test_the_disclosure_and_the_count_use_the_listing(world) -> None:
     from test_cli import run
 
     world.commit(".gitignore", "*.log\n")
@@ -218,17 +254,47 @@ def test_the_disclosure_and_the_count_use_the_groups(world) -> None:
         x.branch: x
         for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
     }["logs"]
-    assert "it holds 1 ignored path(s)" in v.why
+    assert "it holds 2 ignored path(s)" in v.why
     # The paths are data before permission is given, so a caller can decide.
     preview = run(world, "gw prune", "--json")
     rows = {r["branch"]: r for r in json.loads(preview.stdout)["verdicts"]}
-    assert (rows["logs"]["ignored"], rows["logs"]["ignoredPaths"]) == (1, ["build/"])
+    assert (rows["logs"]["ignored"], rows["logs"]["ignoredPaths"]) == (
+        2,
+        ["build/out/a.log", "build/out/b.log"],
+    )
     assert rows["main"]["ignoredPaths"] == []
     p = run(world, "gw prune", "--delete", "ignored-files", "--yes")
     assert p.returncode == 0, p.stderr
-    assert p.stderr.count("deleting ignored, unrecoverable:") == 1
-    assert "deleting ignored, unrecoverable: build/\n" in p.stderr
+    assert p.stderr.count("deleting ignored, unrecoverable:") == 2
+    assert "deleting ignored, unrecoverable: build/out/a.log\n" in p.stderr
     assert not wt.exists()
+
+
+def test_the_disclosure_names_the_command_that_lists_every_ignored_file(
+    world,
+) -> None:
+    """The disclosure names an ignored directory once; the command it prints
+    lists every file in it, so a person can read them before answering."""
+    import shlex
+
+    from test_cli import run_on_a_terminal
+
+    world.commit(".gitignore", "cache/\n")
+    wt = world.merged_worktree("cached")
+    (wt / "cache" / "deep").mkdir(parents=True)
+    for name in ("a", "deep/b"):
+        (wt / "cache" / name).write_text("x\n")
+    code, out = run_on_a_terminal(
+        world, "gw remove", "cached", "--delete", "ignored-files", answer="n\n"
+    )
+    assert code == 0, out
+    assert "deleting ignored, unrecoverable: cache/\n" in out
+    line = next(ln for ln in out.splitlines() if "list every ignored file: " in ln)
+    command = shlex.split(line.split("list every ignored file: ", 1)[1])
+    assert command[:3] == ["git", "-C", str(wt)]
+    listed = subprocess.run(command, capture_output=True, text=True, check=True)
+    assert listed.stdout.splitlines() == ["cache/a", "cache/deep/b"]
+    assert wt.exists()
 
 
 def test_the_disclosure_escapes_what_would_not_print(world) -> None:

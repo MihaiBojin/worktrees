@@ -88,11 +88,17 @@ combined with it.
 Assessment pins the target path, branch ref and full SHA, assessed head ref
 and SHA, ignored path list, and matching stash SHAs and subjects. Disclosure
 prints the path and branch, branch restore command, each stash restore
-command and ignored path. An ignored path is shown cut to its first component
-below the `.gitignore` whose pattern matched it, or below the top level for
-`.git/info/exclude` and `core.excludesFile`: `*.log` in the top-level file
-shows `build/out/a.log` and `build/out/b.log` as one `build/`. A path with a
-character that would not print is quoted and escaped as `git status` does.
+command and ignored path, sorted by name. An ignored path is shown as the
+pattern that matched it names it, from the top level, with a trailing `/` on
+a directory, whichever ignore file holds the pattern: `*.log` shows
+`build/out/a.log` and `build/out/b.log`, and `__pycache__` shows
+`src/pkg/__pycache__/`. A pattern whose last part is a bare `*` or `**`
+names a directory's contents, so `path/to/ignored/*`, or `*` in
+`cache/.gitignore`, shows that directory once; at the top level each match
+shows as itself. A path with a character that would not print is quoted and
+escaped as `git status` does. After the list, the disclosure prints
+`git -C PATH ls-files --others --ignored --exclude-standard`, with the path
+quoted to paste, which lists every ignored file the entries cover.
 The protection's count and the JSON `ignored` field count those entries.
 Quiet, JSON and automatic confirmation preserve that stderr disclosure. A never-synced repository asks
 `Never synced. Delete anyway?` unless `--yes` skips confirmation.
@@ -229,7 +235,7 @@ Worktree and branch assessment put rows in `verdicts`. Both retain
 `verdict`, `eligible`, `proof`, `request`, `protections`, `stashes`, `branch`,
 `sha`, `why` and `undo`, the shell-quoted `git branch NAME SHA` that restores
 the branch; a detached worktree's `undo` is null. Worktree rows add exact
-`path`, the grouped ignored paths in `ignoredPaths` and their count in
+`path`, the ignored paths the disclosure lists in `ignoredPaths` and their count in
 `ignored`; branch rows add `paths` and `error`. `gw prune --json` also
 carries `stale`, the paths of worktree records whose directories are gone, and
 `neighbours`, the count of worktrees under the shared root that belong to
