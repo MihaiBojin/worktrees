@@ -389,6 +389,57 @@ def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
     assert "gw" not in p.stdout.replace(str(world.root), "")
 
 
+def test_prune_says_every_reason_a_worktree_is_held_back(world) -> None:
+    """`nothing to remove` beside a `remove` verdict is not a dead end.
+
+    Each worktree held back is listed with every reason: the evidence only
+    when it proves nothing finished, and the main checkout not at all, since
+    nothing removes it. A worktree only --delete values hold back is named
+    with the command that grants them; a dirty one is not, since no value
+    lifts that.
+    """
+    world.commit(".gitignore", ".env\n")
+    done = world.merged_worktree("done")
+    (done / ".env").write_text("S=1\n")
+    idle = world.worktree("idle")
+    (idle / ".env").write_text("S=1\n")
+    (world.worktree("busy") / "wip").write_text("x")
+    world.commit("unmerged", at=world.worktree("open"))
+    lines = {
+        "done": "done: it holds 1 ignored path(s); pass --delete ignored-files",
+        "idle": "idle: it holds 1 ignored path(s); pass --delete ignored-files; "
+        "empty branches require deletion permission",
+        "busy": "busy: it has uncommitted changes or untracked files; "
+        "empty branches require deletion permission",
+        "open": "open: its commits are not contained in the head branch",
+    }
+
+    for flags in ((), ("--yes",)):
+        p = run(world, "gw prune", *flags)
+        assert p.returncode == 0, p.stderr
+        shown = p.stderr.split("held back:\n", 1)[1].splitlines()
+        assert sorted(shown[:4]) == sorted(lines.values()), p.stderr
+        assert (
+            "gw prune --delete empty --delete ignored-files makes done, idle eligible"
+            in p.stderr
+        )
+    assert "nothing to remove" in p.stdout
+
+    p = run(world, "gw remove", "done")
+    assert p.returncode == 0, p.stderr
+    assert f"held back:\n{lines['done']}\n" in p.stderr
+
+    p = run(world, "gw prune", "--yes", "--delete", "ignored-files")
+    assert p.returncode == 0, p.stderr
+    assert lines["done"] not in p.stderr
+    assert lines["busy"] in p.stderr
+    assert "gw prune --delete empty --delete ignored-files makes idle eligible" in (
+        p.stderr
+    )
+    assert not done.exists()
+    assert idle.exists()
+
+
 def test_version_is_a_command_and_not_a_flag(world) -> None:
     for entry in ("gw", "gw prune", "main"):
         p = run(world, entry, "--version")
@@ -960,6 +1011,26 @@ def test_remove_confirms_permitted_ignored_files_on_a_terminal(world) -> None:
     )
     assert code == 0, out
     assert not wt.exists()
+
+
+def test_remove_suggests_keep_branch_only_where_it_would_remove(world) -> None:
+    """--keep-branch waives completion proof, and never ignored files."""
+    world.commit(".gitignore", ".env\n")
+    holds = world.merged_worktree("holds")
+    (holds / ".env").write_text("S=1\n")
+    world.commit("b.txt", "b\n", at=world.worktree("open"))
+
+    code, out = run_on_a_terminal(world, "gw remove", "holds", answer="")
+    assert code == 1, out
+    assert "holds kept: it holds 1 ignored path(s); pass --delete ignored-files" in out
+    assert "--keep-branch" not in out
+
+    code, out = run_on_a_terminal(world, "gw remove", "open", answer="")
+    assert code == 1, out
+    assert (
+        "open kept: its commits are not contained in the head branch; "
+        "--keep-branch retains the branch"
+    ) in out
 
 
 def test_remove_asks_before_removing_an_unfinished_worktree_and_keeps_the_branch(

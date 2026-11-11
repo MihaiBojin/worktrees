@@ -109,6 +109,11 @@ def test_a_warning_dims_its_detail(stderr_colour) -> None:
     )
 
 
+def test_detail_after_a_branch_name_stays_dim(stderr_colour) -> None:
+    line = render.warn(f"held back:\n{render.branch('wip')}: why").split("\n")[1]
+    assert line.endswith(f"{render.RESET}{render.DIM}: why{render.RESET}")
+
+
 @pytest.mark.parametrize(
     ("text", "painted"),
     [
