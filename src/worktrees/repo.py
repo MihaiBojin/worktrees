@@ -191,7 +191,7 @@ def common_dir() -> None:
 # pattern matches is one entry, so node_modules/ is one line rather than forty
 # thousand, and sub/gen/ stays sub/gen/ where traditional mode widens it to
 # sub/. A directory no pattern names lists its ignored files. The recheck
-# compares this listing; `ignored_groups` cuts it for people. It is also a strict
+# compares this listing; `ignored_groups` names it for people. It is also a strict
 # superset of plain --porcelain, which is why there is one spec here and not
 # two: asking twice was 18 of this program's 35 calls over nine worktrees.
 # --untracked-files=normal overrides status.showUntrackedFiles=no, which hides
@@ -537,29 +537,28 @@ def ignored_paths(path: str) -> list[str]:
 
 
 def ignored_groups(path: str, ignored: list[str]) -> list[str]:
-    """Each ignored path cut to its first component below the file that ignores it.
+    """The ignored paths as the ignore patterns name them, sorted by name.
 
-    A pattern in packages/a/.gitignore speaks for packages/a/, so
-    packages/a/dist/js/app.js reads as packages/a/dist/. A pattern from the
-    top-level .gitignore, .git/info/exclude or core.excludesFile speaks for
-    the top level, so build/out/a.log reads as build/. A path git names no
-    file for is cut at the top level too.
+    Each is the path git lists from the top level, a directory with a trailing
+    slash, so `__pycache__` names src/pkg/__pycache__/ and never the tracked
+    src/ above it. A pattern whose last part is a bare `*` or `**`, such as
+    path/to/ignored/* or the `*` in cache/.gitignore, names a directory's
+    contents, so its matches read as that directory. At the top level, which
+    has no name to show, each match reads as itself.
     """
     if not ignored:
         return []
     out = ignore_sources(input="\0".join(ignored) + "\0", repo=path).out
     found = out.split("\0")[:-1]
-    roots = {
-        name: os.path.dirname(source)
-        for source, _, _, name in zip(*[iter(found)] * 4, strict=True)
-        if not os.path.isabs(source) and os.path.basename(source) == ".gitignore"
+    patterns = {
+        name: pattern for _, _, pattern, name in zip(*[iter(found)] * 4, strict=True)
     }
-    groups = []
+    shown = set()
     for name in ignored:
-        root = roots.get(name, "")
-        first, slash, _ = name.removeprefix(f"{root}/" if root else "").partition("/")
-        groups.append(f"{root}/{first}{slash}" if root else f"{first}{slash}")
-    return list(dict.fromkeys(groups))
+        parent = os.path.dirname(name.rstrip("/"))
+        last = patterns.get(name, "").rstrip("/").rpartition("/")[2]
+        shown.add(f"{parent}/" if parent and last in ("*", "**") else name)
+    return sorted(shown)
 
 
 def unpushed_count(

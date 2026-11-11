@@ -118,8 +118,8 @@ class Snapshot:
     sha: str
     path: str = ""
     flags: frozenset[str] = frozenset()
-    # Every path git lists, which the recheck compares, and the same paths cut
-    # to the first component below the ignore file, which the disclosure shows.
+    # Every path git lists, which the recheck compares, and the same paths as
+    # the ignore patterns name them, which the disclosure shows.
     ignored: tuple[str, ...] = ()
     stashes: tuple[tuple[str, str], ...] = ()
     ignored_groups: tuple[str, ...] = ()
@@ -344,6 +344,21 @@ def plan(
             say(f"  stash {sha}: git stash store -m {shlex.quote(subject)} {sha}")
         for path in map(render.printable, snapshot.ignored_groups):
             say(render.err(f"  deleting ignored, unrecoverable: {path}", render.YELLOW))
+        if snapshot.ignored_groups:
+            # The list above names an ignored directory once; this lists every
+            # file in it, for a person to read before answering.
+            listing = shlex.join(
+                [
+                    "git",
+                    "-C",
+                    snapshot.path,
+                    "ls-files",
+                    "--others",
+                    "--ignored",
+                    "--exclude-standard",
+                ]
+            )
+            say(f"  list every ignored file: {render.command(listing)}")
 
 
 def _prompt(text: str) -> str:

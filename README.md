@@ -278,9 +278,14 @@ with it; `empty`, `stashes` and `all` are usage errors with `--keep-branch`.
 
 Before confirmation, the CLI discloses the path and branch, the branch
 restore command, stashes with their restore commands, and ignored paths it
-will delete. Each ignored path is cut to its first component below the
-`.gitignore` that ignores it, so `build/out/a.log` and `build/out/b.log` read
-as `build/`. Quiet, JSON and `--yes` keep this disclosure on stderr.
+will delete, sorted by name. Each ignored path reads as the pattern that
+ignores it names it, from the top level, with a trailing `/` on a
+directory: `__pycache__` lists `src/pkg/__pycache__/`, never the tracked
+`src/` above it. A pattern for a directory's contents, such as
+`path/to/ignored/*`, lists that directory once as `path/to/ignored/`.
+Below the list, `git -C PATH ls-files --others --ignored --exclude-standard`
+lists every ignored file, for you to read before answering.
+Quiet, JSON and `--yes` keep this disclosure on stderr.
 It repeats the assessment after confirmation and refuses changed targets.
 Ignored directory entries can cover a whole directory; the recheck compares
 Git's ignored path listing, not a fingerprint of every file's contents.

@@ -588,13 +588,15 @@ worktree removal, full-SHA ref deletion and approved stash drops. Ignored
 paths are what an ignore pattern names, so a matched directory is one entry;
 the snapshot is a path listing, not a recursive content fingerprint, and a
 file created inside a listed directory after assessment goes with it. The
-disclosure, the protection's count and the JSON `ignored` field cut each
-listed path to its first component below the `.gitignore` whose pattern
-matched it, found with `git check-ignore -v`, and the disclosure quotes a
-path holding a character that would not print, as `git status` does. A pattern from
-`.git/info/exclude` or `core.excludesFile` counts from the top level, so
-`build/out/a.log` reads as `build/`. Stash drops verify SHA and repair a
-concurrent wrong-entry drop using the exact subject. Restoration remains
+disclosure, the protection's count and the JSON `ignored` field list each
+path as git does, from the top level, sorted, so a tracked directory above
+an ignored one never reads as ignored. A path whose pattern, found with
+`git check-ignore -v`, ends in a bare `*` or `**` reads as its directory,
+since that pattern names the directory's contents. The disclosure quotes a
+path holding a character that would not print, as `git status` does, and
+ends with the `git -C PATH ls-files --others --ignored --exclude-standard`
+line that lists every file below those entries. Stash drops verify SHA and
+repair a concurrent wrong-entry drop using the exact subject. Restoration remains
 possible until Git garbage collection prunes the unreachable stash commit.
 Report checkout, branch and stash outcomes separately after partial failure.
 
@@ -615,7 +617,9 @@ code forever.
 The fixture needs no global git config, no signing key, no forge and no
 network. `GIT_CONFIG_GLOBAL` carries that: without it git still reads
 `$HOME/.gitconfig`, and setting `HOME` alone still leaves
-`$XDG_CONFIG_HOME/git/config`. `WORKTREES_OFFLINE=1` in `conftest.ENV` stops
+`$XDG_CONFIG_HOME/git/config`. `XDG_CONFIG_HOME` points at the test's own
+directory too, since `GIT_CONFIG_GLOBAL` does not reach `git/ignore`, the
+default `core.excludesFile`. `WORKTREES_OFFLINE=1` in `conftest.ENV` stops
 a command syncing first, which would fetch a remote at `github.com` for
 real. `Network.env` clears it for the fake network, and `conftest.online`
 for a remote on disk.

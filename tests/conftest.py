@@ -4,6 +4,11 @@ GIT_CONFIG_GLOBAL carries the weight: without it git still reads
 $HOME/.gitconfig, and setting HOME alone still leaves $XDG_CONFIG_HOME/git/
 config. On a machine with commit.gpgsign=true a fixture inheriting it fails at
 the first commit and every assertion after that is meaningless.
+
+XDG_CONFIG_HOME points at the test's own directory as well. GIT_CONFIG_GLOBAL
+does not reach git/ignore there, the default core.excludesFile, and a
+developer's global ignore list would otherwise decide what a test sees as
+ignored.
 """
 
 from __future__ import annotations
@@ -166,6 +171,7 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> World:
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", "/dev/null")
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     (tmp_path / "gitconfig").write_text("[init]\n\tdefaultBranch = main\n")
 
     w = World(tmp_path)
