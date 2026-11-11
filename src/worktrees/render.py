@@ -230,9 +230,9 @@ def _message(
     """The symbol, the first line as the headline in `base`, any further
     lines in `detail`.
 
-    A painted name inside the headline ends with a reset, so `base` is put
-    back after each one; without that, the words after a branch name lose
-    the line's colour.
+    A painted name ends with a reset, so `base` is put back after each one in
+    the headline and `detail` after each one in a further line; without that,
+    the words after a branch name lose the line's colour.
 
     Plain text when stderr is not a terminal: the symbol is decoration, and a
     log or a pipe gets the words as they were.
@@ -244,7 +244,7 @@ def _message(
     if base:
         head = base + head.replace(RESET, RESET + base) + RESET
     lines = [f"{err(symbol, BOLD + code)} {head}"]
-    lines += [f"  {err(line, detail)}" for line in rest]
+    lines += [f"  {err(line.replace(RESET, RESET + detail), detail)}" for line in rest]
     return "\n".join(lines)
 
 

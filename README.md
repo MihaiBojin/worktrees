@@ -228,6 +228,10 @@ A checked-out branch appears only as its worktree, never as a loose branch.
 `empty` includes unused branches and branches merged by fast-forward without
 forge proof. Git cannot distinguish them. A verdict describes completion;
 `eligible` also checks protections and the deletion permissions you supplied.
+After the table, `gw prune` lists every worktree it holds back with each
+reason, and `gw remove` does the same for its target. The main checkout is
+left out, since nothing removes it. The `keep` and `unknown` evidence counts
+as a reason; the evidence for `remove` and `empty` does not.
 
 The CLI never deletes `main`, `master` or the head branch. It never removes
 the main checkout, locked or dirty worktrees, worktrees with untracked files,
@@ -253,7 +257,9 @@ Repeat `--delete` to combine categories:
 `gw branch status` rejects `--delete`. An unknown or unsupported value is a
 usage error before mutation. `--delete empty` changes eligibility, not the
 verdict. Ignored files have no recovery command: Git never recorded their
-contents.
+contents. When only missing values hold worktrees back, `gw prune` names
+the command that grants them, keeping the values you passed:
+`gw prune --delete ignored-files makes fix-parser eligible`.
 
 ```console
 gw prune --delete empty --delete ignored-files

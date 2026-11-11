@@ -20,6 +20,9 @@ EMPTY = "empty"
 KEEP = "keep"
 UNKNOWN = "unknown"
 
+# What `--delete all` grants a worktree.
+PERMISSIONS = frozenset(("empty", "ignored-files", "stashes"))
+
 
 def restore_command(branch: str, sha: str) -> str:
     """`git branch NAME SHA`, the line that puts a deleted branch back.
@@ -52,7 +55,8 @@ class Verdict:
         self.verdict = verdict
         self.branch = branch
         self.path = path
-        self.why = why
+        # What the completion proof found, before any protection.
+        self.evidence = why
         # Grouped below the ignore file that names each one, as people read them.
         self.ignored_paths = ignored_paths
         self.sha = sha
@@ -61,10 +65,33 @@ class Verdict:
         self.protections = protections or []
         self.stashes = stashes or []
         self.eligible = verdict == REMOVE and not self.protections
+        # The --delete values that alone hold an ineligible row back; empty
+        # when no value would make it eligible.
+        self.needs: tuple[str, ...] = ()
+        # Whether --keep-branch would make an ineligible row eligible.
+        self.keep_branch_frees = False
 
     @property
     def label(self) -> str:
         return self.branch or "(detached)"
+
+    @property
+    def why(self) -> str:
+        """The evidence, then every protection that stands."""
+        return "; ".join([self.evidence, *self.protections])
+
+    @property
+    def held_back(self) -> list[str]:
+        """Every reason this row is not eligible, and none when it is.
+
+        The evidence is a reason only when it proves nothing finished, and
+        not under --keep-branch, which waives proof for a checkout on a branch.
+        """
+        if self.eligible:
+            return []
+        waived = self.keep_branch and bool(self.branch)
+        unproved = self.verdict in (KEEP, UNKNOWN) and not waived
+        return ([self.evidence] if unproved else []) + self.protections
 
     @property
     def ignored(self) -> int:
@@ -158,6 +185,7 @@ def assess(
             first_parents,
             repo,
         )
+        # The protections no --delete value lifts.
         protections = []
         if wt.path == main:
             protections.append("it is the main checkout, and never removable")
@@ -167,6 +195,7 @@ def assess(
             protections.append("it is locked")
         ignored_paths: tuple[str, ...] = ()
         ignored_groups: tuple[str, ...] = ()
+        held = 0
         if wt.path != main and not Path(wt.path).is_dir():
             # A locked worktree keeps its record while its directory is away,
             # on a removable disk say. git refuses to remove it until it is
@@ -183,16 +212,29 @@ def assess(
             ignored_paths = tuple(status.ignored)
             ignored_groups = tuple(R.ignored_groups(wt.path, status.ignored))
             held = len(ignored_groups)
-            if held and not delete_ignored and "ignored-files" not in permissions:
-                protections.append(
+        stashes = prune.stashes_on(wt.branch, entries, wt.sha, repo)
+
+        def standing(granted: frozenset[str], keep: bool = keep_branch) -> list[str]:
+            """The protections left once these --delete values are granted."""
+            left = list(protections)
+            if held and "ignored-files" not in granted:
+                left.append(
                     f"it holds {held} ignored path(s); pass --delete ignored-files"
                 )
-        stashes = prune.stashes_on(wt.branch, entries, wt.sha, repo)
-        protections += prune.branch_protections(
-            wt.branch, head_branch, verdict, stashes, permissions, keep_branch
-        )
-        if protections:
-            why += "; " + "; ".join(protections)
+            return left + prune.branch_protections(
+                wt.branch, head_branch, verdict, stashes, granted, keep
+            )
+
+        def eligible(granted: frozenset[str], keep: bool = keep_branch) -> bool:
+            # --keep-branch waives completion proof because the branch keeps
+            # the commits. A detached worktree has no branch to keep them.
+            return not standing(granted, keep) and (
+                (keep and bool(wt.branch))
+                or verdict == REMOVE
+                or (verdict == EMPTY and "empty" in granted)
+            )
+
+        granted = permissions | {"ignored-files"} if delete_ignored else permissions
         row = Verdict(
             verdict,
             wt.branch,
@@ -202,18 +244,21 @@ def assess(
             wt.sha,
             proof=proof,
             request=request,
-            protections=protections,
+            protections=standing(granted),
             stashes=stashes,
         )
         row.permissions = permissions
         row.keep_branch = keep_branch
-        # --keep-branch waives completion proof because the branch keeps the
-        # commits. A detached worktree has no branch to keep them.
-        row.eligible = not protections and (
-            (keep_branch and bool(wt.branch))
-            or verdict == REMOVE
-            or (verdict == EMPTY and "empty" in permissions)
-        )
+        row.eligible = eligible(granted)
+        row.keep_branch_frees = not row.eligible and eligible(granted, keep=True)
+        # A value is needed when the row stays held back without it, every
+        # other value granted.
+        if not row.eligible and eligible(PERMISSIONS):
+            row.needs = tuple(
+                value
+                for value in sorted(PERMISSIONS)
+                if not eligible(PERMISSIONS - {value})
+            )
         row.snapshot = prune.Snapshot(
             state,
             wt.branch,
