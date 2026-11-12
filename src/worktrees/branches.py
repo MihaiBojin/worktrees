@@ -20,7 +20,8 @@ class Verdict:
     branch: str
     sha: str
     verdict: str
-    why: str
+    # What the completion proof found, or the error, before any protection.
+    evidence: str
     proof: str = ""
     paths: list[str] = field(default_factory=list)
     request: dict | None = None
@@ -35,13 +36,23 @@ class Verdict:
     def undo(self) -> str:
         return restore_command(self.branch, self.sha)
 
+    @property
+    def reasons(self) -> list[str]:
+        """The evidence, then every protection that stands; an error alone."""
+        return [self.evidence] if self.error else [self.evidence, *self.protections]
+
+    @property
+    def why(self) -> str:
+        return "; ".join(self.reasons)
+
     def data(self) -> dict:
         return {
             **{
                 f.name: getattr(self, f.name)
                 for f in fields(self)
-                if f.name not in ("snapshot", "permissions")
+                if f.name not in ("evidence", "snapshot", "permissions")
             },
+            "why": self.why,
             "undo": self.undo,
         }
 
@@ -92,14 +103,13 @@ def assess(
         rows.append(row)
         if row.paths:
             if include_checked:
-                row.why = "checked out in a worktree"
-                row.protections.append(row.why)
+                row.protections.append("checked out in a worktree")
             else:
                 rows.pop()
                 continue
         try:
             progress.say(f"{name}: checking completion evidence ({i} of {len(wanted)})")
-            row.verdict, row.why, row.proof, row.request = merged.branch_proof(
+            row.verdict, row.evidence, row.proof, row.request = merged.branch_proof(
                 name, sha, head_sha, head_branch, remote, ask_forge, first_parents
             )
             row.stashes = prune.stashes_on(name, entries, sha)
@@ -116,10 +126,8 @@ def assess(
                 row.verdict == "remove"
                 or (row.verdict == "empty" and "empty" in permissions)
             ) and not row.protections
-            if row.protections:
-                row.why += "; " + "; ".join(row.protections)
         except GitError as exc:
-            row.error, row.why = True, str(exc)
+            row.error, row.evidence = True, str(exc)
 
     return rows
 

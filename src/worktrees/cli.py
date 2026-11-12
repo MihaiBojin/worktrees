@@ -130,7 +130,7 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
             Cell(v.path, DIM),
             Cell(v.verdict, render.VERDICT.get(v.verdict, "")),
             Cell("yes" if v.eligible else "no"),
-            Cell(v.why),
+            Cell("\n".join(v.reasons)),
         )
         for v in rows
     ]

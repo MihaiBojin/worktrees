@@ -116,7 +116,7 @@ def _table(rows: list[branches.Verdict]) -> str:
                     Cell("yes" if v.eligible else "no"),
                     Cell(v.branch, render.BRANCH),
                     Cell(v.sha[:12], YELLOW),
-                    Cell(v.why),
+                    Cell("\n".join(v.reasons)),
                     Cell(", ".join(v.paths), DIM),
                 )
                 for v in rows
@@ -179,7 +179,7 @@ def _plan(go: list[branches.Verdict]) -> str:
                     _verdict(v),
                     Cell(v.branch, render.BRANCH),
                     Cell(v.sha[:12], YELLOW),
-                    Cell(v.why),
+                    Cell("\n".join(v.reasons)),
                 )
                 for v in go
             ],
@@ -226,7 +226,7 @@ def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:
                         _verdict(v),
                         Cell(v.branch, DIM),
                         Cell(v.sha[:12], DIM),
-                        Cell(v.why, DIM),
+                        Cell("\n".join(v.reasons), DIM),
                     )
                     for v in others
                 ],
@@ -236,7 +236,7 @@ def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:
                         _verdict(v),
                         Cell(v.branch, render.BRANCH),
                         Cell(v.sha[:12], YELLOW),
-                        Cell(v.why),
+                        Cell("\n".join(v.reasons)),
                     )
                     for i, v in enumerate(candidates, 1)
                 ],
