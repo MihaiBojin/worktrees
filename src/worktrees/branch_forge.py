@@ -345,6 +345,45 @@ def fetch_request(
     )
 
 
+def in_stack(
+    branch: str, remote: str, repo: str | os.PathLike[str] | None = None
+) -> tuple[bool, int]:
+    """The number of the branch's open GitHub pull request when it is in a
+    native stack, which GitHub rewrites itself when the one below it merges.
+
+    0 for any other branch, and on GitLab; False first when the forge could
+    not be asked. The API version is the one that describes a stack.
+    """
+    selected = provider(remote, repo)
+    if selected is None or selected[0] != "gh":
+        return True, 0
+    answered, request = fetch_request(branch, remote, repo)
+    if not answered:
+        return False, 0
+    if (
+        request is None
+        or request.state != "OPEN"
+        or not identified(request, remote, repo)
+    ):
+        return True, 0
+    host, path = selected[1].split("/", 1)
+    row = forge.document(
+        [
+            "gh",
+            "api",
+            f"repos/{path}/pulls/{request.number}",
+            "--hostname",
+            host,
+            "--header",
+            "X-GitHub-Api-Version: 2026-03-10",
+        ],
+        repo,
+    )
+    if row is None:
+        return False, 0
+    return True, request.number if isinstance(row.get("stack"), dict) else 0
+
+
 @dataclass(frozen=True)
 class Carried:
     """A merged request that carried a commit, and every commit it carried."""

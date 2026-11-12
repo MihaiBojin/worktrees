@@ -8,6 +8,7 @@ import re
 import shlex
 import subprocess
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from conftest import argv, env_for
@@ -1511,3 +1512,304 @@ def test_another_forge_error_still_refuses(world, network) -> None:
     p = gw_ff_online(world, network)
     assert p.returncode == 1
     assert "the forge could not be asked which request carried" in p.stderr
+
+
+# --------------------------------------------------------------------------
+# a stacked branch the forge rewrote when its parent merged
+# --------------------------------------------------------------------------
+
+
+def restacked(world) -> str:
+    """parent adds a.txt and child, stacked on it, adds b.txt; both are
+    pushed. Then, elsewhere, main squash-merges parent and the forge rewrites
+    child onto the squash under a committer of its own, as GitHub does. This
+    clone has fetched and still holds child as it pushed it. Returns
+    parent's tip."""
+    upstream = world.root / "upstream.git"
+    world.git("init", "--quiet", "--bare", str(upstream))
+    world.git("remote", "add", "origin", str(upstream))
+    world.git("push", "--quiet", "origin", "main")
+    world.git("switch", "--quiet", "--create", "parent")
+    parent = world.commit("a.txt", "a\n")
+    world.git("switch", "--quiet", "--create", "child")
+    world.commit("b.txt", "b\n")
+    world.git("push", "--quiet", "--set-upstream", "origin", "parent", "child")
+
+    forge = world.root / "forge"
+    world.git("clone", "--quiet", str(upstream), str(forge))
+    world.git("merge", "--quiet", "--squash", "origin/parent", at=forge)
+    world.git("commit", "--quiet", "-m", "parent (#1)", at=forge)
+    as_github = {**os.environ, "GIT_COMMITTER_NAME": "GitHub"}
+    for step in (
+        ["rebase", "--quiet", "--onto", "main", "origin/parent", "origin/child"],
+        ["push", "--quiet", "--force", "origin", "HEAD:child", "main"],
+    ):
+        subprocess.run(
+            ["git", "-C", str(forge), *step],
+            check=True,
+            capture_output=True,
+            env=as_github,
+        )
+
+    world.git("fetch", "--quiet", "origin")
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    return parent
+
+
+def leased_push(world) -> subprocess.CompletedProcess[str]:
+    """The push ship-it and the fast-forward skill make for a rebased branch."""
+    return subprocess.run(
+        [
+            "git",
+            "push",
+            "--porcelain",
+            "--force-with-lease",
+            "--force-if-includes",
+            "origin",
+            "child",
+        ],
+        cwd=world.repo,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_raw_git_rebase_leaves_a_branch_its_lease_push_refuses(world) -> None:
+    """What taking the forge's copy is for: the same commits, replayed here,
+    are a push --force-if-includes refuses."""
+    parent = restacked(world)
+    world.git("rebase", "--quiet", "--onto", "origin/main", parent, "child")
+    assert world.git("diff", "child", "origin/child") == ""
+    assert world.git("rev-parse", "child") != world.git("rev-parse", "origin/child")
+
+    p = leased_push(world)
+    assert p.returncode != 0
+    assert "[rejected]" in p.stdout
+
+
+def test_a_stacked_branch_the_forge_rewrote_takes_its_copy(world) -> None:
+    parent = restacked(world)
+    copy = world.git("rev-parse", "origin/child")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["adopted"]) == (
+        "rebased",
+        "refs/remotes/origin/child",
+    )
+    assert payload["boundary"] == world.git("rev-parse", "--short", parent)
+    assert payload["carried"] == 1
+    assert world.git("rev-parse", "child") == copy
+    assert leased_push(world).returncode == 0
+
+
+def test_a_commit_made_after_the_push_lands_on_the_forges_copy(world) -> None:
+    restacked(world)
+    copy = world.git("rev-parse", "origin/child")
+    world.commit("c.txt", "c\n")
+
+    p = gw_ff(world)
+    assert p.returncode == 0, p.stderr
+    assert "moved to origin/child, its commits rewritten there" in p.stdout
+    assert world.git("rev-parse", "child~1") == copy
+    assert world.git("log", "-1", "--format=%s") == "c.txt"
+    assert leased_push(world).returncode == 0
+
+
+def test_a_branch_already_rebased_onto_the_squash_takes_the_copy(world) -> None:
+    """A branch an earlier fast-forward rebased in place is level with the
+    head ref and still diverges from the forge's copy."""
+    parent = restacked(world)
+    world.git("rebase", "--quiet", "--onto", "origin/main", parent, "child")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["adopted"]) == (
+        "rebased",
+        "refs/remotes/origin/child",
+    )
+    assert world.git("rev-parse", "child") == world.git("rev-parse", "origin/child")
+    assert leased_push(world).returncode == 0
+
+
+def test_a_copy_this_branch_pushed_is_not_taken_back(world) -> None:
+    """A branch rebased here after its own push is newer than its remote
+    copy, and its reflog says so."""
+    restacked(world)
+    world.git("reset", "--quiet", "--hard", "origin/child")
+    world.git("push", "--quiet", "--force-with-lease", "origin", "child")
+    advance(world, "later.txt")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+    world.git("rebase", "--quiet", "origin/main")
+    rebased = world.git("rev-parse", "child")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["adopted"]) == ("current", "")
+    assert world.git("rev-parse", "child") == rebased
+
+
+def test_a_copy_holding_a_commit_the_branch_lacks_is_not_taken(world) -> None:
+    restacked(world)
+    forge = world.root / "forge"
+    world.commit("d.txt", "d\n", at=forge)
+    world.git("push", "--quiet", "origin", "HEAD:child", at=forge)
+    world.git("fetch", "--quiet", "origin")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["adopted"]) == ("rebased", "")
+    assert world.git("rev-parse", "child~1") == world.git("rev-parse", "origin/main")
+    assert world.git("rev-parse", "child") != world.git("rev-parse", "origin/child")
+
+
+def test_a_copy_main_has_since_outgrown_is_what_the_branch_is_level_with(
+    world,
+) -> None:
+    """GitHub restacks onto the parent's merge, so a later merge to main
+    leaves the copy below the head ref; the next run rebases onto main."""
+    restacked(world)
+    forge = world.root / "forge"
+    world.git("switch", "--quiet", "main", at=forge)
+    world.commit("later.txt", "l\n", at=forge)
+    world.git("push", "--quiet", "origin", "main", at=forge)
+    world.git("fetch", "--quiet", "origin")
+    copy = world.git("rev-parse", "origin/child")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["base"], payload["adopted"]) == (
+        "rebased",
+        "refs/remotes/origin/child",
+        "refs/remotes/origin/child",
+    )
+    assert world.git("rev-parse", "child") == copy
+    assert leased_push(world).returncode == 0
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["base"], payload["adopted"]) == (
+        "rebased",
+        "refs/remotes/origin/main",
+        "",
+    )
+    assert world.git("rev-parse", "child~1") == world.git("rev-parse", "origin/main")
+    assert leased_push(world).returncode == 0
+
+
+def test_a_stash_on_a_rebased_commit_moves_to_the_copy_it_takes(world) -> None:
+    parent = restacked(world)
+    world.git("rebase", "--quiet", "--onto", "origin/main", parent, "child")
+    (world.repo / "b.txt").write_text("b, then more\n")
+    world.git("stash", "push", "--quiet")
+    made = world.git("rev-parse", "stash@{0}")
+
+    p = gw_ff(world, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert payload["adopted"] == "refs/remotes/origin/child"
+    [entry] = payload["stashes"]
+    assert (entry["sha"], entry["after"], entry["kept"]) == (made, True, "")
+    assert world.git("rev-parse", f"{entry['moved']}^1") == world.git(
+        "rev-parse", "origin/child"
+    )
+
+
+def restacking(world, network, stack: object) -> tuple[str, Path]:
+    """`stacked` on a GitHub remote whose copy of child still holds parent's
+    commit, with child's open pull request #18 describing `stack`. Returns
+    the copy GitHub's rewrite will make, and the file counting fetches."""
+    stacked(world)
+    on_forge(world)
+    old = world.git("rev-parse", "child")
+    world.git("update-ref", "refs/remotes/origin/child", old)
+    world.git("switch", "--quiet", "--detach", "main")
+    subprocess.run(
+        ["git", "cherry-pick", "child"],
+        cwd=world.repo,
+        check=True,
+        capture_output=True,
+        env={**os.environ, "GIT_COMMITTER_NAME": "GitHub"},
+    )
+    rewrite = world.git("rev-parse", "HEAD")
+    world.git("switch", "--quiet", "child")
+    row = {
+        **merged_row("child", old, ""),
+        "number": 18,
+        "state": "OPEN",
+        "url": "https://github.com/owner/repo/pull/18",
+        "mergedAt": None,
+        "mergeCommit": None,
+    }
+    network.answer(
+        {
+            "child": {"merged": [], "all": [row]},
+            "$api": {"repos/owner/repo/pulls/18": {"number": 18, "stack": stack}},
+        }
+    )
+    return rewrite, world.root / "fetches"
+
+
+STACK = {"id": 3470482, "number": 5, "position": 2, "size": 2}
+
+
+def test_a_run_straight_after_the_merge_waits_for_githubs_rewrite(
+    world, network
+) -> None:
+    rewrite, fetches = restacking(world, network, STACK)
+    network.intercept(
+        "    if command[:1] == ['fetch']:\n"
+        f"        counter = pathlib.Path({str(fetches)!r})\n"
+        "        seen = int(counter.read_text()) + 1 if counter.exists() else 1\n"
+        "        counter.write_text(str(seen))\n"
+        "        if seen == 2:\n"
+        "            subprocess.check_call([real_git, *prefix, 'update-ref', "
+        f"'refs/remotes/origin/child', {rewrite!r}])\n"
+    )
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["adopted"]) == (
+        "rebased",
+        "refs/remotes/origin/child",
+    )
+    assert world.git("rev-parse", "child") == rewrite
+    assert fetches.read_text() == "2"
+
+
+def test_a_branch_in_no_native_stack_is_rebased_without_waiting(world, network) -> None:
+    restacking(world, network, None)
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["adopted"]) == ("rebased", "")
+    assert world.git("rev-parse", "child~1") == world.git("rev-parse", "main")
+    fetches = [c for c in network.network_calls() if "fetch" in c]
+    assert len(fetches) == 1
+    assert any("repos/owner/repo/pulls/18" in c for c in network.network_calls())
+
+
+def test_a_rewrite_that_never_arrives_leaves_the_branch(
+    world, network, monkeypatch
+) -> None:
+    restacking(world, network, STACK)
+    tip = world.git("rev-parse", "child")
+    for key, value in network.env().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.delenv("WORKTREES_OFFLINE", raising=False)
+    monkeypatch.setattr(F, "REWRITE_WAIT", 0)
+
+    with pytest.raises(F.Unfetched, match="has not yet rewritten"):
+        F.fast_forward(live=True)
+    assert world.git("rev-parse", "child") == tip
+    asked = network.network_calls()
+    assert any("repos/owner/repo/pulls/18" in call for call in asked)
+    assert any("fetch" in call for call in asked)

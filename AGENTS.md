@@ -100,6 +100,16 @@ squash holds more than the two share, so no local proof marks the shared
 part; `branch_forge.carried_by` asks the forge which merged request carried
 the branch's oldest commit, and that request's commit list marks it, read
 from one page of 100 by choice: a parent seldom drifts further.
+GitHub rewrites that stacked branch's remote copy itself when the parent
+merges, so the branch takes the copy instead, through `_rewritten`: no
+commit in the branch's reflog may reach it, which is when
+`--force-if-includes` refuses the push, and its patch-ids must be the
+branch's own, in order. A copy the branch's own push left is in that reflog,
+so a branch rebased here after its push keeps its newer commits. A run
+before the rewrite arrives finds the copy still holding the merged part;
+when `branch_forge.in_stack` says the open pull request is in a native
+stack, `_awaited` fetches every `REWRITE_INTERVAL` seconds until it
+arrives, and refuses, with the offline command, after `REWRITE_WAIT`.
 Once a carry finishes, each stash made after the merged part moves to the
 replayed copy of its commit, matched by patch-id:
 `git merge-tree --write-tree` re-bases it without touching the checkout,

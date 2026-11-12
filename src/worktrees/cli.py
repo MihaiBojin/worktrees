@@ -798,6 +798,8 @@ def _moved(moved: fast_forward.Moved) -> str:
         ff.ROTATED: f"new, from {base}",
     }
     note = now[moved.result]
+    if moved.adopted:
+        note = f"moved to {R.ref_name(moved.adopted)}, its commits rewritten there"
     if moved.carried:
         note += f", carrying {_commits(moved.carried)} after {moved.boundary}"
     if moved.ahead and not moved.carried:
