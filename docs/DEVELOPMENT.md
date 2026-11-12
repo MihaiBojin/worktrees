@@ -190,9 +190,9 @@ In Codex the same release is `$release:release 0.2.0`, and in either client
 asking to cut a release of 0.2.0 runs it too.
 
 What each step needs is in `.releasetools.yaml`: the branch, the squash, the
-workflow that has to be green, the workflow the tag starts, the URL that must
-not already carry the version, and the command that sets it. The keys are the
-[releasetools conventions](https://github.com/releasetools/conventions/blob/main/FORMAT.md),
+workflow that has to be green, the workflow that publishes and what starts it,
+the URL that must not already carry the version, and the command that sets it.
+The keys are the [releasetools conventions](https://github.com/releasetools/conventions/blob/main/FORMAT.md),
 so the guards and the release read the same file.
 
 The squash is not a preference. The `main` ruleset requires signed commits and
@@ -269,16 +269,21 @@ ERROR:   tag(s) at HEAD: v9.9.9
 ERROR:   version given:  0.1.0
 ```
 
-Pushing the tag starts `publish.yml`:
+`release.trigger` lists `tag` first, so the release pushes the signed tag
+and the push starts `publish.yml`. `dispatch` starts it too: the release runs
+it with the version and the release commit, and its `tag` job creates the tag
+on that commit.
 
 ```
-build ──> publish ──> release
-                   └─> verify
+build ──> tag ──> publish ──> release
+                          └─> verify
 ```
 
-`build` runs three guards before it does anything, cheapest first. The tag has
-to name the version the commit carries. The commit has to be one `main` took,
-so nothing is released from a tree no review ever saw. And that commit's test
+`build` runs its guards before it does anything, cheapest first. A dispatched
+run first refuses a commit other than the one it was given, since it builds
+whatever its ref names when it starts, and a version whose tag already exists.
+The tag has to name the version the commit carries. The commit has to be one
+`main` took, so nothing is released from a tree no review ever saw. And that commit's test
 run has to have passed already, so a doomed release stops before anything is
 uploaded. Then it runs the suite again, builds one artifact for every job
 below, installs that wheel and runs it: the wheel is not the tree, and one
@@ -301,7 +306,12 @@ then runs `uvx pypi-attestations@0.0.30 verify pypi` for each wheel and source
 distribution, checking the attestations against this GitHub repository.
 Either check can fail the verification job independently of the release.
 
-`workflow_dispatch` against a tag ref re-runs a release whose publish failed.
+`tag` runs only for a dispatch, after `build` and before the upload, so a
+second dispatch of the same version stops there. It creates the tag with the
+run's `GITHUB_TOKEN`, and a tag made that way starts no workflow, so the tag
+does not start `publish.yml` again. A dispatch that fails after `tag` is
+finished by re-running its failed jobs, since a fresh dispatch refuses the tag
+that run made.
 
 ## Snapshots on TestPyPI
 

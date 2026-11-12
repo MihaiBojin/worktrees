@@ -22,4 +22,7 @@ release:
   merge: squash
   checks: tests.yml
   publish: publish.yml
+  # A pushed signed tag starts publish.yml, or a dispatch with the version
+  # and the release commit does and publish.yml creates the tag.
+  trigger: [tag, dispatch]
   registry: https://pypi.org/pypi/git-worktrees/{version}/json
