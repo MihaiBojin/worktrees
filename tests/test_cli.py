@@ -408,9 +408,9 @@ def test_prune_says_every_reason_a_worktree_is_held_back(world) -> None:
     lines = {
         "done": "done: it holds 1 ignored path(s); pass --delete ignored-files",
         "idle": "idle: it holds 1 ignored path(s); pass --delete ignored-files; "
-        "empty branches require deletion permission",
+        "the branch is empty; pass --delete empty",
         "busy": "busy: it has uncommitted changes or untracked files; "
-        "empty branches require deletion permission",
+        "the branch is empty; pass --delete empty",
         "open": "open: its commits are not contained in the head branch",
     }
 
@@ -438,6 +438,23 @@ def test_prune_says_every_reason_a_worktree_is_held_back(world) -> None:
     )
     assert not done.exists()
     assert idle.exists()
+
+
+def test_a_protected_branch_names_no_delete_value(world) -> None:
+    """No --delete value frees main, so its row suggests none, though it is
+    empty and has a stash."""
+    world.commit("f.txt", "one\n")
+    (world.repo / "f.txt").write_text("two\n")
+    world.git("stash", "push", "--quiet", "-m", "wip")
+
+    p = run(world, "gw prune", "--json")
+    assert p.returncode == 0, p.stderr
+    (row,) = [v for v in json.loads(p.stdout)["verdicts"] if v["branch"] == "main"]
+    assert row["verdict"] == "empty" and row["stashes"]
+    assert row["protections"] == [
+        "it is the main checkout, and never removable",
+        "it is a protected branch",
+    ]
 
 
 def test_version_is_a_command_and_not_a_flag(world) -> None:
@@ -809,7 +826,7 @@ def test_branch_stashes_prevent_pruning(world) -> None:
 
     p = run(world, "gw prune", "-y")
     assert p.returncode == 0, p.stderr
-    assert "its branch has stashes" in p.stdout
+    assert "its branch has stashes; pass --delete stashes" in p.stdout
     assert wt.exists()
     # And it did outlive it.
     assert world.git("stash", "list")
