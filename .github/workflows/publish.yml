@@ -1,15 +1,20 @@
 name: Publish
+run-name: Release ${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
 
 # Renaming this file breaks publishing. PyPI's Trusted Publishing matches a
 # request against the repository, this workflow's FILENAME and the environment,
 # so a rename means re-registering the publisher on PyPI first.
 #
-#   build -> publish -> release
-#                    \-> verify
+#   build -> tag -> publish -> release
+#                           \-> verify
 #
-# Nothing here creates a tag. A release is a version bump merged into main and
-# then tagged by hand, so the irreversible step is the last one and everything
-# before it is a normal reviewed change.
+# A release is a version bump merged into main, then published one of two
+# ways, as .releasetools.yaml's release.trigger lists them. Pushing the signed
+# tag v<version> on the release commit starts this workflow. Or a dispatch
+# names the version and the release commit, and the tag job creates the tag
+# once build has passed, before anything is uploaded. Either way the
+# irreversible step is the last one and everything before it is a normal
+# reviewed change.
 #
 # There is no TestPyPI rehearsal. testpypi.yml publishes every commit on main
 # there as <version>.post<epoch> and installs it back, so the tree this tag
@@ -24,12 +29,22 @@ on:
   push:
     tags:
       - "v*.*.*"
-  # To re-run a release whose publish failed. Run it against a tag ref, not a
-  # branch: every guard below reads the tag at HEAD.
   workflow_dispatch:
+    inputs:
+      version:
+        description: "The version to release, with no v (e.g. 0.9.1). The tag is v<version>."
+        required: true
+      commit:
+        description: "The release commit: its full SHA, or HEAD for whatever the dispatched ref names when the run starts."
+        required: false
+        default: HEAD
 
 permissions:
   contents: read
+
+env:
+  # The tag this run releases: the one pushed, or the one a dispatch creates.
+  TAG: ${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
 
 jobs:
   # Built once and handed to every job below, so what reaches PyPI is
@@ -61,16 +76,49 @@ jobs:
       - name: Install the release tools
         uses: releasetools/cli@v0
 
-      # Four guards, cheapest first. The tag has to name a version the
-      # repository actually carries, that version has to have a changelog
-      # entry, the commit has to be one main took, and its tests have to have
-      # passed already. All of them here in build, because the release job
-      # runs after the PyPI upload and a refusal there would be too late.
+      # The guards, cheapest first. A dispatched run builds whatever its ref
+      # names when it starts, so it has to be the commit the dispatch named,
+      # and the tag it would create must not exist yet. The tag has to name a
+      # version the repository actually carries, that version has to have a
+      # changelog entry, the commit has to be one main took, and its tests
+      # have to have passed already. All of them here in build, because the
+      # release job runs after the PyPI upload and a refusal there would be
+      # too late.
+      - name: Refuse a commit other than the release commit
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          if [ "$COMMIT" != HEAD ] && [ "$COMMIT" != "$GITHUB_SHA" ]; then
+            echo "::error::asked to release $COMMIT, but $GITHUB_REF_NAME is at $GITHUB_SHA"
+            exit 1
+          fi
+
+      - name: Refuse a version already tagged
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }} # no runner default
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::$TAG already exists"
+            exit 1
+          fi
+
       - name: Check the tag matches the project version
+        if: github.event_name == 'push'
         run: rt git::assert_tag_version "$(uv version --short)"
 
+      - name: Check the dispatched version is the project version
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          DECLARED="v$(uv version --short)"
+          if [ "$DECLARED" != "$TAG" ]; then
+            echo "::error::pyproject.toml declares $DECLARED, not $TAG"
+            exit 1
+          fi
+
       - name: Check the changelog has an entry for it
-        run: rt changelog::section "${GITHUB_REF_NAME#v}" >/dev/null
+        run: rt changelog::section "${TAG#v}" >/dev/null
 
       # github:: rather than git::, because this checkout is shallow and
       # merge-base answers from the history it has: on a truncated one it
@@ -100,7 +148,7 @@ jobs:
       - name: Install fish and zsh
         run: sudo apt-get update && sudo apt-get install -y fish zsh
 
-      # The tag is the last chance to catch a regression, so both suites run.
+      # This run is the last chance to catch a regression, so both suites run.
       - name: Run tests
         run: |
           uv run --no-sync pytest tests -q
@@ -127,10 +175,32 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  # A dispatch tags the release commit here, after every guard and before the
+  # upload, so a second dispatch of the same version stops at this step. The
+  # tag is made with this run's GITHUB_TOKEN, which starts no workflow, so it
+  # does not start this one a second time. A pushed tag skips this job.
+  tag:
+    name: Tag the release commit
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - name: Create the tag
+        env:
+          GH_TOKEN: ${{ github.token }} # no runner default
+        run: >-
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs"
+          -f "ref=refs/tags/$TAG" -f "sha=$GITHUB_SHA"
+
   publish:
     name: Publish to PyPI
     runs-on: ubuntu-24.04
-    needs: build
+    needs: [build, tag]
+    # A pushed tag skips the tag job, and a job whose needs include a skipped
+    # one is skipped too unless its condition says otherwise.
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.tag.result != 'failure' }}
     # Binds this job to the trusted publisher registered for `pypi`. Add a
     # required reviewer on this environment for a manual gate before anything
     # reaches the real index.
@@ -172,6 +242,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, ubuntu-26.04]
     needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
     permissions:
       contents: read
     steps:
@@ -221,6 +292,7 @@ jobs:
     name: Release
     runs-on: ubuntu-24.04
     needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
     permissions:
       contents: write
     steps:
@@ -233,10 +305,11 @@ jobs:
       # What was written for this version, not a list of pull request titles.
       # build already proved the section exists, before anything was published.
       - name: Read the changelog entry
-        run: rt changelog::section "${GITHUB_REF_NAME#v}" >RELEASE_NOTES.md
+        run: rt changelog::section "${TAG#v}" >RELEASE_NOTES.md
 
       - name: Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
+          tag_name: ${{ env.TAG }}
           body_path: RELEASE_NOTES.md
           make_latest: true
