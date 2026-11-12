@@ -310,11 +310,12 @@ def branch_protections(
     if keep_branch and branch:
         return reasons
     if branch and branch in ("main", "master", head_branch):
-        reasons.append("it is a protected branch")
+        # No --delete value frees a protected branch, so none is named.
+        return ["it is a protected branch"]
     if stashes and "stashes" not in permissions:
-        reasons.append("its branch has stashes")
+        reasons.append("its branch has stashes; pass --delete stashes")
     if verdict == "empty" and "empty" not in permissions:
-        reasons.append("empty branches require deletion permission")
+        reasons.append("the branch is empty; pass --delete empty")
     return reasons
 
 
