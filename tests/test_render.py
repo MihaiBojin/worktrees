@@ -41,6 +41,29 @@ def test_an_empty_last_cell_leaves_no_trailing_space() -> None:
     assert render.table([("a", ""), ("bb", "c")]) == "a\nbb  c"
 
 
+def test_a_cell_with_newlines_makes_its_row_that_many_lines_tall() -> None:
+    """The column is as wide as its longest line, the cells beside it blank
+    below their first, and each line painted on its own."""
+    render.out.on = False
+    rows: list[render.Row] = [
+        ("NAME", "WHY", "PATH"),
+        ("a", "first reason\nsecond", "/p/a"),
+        ("bb", "one", "/p/bb"),
+    ]
+    assert render.table(rows) == (
+        "NAME  WHY           PATH\n"
+        "a     first reason  /p/a\n"
+        "      second\n"
+        "bb    one           /p/bb"
+    )
+    render.out.on = True
+    try:
+        lines = render.table([(Cell("x\ny", render.RED), "z")]).splitlines()
+    finally:
+        render.out.on = False
+    assert lines == ["\033[31mx\033[0m  z", "\033[31my\033[0m"]
+
+
 def test_paint_is_a_no_op_while_colour_is_off() -> None:
     assert render.Ink(False)("x", render.RED) == "x"
     assert render.Ink(True)("x", render.RED) == "\033[31mx\033[0m"
@@ -189,7 +212,7 @@ def test_a_restore_command_paints_its_branch_and_sha(stderr_colour) -> None:
 
     from worktrees import branches
 
-    v = branches.Verdict(branch="a b", sha="0" * 40, verdict="remove", why="")
+    v = branches.Verdict(branch="a b", sha="0" * 40, verdict="remove", evidence="")
     line = render.restore(v.branch, v.sha)
     assert render.branch("'a b'") in line
     assert f"{render.YELLOW}{'0' * 40}{render.RESET}" in line

@@ -76,9 +76,13 @@ class Verdict:
         return self.branch or "(detached)"
 
     @property
-    def why(self) -> str:
+    def reasons(self) -> list[str]:
         """The evidence, then every protection that stands."""
-        return "; ".join([self.evidence, *self.protections])
+        return [self.evidence, *self.protections]
+
+    @property
+    def why(self) -> str:
+        return "; ".join(self.reasons)
 
     @property
     def held_back(self) -> list[str]:

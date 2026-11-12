@@ -107,16 +107,35 @@ def table(rows: list[Row], ink: Ink | None = None) -> str:
     Padding runs on the text and painting after it. The other order counts an
     escape sequence as width, and every column under a coloured cell sits
     crooked by exactly the length of the code.
+
+    A cell holding a newline makes its row that many lines tall, the other
+    cells blank below their first line, and each line is painted on its own
+    so no code spans a newline.
     """
     if not rows:
         return ""
-    grid = [[c if isinstance(c, Cell) else Cell(c) for c in row] for row in rows]
-    widths = [max(len(r[i].text) for r in grid) for i in range(len(grid[0]))]
+    grid = [
+        [_lines(c if isinstance(c, Cell) else Cell(c)) for c in row] for row in rows
+    ]
+    widths = [
+        max(len(line.text) for row in grid for line in row[i])
+        for i in range(len(grid[0]))
+    ]
+    blank = Cell("")
     lines = []
     for row in grid:
-        cells = [c.painted(widths[i], ink) for i, c in enumerate(row[:-1])]
-        lines.append("  ".join([*cells, row[-1].painted(0, ink)]).rstrip())
+        for k in range(max(map(len, row))):
+            cells = [c[k] if k < len(c) else blank for c in row]
+            padded = [c.painted(widths[i], ink) for i, c in enumerate(cells[:-1])]
+            lines.append("  ".join([*padded, cells[-1].painted(0, ink)]).rstrip())
     return "\n".join(lines)
+
+
+def _lines(cell: Cell) -> list[Cell]:
+    """A cell, one per line of its text, each painted as the cell is."""
+    if "\n" not in cell.text:
+        return [cell]
+    return [Cell(line, cell.code) for line in cell.text.split("\n")]
 
 
 # --------------------------------------------------------------------------

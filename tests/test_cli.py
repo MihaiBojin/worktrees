@@ -457,6 +457,33 @@ def test_a_protected_branch_names_no_delete_value(world) -> None:
     ]
 
 
+def test_the_table_prints_each_reason_on_its_own_line(world) -> None:
+    """WHY holds the evidence, then each protection under it, while the JSON
+    `why` keeps them on one line. A reason naming its flag stays one line."""
+    world.commit(".gitignore", ".env\n")
+    idle = world.worktree("idle")
+    (idle / ".env").write_text("S=1\n")
+    (idle / "wip").write_text("x")
+    reasons = [
+        "its tip is on the head ref's first-parent history",
+        "it has uncommitted changes or untracked files",
+        "it holds 1 ignored path(s); pass --delete ignored-files",
+    ]
+
+    p = run(world, "gw prune", "--table", "--delete", "empty")
+    assert p.returncode == 0, p.stderr
+    lines = p.stdout.splitlines()
+    at = next(i for i, line in enumerate(lines) if line.startswith("idle "))
+    column = lines[0].index("WHY")
+    assert lines[at][column:] == reasons[0]
+    assert [line[column:] for line in lines[at + 1 : at + 3]] == reasons[1:]
+    assert all(not line[:column].strip() for line in lines[at + 1 : at + 3])
+
+    p = run(world, "gw prune", "--json", "--delete", "empty")
+    (row,) = [v for v in json.loads(p.stdout)["verdicts"] if v["branch"] == "idle"]
+    assert row["why"] == "; ".join(reasons)
+
+
 def test_version_is_a_command_and_not_a_flag(world) -> None:
     for entry in ("gw", "gw prune", "main"):
         p = run(world, entry, "--version")
