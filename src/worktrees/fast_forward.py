@@ -261,10 +261,14 @@ def fast_forward(
         found = (tip, proof, why)
     elif verdict == "keep":
         found = (
-            _forge_boundary(request, branch, tip, head_sha, resolved.branch, repo)
+            _forge_boundary(
+                request, branch, tip, head_sha, resolved.branch, first_parents, repo
+            )
             or merged.boundary(tip, head_sha, repo)
             or (
-                _parent_boundary(branch, tip, head_sha, resolved.branch, remote, repo)
+                _parent_boundary(
+                    branch, tip, head_sha, resolved.branch, first_parents, remote, repo
+                )
                 if live
                 else None
             )
@@ -385,6 +389,7 @@ def _forge_boundary(
     tip: str,
     head: str,
     head_branch: str,
+    first_parents: set[str],
     repo: str | os.PathLike[str] | None,
 ) -> tuple[str, str, str] | None:
     """The commit below the tip a verified merged request names, its proof, why.
@@ -396,7 +401,9 @@ def _forge_boundary(
         return None
     if request.source_sha not in merged.own_commits(head, tip, repo=repo).lines[1:]:
         return None
-    if request.unverified_reason(branch, request.source_sha, head_branch):
+    if request.unverified_reason(
+        branch, request.source_sha, head_branch, first_parents
+    ):
         return None
     if not merged.tree_of(request.merge_sha, repo=repo) or not merged.is_ancestor(
         request.merge_sha, head, repo=repo
@@ -406,7 +413,7 @@ def _forge_boundary(
         request.source_sha,
         "forge",
         f"{request.noun} #{request.number} merged its first commits "
-        "into the head branch",
+        + request.merged_into(head_branch),
     )
 
 
@@ -415,6 +422,7 @@ def _parent_boundary(
     tip: str,
     head: str,
     head_branch: str,
+    first_parents: set[str],
     remote: str,
     repo: str | os.PathLike[str] | None,
 ) -> tuple[str, str, str] | None:
@@ -425,7 +433,8 @@ def _parent_boundary(
     gained commits of its own: the squash holds more than the commits the two
     share, so neither ancestry nor content can mark where the parent's part
     ends. Its request can, from the branch's oldest commit. Only a request
-    into the head branch whose merge commit the fetched head ref holds counts.
+    whose merge reached the head branch, and whose merge commit the fetched
+    head ref holds, counts.
     """
     own = merged.own_commits(head, tip, repo=repo).lines
     if not own:
@@ -437,7 +446,9 @@ def _parent_boundary(
             f"commit of {render.branch(branch)}"
         )
     for request in carried:
-        if request.source_branch == branch or request.target_branch != head_branch:
+        if request.source_branch == branch or not branch_forge.landed(
+            request.target_branch, request.merge_sha, head_branch, first_parents
+        ):
             continue
         if not merged.tree_of(request.merge_sha, repo=repo) or not merged.is_ancestor(
             request.merge_sha, head, repo=repo

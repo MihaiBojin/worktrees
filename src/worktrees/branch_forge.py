@@ -32,18 +32,38 @@ class Request:
     def data(self) -> dict:
         return asdict(self)
 
-    def unverified_reason(self, branch: str, sha: str, head_branch: str) -> str:
+    def unverified_reason(
+        self, branch: str, sha: str, head_branch: str, first_parents: set[str]
+    ) -> str:
         if self.source_branch != branch or self.source_sha != sha:
             return "the request does not identify this branch tip"
         if not self.source_verified or not self.source_repository:
             return "the request's source repository is unverified"
-        if self.target_branch != head_branch:
+        if not landed(self.target_branch, self.merge_sha, head_branch, first_parents):
             return "the request targeted a different branch"
         if not self.merged_at or not re.fullmatch(
             r"(?:[0-9a-f]{40}|[0-9a-f]{64})", self.merge_sha
         ):
             return "the request has no verified merge commit"
         return ""
+
+    def merged_into(self, head_branch: str) -> str:
+        """Where a verdict reason says the merge went."""
+        if self.target_branch == head_branch:
+            return "into the head branch"
+        return f"into {self.target_branch}, and the head branch holds its merge commit"
+
+
+def landed(
+    target: str, merge_sha: str, head_branch: str, first_parents: set[str]
+) -> bool:
+    """Whether a request's merge landed on the head branch.
+
+    A request stacked on another branch records that branch as its target
+    even after the forge lands it on the head branch, so a merge commit on
+    the head's first-parent history counts as well.
+    """
+    return target == head_branch or merge_sha in first_parents
 
 
 def _repository(url: str) -> tuple[str, str]:

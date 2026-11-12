@@ -85,16 +85,48 @@ def test_merged_request_matches_source_tip_and_reachable_merge(forge_world):
     assert row["request"]["source_sha"] == world.git("rev-parse", "feature")
 
 
-@pytest.mark.parametrize(
-    "mismatch", ["tip", "target", "source", "fork", "merge", "missing"]
-)
+def test_a_stacked_request_proves_its_tip_once_the_head_holds_its_merge(forge_world):
+    """A request stacked on another branch keeps that branch as its target
+    after the forge lands its merge commit on the head's first-parent history,
+    and later edits to the same lines leave no content proof behind."""
+    world, provider, network = forge_world
+    target = "baseRefName" if provider == "github" else "target_branch"
+    row = evidence(world, provider, **{target: "parent"})
+    result = assess(world, provider, row, network)
+    assert result["verdict"] == "remove", result
+    assert result["proof"] == "forge"
+    assert result["why"].endswith(
+        " #17 merged this tip into parent, and the head branch holds its merge commit"
+    )
+
+
+def test_a_request_into_another_branch_needs_its_merge_on_the_first_parents(
+    forge_world,
+):
+    """The head reaching the merge commit through a merge of its own is not
+    the forge landing it there."""
+    world, provider, network = forge_world
+    world.git("checkout", "-qb", "side")
+    side = world.commit("side")
+    world.git("checkout", "-q", "main")
+    world.git("merge", "--quiet", "--no-ff", "-m", "merge side", "side")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+    if provider == "github":
+        changes = {"baseRefName": "parent", "mergeCommit": {"oid": side}}
+    else:
+        changes = {"target_branch": "parent", "merge_commit_sha": side}
+    result = assess(world, provider, evidence(world, provider, **changes), network)
+    assert result["verdict"] == "unknown", result
+    assert result["why"] == "the request targeted a different branch"
+
+
+@pytest.mark.parametrize("mismatch", ["tip", "source", "fork", "merge", "missing"])
 def test_unverified_merge_cannot_authorize_deletion(forge_world, mismatch):
     world, provider, network = forge_world
     row = evidence(world, provider)
     fields = {
         "github": {
             "tip": "headRefOid",
-            "target": "baseRefName",
             "source": "headRefName",
             "fork": "headRepository",
             "merge": "mergeCommit",
@@ -102,7 +134,6 @@ def test_unverified_merge_cannot_authorize_deletion(forge_world, mismatch):
         },
         "gitlab": {
             "tip": "sha",
-            "target": "target_branch",
             "source": "source_branch",
             "fork": "source_project_id",
             "merge": "merge_commit_sha",

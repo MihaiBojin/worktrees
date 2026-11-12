@@ -559,9 +559,11 @@ def test_invalid_merged_request_preserves_independent_proof(
         world.git("commit", "--quiet", "-m", "squash")
     world.git("remote", "add", "origin", "git@github.com:owner/repo.git")
     world.git("update-ref", "refs/remotes/origin/main", "main")
-    env = stub(
-        world, "github", [evidence(world, "github", baseRefName="other")], network
+    # Off the head's first-parent history, so the target alone invalidates it.
+    request = evidence(
+        world, "github", baseRefName="other", mergeCommit={"oid": "0" * 40}
     )
+    env = stub(world, "github", [request], network)
     result = cli(world, "branch", "status", "feature", "--json", env=env)
     assert result.returncode == 0, result.stderr
     row = json.loads(result.stdout)["verdicts"][0]

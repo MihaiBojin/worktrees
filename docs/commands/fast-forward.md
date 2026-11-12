@@ -59,8 +59,9 @@ What it does depends on the branch, checked in this order:
    When neither marks one, the forge is asked which merged request carried
    the branch's oldest commit. A commit the forge does not hold, as when
    nobody has pushed the branch, was carried by none. One from another
-   branch, into the head branch, whose merge commit the fetched head ref
-   holds, marks the newest of the branch's commits it carried: how a
+   branch whose merge commit the fetched head ref holds, and which targeted
+   the head branch or left that commit on its first-parent history, marks
+   the newest of the branch's commits it carried: how a
    stacked branch finds its parent's commits when the parent gained more
    before it merged. The forge
    lists at most 100 of a request's commits here, a choice made because a

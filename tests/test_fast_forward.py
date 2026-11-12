@@ -1396,16 +1396,53 @@ def test_the_parents_merged_request_marks_its_commits(world, network, host) -> N
     assert world.git("log", "-1", "--format=%s") == "b.txt"
 
 
+RELEASE = {"base": {"ref": "release", "repo": {"full_name": "owner/repo"}}}
+
+
+def test_a_parents_request_stacked_on_another_branch_marks_its_commits(
+    world, network
+) -> None:
+    """The parent's request records the branch it was stacked on, and the
+    forge landed its squash on main's first-parent history."""
+    first, later, squash = outgrown(world)
+    on_forge(world)
+    network.answer({"$api": carried("github.com", squash, [first, later], **RELEASE)})
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["proof"]) == ("rebased", "forge")
+    assert payload["boundary"] == world.git("rev-parse", "--short", first)
+
+
+def test_a_request_into_another_branch_off_the_first_parents_marks_nothing(
+    world, network
+) -> None:
+    """main reaches the request's merge commit only through a merge of its
+    own, which is not the forge landing it there."""
+    first, later, _ = outgrown(world)
+    world.git("switch", "--quiet", "--create", "release", "main")
+    side = world.commit("r.txt", "r\n")
+    world.git("switch", "--quiet", "main")
+    world.git("merge", "--quiet", "--no-ff", "-m", "merge release", "release")
+    world.git("switch", "--quiet", "child")
+    on_forge(world)
+    network.answer({"$api": carried("github.com", side, [first, later], **RELEASE)})
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 1
+    assert json.loads(p.stdout)["result"] == "conflict"
+
+
 @pytest.mark.parametrize(
     "change",
     [
-        {"base": {"ref": "release", "repo": {"full_name": "owner/repo"}}},
         {"base": {"ref": "main", "repo": {"full_name": "fork/repo"}}},
         {"merged_at": None},
         {"head": {"ref": "child", "sha": "x"}},
         {"merge_commit_sha": "0" * 40},
     ],
-    ids=["target", "repository", "unmerged", "its own", "merge not in head"],
+    ids=["repository", "unmerged", "its own", "merge not in head"],
 )
 def test_a_request_that_does_not_verify_marks_nothing(world, network, change) -> None:
     first, later, squash = outgrown(world)
