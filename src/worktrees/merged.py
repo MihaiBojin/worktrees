@@ -174,7 +174,7 @@ def branch_proof(
     data = request.data() if request is not None else None
     invalid = ""
     if request is not None and request.state == "MERGED":
-        invalid = request.unverified_reason(branch, sha, head_branch)
+        invalid = request.unverified_reason(branch, sha, head_branch, first_parents)
         if not invalid:
             commit = tree_of(request.merge_sha, repo=repo)
             if not commit:
@@ -183,7 +183,7 @@ def branch_proof(
                 return (
                     "remove",
                     f"{request.noun} #{request.number} merged this tip "
-                    "into the head branch",
+                    + request.merged_into(head_branch),
                     "forge",
                     data,
                 )

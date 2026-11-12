@@ -53,7 +53,10 @@ edited; content alone cannot prove that stack finished.
 
 Forge proof requires a merged request for the exact source tip, verified
 source repository, target repository and head branch, plus a merge commit
-contained in the head ref. A closed unmerged request proves nothing. Fork
+contained in the head ref. A request whose recorded target is another
+branch, as a stacked request's stays after it lands, counts when its merge
+commit is on the head ref's first-parent history. A closed unmerged request
+proves nothing. Fork
 requests need verified source identity. Missing or malformed evidence never
 permits removal.
 

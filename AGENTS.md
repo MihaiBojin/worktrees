@@ -568,7 +568,10 @@ not a divergent local counterpart.
 Content proof compares changed paths, modes and deletions against the head.
 It cannot settle a stacked branch whose intermediate content the head later
 edited. Cached forge proof verifies source tip, source repository, target
-branch and merge ancestry. Closed unmerged requests are never proof.
+branch and merge ancestry. A request stacked on another branch keeps that
+branch as its target after the forge lands it on the head, so a merge commit
+on the head's first-parent history stands in for the target branch. Closed
+unmerged requests are never proof.
 
 `eligible` combines proof, protections and `--delete` permissions.
 `prune.removable()` selects only eligible rows. `main`, `master` and the
