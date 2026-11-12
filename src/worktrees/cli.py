@@ -1891,7 +1891,9 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             # caller acting on these verdicts needs to know no sync stands
             # behind them. -q and --json hide the rest.
             hushed = getattr(args, "json", False) or getattr(args, "quiet", False)
-            if R.toplevel().value:
+            # list reads only the worktree records, which no fetch changes, so
+            # it neither syncs first nor says how fresh the evidence is.
+            if run is not run_list and R.toplevel().value:
                 if run is run_fast_forward:
                     _fetch_now(args)
                 else:

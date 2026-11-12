@@ -198,9 +198,9 @@ print the head line, and a head that does not resolve is named in it. JSON provi
 hold whatever `WORKTREES_SYNC_TTL` says, so a longer TTL lets the age
 warning print before the next sync is due.
 
-Every command except `gw sync`, `gw version`, `gw fast-forward`, help and
-completion runs sync first when one is due: the default remote's refs time is null, or at least
-`WORKTREES_SYNC_TTL` seconds old. The TTL is 60 when the variable is unset or
+Every command except `gw sync`, `gw version`, `gw list`, `gw fast-forward`,
+help and completion runs sync first when one is due: the default remote's
+refs time is null, or at least `WORKTREES_SYNC_TTL` seconds old. The TTL is 60 when the variable is unset or
 empty, takes whole seconds with `0` meaning every command, and anything else
 is a usage error at exit 2. The forge time is not read. Without a default
 remote nothing syncs first, since sync records nothing there. That sync's

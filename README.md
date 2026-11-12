@@ -372,9 +372,9 @@ branch and source tip. Sync replaces it atomically. Changing the remote's
 name or URL invalidates it. Malformed or mismatched evidence proves nothing.
 A moved branch needs another sync for forge evidence; local proof still works.
 
-Every command except `gw sync`, `gw version`, `gw fast-forward`, help and
-completion syncs first when the default remote's refs have never synced or
-last synced 60 seconds ago or more. `WORKTREES_SYNC_TTL` sets that window in whole seconds, and `0`
+Every command except `gw sync`, `gw version`, `gw list`, `gw fast-forward`,
+help and completion syncs first when the default remote's refs have never
+synced or last synced 60 seconds ago or more. `WORKTREES_SYNC_TTL` sets that window in whole seconds, and `0`
 syncs before every command. The forge time does not count, so a forge that
 keeps failing does not make every command sync. A failed sync warns, `-q` and
 `--json` hide the warning, and the command goes on with the evidence it had.

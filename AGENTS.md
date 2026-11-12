@@ -417,14 +417,17 @@ when eight threads are asking at once.
 `gw sync` fetches every remote with `--prune --tags --no-prune-tags`, the
 default first, updates the default remote's HEAD and queries the forge for
 every local branch tip on eight threads. Every other command but
-`gw version`, `gw ci-checks`, `gw fast-forward`, help and completion runs
-the same `sync.run` first when
+`gw version`, `gw list`, `gw ci-checks`, `gw fast-forward`, help and
+completion runs the same `sync.run` first when
 `sync.due` says so: the default remote's refs time is null or at least
 `WORKTREES_SYNC_TTL` seconds old, 60 by default. The forge time is not read,
 since a forge that keeps failing would sync before every command. Without a
 default remote nothing syncs first, because sync records nothing there.
-`gw fast-forward` runs `sync.fetch` on every run instead, which fetches the
-default remote and records the refs time.
+`gw list` reads only the worktree records, so it never syncs first and
+prints no word about how fresh the evidence is; its `--json` takes `head`
+and `lastSync` from the cache. `gw fast-forward` runs `sync.fetch` on
+every run instead, which fetches the default remote and records the refs
+time.
 
 A failed sync before a command is a warning, and the command goes on with
 the evidence it has; quiet and JSON hide the warning. A failed fetch before

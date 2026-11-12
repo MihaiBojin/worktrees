@@ -129,8 +129,8 @@ def test_plain_remote_head_names_the_one_branch_at_its_commit(world, separator):
         "ref": f"refs/remotes/origin/{name}",
         "source": "clone",
     }
-    listed = run(world, "gw", "list", "--table")
-    assert f"Head: {name} (clone)" in listed.stderr
+    assessed = run(world, "gw branch status")
+    assert f"Head: {name} (clone)" in assessed.stderr
 
 
 def test_plain_remote_head_at_two_branches_does_not_resolve(world):

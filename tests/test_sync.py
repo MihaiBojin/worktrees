@@ -311,11 +311,12 @@ ORDINARY = [
     ("gw add", ["new", "--json"]),
     ("gw remove", ["no-such-worktree", "--yes"]),
     ("gw fast-forward", ["--json"]),
-    ("gw list", ["--json"]),
 ]
 
 
-@pytest.mark.parametrize("entry, args", [*ORDINARY, ("gw", ["--json"])])
+@pytest.mark.parametrize(
+    "entry, args", [*ORDINARY, ("gw", ["--json"]), ("gw list", ["--json"])]
+)
 def test_offline_commands_never_use_network(world, network, entry, args):
     origin(world)
     world.git("switch", "-qc", "feature")
@@ -340,6 +341,26 @@ def test_ordinary_commands_sync_first_when_due(world, network, entry, args):
     if proc.returncode == 0 and "--json" in args:
         # Nothing the sync said reached stdout.
         assert json.loads(proc.stdout)["lastSync"]["refs"]
+
+
+@pytest.mark.parametrize(
+    "entry, args",
+    [("gw list", ["--json"]), ("gw list", ["--table"]), ("gw", ["l", "--json"])],
+)
+def test_list_never_syncs_first(world, network, entry, args):
+    """It reads the worktree records and nothing a fetch brings in, so a due
+    sync waits for a command that assesses."""
+    origin(world)
+    world.git("switch", "-qc", "feature")
+    world.commit("work")
+    proc = cli(world, *args, entry=entry, env=network.env())
+    assert proc.returncode == 0, proc.stderr
+    assert not network.network_calls(), (proc.stderr, network.network_calls())
+    assert not proc.stderr
+    if "--json" in args:
+        data = json.loads(proc.stdout)
+        assert data["lastSync"] == {"refs": None, "forge": None}
+        assert "head" in data
 
 
 def _cache(world, refs: str | None) -> None:
@@ -520,7 +541,7 @@ def test_stale_notice_boundary_and_units(
     cache_path(world).write_text(json.dumps(cached))
     stamp = datetime(2026, 1, 1, tzinfo=UTC).timestamp()
     monkeypatch.setattr(sync.time, "time", lambda: stamp + seconds)
-    assert C.gw(["list"]) == 0
+    assert C.gw(["branch", "status"]) == 0
     error = capsys.readouterr().err
     if text:
         # Offline, so the line points at no command that would refuse.
@@ -530,7 +551,7 @@ def test_stale_notice_boundary_and_units(
         assert "Last sync:" not in error
     assert C.gw(["prune", "-q"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
-    assert C.gw(["list", "--json"]) == 0
+    assert C.gw(["branch", "status", "--json"]) == 0
     assert "Last sync:" not in capsys.readouterr().err
 
 
@@ -552,7 +573,7 @@ def test_never_synced_survives_quiet_and_json_and_inferred_yields(
     )
     assert proc.stderr.count(never) == 1
     assert ("Head: main (inferred)" in proc.stderr) is not quiet
-    data = cli(world, "list", "--json", env=unreachable)
+    data = cli(world, "branch", "status", "--json", env=unreachable)
     json.loads(data.stdout)
     assert data.stderr.count(never) == 1 and "Head:" not in data.stderr
     proc = cli(world, "sync", *(["-q"] if quiet else []), env=network.env())
@@ -561,7 +582,7 @@ def test_never_synced_survives_quiet_and_json_and_inferred_yields(
 
 
 def test_repository_without_remote_reports_only_inferred_head(world, network):
-    proc = cli(world, "list", env=network.env())
+    proc = cli(world, "branch", "status", env=network.env())
     assert "Head: main (inferred)" in proc.stderr
     assert "Never synced:" not in proc.stderr and "Last sync:" not in proc.stderr
     proc = cli(world, "sync", env=network.env())
