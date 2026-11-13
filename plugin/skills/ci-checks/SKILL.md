@@ -30,11 +30,17 @@ The snapshot:
 
 | field | holds |
 | --- | --- |
-| `pr` | `number`, `url`, `state`, `draft`, `headSha`, `headRef`, `baseRef`, `repository`, `source`, `mergeable`, `mergeStateStatus` |
+| `pr` | `number`, `url`, `state`, `draft`, `headSha`, `headRef`, `baseRef`, `repository`, `source`, `mergeable`, `mergeStateStatus`, `trailers` |
 | `checksState` | `passed`, `failed`, `pending`, `blocked` or `unknown` |
 | `stale` | the review moved while it was read; read again before acting |
 | `checks` | `name`, `workflow`, `state`, `bucket`, `link`, one per check |
 | `pipeline` | GitLab's head pipeline, or null |
+
+`pr.trailers` contains the review commits' trailers once each, oldest
+commit first, parsed and unfolded by Git. Empty means no trailers; null
+means a complete list is unavailable. GitHub returns null at its 100-commit
+cap. GitLab reads every commit page before rechecking the MR. Never build a
+merge message from null trailers or a stale snapshot.
 
 `bucket` is `pass`, `fail`, `cancel`, `pending`, `skipping`, `blocked` or
 `unknown`. Exit 0 means a snapshot was read, failing checks included; exit 1

@@ -105,10 +105,12 @@ branch, correcting its description and merging it once green, in the
 worktree that holds the branch, never the main checkout. A pull request
 stacked on one that did not merge in the same run is not merged.
 
-It merges with `.releasetools.yaml`'s `release.merge` or the first strategy
-the repository allows of squash, merge and rebase; a squash keeps GitHub's
-` (#NN)` subject and the branch's commit trailers, and
-`--match-head-commit` refuses a head that moved after CI passed. It never
+It always squashes on GitHub and GitLab, keeping GitHub's ` (#NN)` subject
+and the commit trailers from `gw ci-checks`'s `pr.trailers`. Null trailers
+stop the merge. GitHub merges use `gw merge`, which waits for lower stack
+members and the head rewrite. A `head-moved` result requires fresh CI on
+that SHA and a message rebuilt from that snapshot's trailers before one
+retry; a second movement stops that PR. It never
 uses `--admin`, `--auto` or `--delete-branch`, and reports a merge queue's
 entry as queued, never as merged. It stops and reports where a person has
 to decide, such as a conflict whose sides want incompatible things, a push
@@ -116,7 +118,7 @@ the lease rejects or a blocked merge. When it fixed CI, the pull request
 carries an auto-resolution block, one row per problem, which the squash
 message leaves out. The report ends with one row per problem: the pull
 request, what was wrong, what fixed it. `--hold-merge` does everything but
-the merge, and prints the one `gh` or `glab` command that makes it with the
+the merge, and prints the one `gw merge` or `glab` command that makes it with the
 prepared subject and body.
 
 ## Cleanup

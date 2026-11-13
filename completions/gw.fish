@@ -76,6 +76,13 @@ complete -c gw -n '__worktrees_on ci-checks ci' -l wait -d 'read again until no 
 complete -c gw -n '__worktrees_on ci-checks ci' -s v -l verbose -d 'print every forge command'
 complete -c gw -n '__worktrees_on ci-checks ci' -s h -l help -d 'show the help and exit'
 
+complete -c gw -n '__worktrees_on merge' -l match-head-commit -x -d 'the head commit whose CI passed'
+complete -c gw -n '__worktrees_on merge' -l subject -x -d 'the merge commit subject'
+complete -c gw -n '__worktrees_on merge' -l body-file -r -d 'read the merge commit body from FILE'
+complete -c gw -n '__worktrees_on merge' -l json -d 'the merge outcome as data'
+complete -c gw -n '__worktrees_on merge' -s v -l verbose -d 'print every forge command'
+complete -c gw -n '__worktrees_on merge' -s h -l help -d 'show the help and exit'
+
 complete -c gw -n '__worktrees_on branch; and test (count (commandline -opc)) -eq 2' -a '(command gw branch --complete)'
 complete -c gw -n '__worktrees_on branch; and test (count (commandline -opc)) -eq 2' -s h -l help -d 'show the help and exit'
 

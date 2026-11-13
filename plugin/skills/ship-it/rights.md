@@ -7,9 +7,14 @@ writes them.
 
 Each rule matches a command's prefix. A rule for
 `git push --force-with-lease --force-if-includes` also admits a trailing
-`--force`, and one for `gh pr merge` also admits `--admin`. The skill never
-writes either, `tests/test_plugin.py` holds its text to that, and the deny
-rules refuse the forms a client can match.
+`--force`. The skill never writes that flag, and `tests/test_plugin.py`
+checks its commands. The deny rules refuse the forms a client can match.
+
+`gw merge` is the GitHub merge command in both clients. Its parser requires
+a full head SHA, always requests squash, and accepts no rule bypass or
+arbitrary API payload. The rule admits only this command; it grants no
+general `gh api` permission. Install the CLI version that provides
+`gw merge` along with the updated plugin. A plugin update alone does not update the CLI.
 
 ## Claude Code
 
@@ -67,19 +72,19 @@ prefix_rule(
     justification="ship-it pushes a rebased branch with a lease",
 )
 prefix_rule(
-    pattern=["gh", "pr", ["view", "diff", "create", "edit", "merge"]],
+    pattern=["gh", "pr", ["view", "diff", "create", "edit"]],
     decision="allow",
-    justification="ship-it opens and merges the pull request",
+    justification="ship-it opens and describes the pull request",
+)
+prefix_rule(
+    pattern=["gw", "merge"],
+    decision="allow",
+    justification="ship-it merges one checked GitHub pull request",
 )
 prefix_rule(
     pattern=["gh", "run", ["view", "rerun"]],
     decision="allow",
     justification="ship-it reads and reruns CI",
-)
-prefix_rule(
-    pattern=["gh", "repo", "view"],
-    decision="allow",
-    justification="ship-it reads the merge strategies",
 )
 prefix_rule(
     pattern=["glab", "mr", ["view", "diff", "create", "update", "merge"]],

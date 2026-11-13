@@ -62,6 +62,13 @@ def _tools(path: Path) -> list[str]:
     return re.findall(r"^  - (.+)$", _frontmatter(path), re.M)
 
 
+@pytest.mark.parametrize("path", sorted(PLUGIN.glob("skills/**/*.md")))
+def test_skill_bodies_have_no_positional_substitutions(path: Path) -> None:
+    text = path.read_text()
+    body = text.split("---", 2)[-1] if text.startswith("---\n") else text
+    assert not re.search(r"\$\d", body), path
+
+
 # What a skill runs only with the user's say-so, or the harness's: removal,
 # merging, pushing, rerunning CI, moving a checkout. `gw sync` and
 # `gw branch create` are pre-approved; neither loses work.
@@ -76,6 +83,7 @@ MUTATIONS = (
     "command gw add x",
     "gw fast-forward --json",
     "command gw fast-forward --json",
+    "gw merge 1 --match-head-commit x",
     "gh pr merge 1",
     "gh pr update-branch 1",
     "gh run rerun 1",
@@ -377,7 +385,7 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "git push --force-with-lease --force-if-includes origin fix-parser",
         "gh pr create --base main --head fix-parser --title t --body-file f",
         "gh pr edit 41 --body-file f",
-        "gh pr merge 41 --squash --subject s --body-file f --match-head-commit x",
+        "gw merge 41 --subject s --body-file f --match-head-commit x --json",
         "gh run rerun 7 --failed",
         "glab mr create --target-branch main --source-branch x --title t --yes",
         "glab mr merge 41 --squash --sha x --auto-merge=false",
@@ -402,6 +410,8 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "git branch -D x",
         "git update-ref refs/heads/main x y",
         "gh pr update-branch 1",
+        "gh api --method PUT repos/o/r/pulls/41/merge-async",
+        "gh pr merge 41 --admin",
     ):
         assert not _covers(tools, refused), refused
 
@@ -415,6 +425,35 @@ def test_ship_it_never_writes_a_flag_that_bypasses_or_forces() -> None:
         words = shlex.split(command.replace('"$(cat FILE)"', "FILE"))
         for flag in ("--force", "-f", "--admin", "--auto", "--delete-branch", "-A"):
             assert flag not in words, command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git fetch origin SHA",
+        "git fetch origin +SHA:refs/heads/main",
+        "git fetch --force origin SHA:refs/heads/main",
+        "git fetch -f origin SHA:refs/heads/main",
+        "git merge-base HEAD origin/main",
+    ],
+)
+def test_ship_it_does_not_preapprove_fetch_or_merge_base(command: str) -> None:
+    assert not _covers(_tools(SHIP_IT), command)
+    allowed = json.loads(RULES.read_text())["permissions"]["allow"]
+    assert not _covers([rule.replace(" *)", ":*)") for rule in allowed], command)
+    words = shlex.split(command)
+    for rule in _codex_rules():
+        if rule["decision"] == "allow":
+            assert not all(
+                word in part if isinstance(part, list) else word == part
+                for word, part in zip(words, rule["pattern"], strict=False)
+            ), rule
+
+
+def test_ship_it_takes_trailers_from_ci_without_fetching() -> None:
+    body = SHIP_IT.read_text().split("---", 2)[-1]
+    assert "pr.trailers" in body
+    assert not re.search(r"\bgit (fetch|merge-base)\b|\bawk\b|BASE_SHA", body)
 
 
 def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
@@ -435,7 +474,7 @@ def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
         "git push --force-with-lease --force-if-includes",
         "gh pr create",
         "gh pr edit",
-        "gh pr merge",
+        "gw merge",
         "gh run rerun",
         "glab mr create",
         "glab mr update",
@@ -445,6 +484,24 @@ def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
         "gw branch create",
     ):
         assert publishing in allow, publishing
+
+
+def _codex_rules() -> list[dict]:
+    rights = (SHIP_IT.parent / "rights.md").read_text()
+    rules: list[dict] = []
+    code = re.search(r"```python\n(.*?)\n```", rights, re.S)
+    assert code
+    exec(code[1], {"prefix_rule": lambda **rule: rules.append(rule)})
+    return rules
+
+
+def test_codex_merge_rule_allows_only_the_merge_command() -> None:
+    rules = _codex_rules()
+    merge = [rule for rule in rules if rule["pattern"] == ["gw", "merge"]]
+    assert len(merge) == 1
+    assert merge[0]["decision"] == "allow"
+    for rule in rules:
+        assert rule["pattern"][:2] != ["gh", "api"]
 
 
 def test_preflight_runs_only_when_called_by_name() -> None:

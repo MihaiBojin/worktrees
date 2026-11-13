@@ -102,6 +102,16 @@ __worktrees_ci-checks() {
         '(-h --help)'{-h,--help}'[show the help and exit]'
 }
 
+__worktrees_merge() {
+    _arguments -s \
+        '--match-head-commit[the head commit whose CI passed]:sha:' \
+        '--subject[the merge commit subject]:subject:' \
+        '--body-file[read the merge commit body from FILE]:file:_files' \
+        '--json[the merge outcome as data]' \
+        '(-v --verbose)'{-v,--verbose}'[print every forge command]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]'
+}
+
 __worktrees_branch_create() {
     _arguments -s \
         '--json[the result as data]' \
@@ -179,6 +189,7 @@ _gw() {
                 remove|rm) __worktrees_remove ;;
                 fast-forward|ff) __worktrees_fast-forward ;;
                 ci-checks|ci) __worktrees_ci-checks ;;
+                merge) __worktrees_merge ;;
                 branch)
                     _arguments -C \
                         '(-h --help)'{-h,--help}'[show the help and exit]' \

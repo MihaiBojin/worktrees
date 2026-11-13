@@ -19,7 +19,10 @@ answer at a terminal.
 `gw branch status` assesses loose local branches and `gw branch prune`
 deletes selected eligible refs. A checked-out branch appears only as a
 worktree. `gw ci-checks` reads one pull request's checks from the forge and writes
-nothing. Each shell plugin shortcut, such as `gwp!`, runs one of these with
+nothing. [`gw merge`](commands/merge.md) squashes one checked GitHub PR. It waits
+for lower stack members and the head rewrite, reports `head-moved` at exit 4
+when that rewrite changes the head, and reports queue submission separately
+from a completed merge. Each shell plugin shortcut, such as `gwp!`, runs one of these with
 fixed words, and `gw --help` lists them under the command they run.
 `gw fast-forward` brings the current branch level with the head ref, and
 [its page](commands/fast-forward.md) gives the order of its checks and its
@@ -255,10 +258,13 @@ outcome records `worktree_removed`, `branch_removed`, `retained`, `dropped`,
 `skipped`, `failed` and `destination`, along with its path and branch. `gw
 branch prune` reports `removed`, `failed`, `verdicts` and `outcomes`.
 
-`gw ci-checks --json` is the one JSON result the forge answers directly. `pr` has
+`gw ci-checks --json` reports a fresh forge snapshot. `pr` has
 `number`, `url`, `state`, `draft`, `headSha`, `headRef`, `baseRef`,
-`repository`, `source`, `mergeable` and `mergeStateStatus`. `checksState`
-is `passed`, `failed`, `pending`, `blocked` or `unknown`, and `stale: true`
+`repository`, `source`, `mergeable`, `mergeStateStatus` and `trailers`.
+`trailers` is an ordered list of unique commit trailers, or null when the
+complete list is unavailable. [CI checks](commands/ci-checks.md) describes
+its limits. `checksState` is `passed`, `failed`, `pending`, `blocked` or
+`unknown`, and `stale: true`
 forces `unknown`. Each of `checks` has `name`, `workflow`, `state`, `bucket`
 and `link`. `pipeline` is GitLab's head pipeline with its `association`:
 `head`, `merge-result` or `stale`. It is null on GitHub.

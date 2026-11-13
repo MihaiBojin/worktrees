@@ -865,6 +865,68 @@ def _add_ci_flags(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _head_sha(text: str) -> str:
+    from .ci import _SHA
+
+    if not _SHA.fullmatch(text):
+        raise argparse.ArgumentTypeError("expected a full head commit SHA")
+    return text
+
+
+def _add_merge_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument("number", type=_review_number, metavar="NUMBER")
+    p.add_argument(
+        "--match-head-commit",
+        required=True,
+        type=_head_sha,
+        metavar="SHA",
+        help="the head commit whose CI passed",
+    )
+    p.add_argument("--subject", help="the merge commit subject")
+    p.add_argument(
+        "--body-file",
+        type=Path,
+        metavar="FILE",
+        help="read the merge commit body from FILE",
+    )
+    p.add_argument("--json", action="store_true", help="the merge outcome as data")
+    p.add_argument(
+        "-v", "--verbose", action="store_true", help="print every forge command"
+    )
+
+
+def run_merge(args: argparse.Namespace) -> int:
+    from . import pr_merge, sync
+    from .git import options
+
+    body = None
+    if args.body_file is not None:
+        try:
+            body = args.body_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise _Stop(str(exc), 2) from None
+    if sync.offline():
+        raise Refused(f"gw merge uses the forge, and {sync.OFFLINE} is set")
+    options.verbose = args.verbose
+    result = pr_merge.merge(args.number, args.match_head_commit, args.subject, body)
+    if args.json:
+        print(_json(result))
+    else:
+        print(
+            f"#{args.number}: {result['status']}"
+            + (f" {result['sha']}" if result["sha"] else "")
+        )
+    if result["message"]:
+        _err(
+            render.fail(result["message"])
+            if result["status"] == "failed"
+            else render.note(result["message"])
+        )
+    if result["status"] == "head-moved":
+        return 4
+    return 0 if result["status"] in ("merged", "enqueued") else 1
+
+
 # Failures first, so the row worth reading is the one at the top.
 _BUCKETS = ("fail", "cancel", "blocked", "pending", "unknown", "skipping", "pass")
 _BUCKET_INK = {
@@ -1716,6 +1778,16 @@ _COMMANDS: dict[str, _Command] = {
         usage="[NUMBER]",
         aliases=("ci",),
     ),
+    "merge": _Command(
+        run_merge,
+        _add_merge_flags,
+        "squash one GitHub PR at its checked head",
+        "Squash one GitHub PR, respecting its queue and waiting up to ten "
+        "minutes for the stack; head-moved exits 4 without submitting when "
+        "the head changes. The command submits with or without --json, which "
+        "prints the outcome as data.",
+        usage="NUMBER",
+    ),
     "version": _Command(
         run_version,
         None,
@@ -1873,11 +1945,9 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
         )
         if run is run_prune and args.only and args.yes:
             raise _Stop("--only cannot be combined with --yes", 2)
-        # sync and ci-checks talk to the network and assess nothing, so
-        # neither syncs first, needs the offline guard or a word about how
-        # fresh the evidence is.
+        # Forge commands read live evidence and do not sync local refs first.
         if (
-            run not in (run_version, run_sync, run_ci)
+            run not in (run_version, run_sync, run_ci, run_merge)
             and not getattr(args, "explain", False)
             and not getattr(args, "complete", False)
             and not (hasattr(args, "name") and not args.name)

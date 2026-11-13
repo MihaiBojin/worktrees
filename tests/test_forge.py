@@ -174,25 +174,24 @@ def test_malformed_cached_request_cannot_authorize_deletion(
         request[field] = value
     cache_path(world).write_text(json.dumps(cached))
     before = network.network_calls()
+    offline = network.env(WORKTREES_OFFLINE="1")
     want = "empty" if local_proof else "unknown" if field == "merge_sha" else "keep"
-    row = worktree_status(world, network)
+    row = worktree_status(world, network, WORKTREES_OFFLINE="1")
     assert row["verdict"] == want, row
     assert row["proof"] != "forge", row
     assert not row["eligible"]
-    denied = cli(
-        world, str(wt), "--yes", "--json", entry="gw remove", env=network.env()
-    )
+    denied = cli(world, str(wt), "--yes", "--json", entry="gw remove", env=offline)
     assert denied.returncode != 0, denied.stderr
     assert wt.exists()
     assert world.git("rev-parse", "feature") == tip
     world.git("worktree", "remove", str(wt))
-    loose = cli(world, "feature", "--json", entry="gw branch status", env=network.env())
+    loose = cli(world, "feature", "--json", entry="gw branch status", env=offline)
     assert loose.returncode == 0, loose.stderr
     row = json.loads(loose.stdout)["verdicts"][0]
     assert row["verdict"] == want, row
     assert row["proof"] != "forge", row
     denied = cli(
-        world, "feature", "--yes", "--json", entry="gw branch prune", env=network.env()
+        world, "feature", "--yes", "--json", entry="gw branch prune", env=offline
     )
     assert denied.returncode != 0, denied.stderr
     assert json.loads(denied.stdout)["removed"] == []

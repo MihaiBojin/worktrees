@@ -47,6 +47,13 @@ def _pr(**extra) -> dict:
         "mergeable": "MERGEABLE",
         "mergeStateStatus": "CLEAN",
         "statusCheckRollup": [_check()],
+        "commits": [
+            {
+                "oid": extra.get("headRefOid", HEAD),
+                "messageHeadline": "Change",
+                "messageBody": "",
+            }
+        ],
         **extra,
     }
 
@@ -112,6 +119,88 @@ def test_reads_the_current_branch_without_the_callers_repo_redirect(
     assert proc.returncode == 0, proc.stderr
     call = next(c for c in github.network_calls() if c[0] == "gh")
     assert call[3:6] == ["feature", "--repo", "github.com/owner/repo"]
+
+
+def test_github_trailers_keep_commit_order_and_parse_each_message(
+    world, github
+) -> None:
+    claude = "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+    session = "Claude-Session: https://claude.ai/code/session_example"
+    codex = "Co-Authored-By: Codex <noreply@openai.com>"
+    github.answer(
+        {
+            "$view": _pr(
+                commits=[
+                    {
+                        "oid": BASE,
+                        "messageHeadline": "First",
+                        "messageBody": (
+                            f"Example: not a trailer\n\nProse.\n\n{claude}\n{session}\n"
+                        ),
+                    },
+                    {
+                        "oid": HEAD,
+                        "messageHeadline": "Second",
+                        "messageBody": (
+                            f"{claude}\n{codex}\n"
+                            "Codex-Session: session\n continuation\n"
+                        ),
+                    },
+                ]
+            )
+        }
+    )
+    out = _read(world, github, "7")
+    assert out["pr"]["trailers"] == [
+        claude,
+        session,
+        codex,
+        "Codex-Session: session continuation",
+    ]
+    calls = github.network_calls()
+    assert len(calls) == 1
+    assert "commits" in calls[0][-1].split(",")
+
+
+@pytest.mark.parametrize(
+    "commits",
+    [
+        None,
+        [],
+        [{}],
+        [{"oid": HEAD, "messageHeadline": "Missing body"}],
+        [{"oid": BASE, "messageHeadline": "Older head", "messageBody": ""}],
+        [{"oid": HEAD, "messageHeadline": "Duplicate", "messageBody": ""}] * 2,
+        [
+            {"oid": f"{n:040x}", "messageHeadline": "Capped", "messageBody": ""}
+            for n in range(100)
+        ],
+    ],
+)
+def test_github_never_reports_incomplete_trailers_as_complete(
+    world, github, commits
+) -> None:
+    github.answer({"$view": _pr(commits=commits)})
+    out = _read(world, github, "7")
+    assert out["pr"]["trailers"] is None
+    assert out["checksState"] == "passed"
+
+
+def test_github_commit_without_trailers_is_a_complete_empty_list(world, github) -> None:
+    assert _read(world, github, "7")["pr"]["trailers"] == []
+
+
+@pytest.mark.parametrize("count", [99, 100])
+def test_github_commit_cap_is_incomplete_even_when_the_head_is_present(
+    world, github, count
+) -> None:
+    commits = [
+        {"oid": f"{n:040x}", "messageHeadline": "Change", "messageBody": ""}
+        for n in range(count)
+    ]
+    commits[-1]["oid"] = HEAD
+    github.answer({"$view": _pr(commits=commits)})
+    assert _read(world, github, "7")["pr"]["trailers"] == ([] if count == 99 else None)
 
 
 @pytest.mark.parametrize(
@@ -319,6 +408,67 @@ def _pipeline(**extra) -> dict:
 
 PIPELINE = "projects/22/pipelines/90"
 JOBS = "projects/22/pipelines/90/jobs?per_page=100"
+COMMITS = "projects/11/merge_requests/7/commits?per_page=100"
+
+
+def test_gitlab_trailers_read_every_page_oldest_first_before_rechecking(
+    world, gitlab
+) -> None:
+    first = "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+    second = "Codex-Session: session"
+    gitlab.answer(
+        {
+            "$view": _mr(),
+            "$api": {
+                PIPELINE: _pipeline(),
+                JOBS: [],
+                COMMITS: {
+                    "$pages": [
+                        [{"id": HEAD, "message": f"Newer\n\n{first}\n{second}\n"}],
+                        [
+                            {
+                                "id": BASE,
+                                "message": (
+                                    f"Older\n\n{first}\nClaude-Session: original\n"
+                                ),
+                            }
+                        ],
+                    ]
+                },
+            },
+        }
+    )
+    out = _read(world, gitlab, "7")
+    assert out["pr"]["trailers"] == [first, "Claude-Session: original", second]
+    calls = gitlab.network_calls()
+    commit_call = ["glab", "api", COMMITS, "--hostname", "gitlab.com", "--paginate"]
+    assert commit_call in calls
+    assert calls[-1][:3] == ["glab", "mr", "view"]
+
+
+@pytest.mark.parametrize(
+    "commits", [None, [], [{"id": HEAD}], [{"id": BASE, "message": "Old"}]]
+)
+def test_gitlab_never_reports_missing_commits_as_complete(
+    world, gitlab, commits
+) -> None:
+    gitlab.answer({"$view": _mr(head_pipeline=None), "$api": {COMMITS: commits}})
+    assert _read(world, gitlab, "7")["pr"]["trailers"] is None
+
+
+def test_gitlab_head_movement_discards_trailers(world, gitlab) -> None:
+    gitlab.answer(
+        {
+            "$view": [_mr(head_pipeline=None), _mr(sha=MERGE, head_pipeline=None)],
+            "$api": {
+                COMMITS: [{"id": HEAD, "message": "Change\n\nCodex-Session: old"}]
+            },
+        }
+    )
+    out = _read(world, gitlab, "7")
+    assert out["stale"] is True
+    assert out["pr"]["headSha"] == MERGE
+    assert out["pr"]["trailers"] is None
 
 
 @pytest.fixture
@@ -406,7 +556,9 @@ def test_a_gitlab_mr_without_a_pipeline_is_unknown(world, gitlab) -> None:
     out = _read(world, gitlab, "7")
     assert out["checksState"] == "unknown"
     assert out["pipeline"] is None
-    assert not [c for c in gitlab.network_calls() if c[:2] == ["glab", "api"]]
+    assert [c[2] for c in gitlab.network_calls() if c[:2] == ["glab", "api"]] == [
+        COMMITS
+    ]
 
 
 def test_a_pipeline_for_an_older_head_cannot_report_green(world, gitlab) -> None:

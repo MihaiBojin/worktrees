@@ -3,7 +3,7 @@
 The second command that uses the network, after `gw sync`. It writes
 nothing: no ref, no cache entry, no file.
 
-GitHub answers identity and checks in one `gh pr view`, so the two cannot
+GitHub answers identity, commits and checks in one `gh pr view`, so they cannot
 describe different heads. GitLab needs several calls, so the merge request is
 read again afterwards and a change between the reads marks the snapshot
 stale.
@@ -18,6 +18,7 @@ from collections.abc import Callable
 
 from . import branch_forge, forge
 from . import repo as R
+from .git import git
 
 _SHA = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
 
@@ -31,7 +32,7 @@ GRACE = 2 * 60
 _GITHUB_FIELDS = (
     "number,url,state,isDraft,headRefOid,headRefName,baseRefName,"
     "headRepository,headRepositoryOwner,isCrossRepository,mergeable,"
-    "mergeStateStatus,statusCheckRollup"
+    "mergeStateStatus,statusCheckRollup,commits"
 )
 _CONCLUSION = {
     "SUCCESS": "pass",
@@ -65,6 +66,19 @@ _GITLAB_PENDING = (
 
 class Unreadable(Exception):
     """The forge gave no snapshot. The message is the whole answer."""
+
+
+@git("interpret-trailers --parse")
+def _parse_trailers() -> None:
+    """Parse and unfold trailers from the commit message on stdin."""
+
+
+def _trailers(messages: list[str], repo) -> list[str]:
+    trailers: dict[str, None] = {}
+    for message in messages:
+        for line in _parse_trailers(input=message, repo=repo).lines:
+            trailers[line] = None
+    return list(trailers)
 
 
 def state(checks: list[dict]) -> str:
@@ -174,12 +188,39 @@ def _github(selector: str, repository: str, repo) -> dict:
             "source": f"{owner}/{name}" if owner and name else "",
             "mergeable": _text(row, "mergeable") or "UNKNOWN",
             "mergeStateStatus": _text(row, "mergeStateStatus") or "UNKNOWN",
+            "trailers": _github_trailers(row, repo),
         },
         "checksState": state(checks),
         "stale": False,
         "checks": checks,
         "pipeline": None,
     }
+
+
+def _github_trailers(review: dict, repo) -> list[str] | None:
+    commits = review.get("commits")
+    # gh exports the first 100 commits without a total count or a cursor.
+    if not isinstance(commits, list) or not 0 < len(commits) < 100:
+        return None
+    if any(
+        not isinstance(commit, dict)
+        or not _SHA.fullmatch(_text(commit, "oid"))
+        or not isinstance(commit.get("messageHeadline"), str)
+        or not isinstance(commit.get("messageBody"), str)
+        for commit in commits
+    ):
+        return None
+    if commits[-1]["oid"] != review["headRefOid"] or len(
+        {commit["oid"] for commit in commits}
+    ) != len(commits):
+        return None
+    return _trailers(
+        [
+            commit["messageHeadline"] + "\n\n" + commit["messageBody"]
+            for commit in commits
+        ],
+        repo,
+    )
 
 
 def _latest(rollup: list) -> list[dict]:
@@ -251,6 +292,7 @@ def _gitlab(selector: str, repository: str, repo) -> dict:
     if pipeline_row:
         pipeline, checks = _gitlab_pipeline(before, pipeline_row, host, repo)
         stale = pipeline["association"] == "stale"
+    trailers = _gitlab_trailers(before, host, repo)
     after = _gitlab_review(str(before["number"]), repository, repo)
     after_pipeline = after.pop("_pipeline")
     if after != before or _pipeline_identity(after_pipeline) != _pipeline_identity(
@@ -258,6 +300,7 @@ def _gitlab(selector: str, repository: str, repo) -> dict:
     ):
         stale = True
     del after["_target"]
+    after["trailers"] = None if stale else trailers
     return {
         "pr": after,
         "checksState": "unknown" if stale else state(checks),
@@ -265,6 +308,33 @@ def _gitlab(selector: str, repository: str, repo) -> dict:
         "checks": checks,
         "pipeline": pipeline,
     }
+
+
+def _gitlab_trailers(review: dict, host: str, repo) -> list[str] | None:
+    project = review["_target"]
+    if type(project) is not int:
+        return None
+    commits = forge.pages(
+        [
+            *_api(
+                f"projects/{project}/merge_requests/{review['number']}/commits?per_page=100",
+                host,
+            ),
+            "--paginate",
+        ],
+        repo,
+    )
+    if not commits or any(
+        not _SHA.fullmatch(_text(commit, "id"))
+        or not isinstance(commit.get("message"), str)
+        for commit in commits
+    ):
+        return None
+    if commits[0]["id"] != review["headSha"] or len(
+        {commit["id"] for commit in commits}
+    ) != len(commits):
+        return None
+    return _trailers([commit["message"] for commit in reversed(commits)], repo)
 
 
 def _gitlab_review(selector: str, repository: str, repo) -> dict:
