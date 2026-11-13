@@ -17,6 +17,78 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.10.0 - 2026-11-13
+
+### Added
+
+`gw merge NUMBER --match-head-commit SHA` squashes one GitHub pull
+request after checking its head and CI. It respects merge queues and
+waits up to ten minutes for lower native-stack pull requests and the
+head rewrite. A rewritten head returns `head-moved` at exit 4 without
+submitting. `/worktrees:ship-it` waits for CI on that head and rebuilds
+the message before one retry. `/worktrees:ship-it` always squashes on
+GitHub and GitLab.
+
+`gw ci-checks --json` includes `pr.trailers`, preserving full coauthor
+and session trailers once each in commit order. `/worktrees:ship-it`
+uses these trailers for squash messages. Missing or incomplete commit
+lists stop `/worktrees:ship-it`; GitHub reviews with 100 or more commits
+have null trailers.
+
+The WHY column of the `gw prune`, `gw remove`, `gw branch status` and
+`gw branch prune` tables puts each reason on its own line: the evidence
+first, then every protection under it. The JSON `why` field is unchanged.
+
+### Fixed
+
+After the counts, `gw prune` lists every worktree it holds back, one to a
+line with each reason, and leaves out the main checkout; `gw remove` does
+the same for its target. When only `--delete` values hold worktrees back,
+`gw prune` names the command that grants them, keeping the values you
+passed: `gw prune --delete ignored-files makes fix-parser eligible`. The
+list replaces the warning that named unknown worktrees. `gw remove`
+suggests `--keep-branch` only when that flag would make the target
+eligible.
+
+When an empty branch or its stashes hold a worktree or a branch back, the
+reason names the value that lifts it: `the branch is empty; pass --delete
+empty` and `its branch has stashes; pass --delete stashes`. Main, master
+and the head branch list only `it is a protected branch`, since no
+`--delete` value frees them.
+
+The removal disclosure, the "it holds N ignored path(s)" count and
+`gw prune --json`'s `ignoredPaths` list each ignored path as the pattern
+that ignores it names it, from the top level and sorted by name, with a
+trailing `/` on a directory. A `__pycache__` pattern lists
+`src/pkg/__pycache__/`, where the disclosure read the tracked `src/` as
+ignored and unrecoverable. A pattern for a directory's contents, such as
+`path/to/ignored/*`, lists that directory once. The disclosure ends with a
+`git -C PATH ls-files --others --ignored --exclude-standard` line that
+lists every ignored file, to read before you answer.
+
+A branch whose pull request was stacked on another branch read as `unknown`,
+"the request targeted a different branch", after the forge landed it on the
+head branch. `gw prune`, `gw remove`, `gw branch status`, `gw branch prune`
+and `gw fast-forward` now count such a request as proof when its merge
+commit is on the head branch's first-parent history, and the reason names
+the branch it targeted.
+
+`gw fast-forward` takes GitHub's rewrite of a stacked pull request's
+branch instead of replaying the same commits locally, so the push after
+it no longer overwrites GitHub's commits and `--force-if-includes` no
+longer refuses it. Run straight after the pull request below merges, it
+waits up to a minute for that rewrite. `--json` names the remote copy it
+took in `adopted`.
+
+`gw list` and `gw l` list worktrees without syncing first: they no longer
+fetch every remote and query the forge when a sync is due, and print no
+`Head:`, `Last sync:` or `Never synced:` line. `gw list --json` still
+carries `head` and `lastSync` from the last sync.
+
+`/worktrees:ship-it` writes the release note with `release:write` when the
+`release` plugin is installed. It looked for the `release-notes` plugin,
+which `release` replaced, so it skipped the note.
+
 ## 0.9.0 - 2026-11-09
 
 ### Removed
