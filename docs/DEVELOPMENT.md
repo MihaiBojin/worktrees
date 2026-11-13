@@ -208,18 +208,17 @@ already carries. That last one matters most: PyPI rejects a duplicate at the
 very end of a publish run, after everything else has already happened. The
 distribution is `git-worktrees`; PyPI's `worktrees` belongs to somebody else.
 
-`/release-notes:prepare` writes the `CHANGELOG.md` entry on the release branch,
-so the notes are reviewed in the same pull request as the version bump. Both
-commands come from the release-tools marketplace:
+`/release:prepare` writes the `CHANGELOG.md` entry on the release branch, so
+the notes are reviewed in the same pull request as the version bump. Both
+commands come from the `release` plugin in the release-tools marketplace:
 
 ```console
 claude plugin marketplace add releasetools/agent-plugins --scope project
 claude plugin install release@release-tools --scope project
-claude plugin install release-notes@release-tools --scope project
 ```
 
-`--scope project` declares them in this repository rather than in your own
-configuration, so the next person to release is offered the same plugins.
+`--scope project` declares it in this repository rather than in your own
+configuration, so the next person to release is offered the same plugin.
 `rt` has to be v0.4.0 or newer, which is where `version::bump` arrived.
 
 `.codex/config.toml` declares the same marketplace and plugins for Codex,
