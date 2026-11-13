@@ -85,6 +85,10 @@ fetch every remote and query the forge when a sync is due, and print no
 `Head:`, `Last sync:` or `Never synced:` line. `gw list --json` still
 carries `head` and `lastSync` from the last sync.
 
+`/worktrees:ship-it` writes the release note with `release:write` when the
+`release` plugin is installed. It looked for the `release-notes` plugin,
+which `release` replaced, so it skipped the note.
+
 ## 0.9.0 - 2026-11-09
 
 ### Removed
