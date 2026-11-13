@@ -81,10 +81,11 @@ The result's fields:
 - `ahead`, `behind`: its own commits after, the head ref's it lacked before
 - `proof`, `why`: how a rotated branch, or its merged part, was proved
 - `boundary`, `carried`: a rotated branch's last merged commit, and the commits after it replayed onto the new one
+- `adopted`: the remote copy, its commits rewritten elsewhere, the branch moved to; empty otherwise
 - `stopped_at`, `subject`: the commit the rebase stopped at
 - `paths`: files with conflicts, relative to the top level
 - `stash`: the stash entry holding changes that did not re-apply
-- `stashes`: a partly merged or rotated branch's stashes, each with `sha`, `subject`, `after`, true for one made after the merged part, `moved`, the copy such a stash moved to, and `kept`, why one did not move
+- `stashes`: a partly merged, rotated or `adopted` branch's stashes, each with `sha`, `subject`, `after`, true for one made after the merged part, `moved`, the copy such a stash moved to, and `kept`, why one did not move
 
 ## Resolve a conflict
 
@@ -133,6 +134,11 @@ branch's name; the new branch has no upstream until it is pushed. With
 the `carried` ones after it moved to the new branch. For `rebased` with
 `carried` above zero, say that the commits up to `boundary` were already in
 the head branch, merged through another branch's request, and were dropped.
+With `adopted` set, say the branch moved to that remote copy, the same
+commits committed again elsewhere, as GitHub does to a stacked pull
+request's branch when the one below it merges. When `base` is that copy
+rather than the head ref, say the branch still lacks the head branch's newer
+commits, and that running this again rebases it onto them.
 List `stashes` made after the merged part. Each `moved` one is on the branch
 holding the commits now, under the sha in `moved`. Give each `kept` reason,
 and its `sha` for `git stash apply`: after a rebase in place, a kept stash

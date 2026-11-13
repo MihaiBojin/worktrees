@@ -19,7 +19,9 @@ remote on every run, whatever `WORKTREES_SYNC_TTL` says, and asks the forge
 for the branch's newest merged request. The finished-branch proof and the
 search for a merged part both use that answer; neither reads the request
 cached by `gw sync`. When nothing else marks where a merged part ends, it
-also asks which merged request carried the branch's oldest commit.
+also asks which merged request carried the branch's oldest commit. When the
+branch's remote copy still holds its merged part, it asks GitHub whether the
+branch's open pull request is in a native stack.
 
 A failed fetch, or a forge on GitHub or GitLab that cannot be asked, `gh` or
 `glab` missing or signed out included, is a refusal. Its last line is the
@@ -84,6 +86,29 @@ What it does depends on the branch, checked in this order:
 10. A branch whose state cannot be told, such as one with no history in common
     with the head ref, is refused.
 
+A branch in step 5, 7 or 9 whose remote copy was rewritten elsewhere takes
+that copy rather than being rebased. GitHub rewrites a stacked pull request's
+branch when the one below it merges: the same commits, committed again on the
+merge. The copy, `refs/remotes/REMOTE/BRANCH`, counts when no commit the
+branch's reflog has held reaches it, which is when a push with
+`--force-if-includes` refuses, and when its commits the head ref lacks are
+the branch's own after any merged part, in order and with the same
+patch-ids. The branch moves to the copy with `git rebase --onto`, replaying
+only the commits made after it, and `adopted` names the copy: `rebased`. A
+branch already level with the head ref takes it too, so a second run mends a
+branch an earlier one rebased in place. A copy that lacks the head ref's
+newest commits leaves the branch there, with `base` naming the copy, and the
+next run rebases it onto the head ref. A copy holding a commit
+the branch lacks is not taken.
+
+Run straight after the parent merged, before GitHub's rewrite arrives, a
+stacked branch's remote copy still holds the merged part. When its open
+pull request is in a native stack, the run fetches every 2 seconds, for a
+minute at most, until the rewrite arrives, then takes it. A rewrite that
+never arrives is a refusal that leaves the branch as it was, and its last
+line is the same command run offline, which rebases the branch here instead.
+A branch in no native stack is rebased without waiting.
+
 A finished branch's name stays with its merged request on the forge, so the
 next change gets a name of its own. Without `NAME`, that name is the UTC time
 and the branch's name, `2026-11-08T09-05-03Z/fix-parser`, with any time a
@@ -96,7 +121,9 @@ The new branch has no upstream.
 A replayed commit that conflicts stops the rebase on the new branch.
 `git rebase --abort` leaves the new branch at the old tip, and the source
 branch never moves. A branch rebased in place has a remote copy to update:
-push it with `--force-with-lease --force-if-includes`.
+push it with `--force-with-lease --force-if-includes`. After it takes its
+remote copy, that push sends only the commits made after the copy, or
+nothing.
 
 ## Uncommitted changes
 
@@ -116,9 +143,11 @@ can renumber a sha.
 
 ## Stashes
 
-A partly merged or rotated branch's stashes are the ones whose subject names
-it and whose commit is on it. `stashes` lists them, with `after` true for
-one made on a commit after the boundary, which is work done after the merge.
+A partly merged or rotated branch's stashes, and those of a branch that took
+its remote copy, are the ones whose subject names it and whose commit is on
+it. `stashes` lists them, with `after` true for one made on a commit after
+the boundary, which is work done after the merge; for a branch with no
+merged part, the boundary is where it left the head ref.
 One made on the boundary or before it may hold work the merge already took,
 and stays where it is.
 
@@ -126,8 +155,8 @@ Once the carry finishes, each stash made after the boundary moves to the
 replayed copy of the commit it was made on, the one with the same patch-id,
 taken from the lines the commit changes and none around them.
 It goes to the branch that holds the commits now: the new one after a
-rotation, the same one after a rebase in place, whose new commits would
-otherwise leave it matching no branch. `git merge-tree --write-tree` puts
+rotation, the same one after a rebase in place or after taking the remote copy,
+whose new commits would otherwise leave it matching no branch. `git merge-tree --write-tree` puts
 its index and its changes onto that commit without touching the checkout,
 and the copy keeps its untracked files as they were. `git stash store` puts
 the copy on the stash list, and the original is dropped by sha with the
@@ -154,19 +183,20 @@ command again reports the stopped rebase until it finishes, then `current`.
 | --- | --- |
 | `result` | `current`, `fast-forwarded`, `rebased`, `rotated`, `conflict` or `stash-conflict` |
 | `branch` | the branch checked out now; while stopped, the one being rebased |
-| `base` | the full ref it was brought level with, or a short commit |
+| `base` | the full ref it was brought level with, or a short commit: the head ref, or `adopted` when that copy lacks the head ref's newest commits |
 | `sha` | where HEAD is now |
 | `previous`, `previous_sha` | the branch and commit before the run |
 | `ahead` | commits of its own on top of `base` after the run |
 | `behind` | commits of `base` it lacked before the run |
 | `proof`, `why` | how a rotated branch, or its merged part, was proved |
 | `boundary` | the branch's last commit already in the head ref |
-| `carried` | commits after `boundary`, the ones replayed |
+| `carried` | commits after `boundary`: the ones replayed, or the copies `adopted` holds |
+| `adopted` | the remote copy, rewritten elsewhere, the branch moved to; empty otherwise |
 | `stopped_at`, `subject` | the commit the rebase stopped at |
 | `paths` | files with conflicts, from the top level; empty once all are staged |
 | `stash` | the stash entry holding changes that did not re-apply |
-| `stashes` | a partly merged or rotated branch's stashes: `sha`, `subject`, `after`, `moved`, `kept` |
+| `stashes` | a partly merged, rotated or `adopted` branch's stashes: `sha`, `subject`, `after`, `moved`, `kept` |
 
-Exit 0 means the branch is level. Exit 1 is a `conflict` or a
+Exit 0 means the branch is level with `base`. Exit 1 is a `conflict` or a
 `stash-conflict`, with the JSON above, or a refusal, with nothing on stdout
 and the reason on stderr. `-q` keeps the result and every failure.

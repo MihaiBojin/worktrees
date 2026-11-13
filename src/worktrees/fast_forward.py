@@ -17,11 +17,12 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import time
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import branch_forge, forge, merged, prune, render
+from . import branch_forge, forge, merged, prune, render, sync
 from . import repo as R
 from .errors import GitError
 from .errors import Refused as Unsafe
@@ -44,6 +45,12 @@ _NAMING = "NAME and --from only name the branch a finished one moves to"
 
 # The subject git gives the stash entry its autostash leaves behind.
 _AUTOSTASH = "autostash"
+
+# GitHub rewrites a stacked pull request's branch five or six seconds after
+# the one below it merges. A run straight after the merge fetches until the
+# rewrite arrives, for this long at most, every this many seconds.
+REWRITE_WAIT = 60
+REWRITE_INTERVAL = 2
 
 
 class Unfetched(Refusal):
@@ -140,6 +147,18 @@ def bare_patches(base: str, tip: str) -> None:
     """Each commit's patch in `base..tip`, its changed lines alone."""
 
 
+@git("log --walk-reflogs --format=%H $ref", ok=(0, 128))
+def reflog_commits(ref: str) -> None:
+    """Every commit the ref's reflog has held, newest first."""
+
+
+# Each line is a commit, or ^commit for one to stop at; the answer is the
+# first commit the plain ones reach and the others do not.
+@git("rev-list --stdin --max-count=1")
+def first_unreached() -> None:
+    """A commit the revisions on standard input leave, or nothing."""
+
+
 @git("commit-tree --no-gpg-sign -m $message $*parents $tree", mutates=True)
 def commit_tree(message: str, parents: list[str], tree: str) -> None:
     """A commit of `tree`, with `-p SHA` in `parents` for each parent."""
@@ -161,7 +180,8 @@ class Moved:
     proof: str = ""  # how a rotated branch, or its merged part, was proved
     why: str = ""
     boundary: str = ""  # the branch's last commit already in `base`
-    carried: int = 0  # its commits after `boundary`, the ones replayed
+    carried: int = 0  # its commits after `boundary`: replayed, or `adopted`'s copies
+    adopted: str = ""  # the remote copy of its commits, made elsewhere, it moved to
     stopped_at: str = ""  # the commit a stopped rebase could not replay
     subject: str = ""
     paths: list[str] = field(default_factory=list)  # files left with conflicts
@@ -235,14 +255,17 @@ def fast_forward(
         return _catch_up(branch, base, stash, repo=repo)
 
     local = f"refs/heads/{branch}"
+    tip = R.local_sha(local, repo=repo).value
+    head_sha = R.local_sha(base, repo=repo).value
     if merged.is_ancestor(base, local, repo=repo):
         _unnamed(name, start, f"{render.branch(branch)} already has {shown}")
+        taken = _rewritten(branch, remote, head_sha, head_sha, tip, repo)
+        if taken:
+            return _replay(branch, base, tip, None, taken, stash, repo)
         sha = _short(local, repo=repo)
         ahead = _count(base, local, repo)
         return Moved(CURRENT, branch, base, sha, branch, sha, ahead=ahead)
 
-    tip = R.local_sha(local, repo=repo).value
-    head_sha = R.local_sha(base, repo=repo).value
     request = merged_request(branch, remote, repo) if live else None
     first_parents = set(merged.first_parent_history(head_sha, repo=repo).lines)
     verdict, why, proof, _ = merged.branch_proof(
@@ -297,10 +320,10 @@ def fast_forward(
         )
     _unnamed(name, start, f"{render.branch(branch)} is not finished: {why}")
 
-    previous_sha = _short(local, repo=repo)
-    behind = _count(local, base, repo)
-    before = _stash_shas(repo)
     if verdict == "empty":
+        previous_sha = _short(local, repo=repo)
+        behind = _count(local, base, repo)
+        before = _stash_shas(repo)
         merge_ff_only(stash, base, repo=repo)
         moved = Moved(
             FAST_FORWARDED,
@@ -313,11 +336,40 @@ def fast_forward(
         )
         return _reapplied(moved, before, tip, repo)
 
-    replayed = (
-        rebase_onto(stash, base, found[0], branch, repo=repo)
-        if found
-        else rebase(stash, base, repo=repo)
+    taken = _rewritten(
+        branch, remote, head_sha, found[0] if found else head_sha, tip, repo
     )
+    if found and live and not taken:
+        taken = _awaited(branch, remote, head_sha, found[0], tip, repo)
+    return _replay(branch, base, tip, found, taken, stash, repo)
+
+
+def _replay(
+    branch: str,
+    base: str,
+    tip: str,
+    found: tuple[str, str, str] | None,
+    taken: tuple[str, str] | None,
+    stash: str,
+    repo: str | os.PathLike[str] | None,
+) -> Moved:
+    """Rebase the branch's own commits onto the head ref, the ones after the
+    boundary `found` marks when it marks one.
+
+    When `taken` names a remote copy of those commits made elsewhere, the
+    branch moves to that copy instead, and only the commits after the one
+    the copy's tip matches are replayed, onto it. A copy made before the
+    head ref's newest commits is what the branch is then level with.
+    """
+    local = f"refs/heads/{branch}"
+    previous_sha = _short(local, repo=repo)
+    before = _stash_shas(repo)
+    if taken:
+        replayed = rebase_onto(stash, taken[0], taken[1], branch, repo=repo)
+    elif found:
+        replayed = rebase_onto(stash, base, found[0], branch, repo=repo)
+    else:
+        replayed = rebase(stash, base, repo=repo)
     if not replayed:
         stopped = stopped_rebase(repo)
         if stopped:
@@ -325,18 +377,34 @@ def fast_forward(
                 stopped.stashes = _left(_branch_stashes(branch, tip, found[0], repo))
             return stopped
         raise Refusal(replayed.err.strip() or f"git rebase exited {replayed.code}")
+    level = base
+    if taken and not merged.is_ancestor(base, local, repo=repo):
+        level = taken[0]
     moved = Moved(
         REBASED,
         branch,
-        base,
+        level,
         _short(local, repo=repo),
         branch,
         previous_sha,
-        ahead=_count(base, local, repo),
-        behind=behind,
+        ahead=_count(level, local, repo),
+        behind=_count(tip, level, repo),
+        adopted=taken[0] if taken else "",
     )
     if not found:
-        return _reapplied(moved, before, tip, repo)
+        moved = _reapplied(moved, before, tip, repo)
+        if taken:
+            fork = merged.merge_base(base, tip, repo=repo).out.strip()
+            moved.stashes = _move_stashes(
+                _branch_stashes(branch, tip, fork, repo),
+                branch,
+                branch,
+                fork,
+                tip,
+                base,
+                repo,
+            )
+        return moved
     point, moved.proof, moved.why = found
     moved.boundary = _short(point, repo=repo)
     moved.carried = _count(point, tip, repo)
@@ -849,14 +917,99 @@ def _renamed(subject: str, branch: str, to: str) -> str:
     return subject
 
 
+def _rewritten(
+    branch: str,
+    remote: str,
+    head: str,
+    start: str,
+    tip: str,
+    repo: str | os.PathLike[str] | None,
+) -> tuple[str, str] | None:
+    """The default remote's copy of the branch, when it was rewritten
+    elsewhere with the branch's own commits, and the commit its tip copies.
+
+    GitHub rewrites a stacked pull request's branch when the one below it
+    merges. The copy counts when none of the commits the branch's reflog
+    has held reaches it, which is when a push with --force-if-includes
+    refuses, and when its commits the head lacks are, in order and by
+    patch-id, the branch's first commits after `start`.
+    """
+    if not remote:
+        return None
+    copy = f"refs/remotes/{remote}/{branch}"
+    copy_tip = R.local_sha(copy, repo=repo).value
+    if not copy_tip:
+        return None
+    held = {tip, *reflog_commits(f"refs/heads/{branch}", repo=repo).lines}
+    revisions = "".join(f"{line}\n" for line in [copy_tip, *(f"^{s}" for s in held)])
+    if not first_unreached(input=revisions, repo=repo).out.strip():
+        return None
+    theirs = [pid for pid, _ in _patch_order(head, copy_tip, repo)]
+    ours = _patch_order(start, tip, repo)
+    if not theirs or [pid for pid, _ in ours[: len(theirs)]] != theirs:
+        return None
+    return copy, ours[len(theirs) - 1][1]
+
+
+def _awaited(
+    branch: str,
+    remote: str,
+    head: str,
+    point: str,
+    tip: str,
+    repo: str | os.PathLike[str] | None,
+) -> tuple[str, str] | None:
+    """The remote copy of a stacked branch, as `_rewritten` takes it, once
+    GitHub has rewritten it.
+
+    Only for a branch whose remote copy still holds the merged commits, up to
+    `point`, and whose open pull request is in a native stack: replaying the
+    commits here would race GitHub's rewrite, and the push after it would be
+    refused or would undo it. None when there is nothing to wait for.
+    """
+    copy = f"refs/remotes/{remote}/{branch}"
+    if not remote or not R.local_sha(copy, repo=repo).value:
+        return None
+    if not merged.is_ancestor(point, copy, repo=repo):
+        return None
+    answered, number = branch_forge.in_stack(branch, remote, repo)
+    if not answered:
+        raise Unfetched(
+            f"the forge could not be asked whether {render.branch(branch)}'s "
+            "pull request is in a stack"
+        )
+    if not number:
+        return None
+    deadline = time.monotonic() + REWRITE_WAIT
+    while True:
+        failures, _ = sync.fetch(repo)
+        if failures:
+            raise Unfetched("\n".join(failures))
+        if not merged.is_ancestor(point, copy, repo=repo):
+            return _rewritten(branch, remote, head, point, tip, repo)
+        if time.monotonic() + REWRITE_INTERVAL > deadline:
+            raise Unfetched(
+                f"GitHub has not yet rewritten {render.branch(branch)} for its "
+                f"stacked pull request #{number}, so it is left as it is"
+            )
+        time.sleep(REWRITE_INTERVAL)
+
+
+def _patch_order(
+    base: str, tip: str, repo: str | os.PathLike[str] | None
+) -> list[tuple[str, str]]:
+    """Each commit in `base..tip`, oldest first, as its patch-id and sha."""
+    patches = bare_patches(base, tip, repo=repo).out
+    rows = [line.split() for line in merged.patch_ids(input=patches, repo=repo).lines]
+    return [(pid, sha) for pid, sha in reversed(rows)]
+
+
 def _by_patch_id(
     base: str, tip: str, repo: str | os.PathLike[str] | None
 ) -> dict[str, str]:
     """Each commit in `base..tip` by its patch-id, or '' where two share one."""
-    patches = bare_patches(base, tip, repo=repo).out
     found: dict[str, str] = {}
-    for line in merged.patch_ids(input=patches, repo=repo).lines:
-        pid, sha = line.split()
+    for pid, sha in _patch_order(base, tip, repo):
         found[pid] = "" if pid in found else sha
     return found
 

@@ -274,6 +274,9 @@ class Network:
             "flag = '--head' if tool == 'gh' else '--source-branch'\n"
             "branch = args[args.index(flag) + 1]\n"
             "answer = json.loads(responses.read_text()).get(branch, [])\n"
+            # A dict answers each gh --state on its own.
+            "if isinstance(answer, dict):\n"
+            "    answer = answer.get(args[args.index('--state') + 1], [])\n"
             "if isinstance(answer, int):\n"
             "    sys.exit(answer)\n"
             "print(json.dumps(answer))\n"
