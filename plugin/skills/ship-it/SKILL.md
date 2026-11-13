@@ -25,6 +25,8 @@ allowed-tools:
   - Bash(git log:*)
   - Bash(git show:*)
   - Bash(git rev-parse:*)
+  - Bash(git fetch:*)
+  - Bash(git merge-base:*)
   - Bash(git switch --create:*)
   - Bash(git add --:*)
   - Bash(git commit:*)
@@ -35,10 +37,9 @@ allowed-tools:
   - Bash(gh pr diff:*)
   - Bash(gh pr create:*)
   - Bash(gh pr edit:*)
-  - Bash(gh pr merge:*)
+  - Bash(gw merge:*)
   - Bash(gh run view:*)
   - Bash(gh run rerun:*)
-  - Bash(gh repo view:*)
   - Bash(glab mr view:*)
   - Bash(glab mr diff:*)
   - Bash(glab mr create:*)
@@ -68,7 +69,8 @@ steps. Where a skill this one follows would ask the user, take the safe
 default below or stop and report.
 
 `gw` comes from `uv tool install git-worktrees`; if it is missing, report
-that and stop.
+that and stop. Run `gw merge --help` before shipping a GitHub review. If the
+installed CLI has no merge command, report that it needs updating and stop.
 
 Keep a record as you go, one row per problem: the review, what was wrong,
 what fixed it and the commit that carries it. It is the report at the end,
@@ -105,7 +107,8 @@ With numbers, each review goes through steps 7 to 10 on its own, one at a
 time in the order given, and a stack bottom first. One whose `pr.baseRef`
 is the branch of a review this run did not merge, whatever the reason, is
 not merged: it would land on that branch rather than the head branch.
-Report it as waiting on that one.
+Report it as waiting on that one. After each merge, read the next review
+and its CI again. A queued or pending merge does not unblock the next review.
 
 ## 1. A branch of its own
 
@@ -299,13 +302,8 @@ last row. `DRAFT` is step 7's draft. `UNKNOWN` means GitHub has not worked
 it out yet, which is usual just after a push: read again a minute later,
 never merge on it, and report it only when it stays.
 
-Pick the strategy: `release.merge` in `.releasetools.yaml` when the
-repository has one, otherwise the first that
-`gh repo view --json squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed`
-allows of squash, merge and rebase.
-
-For a squash or a merge commit, the message is the review's own title and
-body, which describe-pr made true:
+Always squash on GitHub and GitLab. The message is the review's own title
+and body, which describe-pr made true:
 
 - Subject: the title, then ` (#NUMBER)`, as GitHub would have written it.
 - Body: the review body, without the lines that only make sense on a review
@@ -320,40 +318,95 @@ git log --reverse --format='%(trailers:only,unfold)' 'BASE_SHA..HEAD_SHA' | awk 
 
 `BASE_SHA` is the merge base of `pr.headSha` and the remote's `pr.baseRef`.
 Write the subject and body in your reply, under the review's URL, then
-write the body to a file with the Write tool and merge:
+write the message file with the Write tool. For GitHub, FILE contains the
+body. For GitLab, FILE contains the subject, a blank line and the body. Merge:
 
 ```sh
-gh pr merge NUMBER --squash --subject 'SUBJECT' --body-file FILE --match-head-commit HEAD_SHA
+gw merge NUMBER --subject 'SUBJECT' --body-file FILE --match-head-commit HEAD_SHA --json
 glab mr merge NUMBER --squash --squash-message "$(cat FILE)" --sha HEAD_SHA --auto-merge=false
 ```
 
-`--merge` or `--rebase` replace `--squash` for those strategies; a rebase
-takes no subject or body. `HEAD_SHA` is the `pr.headSha` CI passed on, so a
-push since then refuses the merge instead of landing unseen work. Never add
+Run `gw merge` in the background where the host can, as for
+`gw ci-checks --wait`, and collect its stdout, stderr and exit status when
+it finishes. Otherwise set the host tool's timeout above 11 minutes, for
+example 15 minutes: the command can wait ten minutes for the stack and one
+minute for the merge operation, with forge reads extending those windows.
+A host timeout leaves the merge outcome uncertain; read the PR before any
+further attempt, as below.
+
+`HEAD_SHA` is the `pr.headSha` CI passed on. A changed head needs fresh CI
+and a rebuilt message before another merge attempt. Never add
 `--admin`, `--auto` or `--delete-branch`. glab sets auto-merge by default
 while a pipeline runs, which `--auto-merge=false` turns off.
 
-Then read it back:
+For GitHub, both Codex and Claude call `gw merge`. It checks the supplied
+head SHA and fresh CI. It waits up to ten minutes for every lower stack
+member to merge, the base to match the stack base and the head to contain
+the most recent parent merge. It checks containment again before submitting.
+It uses GitHub's asynchronous merge API for ordinary and native stacked
+reviews, with the repository's default
+queue behavior. The prepared subject and body reach direct merges; a merge
+queue controls its own commit message and strategy.
+
+Read stdout, stderr and the exit status. JSON carries `status`, `pr`, `sha`,
+`uuid` and `message`, along with `head` and `lastSync`.
+
+| status | action |
+| --- | --- |
+| `merged` | Report `sha` as the merge commit and continue to the next review. |
+| `enqueued` | Report queued and leave dependent reviews waiting. |
+| `pending` | Report the request UUID and that the merge may still complete. Leave dependent reviews waiting. |
+| `failed` | Report `message` and leave dependent reviews waiting. |
+| `head-moved` | Fetch `sha`, repeat CI and rebuild the message as below; retry once for this PR. |
+
+Exit 0 covers `merged` and `enqueued`; it alone does not prove a merge.
+Exit 1 covers `pending` and `failed`. Exit 4 is `head-moved`: nothing was
+submitted. A refusal exits 3 with stderr and no JSON. An unknown command or
+invalid arguments exits 2. Report refusals as written. Do not retry through `gh pr merge` or `gh api`.
+
+On the first `head-moved` for this PR, record that its one retry is in use.
+`NEW_SHA` is the result's `sha`, and `BASE_BRANCH` is its `pr.baseRef`.
+Fetch both before reading any local commit range. Never prefix a fetch
+refspec with `+`, pass `--force` or `-f`, or write a destination under local
+`refs/heads/`. The destination below is a remote-tracking ref:
 
 ```sh
-gh pr view NUMBER --json state,mergeCommit,mergedAt,autoMergeRequest
+git fetch 'REMOTE' 'NEW_SHA' 'refs/heads/BASE_BRANCH:refs/remotes/REMOTE/BASE_BRANCH'
 ```
 
-Only `MERGED` is merged. Where the base branch requires a merge queue,
-`gh pr merge` exits 0 having only queued the pull request. It names the
-queue on stderr: a warning that the queue sets the strategy, or that the
-pull request is already queued. That warning or a non-null
-`autoMergeRequest` is reported as queued. `OPEN` after an exit of 0 with
-neither is reported as still open, never as merged or queued. A refusal is
-reported as the forge worded it, and the merge is not tried again in
-another way.
+A failed fetch is a stop. Return to step 7 for this PR and run
+`gw ci-checks NUMBER --wait --json`; require `pr.headSha` to equal `NEW_SHA`
+and `checksState` to be `passed`. Require `pr.baseRef` to equal
+`BASE_BRANCH`. A different head or base is another movement: stop and
+report it. Then repeat steps 8 and 9. Compute the trailer range
+from the fetched base and rewritten head:
+
+```sh
+git merge-base 'refs/remotes/REMOTE/BASE_BRANCH' 'NEW_SHA'
+```
+
+Use that output as `BASE_SHA` and `NEW_SHA` as `HEAD_SHA` in the trailer
+command. Write the subject and body again from the review and that range,
+then call `gw merge` with `NEW_SHA`. A second `head-moved` for this PR is a
+stop: report its new SHA and leave dependent reviews waiting.
+
+After a pending result or an uncertain network failure, read the PR before
+any further merge attempt:
+
+```sh
+gh pr view NUMBER --json state,mergeCommit,mergedAt
+```
+
+Only `MERGED` confirms completion. An open PR can still have a merge in
+progress. Do not resubmit it automatically. An existing async request whose
+commit message cannot be verified is also a refusal, with the same readback.
 
 With `--hold-merge`, do not merge. Make a file that outlives this session
-with `mktemp -t ship-it.XXXXXX`, write the body into it with the Write tool,
-and print the subject, the body and the one command that merges with them.
-Print the command with every value written out, the file's path included,
-and the strategy's flag in place of `--squash`. The head-commit check
-refuses the merge if anything is pushed after CI passed. In Claude Code,
+with `mktemp -t ship-it.XXXXXX` and write its platform-specific contents as
+above with the Write tool. Print the subject, the body and the one command
+that merges with them.
+Print the command with every value written out, the file's path included.
+A changed head requires fresh CI and a rebuilt message. In Claude Code,
 `!` before the command runs it in the session. The user may run it, change
 it, or merge another way.
 
@@ -395,7 +448,7 @@ puts the head branch back: `git update-ref 'refs/heads/HEAD_BRANCH'
 branch. A checkout that holds the head branch, or a run that stopped before
 the push, leaves the head branch where it was: say so.
 
-Lead with each review's outcome, merged with its commit, queued, still
+Lead with each review's outcome, merged with its commit, queued, pending, still
 open, waiting on the one below it, held with the merge command, or blocked
 with the reason, and its URL. Then the record, one short row per problem:
 

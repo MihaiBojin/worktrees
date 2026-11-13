@@ -13,7 +13,7 @@ gw remove fix-parser    # remove one worktree and its finished branch
 ```
 
 `gw sync` fetches every remote and asks the forge about each local branch.
-Every other command but `gw version`, `gw ci-checks`, help and completion
+Every other command but `gw version`, `gw ci-checks`, `gw merge`, help and completion
 runs it first once the last sync is a minute old, then works from local refs
 and that sync's evidence. `gw ci-checks` reads a pull request's checks from
 the forge each time it runs. With `WORKTREES_OFFLINE` set, nothing touches
@@ -33,6 +33,7 @@ repositories under the same worktree root are outside their scope.
 | `gw add NAME [BASE]` | `gwa` | create or enter a worktree |
 | `gw branch create NAME` | `gwbc` | start a branch from the assessed head ref |
 | `gw fast-forward [NAME]` | `gwff` | rebase this branch onto the head ref, or move a merged one, and what came after its merge, to a new branch |
+| `gw merge NUMBER --match-head-commit SHA` | | squash one checked GitHub PR, respecting native stacks and merge queues |
 | `gw ci-checks [NUMBER]` | | read a pull request's checks from GitHub or GitLab; `gw ci` for short |
 | `gw version` | | print the installed version |
 
@@ -446,7 +447,15 @@ its name and drops the merged commits in place. `--autostash` carries uncommitte
 already level exits 0 and changes nothing. [Fast-forward](docs/commands/fast-forward.md) gives the
 order of the checks, the JSON and the conflict loop.
 
-## Pull request checks
+## Pull request checks and merges
+
+[`gw merge`](docs/commands/merge.md) squashes one GitHub PR at its checked
+head SHA, including native stacked PRs. It waits up to ten minutes for lower
+stack members and the head rewrite, and respects the merge queue. A rewritten
+head returns `head-moved` at exit 4 without submitting. Submitted operations
+report `merged`, `enqueued`, `pending` or `failed`. The ship-it skill in
+Codex and Claude uses this command; both the CLI and plugin must be updated
+to provide it.
 
 `gw ci-checks`, or `gw ci` for short, reads one pull request, or GitLab merge
 request, and its checks: the current branch's, or the one `NUMBER` names. It
@@ -504,6 +513,7 @@ parseable. Passing both is a usage error.
 | `gw branch status` | yes | no |
 | `gw list`, `gw select-main` | no | no |
 | `gw ci-checks` | no | yes |
+| `gw merge` | no | yes |
 
 Other commands retain their own flags; use `--help`. Help, version and
 completion work without an assessment. `--only` filters assessment verdicts

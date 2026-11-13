@@ -4,6 +4,7 @@ prune skill runs read the JSON `gwp` and `gwbs` print."""
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 import shlex
@@ -76,6 +77,7 @@ MUTATIONS = (
     "command gw add x",
     "gw fast-forward --json",
     "command gw fast-forward --json",
+    "gw merge 1 --match-head-commit x",
     "gh pr merge 1",
     "gh pr update-branch 1",
     "gh run rerun 1",
@@ -368,6 +370,7 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "gw branch create fix-parser --json",
         "command gw add fix-parser --json",
         "git switch --create fix-parser",
+        "git fetch origin abc refs/heads/main:refs/remotes/origin/main",
         "gw fast-forward --autostash --json",
         "gw ci-checks 41 --wait --json",
         "git add -- README",
@@ -377,7 +380,7 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "git push --force-with-lease --force-if-includes origin fix-parser",
         "gh pr create --base main --head fix-parser --title t --body-file f",
         "gh pr edit 41 --body-file f",
-        "gh pr merge 41 --squash --subject s --body-file f --match-head-commit x",
+        "gw merge 41 --subject s --body-file f --match-head-commit x --json",
         "gh run rerun 7 --failed",
         "glab mr create --target-branch main --source-branch x --title t --yes",
         "glab mr merge 41 --squash --sha x --auto-merge=false",
@@ -402,6 +405,8 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "git branch -D x",
         "git update-ref refs/heads/main x y",
         "gh pr update-branch 1",
+        "gh api --method PUT repos/o/r/pulls/41/merge-async",
+        "gh pr merge 41 --admin",
     ):
         assert not _covers(tools, refused), refused
 
@@ -415,6 +420,52 @@ def test_ship_it_never_writes_a_flag_that_bypasses_or_forces() -> None:
         words = shlex.split(command.replace('"$(cat FILE)"', "FILE"))
         for flag in ("--force", "-f", "--admin", "--auto", "--delete-branch", "-A"):
             assert flag not in words, command
+
+
+def test_ship_it_fetches_without_forcing_or_writing_local_branches() -> None:
+    commands = re.findall(r"^git fetch .+$", SHIP_IT.read_text(), re.M)
+    assert commands
+    for command in commands:
+        words = shlex.split(command)[2:]
+        assert "--force" not in words and "-f" not in words, command
+        assert not any(word.startswith("+") for word in words), command
+        assert not any(
+            word.partition(":")[2].startswith("refs/heads/") for word in words
+        ), command
+
+
+def _bash_matches(rule: str, command: str) -> bool:
+    pattern = rule[5:-1]
+    # Claude Code's sole trailing wildcard also admits the bare command.
+    bare = pattern.endswith(" *") and pattern.count("*") == 1
+    return fnmatch.fnmatchcase(command, pattern) or (bare and command == pattern[:-2])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git fetch --force",
+        "git fetch -f",
+        "git fetch --force origin SHA",
+        "git fetch -f origin SHA",
+        "git fetch origin --force SHA",
+        "git fetch origin -f SHA",
+        "git fetch origin SHA --force",
+        "git fetch origin SHA -f",
+        "git fetch origin +SHA:refs/heads/main",
+        "git fetch origin SHA +refs/heads/main:refs/remotes/origin/main",
+    ],
+)
+def test_preflight_denies_forced_fetch_forms(command: str) -> None:
+    denied = json.loads(RULES.read_text())["permissions"]["deny"]
+    assert any(_bash_matches(rule, command) for rule in denied)
+
+
+def test_preflight_keeps_the_ship_it_fetch_allowed() -> None:
+    rules = json.loads(RULES.read_text())["permissions"]
+    command = "git fetch origin SHA refs/heads/main:refs/remotes/origin/main"
+    assert any(_bash_matches(rule, command) for rule in rules["allow"])
+    assert not any(_bash_matches(rule, command) for rule in rules["deny"])
 
 
 def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
@@ -435,7 +486,7 @@ def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
         "git push --force-with-lease --force-if-includes",
         "gh pr create",
         "gh pr edit",
-        "gh pr merge",
+        "gw merge",
         "gh run rerun",
         "glab mr create",
         "glab mr update",
@@ -445,6 +496,39 @@ def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
         "gw branch create",
     ):
         assert publishing in allow, publishing
+
+
+def _codex_rules() -> list[dict]:
+    rights = (SHIP_IT.parent / "rights.md").read_text()
+    rules: list[dict] = []
+    code = re.search(r"```python\n(.*?)\n```", rights, re.S)
+    assert code
+    exec(code[1], {"prefix_rule": lambda **rule: rules.append(rule)})
+    return rules
+
+
+def test_codex_merge_rule_allows_only_the_merge_command() -> None:
+    rules = _codex_rules()
+    merge = [rule for rule in rules if rule["pattern"] == ["gw", "merge"]]
+    assert len(merge) == 1
+    assert merge[0]["decision"] == "allow"
+    for rule in rules:
+        assert rule["pattern"][:2] != ["gh", "api"]
+
+
+@pytest.mark.parametrize("flag", ["--force", "-f"])
+def test_codex_denies_fetch_with_a_leading_force_flag(flag: str) -> None:
+    rules = _codex_rules()
+    command = ["git", "fetch", flag, "origin", "SHA"]
+    assert any(
+        rule["decision"] == "forbidden"
+        and len(rule["pattern"]) <= len(command)
+        and all(
+            word in part if isinstance(part, list) else word == part
+            for word, part in zip(command, rule["pattern"], strict=False)
+        )
+        for rule in rules
+    )
 
 
 def test_preflight_runs_only_when_called_by_name() -> None:

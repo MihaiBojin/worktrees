@@ -19,7 +19,10 @@ answer at a terminal.
 `gw branch status` assesses loose local branches and `gw branch prune`
 deletes selected eligible refs. A checked-out branch appears only as a
 worktree. `gw ci-checks` reads one pull request's checks from the forge and writes
-nothing. Each shell plugin shortcut, such as `gwp!`, runs one of these with
+nothing. [`gw merge`](commands/merge.md) squashes one checked GitHub PR. It waits
+for lower stack members and the head rewrite, reports `head-moved` at exit 4
+when that rewrite changes the head, and reports queue submission separately
+from a completed merge. Each shell plugin shortcut, such as `gwp!`, runs one of these with
 fixed words, and `gw --help` lists them under the command they run.
 `gw fast-forward` brings the current branch level with the head ref, and
 [its page](commands/fast-forward.md) gives the order of its checks and its

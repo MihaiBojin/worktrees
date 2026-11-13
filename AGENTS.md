@@ -199,7 +199,7 @@ assumes a plugin root or a checkout at a known path.
 | `ci-checks` | `gw ci-checks --json`, `--wait` to wait without polling |
 | `describe-pr` | checks a review's title and body against its diff, and edits them |
 | `prune` | `gw prune --json` and `gw branch status --json`, then the removals approved |
-| `ship-it` | commits, `fast-forward`, a leased or plain push, `gh pr create`, `describe-pr`, `ci-checks`, fixes on the branch, `gh pr merge`, then `fast-forward` in the head branch's checkout, unassisted, for this checkout or each branch it is named; given numbers, those open reviews from `ci-checks` on |
+| `ship-it` | commits, `fast-forward`, a leased or plain push, `gh pr create`, `describe-pr`, `ci-checks`, fixes on the branch, `gw merge` on GitHub or `glab mr merge` on GitLab, then `fast-forward` in the head branch's checkout, unassisted, for this checkout or each branch it is named; given numbers, those open reviews from `ci-checks` on |
 | `preflight` | `jq` merges `preflight/rules.json` into the user's or the project's `.claude/settings.json`, after asking |
 
 `describe-pr` and `ship-it` share `describe-pr/format.md`: the
@@ -427,7 +427,7 @@ when eight threads are asking at once.
 `gw sync` fetches every remote with `--prune --tags --no-prune-tags`, the
 default first, updates the default remote's HEAD and queries the forge for
 every local branch tip on eight threads. Every other command but
-`gw version`, `gw list`, `gw ci-checks`, `gw fast-forward`, help and
+`gw version`, `gw list`, `gw ci-checks`, `gw merge`, `gw fast-forward`, help and
 completion runs the same `sync.run` first when
 `sync.due` says so: the default remote's refs time is null or at least
 `WORKTREES_SYNC_TTL` seconds old, 60 by default. The forge time is not read,
@@ -449,6 +449,15 @@ whole seconds is a usage error at exit 2.
 first, and `gw sync` and `gw ci-checks` refuse at exit 3. Every notice that would end
 `Run: gw sync` goes through `sync.hint`, which leaves that off offline,
 since it names a command that refuses there.
+
+`gw merge` squashes one GitHub PR at a supplied head SHA. It waits up to ten
+minutes, polling every five seconds, for lower stack members to merge, the
+base to match the stack base and the head to contain the latest parent merge.
+A rewritten head returns `head-moved` at exit 4 without submitting. It reads
+fresh CI and verifies membership and containment again before calling the
+asynchronous merge API, then polls a pending operation for one minute. `enqueued` is queued, not merged. Both clients call
+the same command; their rules admit `gw merge` without general `gh api`
+writes. [Merge](docs/commands/merge.md) describes the result and refusals.
 
 `gw ci-checks` reads one review and its checks from the forge each time it
 runs and writes nothing, the sync cache included. It never syncs first: its
