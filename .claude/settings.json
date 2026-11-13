@@ -1,6 +1,5 @@
 {
   "enabledPlugins": {
-    "release-notes@release-tools": true,
     "release@release-tools": true
   },
   "extraKnownMarketplaces": {
