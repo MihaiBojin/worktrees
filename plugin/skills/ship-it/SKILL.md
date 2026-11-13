@@ -217,12 +217,11 @@ Then run [the describe-pr skill](../describe-pr/SKILL.md) on it.
 
 ## 6. Release note
 
-When the agent has the release-notes plugin's `release-notes:write` skill,
-run it for this branch and review, then commit and push the changelog entry
-it writes, as in steps 2 and 4. When it has not, say in one line that no
-release note was written because the release-notes plugin is not
-installed, and go on. The note is optional, and organising it is the
-user's.
+When the agent has the release plugin's `release:write` skill, run it for
+this branch and review, then commit and push the changelog entry it writes,
+as in steps 2 and 4. When it has not, say in one line that no release note
+was written because the release plugin is not installed, and go on. The
+note is optional, and organising it is the user's.
 
 ## 7. CI
 

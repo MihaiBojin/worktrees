@@ -90,8 +90,8 @@ harness footers as they were, and says in its reply what it changed.
 to a merged pull request, and asking for it approves every step for that
 change: a branch off the head branch when you stand on it, commits by path,
 `gw fast-forward --autostash`, a leased or plain push, the pull request and
-its description, a release note through `release-notes:write` when the
-release-notes plugin is installed, the CI fixes, and the merge.
+its description, a release note through `release:write` when the release
+plugin is installed, the CI fixes, and the merge.
 
 `/worktrees:ship-it fix-parser` does the same for the branch `fix-parser`,
 in the worktree that has it checked out, or a new one when none does. On a
