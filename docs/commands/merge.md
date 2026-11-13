@@ -32,10 +32,11 @@ latest merge time each need containment. Each commit is read from
 A timeout refuses at exit 3 and names the condition still unmet.
 
 Once the stack settles, a head different from `--match-head-commit` returns
-`head-moved` at exit 4 with the new SHA in `sha`. Nothing is submitted. Fetch
-that head and the remote base, wait for CI on the new SHA, and rebuild the
-message and trailers from their merge base before retrying. The ship-it skill
-retries once per PR and stops on a second movement.
+`head-moved` at exit 4 with the new SHA in `sha`. Nothing is submitted. Run
+`gw ci-checks NUMBER --wait --json`, require that SHA and passed checks in a
+fresh snapshot, and rebuild the message with its non-null `pr.trailers`
+before retrying. The ship-it skill retries once per PR and stops on a second
+movement.
 
 An unchanged head needs fresh checks with `checksState: passed`, an open
 review that is ready, and merge state `CLEAN`, `HAS_HOOKS` or `UNSTABLE`.

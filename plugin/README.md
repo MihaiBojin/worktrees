@@ -106,10 +106,11 @@ worktree that holds the branch, never the main checkout. A pull request
 stacked on one that did not merge in the same run is not merged.
 
 It always squashes on GitHub and GitLab, keeping GitHub's ` (#NN)` subject
-and the branch's commit trailers. GitHub merges use `gw merge`, which waits
-for lower stack members and the head rewrite. A `head-moved` result causes
-one fetch, fresh CI and a rebuilt message before retrying; a second movement
-stops that PR. It never
+and the commit trailers from `gw ci-checks`'s `pr.trailers`. Null trailers
+stop the merge. GitHub merges use `gw merge`, which waits for lower stack
+members and the head rewrite. A `head-moved` result requires fresh CI on
+that SHA and a message rebuilt from that snapshot's trailers before one
+retry; a second movement stops that PR. It never
 uses `--admin`, `--auto` or `--delete-branch`, and reports a merge queue's
 entry as queued, never as merged. It stops and reports where a person has
 to decide, such as a conflict whose sides want incompatible things, a push

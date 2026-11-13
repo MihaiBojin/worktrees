@@ -258,10 +258,13 @@ outcome records `worktree_removed`, `branch_removed`, `retained`, `dropped`,
 `skipped`, `failed` and `destination`, along with its path and branch. `gw
 branch prune` reports `removed`, `failed`, `verdicts` and `outcomes`.
 
-`gw ci-checks --json` is the one JSON result the forge answers directly. `pr` has
+`gw ci-checks --json` reports a fresh forge snapshot. `pr` has
 `number`, `url`, `state`, `draft`, `headSha`, `headRef`, `baseRef`,
-`repository`, `source`, `mergeable` and `mergeStateStatus`. `checksState`
-is `passed`, `failed`, `pending`, `blocked` or `unknown`, and `stale: true`
+`repository`, `source`, `mergeable`, `mergeStateStatus` and `trailers`.
+`trailers` is an ordered list of unique commit trailers, or null when the
+complete list is unavailable. [CI checks](commands/ci-checks.md) describes
+its limits. `checksState` is `passed`, `failed`, `pending`, `blocked` or
+`unknown`, and `stale: true`
 forces `unknown`. Each of `checks` has `name`, `workflow`, `state`, `bucket`
 and `link`. `pipeline` is GitLab's head pipeline with its `association`:
 `head`, `merge-result` or `stale`. It is null on GitHub.

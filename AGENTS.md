@@ -489,13 +489,18 @@ patch-id input and creates no synthetic commits.
 The per-worktree checks run on eight threads. Mutations remain serial.
 
 `gw ci-checks` takes GitHub's review and checks from one `gh pr view` with
-`statusCheckRollup`, so both describe one head and nothing can go stale
-between them. It keeps the newest run per workflow and name, and a run with
+`statusCheckRollup` and `commits`. Commit messages and checks describe the
+same `headSha`. `pr.trailers` holds each trailer once, in commit order,
+oldest first, parsed with `git interpret-trailers --parse`. An incomplete
+commit list gives null trailers; GitHub's 100-commit cap also gives null.
+
+It keeps the newest run per workflow and name, and a run with
 no start time counts as newest, so a queued re-run supersedes the failure it
 repeats. GitLab needs several calls: the pipeline is read from the project
-that ran it, its jobs across every page, and the merge request again
-afterwards, and a change between the two reads is `stale`. A pipeline for
-another SHA is stale unless it is the merged-result pipeline whose parents
+that ran it, its jobs and the MR's commits across every page, then the merge
+request again. A change between the two reads is `stale` and clears the
+trailers. A pipeline for another SHA is stale unless it is the merged-result
+pipeline whose parents
 are the current head and the target's tip. `ci.wait` takes its clock and
 sleep as arguments, so its tests run in-process without waiting.
 

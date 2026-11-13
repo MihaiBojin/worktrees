@@ -25,8 +25,6 @@ allowed-tools:
   - Bash(git log:*)
   - Bash(git show:*)
   - Bash(git rev-parse:*)
-  - Bash(git fetch:*)
-  - Bash(git merge-base:*)
   - Bash(git switch --create:*)
   - Bash(git add --:*)
   - Bash(git commit:*)
@@ -302,21 +300,19 @@ last row. `DRAFT` is step 7's draft. `UNKNOWN` means GitHub has not worked
 it out yet, which is usual just after a push: read again a minute later,
 never merge on it, and report it only when it stays.
 
-Always squash on GitHub and GitLab. The message is the review's own title
-and body, which describe-pr made true:
+Always squash on GitHub and GitLab. Require `stale: false`,
+`checksState: passed` and a non-null `pr.trailers` in that fresh snapshot.
+Null trailers mean the complete commit list was unavailable: stop and
+report it. An empty array means the commits have no trailers.
 
-- Subject: the title, then ` (#NUMBER)`, as GitHub would have written it.
-- Body: the review body, without the lines that only make sense on a review
-  page, such as a `Generated with` footer, the auto-resolution block,
-  screenshots or task lists, and keeping any `release-note` block.
-- Then every trailer from the branch's commits, copied from this output
-  rather than retyped, once each:
+Use the review's title as the subject, followed by ` (#NUMBER)`, as GitHub
+would have written it. The body is the review body, without lines that only
+make sense on a review page, such as a `Generated with` footer, the
+auto-resolution block, screenshots or task lists. Keep any `release-note`
+block. Append the strings from that snapshot's `pr.trailers` in order,
+once each, copying their full values rather than retyping them. Preserve
+trailers already in the review body without duplicating them.
 
-```sh
-git log --reverse --format='%(trailers:only,unfold)' 'BASE_SHA..HEAD_SHA' | awk 'NF && !seen[$0]++'
-```
-
-`BASE_SHA` is the merge base of `pr.headSha` and the remote's `pr.baseRef`.
 Write the subject and body in your reply, under the review's URL, then
 write the message file with the Write tool. For GitHub, FILE contains the
 body. For GitLab, FILE contains the subject, a blank line and the body. Merge:
@@ -357,7 +353,7 @@ Read stdout, stderr and the exit status. JSON carries `status`, `pr`, `sha`,
 | `enqueued` | Report queued and leave dependent reviews waiting. |
 | `pending` | Report the request UUID and that the merge may still complete. Leave dependent reviews waiting. |
 | `failed` | Report `message` and leave dependent reviews waiting. |
-| `head-moved` | Fetch `sha`, repeat CI and rebuild the message as below; retry once for this PR. |
+| `head-moved` | Repeat CI for `sha` and rebuild the message from its trailers as below; retry once for this PR. |
 
 Exit 0 covers `merged` and `enqueued`; it alone does not prove a merge.
 Exit 1 covers `pending` and `failed`. Exit 4 is `head-moved`: nothing was
@@ -365,30 +361,19 @@ submitted. A refusal exits 3 with stderr and no JSON. An unknown command or
 invalid arguments exits 2. Report refusals as written. Do not retry through `gh pr merge` or `gh api`.
 
 On the first `head-moved` for this PR, record that its one retry is in use.
-`NEW_SHA` is the result's `sha`, and `BASE_BRANCH` is its `pr.baseRef`.
-Fetch both before reading any local commit range. Never prefix a fetch
-refspec with `+`, pass `--force` or `-f`, or write a destination under local
-`refs/heads/`. The destination below is a remote-tracking ref:
+`NEW_SHA` is the result's `sha`. Return to step 7 for this PR and run:
 
 ```sh
-git fetch 'REMOTE' 'NEW_SHA' 'refs/heads/BASE_BRANCH:refs/remotes/REMOTE/BASE_BRANCH'
+gw ci-checks NUMBER --wait --json
 ```
 
-A failed fetch is a stop. Return to step 7 for this PR and run
-`gw ci-checks NUMBER --wait --json`; require `pr.headSha` to equal `NEW_SHA`
-and `checksState` to be `passed`. Require `pr.baseRef` to equal
-`BASE_BRANCH`. A different head or base is another movement: stop and
-report it. Then repeat steps 8 and 9. Compute the trailer range
-from the fetched base and rewritten head:
-
-```sh
-git merge-base 'refs/remotes/REMOTE/BASE_BRANCH' 'NEW_SHA'
-```
-
-Use that output as `BASE_SHA` and `NEW_SHA` as `HEAD_SHA` in the trailer
-command. Write the subject and body again from the review and that range,
-then call `gw merge` with `NEW_SHA`. A second `head-moved` for this PR is a
-stop: report its new SHA and leave dependent reviews waiting.
+Require `pr.headSha` to equal `NEW_SHA`, `checksState` to be `passed`,
+`stale` to be false and `pr.trailers` to be non-null. A different head is
+another movement: stop and report it. Repeat steps 8 and 9 using that
+completed wait as step 9's fresh snapshot, including its merge-state check.
+Rebuild the message with that snapshot's `pr.trailers`, then call `gw merge`
+with `NEW_SHA`. A second `head-moved` for this PR is a stop: report its new
+SHA and leave dependent reviews waiting.
 
 After a pending result or an uncertain network failure, read the PR before
 any further merge attempt:

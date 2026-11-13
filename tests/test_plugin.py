@@ -4,7 +4,6 @@ prune skill runs read the JSON `gwp` and `gwbs` print."""
 
 from __future__ import annotations
 
-import fnmatch
 import json
 import re
 import shlex
@@ -61,6 +60,13 @@ def _frontmatter(path: Path) -> str:
 
 def _tools(path: Path) -> list[str]:
     return re.findall(r"^  - (.+)$", _frontmatter(path), re.M)
+
+
+@pytest.mark.parametrize("path", sorted(PLUGIN.glob("skills/**/*.md")))
+def test_skill_bodies_have_no_positional_substitutions(path: Path) -> None:
+    text = path.read_text()
+    body = text.split("---", 2)[-1] if text.startswith("---\n") else text
+    assert not re.search(r"\$\d", body), path
 
 
 # What a skill runs only with the user's say-so, or the harness's: removal,
@@ -370,7 +376,6 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "gw branch create fix-parser --json",
         "command gw add fix-parser --json",
         "git switch --create fix-parser",
-        "git fetch origin abc refs/heads/main:refs/remotes/origin/main",
         "gw fast-forward --autostash --json",
         "gw ci-checks 41 --wait --json",
         "git add -- README",
@@ -422,50 +427,33 @@ def test_ship_it_never_writes_a_flag_that_bypasses_or_forces() -> None:
             assert flag not in words, command
 
 
-def test_ship_it_fetches_without_forcing_or_writing_local_branches() -> None:
-    commands = re.findall(r"^git fetch .+$", SHIP_IT.read_text(), re.M)
-    assert commands
-    for command in commands:
-        words = shlex.split(command)[2:]
-        assert "--force" not in words and "-f" not in words, command
-        assert not any(word.startswith("+") for word in words), command
-        assert not any(
-            word.partition(":")[2].startswith("refs/heads/") for word in words
-        ), command
-
-
-def _bash_matches(rule: str, command: str) -> bool:
-    pattern = rule[5:-1]
-    # Claude Code's sole trailing wildcard also admits the bare command.
-    bare = pattern.endswith(" *") and pattern.count("*") == 1
-    return fnmatch.fnmatchcase(command, pattern) or (bare and command == pattern[:-2])
-
-
 @pytest.mark.parametrize(
     "command",
     [
-        "git fetch --force",
-        "git fetch -f",
-        "git fetch --force origin SHA",
-        "git fetch -f origin SHA",
-        "git fetch origin --force SHA",
-        "git fetch origin -f SHA",
-        "git fetch origin SHA --force",
-        "git fetch origin SHA -f",
+        "git fetch origin SHA",
         "git fetch origin +SHA:refs/heads/main",
-        "git fetch origin SHA +refs/heads/main:refs/remotes/origin/main",
+        "git fetch --force origin SHA:refs/heads/main",
+        "git fetch -f origin SHA:refs/heads/main",
+        "git merge-base HEAD origin/main",
     ],
 )
-def test_preflight_denies_forced_fetch_forms(command: str) -> None:
-    denied = json.loads(RULES.read_text())["permissions"]["deny"]
-    assert any(_bash_matches(rule, command) for rule in denied)
+def test_ship_it_does_not_preapprove_fetch_or_merge_base(command: str) -> None:
+    assert not _covers(_tools(SHIP_IT), command)
+    allowed = json.loads(RULES.read_text())["permissions"]["allow"]
+    assert not _covers([rule.replace(" *)", ":*)") for rule in allowed], command)
+    words = shlex.split(command)
+    for rule in _codex_rules():
+        if rule["decision"] == "allow":
+            assert not all(
+                word in part if isinstance(part, list) else word == part
+                for word, part in zip(words, rule["pattern"], strict=False)
+            ), rule
 
 
-def test_preflight_keeps_the_ship_it_fetch_allowed() -> None:
-    rules = json.loads(RULES.read_text())["permissions"]
-    command = "git fetch origin SHA refs/heads/main:refs/remotes/origin/main"
-    assert any(_bash_matches(rule, command) for rule in rules["allow"])
-    assert not any(_bash_matches(rule, command) for rule in rules["deny"])
+def test_ship_it_takes_trailers_from_ci_without_fetching() -> None:
+    body = SHIP_IT.read_text().split("---", 2)[-1]
+    assert "pr.trailers" in body
+    assert not re.search(r"\bgit (fetch|merge-base)\b|\bawk\b|BASE_SHA", body)
 
 
 def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
@@ -514,21 +502,6 @@ def test_codex_merge_rule_allows_only_the_merge_command() -> None:
     assert merge[0]["decision"] == "allow"
     for rule in rules:
         assert rule["pattern"][:2] != ["gh", "api"]
-
-
-@pytest.mark.parametrize("flag", ["--force", "-f"])
-def test_codex_denies_fetch_with_a_leading_force_flag(flag: str) -> None:
-    rules = _codex_rules()
-    command = ["git", "fetch", flag, "origin", "SHA"]
-    assert any(
-        rule["decision"] == "forbidden"
-        and len(rule["pattern"]) <= len(command)
-        and all(
-            word in part if isinstance(part, list) else word == part
-            for word, part in zip(command, rule["pattern"], strict=False)
-        )
-        for rule in rules
-    )
 
 
 def test_preflight_runs_only_when_called_by_name() -> None:

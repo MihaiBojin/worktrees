@@ -474,12 +474,15 @@ read, so read again. Each check carries `name`, `workflow`, the forge's own
 `state`, a `bucket` of `pass`, `fail`, `cancel`, `pending`, `skipping`,
 `blocked` or `unknown`, and a `link` to its log. `pr` holds the review's
 number, URL, state, draft flag, head and base, and its mergeability as the
-forge reports it. `passed` describes the checks, not whether the forge will
-merge: a required review still blocks it.
+forge reports it. `pr.trailers` holds the commits' trailers once each,
+oldest commit first, or null when the complete list is unavailable.
+[CI checks](docs/commands/ci-checks.md) describes the trailer limits.
+`passed` describes the checks, not whether the forge will merge: a required
+review still blocks it.
 
-GitHub answers in one `gh pr view`, so the review and its checks describe
-the same head; a re-run replaces the run it repeats. GitLab reads the merge
-request's head pipeline from the project that ran it, and reads the merge
+GitHub answers in one `gh pr view`, so the commit messages and checks
+describe the same head; a re-run replaces the run it repeats. GitLab reads
+the merge request's head pipeline from the project that ran it, and reads the merge
 request again afterwards. A pipeline for an older head is stale, unless it is
 a merged-result pipeline whose parents are the current head and the target's
 current tip.
