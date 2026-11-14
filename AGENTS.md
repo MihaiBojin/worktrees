@@ -133,6 +133,11 @@ never reading the cached one, since a pull request merged a moment ago is
 the usual reason to run it. Either failing is a refusal whose last line is
 the same command under `WORKTREES_OFFLINE=1`.
 
+A branch whose open request targets another branch with an open request,
+a stacked one, is levelled with that branch instead of the head ref:
+`fast_forward.stacked_on` reads both requests from the forge in the same
+run, and the branch below levels with the head ref in its own run.
+
 Every other branch keeps its name. One with no commits of its own
 fast-forwards and one with commits is rebased, both with `--no-autostash`
 unless `--autostash` is given: `merge.autoStash` and `rebase.autoStash`

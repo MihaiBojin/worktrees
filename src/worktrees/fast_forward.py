@@ -9,7 +9,9 @@ gets a name of its own. A branch whose first commits are in the head ref and
 which went on afterwards moves the same way when its own request merged them,
 carrying only the commits after the merged part; when another branch's did,
 as with a stacked branch whose parent merged, it keeps its name and drops the
-merged commits in place. The head branch itself only ever fast-forwards.
+merged commits in place. A branch whose open request targets another open
+request's branch, a stacked one, is rebased onto that branch instead, so the
+stack stays in order. The head branch itself only ever fast-forwards.
 """
 
 from __future__ import annotations
@@ -262,6 +264,16 @@ def fast_forward(
 
     local = f"refs/heads/{branch}"
     tip = R.local_sha(local, repo=repo).value
+    parent = stacked_on(branch, remote, head_name, repo) if live else ""
+    if parent:
+        # The parent is still open, so the branch is level with the parent's
+        # tip, not the head ref; the parent levels with the head ref itself.
+        _unnamed(name, start, f"{render.branch(branch)} is stacked on {parent}")
+        if merged.is_ancestor(parent, local, repo=repo):
+            sha = _short(local, repo=repo)
+            ahead = _count(parent, local, repo)
+            return Moved(CURRENT, branch, parent, sha, branch, sha, ahead=ahead)
+        return _replay(branch, parent, tip, None, None, stash, repo)
     head_sha = R.local_sha(base, repo=repo).value
     if merged.is_ancestor(base, local, repo=repo):
         _unnamed(name, start, f"{render.branch(branch)} already has {shown}")
@@ -425,6 +437,41 @@ def _replay(
         repo,
     )
     return moved
+
+
+def stacked_on(
+    branch: str,
+    remote: str,
+    head_branch: str,
+    repo: str | os.PathLike[str] | None = None,
+) -> str:
+    """The ref of the branch an open request stacks this one on, or nothing.
+
+    The branch's open request names its parent as the branch it targets. A
+    parent whose own newest request is no longer open has merged or closed,
+    and the rest of this module handles that branch as it always has.
+    """
+    if not remote or branch_forge.provider(remote, repo) is None:
+        return ""
+
+    def open_request(name: str) -> branch_forge.Request | None:
+        answered, request = branch_forge.fetch_request(name, remote, repo)
+        if not answered or request is None or request.state not in OPEN:
+            return None
+        return request if branch_forge.identified(request, remote, repo) else None
+
+    request = open_request(branch)
+    parent = request.target_branch if request else ""
+    if not parent or parent == head_branch or open_request(parent) is None:
+        return ""
+    for ref in (f"refs/heads/{parent}", f"refs/remotes/{remote}/{parent}"):
+        if R.ref_exists(ref, repo=repo):
+            return ref
+    return ""
+
+
+# GitHub's and GitLab's words for a request still open.
+OPEN = ("OPEN", "opened")
 
 
 def merged_request(

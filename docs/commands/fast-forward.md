@@ -49,12 +49,17 @@ What it does depends on the branch, checked in this order:
 4. The head branch fast-forwards with `git merge --ff-only`. Local commits on
    it are refused and listed, because a rebase would rewrite them, with the
    two commands that move them to a branch of their own.
-5. A branch that already contains the head ref is left alone: `current`.
-6. A branch proved finished, by the checks
+5. A branch whose open request targets another branch whose own request is
+   still open, a stacked one, is levelled with that branch rather than the
+   head ref, from the local copy when there is one: `rebased`, with `base`
+   naming it, or `current` when it already holds that branch's tip. The
+   branch below levels with the head ref in its own run.
+6. A branch that already contains the head ref is left alone: `current`.
+7. A branch proved finished, by the checks
    [branch status](branch-status.md) runs or by a verified merged request,
    keeps its name and its commits. The checkout moves to a new branch from
    the head ref: `rotated`.
-7. A branch whose first commits are in the head ref and which went on
+8. A branch whose first commits are in the head ref and which went on
    afterwards has a boundary: the newest commit below the tip with a proof,
    searched from the tip down, since the first of a squashed pair is not
    upstream on its own, or the source commit of a verified merged request.
@@ -78,15 +83,15 @@ What it does depends on the branch, checked in this order:
    where nothing says whose it was, the branch keeps its name and any
    request open from it, and drops the merged commits in place with the same
    `git rebase --onto`: `rebased`, with `carried` above zero.
-8. A branch whose tip is on the head ref's first-parent history has no commits
+9. A branch whose tip is on the head ref's first-parent history has no commits
    of its own and fast-forwards: `fast-forwarded`.
-9. A branch with commits of its own is rebased onto the head ref: `rebased`.
+10. A branch with commits of its own is rebased onto the head ref: `rebased`.
    The first commit that conflicts stops the rebase, and the files stay as
    git left them, markers included: `conflict`.
-10. A branch whose state cannot be told, such as one with no history in common
+11. A branch whose state cannot be told, such as one with no history in common
     with the head ref, is refused.
 
-A branch in step 5, 7 or 9 whose remote copy was rewritten elsewhere takes
+A branch in step 6, 8 or 10 whose remote copy was rewritten elsewhere takes
 that copy rather than being rebased. GitHub rewrites a stacked pull request's
 branch when the one below it merges: the same commits, committed again on the
 merge. The copy, `refs/remotes/REMOTE/BRANCH`, counts when no commit the
