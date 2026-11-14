@@ -345,6 +345,14 @@ def test_from_that_names_nothing_is_refused(world, start: str) -> None:
     assert world.git("symbolic-ref", "--short", "HEAD") == "fix-parser"
 
 
+def test_a_name_that_nests_with_a_branch_is_refused(world) -> None:
+    squashed(world)
+    world.git("branch", "next/one", "main")
+    with pytest.raises(Refusal, match="branch next/one exists"):
+        F.fast_forward("next")
+    assert world.git("symbolic-ref", "--short", "HEAD") == "fix-parser"
+
+
 def test_a_name_another_branch_holds_is_refused(world) -> None:
     squashed(world)
     world.git("branch", "taken", "main")

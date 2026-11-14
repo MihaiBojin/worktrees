@@ -15,6 +15,24 @@ def check_ref_format(name: str) -> None:
     """Would git accept this as a branch name?"""
 
 
+def refuse_nested(name: str, repo: str | os.PathLike[str] | None = None) -> None:
+    """Refuse `name` when a branch sits inside it or it sits inside one.
+
+    A ref is a path, so `codex` and `codex/plan` cannot both be branches.
+    Git's own refusal names refs and lock files, not the branch in the way.
+    """
+    for line in R.local_tips(repo=repo).lines:
+        held = line.partition("\0")[0]
+        if held.startswith(f"{name}/") or name.startswith(f"{held}/"):
+            outer = min(name, held, key=len)
+            raise Refusal(
+                f"cannot create branch {render.branch(name)}: "
+                f"branch {render.branch(held)} exists\n"
+                f"git cannot have both a branch {render.branch(outer)} "
+                f"and branches whose names start with {render.branch(outer + '/')}"
+            )
+
+
 @git("rev-parse --short $ref", ok=(0, 128))
 def short_sha(ref: str) -> None:
     """The short sha a ref names."""
@@ -60,6 +78,7 @@ def create(
             f"{render.branch(name)} is already a branch; "
             f"git switch {shlex.quote(name)} checks it out"
         )
+    refuse_nested(name, repo=repo)
 
     resolved = R.head(repo)
     if not resolved.ref:

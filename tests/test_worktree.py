@@ -494,48 +494,60 @@ def test_a_loose_match_ignores_the_path(world) -> None:
     assert [w.branch for w in pick.matches("/one/", rows)] == ["one"]
 
 
-def test_git_refuses_a_branch_under_an_existing_one(world) -> None:
-    """The raw behaviour: refs are files, so `feat` blocks `feat/oauth`."""
-    world.git("branch", "feat", "main")
-    dest = layout.destination("feat/oauth", str(world.repo))
+NESTED = [("feat", "feat/oauth"), ("feat/oauth", "feat")]
+
+
+@pytest.mark.parametrize(("held", "wanted"), NESTED)
+def test_git_refuses_a_branch_that_nests_with_another(world, held, wanted) -> None:
+    """The raw behaviour: refs are paths, so `feat` and `feat/oauth` exclude
+    each other, and git refuses only once it has the directory."""
+    world.git("branch", held, "main")
+    dest = layout.destination(wanted, str(world.repo))
     dest.parent.mkdir(parents=True)
     p = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(world.repo),
-            "worktree",
-            "add",
-            "-b",
-            "feat/oauth",
-            str(dest),
-        ],
+        ["git", "-C", str(world.repo), "worktree", "add", "-b", wanted, str(dest)],
         capture_output=True,
         text=True,
     )
     assert p.returncode != 0
-    assert "cannot lock ref" in p.stderr
+    assert f"'refs/heads/{held}' exists; cannot create 'refs/heads/{wanted}'" in (
+        p.stderr
+    )
     assert dest.parent.is_dir(), "git leaves the directory it was handed"
+
+
+@pytest.mark.parametrize(("held", "wanted"), NESTED)
+def test_add_refuses_a_branch_that_nests_with_another_before_making_anything(
+    world, held, wanted
+) -> None:
+    world.git("branch", held, "main")
+    p = run(world, "gw add", wanted)
+    assert p.returncode == 1
+    assert p.stdout == ""
+    assert p.stderr.endswith(
+        f"cannot create branch {wanted}: branch {held} exists\n"
+        "git cannot have both a branch feat and branches whose names start with feat/\n"
+    )
+    assert not layout.worktrees_root(str(world.repo)).exists()
 
 
 def test_add_names_the_directory_a_refusal_left_behind(world) -> None:
     """The directories go in before git is asked, so a refusal strands them."""
-    world.worktree("feat")
+    world.worktree("team/one")
     said: list[str] = []
     with pytest.raises(GitError):
-        W.add("feat/oauth", warn=said.append)
+        W.add("team/two", base="no-such-ref", warn=said.append)
 
-    left = layout.worktrees_root(str(world.repo)) / "feat" / "oauth"
+    left = layout.worktrees_root(str(world.repo)) / "team" / "two"
     assert left.is_dir()
     assert any(str(left) in line and "empty" in line for line in said), said
 
 
 def test_add_names_the_root_when_it_made_the_whole_tree(world) -> None:
     """Nothing was there, so everything it made is worth naming."""
-    world.git("branch", "feat", "main")
     said: list[str] = []
     with pytest.raises(GitError):
-        W.add("feat/oauth", warn=said.append)
+        W.add("feat/oauth", base="no-such-ref", warn=said.append)
 
     root = layout.worktrees_root(str(world.repo))
     assert any(str(root) in line and "empty" in line for line in said), said
@@ -543,11 +555,10 @@ def test_add_names_the_root_when_it_made_the_whole_tree(world) -> None:
 
 def test_add_says_nothing_when_the_parents_were_already_there(world) -> None:
     """Only what this call created is worth reporting."""
-    world.git("branch", "feat", "main")
     (layout.worktrees_root(str(world.repo)) / "feat" / "oauth").mkdir(parents=True)
     said: list[str] = []
     with pytest.raises(GitError):
-        W.add("feat/oauth", warn=said.append)
+        W.add("feat/oauth", base="no-such-ref", warn=said.append)
     assert not [line for line in said if "empty" in line], said
 
 

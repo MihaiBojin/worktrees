@@ -27,7 +27,13 @@ from . import repo as R
 from .errors import GitError
 from .errors import Refused as Unsafe
 from .git import git
-from .new_branch import Refusal, check_ref_format, short_sha, switch_create
+from .new_branch import (
+    Refusal,
+    check_ref_format,
+    refuse_nested,
+    short_sha,
+    switch_create,
+)
 
 CURRENT = "current"
 FAST_FORWARDED = "fast-forwarded"
@@ -654,6 +660,7 @@ def _rotate(
         raise Refusal(f"{render.branch(chosen)} is not a valid branch name")
     if R.ref_exists(f"refs/heads/{chosen}", repo=repo):
         raise Refusal(f"{render.branch(chosen)} is already a branch")
+    refuse_nested(chosen, repo=repo)
     if remote and R.ref_exists(f"refs/remotes/{remote}/{chosen}", repo=repo):
         raise Refusal(
             f"{render.ref(f'{remote}/{chosen}')} already exists; another NAME "
