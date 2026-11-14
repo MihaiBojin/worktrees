@@ -290,6 +290,18 @@ def test_filters_group_a_row_needing_two_values_and_count_a_dirty_one(world) -> 
     ]
     assert out["kept"] == 1
 
+    stashed = world.worktree("loose")
+    (stashed / "README").write_text("saved")
+    world.git("stash", "push", "-m", "saved", at=stashed)
+    world.git("worktree", "remove", str(stashed))
+    branches = _jq(_filter("gw branch status"), _json(world, "gw branch status"))
+    assert [v["branch"] for v in branches["empty"]] == ["loose"]
+    assert [v["branch"] for v in branches["stash_blocked"]] == ["loose"]
+    assert branches["empty"][0]["protections"] == [
+        "its branch has stashes; pass --delete empty --delete stashes",
+        "the branch is empty; pass --delete empty --delete stashes",
+    ]
+
 
 def test_branch_filter_preserves_sync_and_empty_rows(world) -> None:
     world.merged_branch("finished")
