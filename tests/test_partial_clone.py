@@ -31,14 +31,17 @@ def partial_clone(world) -> World:
     partial = World(world.root)
     partial.repo = clone
     partial.git("branch", "feature", "origin/feature")
+    checkout = world.root / "feature"
+    partial.git("worktree", "add", "--quiet", "--no-checkout", str(checkout), "feature")
+    # A clean checkout without the blobs: the index from trees alone, and no
+    # file in it expected on disk, so the worktree is not dirty and the
+    # verdict is the branch's.
+    partial.git("read-tree", "HEAD", at=checkout)
+    files = partial.git("ls-files", "-z", at=checkout).split("\0")
     partial.git(
-        "worktree",
-        "add",
-        "--quiet",
-        "--no-checkout",
-        str(world.root / "feature"),
-        "feature",
+        "update-index", "--skip-worktree", "--", *filter(None, files), at=checkout
     )
+    assert not partial.git("status", "--porcelain", at=checkout)
     return partial
 
 

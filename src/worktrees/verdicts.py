@@ -23,6 +23,8 @@ UNKNOWN = "unknown"
 # What `--delete all` grants a worktree.
 PERMISSIONS = frozenset(("empty", "stashes"))
 
+DIRTY = "it has uncommitted changes or untracked files"
+
 
 def restore_command(branch: str, sha: str) -> str:
     """`git branch NAME SHA`, the line that puts a deleted branch back.
@@ -65,11 +67,13 @@ class Verdict:
         self.protections = protections or []
         self.stashes = stashes or []
         self.eligible = verdict == REMOVE and not self.protections
-        # The --delete values that alone hold an ineligible row back; empty
-        # when no value would make it eligible.
+        # Every --delete value an ineligible row needs; empty when no value
+        # would make it eligible.
         self.needs: tuple[str, ...] = ()
-        # Whether --keep-branch would make an ineligible row eligible.
-        self.keep_branch_frees = False
+        # The --delete values that make an ineligible row eligible beside
+        # --keep-branch, when no --delete value alone does; None when
+        # --keep-branch would not.
+        self.keep_needs: tuple[str, ...] | None = None
 
     @property
     def label(self) -> str:
@@ -77,8 +81,11 @@ class Verdict:
 
     @property
     def reasons(self) -> list[str]:
-        """The evidence, then every protection that stands."""
-        return [self.evidence, *self.protections]
+        """The evidence, then every protection that stands.
+
+        A dirty worktree's evidence is its protection, said once.
+        """
+        return list(dict.fromkeys([self.evidence, *self.protections]))
 
     @property
     def why(self) -> str:
@@ -95,7 +102,9 @@ class Verdict:
             return []
         waived = self.keep_branch and bool(self.branch)
         unproved = self.verdict in (KEEP, UNKNOWN) and not waived
-        return ([self.evidence] if unproved else []) + self.protections
+        return list(
+            dict.fromkeys(([self.evidence] if unproved else []) + self.protections)
+        )
 
     @property
     def ignored(self) -> int:
@@ -207,7 +216,10 @@ def assess(
             progress.say(f"{wt.label}: reading its status")
             status = R.status_of(wt.path)
             if status.dirty:
-                protections.append("it has uncommitted changes or untracked files")
+                # Work the head branch does not hold, whatever the branch's
+                # own commits prove.
+                verdict, why = KEEP, DIRTY
+                protections.append(DIRTY)
             submodule = submodule_protection(wt.path)
             if submodule:
                 protections.append(submodule)
@@ -215,9 +227,12 @@ def assess(
             ignored_groups = tuple(R.ignored_groups(wt.path, status.ignored))
         stashes = prune.stashes_on(wt.branch, entries, wt.sha, repo)
 
-        def standing(granted: frozenset[str], keep: bool = keep_branch) -> list[str]:
-            """The protections left once these --delete values are granted."""
-            return protections + prune.branch_protections(
+        def standing(
+            granted: frozenset[str], keep: bool = keep_branch
+        ) -> list[tuple[str, str]]:
+            """The protections left once these --delete values are granted,
+            each with the value that lifts it, or '' when none does."""
+            return [("", text) for text in protections] + prune.branch_protections(
                 wt.branch, head_branch, verdict, stashes, granted, keep
             )
 
@@ -231,6 +246,14 @@ def assess(
             )
 
         granted = permissions
+        needs: tuple[str, ...] = ()
+        keep_needs = None
+        if not eligible(granted):
+            needs = prune.needed(eligible, PERMISSIONS) or ()
+            if not needs and not keep_branch:
+                keep_needs = prune.needed(
+                    lambda values: eligible(values, keep=True), PERMISSIONS
+                )
         row = Verdict(
             verdict,
             wt.branch,
@@ -240,21 +263,14 @@ def assess(
             wt.sha,
             proof=proof,
             request=request,
-            protections=standing(granted),
+            protections=prune.hinted(standing(granted), needs),
             stashes=stashes,
         )
         row.permissions = permissions
         row.keep_branch = keep_branch
         row.eligible = eligible(granted)
-        row.keep_branch_frees = not row.eligible and eligible(granted, keep=True)
-        # A value is needed when the row stays held back without it, every
-        # other value granted.
-        if not row.eligible and eligible(PERMISSIONS):
-            row.needs = tuple(
-                value
-                for value in sorted(PERMISSIONS)
-                if not eligible(PERMISSIONS - {value})
-            )
+        row.needs = needs
+        row.keep_needs = keep_needs
         row.snapshot = prune.Snapshot(
             state,
             wt.branch,

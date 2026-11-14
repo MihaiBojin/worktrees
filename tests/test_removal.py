@@ -104,9 +104,11 @@ def test_keep_branch_keeps_ref_and_stashes_even_when_protected(world, kind):
     assert not path.exists()
     assert world.git("rev-parse", f"refs/heads/{branch}") == tip
     assert world.git("rev-parse", "refs/stash") == sha
-    assert "retained" in p.stderr
-    assert f"git branch {branch} {tip}" in p.stderr
-    assert "git stash store -m" in p.stderr
+    assert f"branch {branch}: retained" in p.stderr
+    assert f"stash {sha}: retained" in p.stderr
+    assert f"  keep branch      {branch} at {tip[:7]}, and its stashes" in p.stderr
+    # Nothing it keeps needs a way back.
+    assert "restore with" not in p.stderr
 
 
 @pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch prune"])
@@ -518,7 +520,8 @@ def test_never_synced_disclosure_and_confirmation_survive_output_flags(world, en
     )
     assert code == 0, output
     assert "Never synced:" in output
-    assert "Never synced. Delete anyway?" in output
+    deletes = "1 branch" if entry == "gw branch prune" else "1 worktree and 1 branch"
+    assert f"Never synced. Delete {deletes} anyway?" in output
     assert "git branch topic" in output
     assert world.git("rev-parse", "topic")
 

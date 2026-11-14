@@ -431,7 +431,7 @@ def test_a_finished_branch_is_removed_with_its_ignored_files(world) -> None:
     p = run(world, "gw remove", "holds", "--yes")
     assert p.returncode == 0, p.stderr
     assert "is not finished" not in p.stderr
-    assert "deleting ignored, unrecoverable: .env" in p.stderr
+    assert "  delete ignored   .env, unrecoverable\n" in p.stderr
     assert not wt.exists()
 
 
@@ -446,7 +446,7 @@ def test_keep_branch_names_the_ignored_files_it_is_about_to_delete(world) -> Non
 
     p = run(world, "gw remove", "busy", "--yes", "--keep-branch")
     assert p.returncode == 0, p.stderr
-    assert "deleting ignored, unrecoverable: .env" in p.stderr
+    assert "  delete ignored   .env, unrecoverable\n" in p.stderr
     assert not wt.exists()
 
 

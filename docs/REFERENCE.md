@@ -48,6 +48,9 @@ Completion checks run in this order:
 4. Commits outside the head give `keep`; absent or invalid evidence gives
    `unknown`.
 
+A linked worktree with tracked changes or untracked files gives `keep`
+whatever these checks find, with that state as its evidence.
+
 The first-parent set is computed once per assessment. A divergent local
 counterpart does not extend it. Local content proof compares every changed
 path from merge base to branch tip with the head tree, including modes and
@@ -79,20 +82,28 @@ Ignored paths are deleted with the worktree and listed before confirmation.
 Branch stashes require `--delete stashes`; an `empty` verdict requires
 `--delete empty`. Repeated values combine, and `all` expands to both.
 `gw branch status` rejects `--delete`. Unsupported combinations fail at
-usage parsing before mutation. `--yes` grants neither permission.
+usage parsing before mutation. `--yes` grants neither permission. A
+protection these values lift ends with `pass --delete VALUE`, repeated for
+every value its row needs, only when those values make the row eligible. A
+preview's `--yes` line carries the `--delete` values and `--keep-branch`
+passed.
 
 `gw remove --keep-branch` retains the branch and stashes and needs no completion
 proof for the checkout. A detached checkout has no branch to keep its
 commits and still needs proof. It permits a checkout on a protected branch, while
 all other worktree protections remain. No `--delete` value can be combined
-with it.
+with it. When no `--delete` value alone makes a target eligible and
+`--keep-branch` does, `gw remove` names that command in full.
 
 ## Deletion and recovery
 
 Assessment pins the target path, branch ref and full SHA, assessed head ref
 and SHA, ignored path list, and matching stash SHAs and subjects. Disclosure
-prints the path and branch, branch restore command, each stash restore
-command and ignored path, sorted by name. An ignored path is shown as the
+prints one line for each thing deleted or kept, led by what happens to it:
+`delete worktree PATH`, `delete ignored PATH, unrecoverable` for each ignored
+path, sorted by name, `delete branch NAME at SHA` and `delete stash SHA` with
+their restore commands, or `keep branch NAME at SHA, and its stashes` under
+`--keep-branch`. An ignored path is shown as the
 pattern that matched it names it, from the top level, with a trailing `/` on
 a directory, whichever ignore file holds the pattern: `*.log` shows
 `build/out/a.log` and `build/out/b.log`, and `__pycache__` shows
@@ -104,8 +115,10 @@ escaped as `git status` does. After the list, the disclosure prints
 `git -C PATH ls-files --others --ignored --exclude-standard`, with the path
 quoted to paste, which lists every ignored file the entries cover.
 The JSON `ignored` field counts those entries.
-Quiet, JSON and automatic confirmation preserve that stderr disclosure. A never-synced repository asks
-`Never synced. Delete anyway?` unless `--yes` skips confirmation.
+Quiet, JSON and automatic confirmation preserve that stderr disclosure. The
+question counts each kind deleted, `delete 1 worktree and 1 branch?`, and a
+never-synced repository asks `Never synced. Delete 1 worktree and 1 branch
+anyway?`, unless `--yes` skips confirmation.
 
 After confirmation, the command assesses again and refuses changed targets,
 head identity, cleanliness, lock state, ignored paths or matching stashes.

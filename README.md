@@ -223,16 +223,19 @@ A checked-out branch appears only as its worktree, never as a loose branch.
 | --- | --- |
 | `remove` | a matching cached merged request, or local ancestry, squash or content proof |
 | `empty` | the tip is on the head ref's first-parent history |
-| `keep` | commits remain outside the head ref |
+| `keep` | commits remain outside the head ref, or the worktree has uncommitted changes or untracked files |
 | `unknown` | the CLI lacks valid evidence |
 
 `empty` includes unused branches and branches merged by fast-forward without
-forge proof. Git cannot distinguish them. A verdict describes completion;
-`eligible` also checks protections and the deletion permissions you supplied.
-After the table, `gw prune` lists every worktree it holds back with each
-reason, and `gw remove` does the same for its target. The main checkout is
-left out, since nothing removes it. The `keep` and `unknown` evidence counts
-as a reason; the evidence for `remove` and `empty` does not.
+forge proof. Git cannot distinguish them. A worktree with uncommitted changes
+or untracked files is `keep` whatever its branch proves, and those changes are
+its evidence. A verdict describes completion; `eligible` also checks
+protections and the deletion permissions you supplied. The WHY column gives
+the evidence, then each protection that stands. A protection that `--delete`
+values lift ends with every value its row needs, such as
+`pass --delete empty --delete stashes`, and only where those values make
+the row eligible. For a target it keeps, `gw remove` prints every reason, and
+names a command with `--keep-branch` when only that removes the worktree.
 
 The CLI never deletes `main`, `master` or the head branch. It never removes
 the main checkout, locked or dirty worktrees, worktrees with untracked files,
@@ -258,7 +261,9 @@ Repeat `--delete` to combine categories:
 usage error before mutation. `--delete empty` changes eligibility, not the
 verdict. When only missing values hold worktrees back, `gw prune` names
 the command that grants them, keeping the values you passed:
-`gw prune --delete empty makes fix-parser eligible`.
+`gw prune --delete empty makes fix-parser eligible`. Without a terminal,
+the line that names `--yes` carries the `--delete` values and
+`--keep-branch` you passed, so running it removes what was counted.
 
 ```console
 gw prune --delete empty --delete stashes
@@ -275,12 +280,15 @@ Every `--delete` value is a usage error with `--keep-branch`.
 
 Removal deletes a worktree's ignored files: build output, caches and
 virtual environments are what most of them are. They have no recovery
-command, since Git never recorded their contents, so before confirmation
-the CLI discloses the path and branch, the branch restore command, stashes
-with their restore commands, and the ignored paths it will delete, sorted
-by name. Each ignored path reads as the pattern that
-ignores it names it, from the top level, with a trailing `/` on a
-directory: `__pycache__` lists `src/pkg/__pycache__/`, never the tracked
+command, since Git never recorded their contents. Before confirmation, the
+CLI discloses each thing it deletes or keeps, one line each, led by what
+happens to it: `delete worktree` with its path, `delete ignored` for each
+ignored path, sorted by name, `delete branch` and `delete stash` with their
+restore commands, or `keep branch` under `--keep-branch`. The question
+counts each kind: `delete 1 worktree, 1 ignored path and 1 branch? [y/N]`.
+Each ignored path reads as the pattern that ignores it names it, from the
+top level, with a trailing `/` on a directory: `__pycache__` lists
+`src/pkg/__pycache__/`, never the tracked
 `src/` above it. A pattern for a directory's contents, such as
 `path/to/ignored/*`, lists that directory once as `path/to/ignored/`.
 Below the list, `git -C PATH ls-files --others --ignored --exclude-standard`

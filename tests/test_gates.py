@@ -133,8 +133,8 @@ def test_ignored_files_are_listed_and_removed_with_the_worktree(world) -> None:
 
     p = run(world, "gw remove", "holds", "--yes")
     assert p.returncode == 0, p.stderr
-    assert "deleting ignored, unrecoverable: .env\n" in p.stderr
-    assert "deleting ignored, unrecoverable: node_modules/\n" in p.stderr
+    assert "  delete ignored   .env, unrecoverable\n" in p.stderr
+    assert "  delete ignored   node_modules/, unrecoverable\n" in p.stderr
     assert not wt.exists()
 
 
@@ -264,8 +264,8 @@ def test_the_disclosure_and_the_count_use_the_listing(world) -> None:
     assert rows["main"]["ignoredPaths"] == []
     p = run(world, "gw prune", "--yes")
     assert p.returncode == 0, p.stderr
-    assert p.stderr.count("deleting ignored, unrecoverable:") == 2
-    assert "deleting ignored, unrecoverable: build/out/a.log\n" in p.stderr
+    assert p.stderr.count("  delete ignored   ") == 2
+    assert "  delete ignored   build/out/a.log, unrecoverable\n" in p.stderr
     assert not wt.exists()
 
 
@@ -285,7 +285,7 @@ def test_the_disclosure_names_the_command_that_lists_every_ignored_file(
         (wt / "cache" / name).write_text("x\n")
     code, out = run_on_a_terminal(world, "gw remove", "cached", answer="n\n")
     assert code == 0, out
-    assert "deleting ignored, unrecoverable: cache/\n" in out
+    assert "  delete ignored   cache/, unrecoverable\n" in out
     line = next(ln for ln in out.splitlines() if "list every ignored file: " in ln)
     command = shlex.split(line.split("list every ignored file: ", 1)[1])
     assert command[:3] == ["git", "-C", str(wt)]
@@ -305,9 +305,9 @@ def test_the_disclosure_escapes_what_would_not_print(world) -> None:
     p = run(world, "gw prune", "--yes")
     assert p.returncode == 0, p.stderr
     shown = [
-        line.removeprefix("  deleting ignored, unrecoverable: ")
+        line.removeprefix("  delete ignored   ").removesuffix(", unrecoverable")
         for line in p.stderr.split("\n")
-        if "deleting ignored" in line
+        if line.startswith("  delete ignored   ")
     ]
     assert sorted(shown) == ['"a\\033[31mb.log"', '"x\\ny.log"', "café.log"]
     assert "\x1b" not in p.stderr

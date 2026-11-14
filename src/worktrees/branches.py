@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, fields
 from . import merged, progress, prune
 from . import repo as R
 from .git import GitError, Refused, git
-from .verdicts import restore_command
+from .verdicts import PERMISSIONS, restore_command
 
 
 @git("for-each-ref --format='%(refname)%00%(objectname)%00%(symref)' refs/heads/")
@@ -115,21 +115,46 @@ def assess(
             row.stashes = prune.stashes_on(name, entries, sha)
             if symbolic:
                 row.protections.append("it is a symbolic branch ref")
-            row.protections += prune.branch_protections(
-                name, head_branch, row.verdict, row.stashes, permissions
+            row.eligible = _eligible(row, head_branch, permissions)
+            needs = () if row.eligible else _needs(row, head_branch)
+            row.protections += prune.hinted(
+                prune.branch_protections(
+                    name, head_branch, row.verdict, row.stashes, permissions
+                ),
+                needs,
             )
             row.permissions = permissions
             row.snapshot = prune.Snapshot(
                 state, name, sha, stashes=prune.stash_subjects(row.stashes, entries)
             )
-            row.eligible = (
-                row.verdict == "remove"
-                or (row.verdict == "empty" and "empty" in permissions)
-            ) and not row.protections
         except GitError as exc:
             row.error, row.evidence = True, str(exc)
 
     return rows
+
+
+def _eligible(row: Verdict, head_branch: str, granted: frozenset[str]) -> bool:
+    """Proved finished, and nothing left standing once `granted` is given.
+
+    `row.protections` holds only the rules no --delete value lifts.
+    """
+    branch = prune.branch_protections(
+        row.branch, head_branch, row.verdict, row.stashes, granted
+    )
+    return (
+        row.verdict == "remove" or (row.verdict == "empty" and "empty" in granted)
+    ) and not (row.protections or branch)
+
+
+def _needs(row: Verdict, head_branch: str) -> tuple[str, ...]:
+    """Every --delete value the row needs, or none when no value frees it."""
+    return (
+        prune.needed(
+            lambda granted: _eligible(row, head_branch, granted),
+            PERMISSIONS,
+        )
+        or ()
+    )
 
 
 def delete(

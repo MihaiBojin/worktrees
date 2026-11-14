@@ -29,8 +29,9 @@ and grants no permission. Unknown or unsupported values fail before mutation.
 
 Before confirmation, stderr lists branches and SHAs, their branch restore
 commands, and matching stashes with exact restore commands. Quiet and JSON
-keep the disclosure. Never-synced repositories ask
-`Never synced. Delete anyway?` unless `--yes` skips it.
+keep the disclosure. The question counts the branches and stashes it
+deletes, `delete 2 branches and 1 stash?`, and never-synced repositories ask
+`Never synced. Delete 2 branches and 1 stash anyway?`, unless `--yes` skips it.
 
 The recheck pins the branch SHA, head identity and matching stashes. Deletion
 uses `git update-ref --no-deref -d REF FULL_SHA`; the full SHA prevents a

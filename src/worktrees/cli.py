@@ -165,33 +165,23 @@ def _counted(rows: list[verdicts.Verdict]) -> str:
     return render.counted([v.verdict for v in rows]) + f"; {eligible} eligible"
 
 
-def _warn_held_back(rows: list[verdicts.Verdict], main: str = "") -> None:
-    """Every reason each row stays, one row to a line.
-
-    The main checkout is left out: nothing ever removes it.
-    """
-    held = [v for v in rows if v.held_back and v.path != main]
-    if held:
-        _warn(
-            "held back:\n"
-            + "\n".join(
-                f"{render.branch(v.label)}: {'; '.join(v.held_back)}" for v in held
-            )
-        )
-
-
 def _note_needs(args: argparse.Namespace, rows: list[verdicts.Verdict]) -> None:
     """Name the command that makes the rows only a permission holds back eligible.
 
     The command keeps the values already passed, so running it loses none.
     """
+    from . import prune
+
     held = [v for v in rows if v.needs]
     if not held:
         return
     values = {value for v in held for value in v.needs} | args.permissions
-    flags = " ".join(f"--delete {value}" for value in sorted(values))
     names = ", ".join(render.branch(v.label) for v in held)
-    _err(render.note(f"gw prune {flags} makes {names} eligible"))
+    _err(
+        render.note(
+            f"gw prune {prune.delete_flags(sorted(values))} makes {names} eligible"
+        )
+    )
 
 
 def add_status_flags(p: argparse.ArgumentParser) -> None:
@@ -445,10 +435,13 @@ def run_preview(args: argparse.Namespace) -> int:
                 f"{others} worktree(s) under {root} belong to another repository"
             )
         )
-    _warn_held_back(rows, main)
     _note_needs(args, rows)
     if go:
-        _err(render.note(f"gw prune --yes removes the {len(go)} marked removable"))
+        # With the values that made them eligible, or it removes fewer.
+        command = " ".join(
+            filter(None, ("gw prune", prune.delete_flags(args.permissions), "--yes"))
+        )
+        _err(render.note(f"{command} removes the {len(go)} marked removable"))
     return 0
 
 
@@ -480,10 +473,8 @@ def run_prune(args: argparse.Namespace) -> int:
     _require_head()
     prune.worktree_prune()
 
-    rows, _, _, _, records = _assess(args)
+    rows, *_ = _assess(args)
     go = prune.removable(rows)
-    # `worktrees` puts the main checkout first.
-    main = records[0].path if records else ""
 
     if not args.json:
         print(_verdict_table(rows), flush=True)
@@ -504,12 +495,10 @@ def run_prune(args: argparse.Namespace) -> int:
                 print(f"nothing to remove; {_counted(rows)}")
                 if len(rows) < 2:
                     _err(render.note(_NO_WORKTREES))
-                _warn_held_back(rows, main)
                 _note_needs(args, rows)
         return 0
 
     if not args.quiet:
-        _warn_held_back(rows, main)
         _note_needs(args, rows)
 
     # What goes, and what puts it back, before anything does. On stderr with
@@ -519,7 +508,9 @@ def run_prune(args: argparse.Namespace) -> int:
 
     # A Refused from here goes to _dispatch, which exits 3 for every refusal.
     # No terminal is one condition, so it is one code wherever it is met.
-    if not args.yes and not prune.confirm(len(go), never=prune.never_synced(go)):
+    if not args.yes and not prune.confirm(
+        prune.deletions(go), never=prune.never_synced(go)
+    ):
         _err(render.note("nothing removed"))
         return 0
 
@@ -1258,11 +1249,16 @@ def _remove_preview(args: argparse.Namespace, rows: list[verdicts.Verdict]) -> i
         return 0
     print()
     print(_counted(rows))
-    _warn_held_back(rows)
     if len(rows) == 1 and rows[0].eligible:
+        from . import prune
+
         sys.stdout.flush()
-        named = shlex.quote(rows[0].path)
-        _err(render.note(f"gw remove {named} --yes removes it"))
+        # With the flags that made it eligible, or it removes nothing.
+        flags = prune.delete_flags(args.permissions, args.keep_branch)
+        command = " ".join(
+            filter(None, ("gw remove", shlex.quote(rows[0].path), flags, "--yes"))
+        )
+        _err(render.note(f"{command} removes it"))
     return 0
 
 
@@ -1333,14 +1329,21 @@ def run_remove(args: argparse.Namespace) -> int:
     chosen = by_path[picked.path]
 
     if not chosen.eligible:
-        reasons = chosen.held_back
-        if chosen.keep_branch_frees:
-            reasons = [*reasons, "--keep-branch retains the branch"]
-        _err(render.fail(f"{render.branch(chosen.label)} kept: {'; '.join(reasons)}"))
+        reasons = "; ".join(chosen.held_back)
+        _err(render.fail(f"{render.branch(chosen.label)} kept: {reasons}"))
+        if chosen.keep_needs is not None:
+            flags = prune.delete_flags(chosen.keep_needs, keep_branch=True)
+            _err(
+                render.note(
+                    f"gw remove {shlex.quote(chosen.path)} {flags} removes the "
+                    "worktree and retains the branch"
+                )
+            )
         return 1
 
     prune.plan([chosen], _err, keep_branch=args.keep_branch)
-    if not args.yes and not prune.confirm(1, never=prune.never_synced([chosen])):
+    what = prune.deletions([chosen], keep_branch=args.keep_branch)
+    if not args.yes and not prune.confirm(what, never=prune.never_synced([chosen])):
         _err(render.note("nothing removed"))
         return 0
     if _same(chosen.path, here):

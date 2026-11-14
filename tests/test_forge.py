@@ -63,7 +63,8 @@ def test_cached_forge_proof_keeps_worktree_protections(world, network, protectio
         )
     else:
         row = worktree_status(world, network)
-    assert row["verdict"] == "remove"
+    # Uncommitted work is not in the request that merged, so it is kept.
+    assert row["verdict"] == ("keep" if protection == "dirty" else "remove")
     assert not row["eligible"]
     assert wt.exists()
 

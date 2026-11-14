@@ -32,7 +32,7 @@ Read worktrees, then loose branches, using these pipelines:
 
 ```sh
 gw prune --json | jq -c '
-def permission: test("^(the branch is empty; pass --delete empty|its branch has stashes; pass --delete stashes)$");
+def permission: test("^(the branch is empty|its branch has stashes); pass( --delete (empty|stashes))+$");
 def grantable: .eligible == false and (.verdict == "remove" or .verdict == "empty") and all(.protections[]; permission);
 {
   head, lastSync,
@@ -46,7 +46,7 @@ def grantable: .eligible == false and (.verdict == "remove" or .verdict == "empt
 
 ```sh
 gw branch status --json | jq -c '
-def permission: test("^(the branch is empty; pass --delete empty|its branch has stashes; pass --delete stashes)$");
+def permission: test("^(the branch is empty|its branch has stashes); pass( --delete (empty|stashes))+$");
 def grantable: .eligible == false and (.verdict == "remove" or .verdict == "empty") and all(.protections[]; permission);
 {
   head, lastSync,

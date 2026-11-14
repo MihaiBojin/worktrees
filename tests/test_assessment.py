@@ -111,7 +111,12 @@ def test_finished_worktree_protections_preserve_verdict(world, protection, detac
         (wt / "untracked").write_text("keep")
     result = rows(world, at=wt if protection == "current" else None)
     row = next(r for r in result if r["path"] == str(wt))
-    assert row["verdict"] == "remove"
+    # Changes the head branch does not hold are work to keep, whatever the
+    # branch's own commits prove.
+    dirty = protection in ("tracked", "untracked")
+    assert row["verdict"] == ("keep" if dirty else "remove")
+    if dirty:
+        assert row["why"] == "it has uncommitted changes or untracked files"
     assert not row["eligible"]
     assert row["protections"]
     assert wt.exists()
@@ -815,7 +820,7 @@ def test_prune_yes_approves_metadata_modes_with_category_permissions(
         assert not done.exists()
         assert not world.git("branch", "--list", "done")
         assert f"git branch done {tip}" in result.stderr
-        assert "deleting ignored, unrecoverable: kept.secret" in result.stderr
+        assert "  delete ignored   kept.secret, unrecoverable\n" in result.stderr
         assert "git stash store -m" in result.stderr
     else:
         assert (done / "kept.secret").read_bytes() == b"keep until approved\n"

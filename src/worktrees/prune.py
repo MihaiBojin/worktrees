@@ -6,7 +6,7 @@ import os
 import re
 import shlex
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -304,19 +304,44 @@ def branch_protections(
     stashes: list[str],
     permissions: frozenset[str] = frozenset(),
     keep_branch: bool = False,
-) -> list[str]:
-    """Branch rules that apply to loose refs and checked-out branches."""
-    reasons: list[str] = []
+) -> list[tuple[str, str]]:
+    """Branch rules that apply to loose refs and checked-out branches.
+
+    Each comes with the --delete value that lifts it, or '' when none does.
+    """
+    reasons: list[tuple[str, str]] = []
     if keep_branch and branch:
         return reasons
     if branch and branch in ("main", "master", head_branch):
-        # No --delete value frees a protected branch, so none is named.
-        return ["it is a protected branch"]
+        return [("", "it is a protected branch")]
     if stashes and "stashes" not in permissions:
-        reasons.append("its branch has stashes; pass --delete stashes")
+        reasons.append(("stashes", "its branch has stashes"))
     if verdict == "empty" and "empty" not in permissions:
-        reasons.append("the branch is empty; pass --delete empty")
+        reasons.append(("empty", "the branch is empty"))
     return reasons
+
+
+def needed(
+    eligible: Callable[[frozenset[str]], bool], values: frozenset[str]
+) -> tuple[str, ...] | None:
+    """Every --delete value a row needs to be eligible, or None when no set
+    of them makes it eligible."""
+    if not eligible(values):
+        return None
+    return tuple(v for v in sorted(values) if not eligible(values - {v}))
+
+
+def delete_flags(values: Iterable[str], keep_branch: bool = False) -> str:
+    """The flags that grant these values, as typed."""
+    words = ["--keep-branch"] if keep_branch else []
+    return " ".join(words + [f"--delete {value}" for value in sorted(values)])
+
+
+def hinted(protections: list[tuple[str, str]], needs: Sequence[str]) -> list[str]:
+    """Each protection as it reads, one that a needed value lifts ending with
+    every value the row needs, so following that hint alone frees it."""
+    hint = f"; pass {delete_flags(needs)}"
+    return [text + hint if value in needs else text for value, text in protections]
 
 
 def plan(
@@ -326,27 +351,25 @@ def plan(
     *,
     keep_branch: bool = False,
 ) -> None:
-    """Disclose the immutable assessed state before confirmation."""
+    """Disclose the immutable assessed state before confirmation: one line
+    for each thing that goes or stays, led by what happens to it."""
     for v in go:
         snapshot = v.snapshot
         if snapshot is None:
             raise Refused("no assessed deletion snapshot")
         for notice in snapshot.head.notices:
             say(render.note(notice))
-        say(
-            f"{render.branch(v.branch or '(detached)')}  "
-            f"{render.err(snapshot.path, render.DIM)}"
-        )
-        if v.branch:
-            say(f"  restore with: {render.restore(v.branch, snapshot.sha)}")
-            if keep_branch:
-                say("  branch and its stashes retained")
-        for sha, subject in snapshot.stashes:
-            say(f"  stash {sha}: git stash store -m {shlex.quote(subject)} {sha}")
+        say(render.branch(v.branch or "(detached)"))
+        if snapshot.path:
+            say(_line("delete worktree", render.err(snapshot.path, render.DIM)))
         for path in map(render.printable, snapshot.ignored_groups):
-            say(render.err(f"  deleting ignored, unrecoverable: {path}", render.YELLOW))
+            say(
+                render.err(
+                    _line("delete ignored", f"{path}, unrecoverable"), render.YELLOW
+                )
+            )
         if snapshot.ignored_groups:
-            # The list above names an ignored directory once; this lists every
+            # The lines above name an ignored directory once; this lists every
             # file in it, for a person to read before answering.
             listing = shlex.join(
                 [
@@ -359,7 +382,51 @@ def plan(
                     "--exclude-standard",
                 ]
             )
-            say(f"  list every ignored file: {render.command(listing)}")
+            say(_line("", f"list every ignored file: {render.command(listing)}"))
+        if not v.branch:
+            continue
+        short = render.err(snapshot.sha[:7], render.YELLOW)
+        at = f"{render.branch(v.branch)} at {short}"
+        if keep_branch:
+            kept = ", and its stashes" if snapshot.stashes else ""
+            say(_line("keep branch", f"{at}{kept}"))
+            continue
+        say(
+            _line(
+                "delete branch",
+                f"{at}, restore with: {render.restore(v.branch, snapshot.sha)}",
+            )
+        )
+        for sha, subject in snapshot.stashes:
+            restore = f"git stash store -m {shlex.quote(subject)} {sha}"
+            say(_line("delete stash", f"{sha[:7]}, restore with: {restore}"))
+
+
+def _line(label: str, value: str) -> str:
+    """A disclosure line, its values in one column under the longest label."""
+    return f"  {label:<15}  {value}"
+
+
+def deletions(
+    go: Sequence[Verdict | branches.Verdict], *, keep_branch: bool = False
+) -> str:
+    """What the disclosure deletes, counted by kind, for the question."""
+    snapshots = [v.snapshot for v in go if v.snapshot]
+    dropping = [s for s in snapshots if s.branch and not keep_branch]
+    counts = (
+        (sum(bool(s.path) for s in snapshots), "worktree", "worktrees"),
+        (
+            sum(len(s.ignored_groups) for s in snapshots),
+            "ignored path",
+            "ignored paths",
+        ),
+        (len(dropping), "branch", "branches"),
+        (sum(len(s.stashes) for s in dropping), "stash", "stashes"),
+    )
+    parts = [f"{n} {one if n == 1 else many}" for n, one, many in counts if n]
+    if len(parts) == 1:
+        return parts[0]
+    return f"{', '.join(parts[:-1])} and {parts[-1]}"
 
 
 def _prompt(text: str) -> str:
@@ -374,9 +441,10 @@ def _prompt(text: str) -> str:
 
 
 def confirm(
-    count: int, ask: Callable[[str], str] | None = None, *, never: bool = False
+    what: str, ask: Callable[[str], str] | None = None, *, never: bool = False
 ) -> bool:
-    """Ask before removing. Anything but yes is no.
+    """Ask before deleting `what`, as `deletions` counts it. Anything but yes
+    is no.
 
     A run whose stdin is not a terminal cannot answer, so it is refused
     rather than left to block: an agent or a pipe reaches this and would
@@ -385,12 +453,12 @@ def confirm(
     if ask is None:
         if not sys.stdin.isatty():
             raise Refused(
-                f"not a terminal, so nothing can answer for the {count} above; "
-                "pass --yes to remove them"
+                f"not a terminal, so nothing can answer for the {what} above; "
+                "pass --yes to delete them"
             )
         ask = _prompt
     question = render.ask(
-        "Never synced. Delete anyway?" if never else f"remove {count} worktree(s)?",
+        f"Never synced. Delete {what} anyway?" if never else f"delete {what}?",
         "[y/N]",
     )
     return ask(question).strip().lower() in ("y", "yes")
