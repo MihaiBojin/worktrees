@@ -126,6 +126,18 @@ def test_a_refusal_leaves_the_checkout_alone(world) -> None:
     assert world.git("symbolic-ref", "--short", "HEAD") == "main"
 
 
+@pytest.mark.parametrize(("held", "wanted"), [("feat", "feat/x"), ("feat/x", "feat")])
+def test_a_name_that_nests_with_a_branch_is_refused(world, held, wanted) -> None:
+    world.git("branch", held, "main")
+    p = branch_create(world, wanted)
+    assert p.returncode == 1
+    assert p.stderr.endswith(
+        f"cannot create branch {wanted}: branch {held} exists\n"
+        "git cannot have both a branch feat and branches whose names start with feat/\n"
+    )
+    assert world.git("symbolic-ref", "--short", "HEAD") == "main"
+
+
 def test_a_forced_checkout_is_refused(world) -> None:
     """The same class as reset --hard: it discards the working tree."""
     for words in (

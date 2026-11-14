@@ -13,7 +13,7 @@ from pathlib import Path
 from . import layout, prune, render
 from . import repo as R
 from .git import GitError, Refused, git
-from .new_branch import Refusal, check_ref_format
+from .new_branch import Refusal, check_ref_format, refuse_nested
 from .prune import _prune_empty_parents
 from .verdicts import REMOVE, Verdict, assess
 
@@ -57,6 +57,7 @@ def add(
     main = R.main_worktree(repo)
     if not main:
         raise Refusal("not inside a git repository")
+    refuse_nested(name, repo=repo)
     dest = layout.destination(name, main)
 
     for wt in R.worktrees(repo):
