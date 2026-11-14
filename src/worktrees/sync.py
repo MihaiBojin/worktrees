@@ -5,12 +5,11 @@ from __future__ import annotations
 import json
 import os
 import re
-import tempfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import branch_forge, forge, progress, render
+from . import progress, render
 from . import repo as R
 
 _CACHE = "git-worktrees-sync.json"
@@ -180,6 +179,8 @@ def head_line(head: R.Head) -> str:
 
 
 def _write(cached: dict, repo: str | os.PathLike[str] | None) -> None:
+    import tempfile
+
     cache_path = path(repo)
     if cache_path is None:
         raise OSError("not inside a git repository")
@@ -361,6 +362,10 @@ def run(
         "lastSync": {**previous["lastSync"], "refs": now},
         "branches": {},
     }
+    # Only a sync reads the forge, and `gw version` prints the head line from
+    # this module without one.
+    from . import branch_forge, forge
+
     provider = branch_forge.provider(remote, repo)
     if provider is None:
         cached["lastSync"]["forge"] = None

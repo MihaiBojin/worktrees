@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import shlex
 import sys
@@ -1186,17 +1187,11 @@ def run_list(args: argparse.Namespace) -> int:
     if args.explain:
         return _explain()
 
+    if args.complete:
+        return _complete_worktrees(include_main=True)
+
     here = R.toplevel().value
     rows = [w for w in R.worktrees() if "bare" not in w.flags]
-
-    if args.complete:
-        # Every one of them the protocol can carry, the current included: the
-        # shell does the narrowing, and a completion that hides a candidate is
-        # worse than one that offers a useless one.
-        for w in rows:
-            if _offerable(w.path):
-                print(f"{w.label}\t{w.path}")
-        return 0
 
     found = pick.matches(args.query, rows)
 
@@ -1354,13 +1349,7 @@ def run_remove(args: argparse.Namespace) -> int:
         return _explain()
 
     if args.complete:
-        # Every worktree this can reach, and no verdict: whether a branch is
-        # finished is what gw remove works out after you pick one, not what decides
-        # whether its name can be typed. No fetch either, so TAB stays fast.
-        for w in R.worktrees():
-            if "bare" not in w.flags and not w.main and _offerable(w.path):
-                print(f"{w.label}\t{w.path}")
-        return 0
+        return _complete_worktrees(include_main=False)
 
     # Assess cached evidence and protections before offering candidates.
     _require_head()
@@ -1593,6 +1582,71 @@ def _complete_commands() -> int:
     return 0
 
 
+def _complete_worktrees(include_main: bool) -> int:
+    """The worktrees `gw list` or `gw remove` can reach, for the completions.
+
+    No verdict and no fetch, so TAB stays fast: whether a branch is finished is
+    what gw remove works out after you pick one, not what decides whether its
+    name can be typed. `gw list` offers every one the protocol can carry, the
+    current included, since the shell does the narrowing and a completion that
+    hides a candidate is worse than one that offers a useless one.
+    """
+    from . import repo as R
+
+    for w in R.worktrees():
+        if "bare" in w.flags or (w.main and not include_main):
+            continue
+        if _offerable(w.path):
+            print(f"{w.label}\t{w.path}")
+    return 0
+
+
+def _complete_branch_commands() -> int:
+    for name, command in _BRANCH_COMMANDS.items():
+        print(f"{name}\t{command.about}")
+    return 0
+
+
+def _complete_branches() -> int:
+    from .branch_cli import complete
+
+    return complete()
+
+
+def _fast_complete(words: list[str]) -> int | None:
+    """Answer a shell completion before any parser is built, or None.
+
+    Both shells ask one of a few fixed questions on every TAB, and building
+    the argparse tree costs more than answering them: on Python 3.14 a parser
+    imports `_colorize` as it is made. Only the exact words the completion
+    files send land here, so anything else gets the full parser and its
+    usage errors.
+    """
+    command = _CANONICAL.get(words[0]) if words else None
+    rest = words[1:]
+    answer: Callable[[], int]
+    if command in ("list", "remove") and not rest:
+        answer = functools.partial(_complete_worktrees, include_main=command == "list")
+    elif command == "branch" and not rest:
+        answer = _complete_branch_commands
+    elif command == "branch" and rest in (["status"], ["prune"]):
+        answer = _complete_branches
+    else:
+        return None
+    render.setup()
+    try:
+        return answer()
+    except KeyboardInterrupt:
+        _err("")
+        return 130
+    except Refused as exc:
+        _err(render.fail(str(exc)))
+        return 3
+    except GitError as exc:
+        _err(render.fail(str(exc)))
+        return 1
+
+
 # --------------------------------------------------------------------------
 # the command table
 # --------------------------------------------------------------------------
@@ -1656,9 +1710,7 @@ def run_branch(args: argparse.Namespace) -> int:
     if args.branch_command:
         return _BRANCH_COMMANDS[args.branch_command].run(args)
     if args.complete:
-        for name, command in _BRANCH_COMMANDS.items():
-            print(f"{name}\t{command.about}")
-        return 0
+        return _complete_branch_commands()
     p = _parser(args.prog, _COMMANDS["branch"].description)
     _add_branch_flags(p)
     p.print_help()
@@ -1961,6 +2013,10 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     args_in = sys.argv[1:] if argv is None else argv
     if args_in and args_in[0] == "--complete":
         return _complete_commands()
+    if args_in and args_in[-1] == "--complete":
+        answered = _fast_complete(args_in[:-1])
+        if answered is not None:
+            return answered
     if args_in in ([], ["-h"], ["--help"]):
         render.setup()
         return _guide()
@@ -2015,9 +2071,13 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
         values = getattr(args, "delete", [])
         if getattr(args, "keep_branch", False) and set(values) - {"reflog"}:
             raise _Stop("--keep-branch takes only --delete reflog", 2)
-        from .verdicts import PERMISSIONS
+        args.permissions = frozenset(values)
+        if "all" in values:
+            # Only here: verdicts pulls in the assessment, which costs every
+            # command that does not assess a tenth of its startup.
+            from .verdicts import PERMISSIONS
 
-        args.permissions = PERMISSIONS if "all" in values else frozenset(values)
+            args.permissions = PERMISSIONS
         if run is run_prune and args.only and args.yes:
             raise _Stop("--only cannot be combined with --yes", 2)
         # Forge commands read live evidence and do not sync local refs first.
