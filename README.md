@@ -613,6 +613,11 @@ through CI to its merge, prune finished worktrees and branches after
 asking, and add the permission rules shipping needs to Claude Code's
 settings.
 
+The skills handle branches, pull requests and merges in the checkout the
+session runs in, and never create a worktree. Creating and choosing
+worktrees is for a person, through `gw add` and `gw list`, or for the
+agent's client, as `claude --worktree` and `codex --worktree` do.
+
 ## Contributing
 
 See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for checks and release commands,

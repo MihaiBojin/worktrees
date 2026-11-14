@@ -15,6 +15,16 @@ reaches for one on its own when a task matches its description, except
 | `prune` | removes the worktrees and branches the CLI proves finished, after asking |
 | `preflight` | adds the permission rules `ship-it` needs to your Claude Code settings, after asking |
 
+## A session and its worktree
+
+The skills work on branches, pull requests and merges in the checkout the
+session runs in. None of them creates a worktree. The client creates the
+session's worktree (`claude --worktree`, `EnterWorktree`,
+`codex --worktree`), or a person does with `gw add` before the session
+starts. One worktree holds one branch after another: ship a branch, start
+the next with `new-branch`, and ship several at once with
+`ship-it BRANCH ...`, which switches the worktree to each in turn.
+
 ## Install
 
 The plugin is listed in the `mihaibojin` marketplace, pinned to a release
@@ -93,16 +103,18 @@ change: a branch off the head branch when you stand on it, commits by path,
 its description, a release note through `release:write` when the release
 plugin is installed, the CI fixes, and the merge.
 
-`/worktrees:ship-it fix-parser` does the same for the branch `fix-parser`,
-in the worktree that has it checked out, or a new one when none does. On a
+`/worktrees:ship-it fix-parser add-tests` does the same for each branch, one
+after another, switching this worktree to each. A branch checked out in
+another worktree is being worked on there: it is reported and left alone.
+In the main checkout it switches back to the head branch after each push. On a
 head branch that holds commits its remote does not, it starts the branch on
 them, ships it, then puts the head branch back where its remote is and
 prints the command that undoes that.
 
 `/worktrees:ship-it 41 42` ships open pull requests instead, one at a time
 and a stack bottom first. Asking approves pushing fixes to each one's
-branch, correcting its description and merging it once green, in the
-worktree that holds the branch, never the main checkout. A pull request
+branch, correcting its description and merging it once green, fixing each
+on its branch in this worktree. A pull request
 stacked on one that did not merge in the same run is not merged.
 
 It always squashes on GitHub and GitLab, keeping GitHub's ` (#NN)` subject
