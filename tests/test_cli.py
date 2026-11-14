@@ -114,10 +114,40 @@ def test_status_leaves_a_removable_worktree_alone(world) -> None:
     p = run(world, "gw prune")
     assert p.returncode == 0, p.stderr
     assert "remove" in p.stdout
-    assert "1 remove, 1 empty, 0 keep, 0 unknown; 1 eligible" in p.stdout
+    assert "1 remove, 1 keep; 1 eligible" in p.stdout
     assert "gw prune --yes removes the 1 marked removable" in p.stderr
     assert wt.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/done")
+
+
+@pytest.mark.parametrize(
+    ("entry", "flags", "says"),
+    [
+        ("gw prune", ["--delete", "empty"], "removes the 1 marked removable"),
+        ("gw remove", ["idle", "--delete", "empty"], "removes it"),
+        ("gw remove", ["open", "--keep-branch"], "removes it"),
+    ],
+)
+def test_the_command_a_preview_names_removes_what_it_counted(
+    world, entry, flags, says
+) -> None:
+    """The `--yes` line keeps the flags that made the row eligible, so running
+    it removes the row rather than finding it held back."""
+    idle = world.worktree("idle")
+    open_ = world.worktree("open")
+    world.commit("unmerged", at=open_)
+    target = open_ if "open" in flags else idle
+
+    p = run(world, entry, *flags)
+    assert p.returncode == 0, p.stderr
+    line = next(ln for ln in p.stderr.splitlines() if ln.endswith(f" {says}"))
+    words = shlex.split(line.removesuffix(f" {says}"))
+    assert words[-1] == "--yes"
+    assert set(flags[1:] if entry == "gw remove" else flags) <= set(words)
+
+    p = run(world, " ".join(words[:2]), *words[2:])
+    assert p.returncode == 0, p.stderr
+    assert not target.exists()
 
 
 def test_status_says_when_there_is_nothing(world) -> None:
@@ -156,7 +186,8 @@ def test_json_carries_the_ignored_count_as_a_number(world) -> None:
     rows = {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
     row = rows["holds-secrets"]
     assert row["ignored"] == 1
-    assert row["verdict"] == "empty"
+    # A fast-forward only moved it: no commit was made on it.
+    assert (row["verdict"], row["reason"]) == ("keep", "unused")
     assert not row["eligible"]
     assert rows["main"]["ignored"] == 0
     assert "ignored" not in row["why"]
@@ -262,9 +293,32 @@ def test_prune_asks_before_removing(world) -> None:
     wt = world.merged_worktree("done")
     code, out = run_on_a_terminal(world, "gw prune", answer="y\n")
     assert code == 0, out
-    assert "remove 1 worktree(s)? [y/N]" in out
-    assert "restore with: git branch done " in out
+    assert f"done\n  delete worktree  {wt}\n" in out
+    assert "  delete branch    done at " in out
+    assert ", restore with: git branch done " in out
+    assert "delete 1 worktree and 1 branch? [y/N]" in out
     assert not wt.exists()
+
+
+def test_the_question_counts_each_kind_it_deletes(world) -> None:
+    """A stash and an ignored path go with the worktree, so the question says
+    so, and the disclosure gives each its own line."""
+    world.commit(".gitignore", ".env\n")
+    wt = world.merged_worktree("done")
+    (wt / ".env").write_text("S=1\n")
+    (wt / "README").write_text("saved\n")
+    world.git("stash", "push", "--quiet", "-m", "saved", at=wt)
+    stash = world.git("rev-parse", "refs/stash")
+
+    code, out = run_on_a_terminal(world, "gw prune", "--delete", "all", answer="n\n")
+    assert code == 0, out
+    assert "  delete ignored   .env, unrecoverable\n" in out
+    assert (
+        f"  delete stash     {stash[:7]}, restore with: "
+        f"git stash store -m 'On done: saved' {stash}\n"
+    ) in out
+    assert "delete 1 worktree, 1 ignored path, 1 branch and 1 stash? [y/N]" in out
+    assert wt.exists()
 
 
 def test_answering_no_removes_nothing(world) -> None:
@@ -310,7 +364,7 @@ def test_no_terminal_is_one_exit_code(world) -> None:
     [("y", True), ("Y", True), ("yes", True), ("n", False), ("", False), ("q", False)],
 )
 def test_confirm_takes_yes_and_nothing_else(answer: str, expected: bool) -> None:
-    assert prune.confirm(1, ask=lambda _: answer) is expected
+    assert prune.confirm("1 worktree", ask=lambda _: answer) is expected
 
 
 def test_prune_deletes_the_branch_and_the_empty_parents(world) -> None:
@@ -380,46 +434,65 @@ def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
     assert p.returncode == 0, p.stderr
     assert "busy" in p.stdout
     assert "it has uncommitted changes" in p.stdout
-    assert (
-        "nothing to remove; 0 remove, 2 empty, 0 keep, 0 unknown; 0 eligible"
-        in p.stdout
-    )
+    assert "nothing to remove; 0 remove, 2 keep; 0 eligible" in p.stdout
     # The temporary root can hold the letters, as pytest-xdist's popen-gw0 does.
     assert "gw" not in p.stdout.replace(str(world.root), "")
 
 
-def test_prune_says_every_reason_a_worktree_is_held_back(world) -> None:
-    """`nothing to remove` beside a `remove` verdict is not a dead end.
+def test_a_hint_names_every_value_its_row_needs_and_only_a_row_they_free(
+    world,
+) -> None:
+    """Following a `pass --delete` hint alone removes its row.
 
-    Each worktree held back is listed with every reason: the evidence only
-    when it proves nothing finished, and the main checkout not at all, since
-    nothing removes it. A worktree only --delete values hold back is named
-    with the command that grants them; a dirty one is not, since no value
-    lifts that.
+    A row the values cannot free carries none: a dirty worktree reads `keep`
+    with its changes as the evidence, said once, and an unfinished one names
+    only its commits. The table holds every reason, and nothing below it
+    repeats them.
     """
     world.commit(".gitignore", ".env\n")
-    done = world.merged_worktree("done")
-    (done / ".env").write_text("S=1\n")
     idle = world.worktree("idle")
     (idle / ".env").write_text("S=1\n")
-    (world.worktree("busy") / "wip").write_text("x")
-    world.commit("unmerged", at=world.worktree("open"))
-    lines = {
-        "idle": "idle: the branch is empty; pass --delete empty",
-        "busy": "busy: it has uncommitted changes or untracked files; "
-        "the branch is empty; pass --delete empty",
-        "open": "open: its commits are not contained in the head branch",
+    stashed = world.worktree("stashed")
+    (stashed / "README").write_text("saved\n")
+    world.git("stash", "push", "--quiet", "-m", "saved", at=stashed)
+    busy = world.worktree("busy")
+    (busy / "wip").write_text("x")
+    open_ = world.worktree("open")
+    world.commit("unmerged", at=open_)
+    both = "pass --delete empty --delete stashes"
+    dirty = "it has uncommitted changes or untracked files"
+    expected = {
+        "idle": ("keep", ["the branch is empty; pass --delete empty"]),
+        "stashed": (
+            "keep",
+            [f"its branch has stashes; {both}", f"the branch is empty; {both}"],
+        ),
+        "busy": ("keep", [dirty]),
+        "open": ("keep", []),
     }
 
-    for flags in ((), ("--yes",)):
-        p = run(world, "gw prune", *flags)
+    p = run(world, "gw prune", "--json")
+    rows = {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
+    assert {
+        name: (rows[name]["verdict"], rows[name]["protections"]) for name in expected
+    } == expected
+    assert rows["busy"]["why"] == dirty
+
+    p = run(world, "gw prune")
+    assert p.returncode == 0, p.stderr
+    assert "held back" not in p.stderr
+    assert p.stdout.count(dirty) == 1
+    assert (
+        "gw prune --delete empty --delete stashes makes idle, stashed eligible"
+        in p.stderr
+    )
+
+    for name, path in (("idle", idle), ("stashed", stashed)):
+        hint = rows[name]["protections"][0].split("; pass ", 1)[1]
+        p = run(world, "gw prune", *shlex.split(hint), "--yes")
         assert p.returncode == 0, p.stderr
-        shown = p.stderr.split("held back:\n", 1)[1].splitlines()
-        assert sorted(shown[:3]) == sorted(lines.values()), p.stderr
-        assert "gw prune --delete empty makes idle eligible" in p.stderr
-    assert "deleting ignored, unrecoverable: .env\n" in p.stderr
-    assert not done.exists()
-    assert idle.exists()
+        assert not path.exists()
+    assert busy.exists() and open_.exists()
 
 
 def test_a_protected_branch_names_no_delete_value(world) -> None:
@@ -432,7 +505,8 @@ def test_a_protected_branch_names_no_delete_value(world) -> None:
     p = run(world, "gw prune", "--json")
     assert p.returncode == 0, p.stderr
     (row,) = [v for v in json.loads(p.stdout)["verdicts"] if v["branch"] == "main"]
-    assert row["verdict"] == "empty" and row["stashes"]
+    assert (row["verdict"], row["reason"]) == ("keep", "main-checkout")
+    assert row["stashes"]
     assert row["protections"] == [
         "it is the main checkout, and never removable",
         "it is a protected branch",
@@ -444,16 +518,16 @@ def test_the_table_prints_each_reason_on_its_own_line(world) -> None:
     `why` keeps them on one line. A reason naming its flag stays one line."""
     world.commit(".gitignore", ".env\n")
     idle = world.worktree("idle")
-    (idle / ".gitignore").write_text("changed\n")
-    world.git("stash", "push", "--quiet", "-m", "wip", at=idle)
-    (idle / "wip").write_text("x")
+    (idle / "README").write_text("saved\n")
+    world.git("stash", "push", "--quiet", "-m", "saved", at=idle)
+    every = "pass --delete empty --delete stashes"
     reasons = [
         "its tip is on the head ref's first-parent history",
-        "it has uncommitted changes or untracked files",
-        "its branch has stashes; pass --delete stashes",
+        f"its branch has stashes; {every}",
+        f"the branch is empty; {every}",
     ]
 
-    p = run(world, "gw prune", "--table", "--delete", "empty")
+    p = run(world, "gw prune", "--table")
     assert p.returncode == 0, p.stderr
     lines = p.stdout.splitlines()
     at = next(i for i, line in enumerate(lines) if line.startswith("idle "))
@@ -462,7 +536,7 @@ def test_the_table_prints_each_reason_on_its_own_line(world) -> None:
     assert [line[column:] for line in lines[at + 1 : at + 3]] == reasons[1:]
     assert all(not line[:column].strip() for line in lines[at + 1 : at + 3])
 
-    p = run(world, "gw prune", "--json", "--delete", "empty")
+    p = run(world, "gw prune", "--json")
     (row,) = [v for v in json.loads(p.stdout)["verdicts"] if v["branch"] == "idle"]
     assert row["why"] == "; ".join(reasons)
 
@@ -901,9 +975,9 @@ def test_list_moves_with_the_arrow_keys_and_picks_on_enter(world) -> None:
             (
                 "remove",
                 ("one",),
-                "remove 1 worktree(s)? [y/N] ",
+                "delete 1 worktree and 1 branch? [y/N] ",
             ),
-            ("prune", (), "remove 2 worktree(s)? [y/N] "),
+            ("prune", (), "delete 2 worktrees and 2 branches? [y/N] "),
         )
         for entry, prefix in (
             (entry, (name,))
@@ -972,13 +1046,16 @@ def test_status_lists_the_main_checkout_and_never_proposes_it(world) -> None:
     assert p.returncode == 0, p.stderr
     assert "it is the main checkout, and never removable" in p.stdout
     assert "ELIGIBLE" in p.stdout
-    assert "1 remove, 1 empty, 0 keep, 0 unknown; 1 eligible" in p.stdout
+    assert "1 remove, 1 keep; 1 eligible" in p.stdout
     rows = {
         v["branch"]: v
         for v in json.loads(run(world, "gw prune", "--json").stdout)["verdicts"]
     }
     assert set(rows) == {"main", "done"}
-    assert rows["main"]["verdict"] == "empty"
+    assert (rows["main"]["verdict"], rows["main"]["reason"]) == (
+        "keep",
+        "main-checkout",
+    )
     assert not rows["main"]["eligible"]
 
 
@@ -1027,7 +1104,7 @@ def test_remove_lists_ignored_files_before_confirming_on_a_terminal(world) -> No
 
     code, out = run_on_a_terminal(world, "gw remove", "holds", answer="n\n")
     assert code == 0, out
-    assert "deleting ignored, unrecoverable: .env" in out
+    assert "  delete ignored   .env, unrecoverable\n" in out
     assert "nothing removed" in out
     assert wt.exists()
 
@@ -1037,10 +1114,15 @@ def test_remove_lists_ignored_files_before_confirming_on_a_terminal(world) -> No
 
 
 def test_remove_suggests_keep_branch_only_where_it_would_remove(world) -> None:
-    """--keep-branch waives completion proof, and never uncommitted changes."""
+    """--keep-branch waives completion proof, and never uncommitted changes.
+
+    It is named only where no --delete value alone frees the worktree, in a
+    command that removes it.
+    """
     holds = world.merged_worktree("holds")
     (holds / "README.md").write_text("changed\n")
-    world.commit("b.txt", "b\n", at=world.worktree("open"))
+    open_ = world.worktree("open")
+    world.commit("b.txt", "b\n", at=open_)
 
     code, out = run_on_a_terminal(world, "gw remove", "holds", answer="")
     assert code == 1, out
@@ -1049,10 +1131,16 @@ def test_remove_suggests_keep_branch_only_where_it_would_remove(world) -> None:
 
     code, out = run_on_a_terminal(world, "gw remove", "open", answer="")
     assert code == 1, out
+    assert "open kept: its commits are only here, not in the head branch\n" in out
     assert (
-        "open kept: its commits are not contained in the head branch; "
-        "--keep-branch retains the branch"
+        f"gw remove {shlex.quote(str(open_))} --keep-branch removes the worktree "
+        "and retains the branch"
     ) in out
+
+    p = run(world, "gw remove", str(open_), "--keep-branch", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert not open_.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/open")
 
 
 def test_remove_asks_before_removing_an_unfinished_worktree_and_keeps_the_branch(
@@ -1064,7 +1152,10 @@ def test_remove_asks_before_removing_an_unfinished_worktree_and_keeps_the_branch
         world, "gw remove", "busy", "--keep-branch", answer="n\n"
     )
     assert code == 0, out
-    assert "branch and its stashes retained" in out
+    tip = world.git("rev-parse", "--short=7", "busy")
+    assert f"  keep branch      busy at {tip}\n" in out
+    assert "restore with" not in out
+    assert "delete 1 worktree? [y/N]" in out
     assert wt.exists()
 
     code, out = run_on_a_terminal(
@@ -1255,21 +1346,21 @@ def test_status_only_shows_the_verdicts_asked_for(world) -> None:
     world.merged_worktree("done")
     whole = run(world, "gw prune")
     assert whole.returncode == 0, whole.stderr
-    assert "empty" in whole.stdout
+    assert "main-checkout" in whole.stdout
 
     p = run(world, "gw prune", "--only", "remove")
     assert p.returncode == 0, p.stderr
     table, _, counts = p.stdout.partition("\n\n")
-    assert "empty" not in table
+    assert "main-checkout" not in table
     assert counts.strip() == whole.stdout.partition("\n\n")[2].strip()
 
 
 def test_status_only_narrows_json_too(world) -> None:
     world.merged_worktree("done")
-    p = run(world, "gw prune", "--json", "--only", "empty")
+    p = run(world, "gw prune", "--json", "--only", "keep")
     assert p.returncode == 0, p.stderr
     verdicts = [v["verdict"] for v in json.loads(p.stdout)["verdicts"]]
-    assert verdicts and set(verdicts) == {"empty"}
+    assert verdicts and set(verdicts) == {"keep"}
 
 
 def test_only_takes_no_verdict_that_does_not_exist(world) -> None:

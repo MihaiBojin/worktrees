@@ -32,29 +32,31 @@ Read worktrees, then loose branches, using these pipelines:
 
 ```sh
 gw prune --json | jq -c '
-def permission: test("^(the branch is empty; pass --delete empty|its branch has stashes; pass --delete stashes)$");
-def grantable: .eligible == false and (.verdict == "remove" or .verdict == "empty") and all(.protections[]; permission);
+def grantable(value): .eligible == false and any(.needs[]; . == value);
 {
   head, lastSync,
   worktrees: [.verdicts[] | select(.eligible)],
-  empty: [.verdicts[] | select(.verdict == "empty" and grantable)],
-  stash_blocked: [.verdicts[] | select(grantable and (.stashes | length) > 0)],
-  kept: [.verdicts[] | select(.verdict == "keep")] | length,
-  unknown: [.verdicts[] | select(.verdict == "unknown")] | length
+  empty: [.verdicts[] | select(grantable("empty"))],
+  closed: [.verdicts[] | select(grantable("closed"))],
+  stash_blocked: [.verdicts[] | select(grantable("stashes"))],
+  reflog: [.verdicts[] | select(grantable("reflog"))],
+  kept: [.verdicts[] | select(.eligible == false and (.needs | length) == 0 and .reason != "main-checkout")] | length,
+  unknown: [.verdicts[] | select(.reason == "unknown")] | length
 }'
 ```
 
 ```sh
 gw branch status --json | jq -c '
-def permission: test("^(the branch is empty; pass --delete empty|its branch has stashes; pass --delete stashes)$");
-def grantable: .eligible == false and (.verdict == "remove" or .verdict == "empty") and all(.protections[]; permission);
+def grantable(value): .eligible == false and any(.needs[]; . == value);
 {
   head, lastSync,
   branches: [.verdicts[] | select(.eligible)],
-  empty: [.verdicts[] | select(.verdict == "empty" and grantable)],
-  stash_blocked: [.verdicts[] | select(grantable and (.stashes | length) > 0)],
-  kept: [.verdicts[] | select(.verdict == "keep")] | length,
-  unknown: [.verdicts[] | select(.verdict == "unknown")] | length
+  empty: [.verdicts[] | select(grantable("empty"))],
+  closed: [.verdicts[] | select(grantable("closed"))],
+  stash_blocked: [.verdicts[] | select(grantable("stashes"))],
+  reflog: [.verdicts[] | select(grantable("reflog"))],
+  kept: [.verdicts[] | select(.eligible == false and (.needs | length) == 0 and .reason != "main-checkout")] | length,
+  unknown: [.verdicts[] | select(.reason == "unknown")] | length
 }'
 ```
 
@@ -89,14 +91,16 @@ removal reply does not erase that sync choice or require asking again.
 ## Show candidates and ask what to remove
 
 Show eligible worktrees first, then eligible loose branches, with their
-proofs and worktree paths. List each worktree's `ignoredPaths` under it:
-removal deletes them, and they cannot be restored. The `empty` and
-`stash_blocked` groups hold
-only rows that the matching deletion permissions would make eligible; the
-main checkout, the current checkout, protected branches and `keep` rows never
-appear there. Show those groups separately, retaining all their protections; offer those categories
-only when the user asks. A row can
-have more than one blocker, so show every required permission.
+proofs, reasons and worktree paths. List each worktree's `ignoredPaths`
+under it: removal deletes them, and they cannot be restored. The `empty`,
+`closed`, `stash_blocked` and `reflog` groups hold only rows whose `needs`
+names that deletion permission, so the main checkout, the current checkout,
+protected branches and unfinished rows never appear there. Show those groups
+separately, retaining all their protections; offer those categories only
+when the user asks. A row can have more than one blocker, so show every
+value in its `needs`. For a `reflog` row, show the `git show SHA` commands
+its protection names, and offer `--delete reflog` only once the user has
+read them.
 
 A checked-out branch is already represented by its worktree and is absent
 from `gw branch status`. Never target the current checkout, even if the user names it;
@@ -112,10 +116,11 @@ A prior explicit selection and category approval for this cleanup already
 answers the question; do not ask again just because assessment was refreshed.
 
 Deletion permission covers only the category and targets the user approved:
-`empty` or `stashes`. `--yes` adds no permission. Explain that `empty`
-includes unused
-branches and fast-forward merges without forge proof. Keep other protections
-in place. If the user requests a blocked category, get the missing explicit
+`empty`, `closed`, `stashes` or `reflog`. `--yes` adds no permission. Explain
+that `empty` covers branches no commit was ever made on, that `closed`
+covers a closed, unmerged request whose head is the local tip, and that
+`reflog` drops commits nothing but the reflog holds, which git garbage
+collection then deletes. Keep other protections in place. If the user requests a blocked category, get the missing explicit
 permission before removing those rows. With no chosen targets, stop after
 the assessment.
 
@@ -141,7 +146,7 @@ Then invoke chosen loose branches, quoting every exact branch name:
 command gw branch prune 'NAME' 'OTHER_NAME' --yes
 ```
 
-Add only their approved `--delete empty` or `--delete stashes` values. Split
+Add only their approved `--delete` values. Split
 branch calls when their category approvals differ. Do not run bulk
 `gw prune` for a selective approval. The CLI reassesses before removing and can refuse
 changed targets. Use its commands rather than raw Git deletion or `rm`.

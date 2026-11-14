@@ -16,12 +16,38 @@ from . import repo as R
 from .git import git
 
 REMOVE = "remove"
-EMPTY = "empty"
 KEEP = "keep"
-UNKNOWN = "unknown"
 
-# What `--delete all` grants a worktree.
-PERMISSIONS = frozenset(("empty", "stashes"))
+# The checkout facts that decide a row before its branch does, in the order
+# the first one found is its reason.
+MAIN = "main-checkout"
+CURRENT = "current"
+LOCKED = "locked"
+MISSING = "missing"
+SUBMODULE = "submodule"
+IN_PROGRESS = "in-progress"
+UNCOMMITTED = "uncommitted"
+PROTECTED = "protected"
+
+# What the evidence leaves open; no --delete value settles it.
+UNFINISHED = frozenset((merged.OPEN, merged.PUSHED, merged.UNPUSHED, merged.UNKNOWN))
+# What lets a row go once its permission, if it has one, is given.
+DONE = frozenset((merged.MERGED, merged.STALE, merged.UNUSED, merged.CLOSED))
+
+# Every --delete value, and what `--delete all` grants.
+PERMISSIONS = frozenset(("empty", "stashes", "closed", "reflog"))
+
+DIRTY = "it has uncommitted changes or untracked files"
+
+# Files in a worktree's git directory while an operation waits for it.
+OPERATIONS = (
+    ("rebase-merge", "a rebase"),
+    ("rebase-apply", "a rebase or am"),
+    ("MERGE_HEAD", "a merge"),
+    ("CHERRY_PICK_HEAD", "a cherry-pick"),
+    ("REVERT_HEAD", "a revert"),
+    ("BISECT_LOG", "a bisect"),
+)
 
 
 def restore_command(branch: str, sha: str) -> str:
@@ -48,8 +74,11 @@ class Verdict:
         request: dict | None = None,
         protections: list[str] | None = None,
         stashes: list[str] | None = None,
+        reason: str = "",
     ) -> None:
         self.snapshot: Snapshot | None = None
+        # The fact that decides the row: a checkout fact, else its evidence.
+        self.reason = reason
         self.permissions: frozenset[str] = frozenset()
         self.keep_branch = False
         self.verdict = verdict
@@ -64,12 +93,14 @@ class Verdict:
         self.request = request
         self.protections = protections or []
         self.stashes = stashes or []
-        self.eligible = verdict == REMOVE and not self.protections
-        # The --delete values that alone hold an ineligible row back; empty
-        # when no value would make it eligible.
+        self.eligible = False
+        # Every --delete value an ineligible row needs; empty when no value
+        # would make it eligible.
         self.needs: tuple[str, ...] = ()
-        # Whether --keep-branch would make an ineligible row eligible.
-        self.keep_branch_frees = False
+        # The --delete values that make an ineligible row eligible beside
+        # --keep-branch, when no --delete value alone does; None when
+        # --keep-branch would not.
+        self.keep_needs: tuple[str, ...] | None = None
 
     @property
     def label(self) -> str:
@@ -77,8 +108,11 @@ class Verdict:
 
     @property
     def reasons(self) -> list[str]:
-        """The evidence, then every protection that stands."""
-        return [self.evidence, *self.protections]
+        """The evidence, then every protection that stands.
+
+        A dirty worktree's evidence is its protection, said once.
+        """
+        return list(dict.fromkeys([self.evidence, *self.protections]))
 
     @property
     def why(self) -> str:
@@ -94,8 +128,10 @@ class Verdict:
         if self.eligible:
             return []
         waived = self.keep_branch and bool(self.branch)
-        unproved = self.verdict in (KEEP, UNKNOWN) and not waived
-        return ([self.evidence] if unproved else []) + self.protections
+        unproved = self.reason in UNFINISHED and not waived
+        return list(
+            dict.fromkeys(([self.evidence] if unproved else []) + self.protections)
+        )
 
     @property
     def ignored(self) -> int:
@@ -120,6 +156,17 @@ def submodule_status() -> None:
 @git("rev-parse --path-format=absolute --git-path modules")
 def modules_dir() -> None:
     """Where this worktree keeps its submodules' git directories."""
+
+
+@git("rev-parse --path-format=absolute --git-dir")
+def git_dir() -> None:
+    """This worktree's own git directory."""
+
+
+def in_progress(path: str) -> str:
+    """The operation waiting in this worktree, or ''."""
+    own = Path(git_dir(repo=path).value)
+    return next((what for name, what in OPERATIONS if (own / name).exists()), "")
 
 
 def submodule_protection(path: str) -> str:
@@ -178,7 +225,7 @@ def assess(
         if wt.path == main and not include_main:
             return None
         progress.say(f"{wt.label}: checking completion evidence")
-        verdict, why, proof, request = merged.branch_proof(
+        evidence, why, proof, request = merged.branch_proof(
             wt.branch,
             wt.sha,
             head_sha,
@@ -188,73 +235,109 @@ def assess(
             first_parents,
             repo,
         )
-        # The protections no --delete value lifts.
-        protections = []
+        if evidence == merged.UNUSED:
+            evidence, why = merged.first_parent_reason(wt.branch, repo)
+        # The checkout facts no --delete value lifts, in reason order.
+        hard: list[tuple[str, str]] = []
         if wt.path == main:
-            protections.append("it is the main checkout, and never removable")
+            hard.append((MAIN, "it is the main checkout, and never removable"))
         if here and Path(wt.path).resolve() == Path(here).resolve() and wt.path != main:
-            protections.append("you are standing in it")
+            hard.append((CURRENT, "you are standing in it"))
         if "locked" in wt.flags:
-            protections.append("it is locked")
+            hard.append((LOCKED, "it is locked"))
         ignored_paths: tuple[str, ...] = ()
         ignored_groups: tuple[str, ...] = ()
+        reflogs: dict[bool, tuple[tuple[str, str], ...]] = {}
         if wt.path != main and not Path(wt.path).is_dir():
             # A locked worktree keeps its record while its directory is away,
             # on a removable disk say. git refuses to remove it until it is
             # unlocked, so there is nothing here to read and nothing to delete.
-            protections.append("its directory is missing")
+            hard.append((MISSING, "its directory is missing"))
         elif wt.path != main:
             progress.say(f"{wt.label}: reading its status")
             status = R.status_of(wt.path)
-            if status.dirty:
-                protections.append("it has uncommitted changes or untracked files")
             submodule = submodule_protection(wt.path)
             if submodule:
-                protections.append(submodule)
+                hard.append((SUBMODULE, submodule))
+            operation = in_progress(wt.path)
+            if operation:
+                hard.append((IN_PROGRESS, f"{operation} is in progress in it"))
+            if status.dirty:
+                hard.append((UNCOMMITTED, DIRTY))
             ignored_paths = tuple(status.ignored)
             ignored_groups = tuple(R.ignored_groups(wt.path, status.ignored))
-        stashes = prune.stashes_on(wt.branch, entries, wt.sha, repo)
-
-        def standing(granted: frozenset[str], keep: bool = keep_branch) -> list[str]:
-            """The protections left once these --delete values are granted."""
-            return protections + prune.branch_protections(
-                wt.branch, head_branch, verdict, stashes, granted, keep
+            own = merged.reflog_shas("HEAD", wt.path)
+            branch = (
+                merged.reflog_shas(f"refs/heads/{wt.branch}", repo) if wt.branch else []
             )
+            upstream: dict[str, set[str]] = {}
+            # Removal deletes the worktree's HEAD reflog, and the branch's
+            # unless --keep-branch keeps the branch.
+            reflogs = {
+                False: merged.reflog_only(own + branch, [], head_sha, repo, upstream),
+                True: merged.reflog_only(own, branch, head_sha, repo, upstream),
+            }
+        stashes = prune.stashes_on(wt.branch, entries, wt.sha, repo)
+        deciding = hard + (
+            [(PROTECTED, prune.PROTECTED_WHY)]
+            if prune.protected(wt.branch, head_branch)
+            else []
+        )
+        reason, decided = deciding[0] if deciding else (evidence, why)
+
+        def standing(
+            granted: frozenset[str], keep: bool = keep_branch
+        ) -> list[prune.Fact]:
+            """The protections left once these --delete values are granted."""
+            facts = [prune.Fact(code, "", text) for code, text in hard]
+            # With a checkout fact deciding the row, what its commits prove
+            # is beside the point, and saying "empty" of a dirty one misleads.
+            facts += [
+                fact
+                for fact in prune.branch_protections(
+                    wt.branch, head_branch, evidence, stashes, granted, keep
+                )
+                if not hard or fact.code not in (merged.UNUSED, merged.CLOSED)
+            ]
+            lost = reflogs.get(keep and bool(wt.branch), ())
+            if lost and "reflog" not in granted:
+                facts.append(prune.reflog_fact(lost))
+            return facts
 
         def eligible(granted: frozenset[str], keep: bool = keep_branch) -> bool:
             # --keep-branch waives completion proof because the branch keeps
             # the commits. A detached worktree has no branch to keep them.
             return not standing(granted, keep) and (
-                (keep and bool(wt.branch))
-                or verdict == REMOVE
-                or (verdict == EMPTY and "empty" in granted)
+                (keep and bool(wt.branch)) or evidence in DONE
             )
 
         granted = permissions
+        needs: tuple[str, ...] = ()
+        keep_needs = None
+        if not eligible(granted):
+            needs = prune.needed(eligible, PERMISSIONS) or ()
+            if not needs and not keep_branch:
+                keep_needs = prune.needed(
+                    lambda values: eligible(values, keep=True), PERMISSIONS
+                )
         row = Verdict(
-            verdict,
+            REMOVE if reason in (merged.MERGED, merged.STALE) else KEEP,
             wt.branch,
             wt.path,
-            why,
+            decided,
             ignored_groups,
             wt.sha,
             proof=proof,
             request=request,
-            protections=standing(granted),
+            protections=prune.hinted(standing(granted), needs),
             stashes=stashes,
+            reason=reason,
         )
         row.permissions = permissions
         row.keep_branch = keep_branch
         row.eligible = eligible(granted)
-        row.keep_branch_frees = not row.eligible and eligible(granted, keep=True)
-        # A value is needed when the row stays held back without it, every
-        # other value granted.
-        if not row.eligible and eligible(PERMISSIONS):
-            row.needs = tuple(
-                value
-                for value in sorted(PERMISSIONS)
-                if not eligible(PERMISSIONS - {value})
-            )
+        row.needs = needs
+        row.keep_needs = keep_needs
         row.snapshot = prune.Snapshot(
             state,
             wt.branch,
@@ -264,6 +347,7 @@ def assess(
             ignored_paths,
             prune.stash_subjects(stashes, entries),
             ignored_groups,
+            reflogs.get(keep_branch and bool(wt.branch), ()),
         )
         return row
 

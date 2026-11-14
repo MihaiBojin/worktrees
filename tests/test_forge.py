@@ -63,7 +63,10 @@ def test_cached_forge_proof_keeps_worktree_protections(world, network, protectio
         )
     else:
         row = worktree_status(world, network)
-    assert row["verdict"] == "remove"
+    # The checkout fact decides the row, and the forge's proof stays beside it.
+    assert row["verdict"] == "keep"
+    assert row["reason"] == {"dirty": "uncommitted"}.get(protection, protection)
+    assert row["proof"] == "forge"
     assert not row["eligible"]
     assert wt.exists()
 
@@ -171,9 +174,11 @@ def test_malformed_cached_request_cannot_authorize_deletion(
     cache_path(world).write_text(json.dumps(cached))
     before = network.network_calls()
     offline = network.env(WORKTREES_OFFLINE="1")
-    want = "empty" if local_proof else "unknown" if field == "merge_sha" else "keep"
+    want = (
+        "unused" if local_proof else "unknown" if field == "merge_sha" else "unpushed"
+    )
     row = worktree_status(world, network, WORKTREES_OFFLINE="1")
-    assert row["verdict"] == want, row
+    assert (row["verdict"], row["reason"]) == ("keep", want), row
     assert row["proof"] != "forge", row
     assert not row["eligible"]
     denied = cli(world, str(wt), "--yes", "--json", entry="gw remove", env=offline)
@@ -184,7 +189,7 @@ def test_malformed_cached_request_cannot_authorize_deletion(
     loose = cli(world, "feature", "--json", entry="gw branch status", env=offline)
     assert loose.returncode == 0, loose.stderr
     row = json.loads(loose.stdout)["verdicts"][0]
-    assert row["verdict"] == want, row
+    assert (row["verdict"], row["reason"]) == ("keep", want), row
     assert row["proof"] != "forge", row
     denied = cli(
         world, "feature", "--yes", "--json", entry="gw branch prune", env=offline

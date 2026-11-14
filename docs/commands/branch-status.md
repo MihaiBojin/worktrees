@@ -8,26 +8,32 @@ due. A checked-out branch appears in `gw prune --json`, not here.
 ```console
 gw branch status
 gw branch status feature old-fix
-gw branch status --only empty --json
-gwbs --only empty
+gw branch status --only remove --json
+gwbs --only keep
 ```
 
-`remove` means matching cached forge evidence or local ancestry, squash or
-content proof. `empty` means the tip is on the assessed head's first-parent
-history; this includes unused branches and fast-forward merges without
-forge proof. `keep` has commits outside the head, while `unknown` lacks
-usable proof. [The reference](../REFERENCE.md#head-and-evidence) defines the
-check order and forge identity checks.
+Each row's verdict is `remove` or `keep`, and its `reason` says why:
+`merged` for matching cached forge evidence, local ancestry, squash or
+content proof, or commits made on it that sit on the assessed head's
+first-parent history; `unused` for a tip there with no commit made on it;
+`stale` for one whose reflog is gone; `closed` and `open` for a cached
+request at the tip; `pushed` and `unpushed` for commits outside the head;
+`protected`, `checked-out` and `symbolic` for refs never deleted; and
+`unknown` without usable proof. `merged` and `stale` read `remove`.
+[The reference](../REFERENCE.md#head-and-evidence) defines the check order
+and forge identity checks.
 
 A verdict does not grant permission. `main`, `master`, the head branch,
-branch stashes and an empty verdict can block deletion. Rows record these
+branch stashes, an `unused` or `closed` reason, and commits only the
+branch's reflog holds can block deletion. Rows record these
 in `protections`; `eligible` is true only when deletion needs no additional
 permission and no protection applies. `gw branch status` rejects `--delete`;
 use approved values with [gw branch prune](branch-prune.md).
 
 `--only VERDICT` can be repeated. `--json` prints an object with `head`,
 `lastSync`, `head_sha` and `verdicts`. Each row includes `branch`, `sha`,
-`verdict`, `eligible`, `why`, `proof`, `paths`, `request`, `error`, `stashes`,
+`verdict`, `reason`, `needs` (every `--delete` value it waits on),
+`eligible`, `why`, `proof`, `paths`, `request`, `error`, `stashes`,
 `protections` and the shell-quoted `undo` command. No table parsing is needed.
 `request` is null when no usable cached request exists.
 

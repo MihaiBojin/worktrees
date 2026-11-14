@@ -38,7 +38,7 @@ def stash(world, path, subject="pending") -> str:
         ("empty", "empty", "stashes"),
     ],
 )
-def test_permissions_combine_without_changing_empty_verdict(world, entry, values):
+def test_permissions_combine_without_changing_an_unused_verdict(world, entry, values):
     path = world.worktree("topic")
     sha = stash(world, path)
     if entry == "gw branch prune":
@@ -53,7 +53,8 @@ def test_permissions_combine_without_changing_empty_verdict(world, entry, values
     assert not world.git("stash", "list")
     assert sha in p.stderr
     if entry == "gw branch prune":
-        assert json.loads(p.stdout)["verdicts"][0]["verdict"] == "empty"
+        row = json.loads(p.stdout)["verdicts"][0]
+        assert (row["verdict"], row["reason"]) == ("keep", "unused")
 
 
 @pytest.mark.parametrize(
@@ -104,9 +105,11 @@ def test_keep_branch_keeps_ref_and_stashes_even_when_protected(world, kind):
     assert not path.exists()
     assert world.git("rev-parse", f"refs/heads/{branch}") == tip
     assert world.git("rev-parse", "refs/stash") == sha
-    assert "retained" in p.stderr
-    assert f"git branch {branch} {tip}" in p.stderr
-    assert "git stash store -m" in p.stderr
+    assert f"branch {branch}: retained" in p.stderr
+    assert f"stash {sha}: retained" in p.stderr
+    assert f"  keep branch      {branch} at {tip[:7]}, and its stashes" in p.stderr
+    # Nothing it keeps needs a way back.
+    assert "restore with" not in p.stderr
 
 
 @pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch prune"])
@@ -518,7 +521,8 @@ def test_never_synced_disclosure_and_confirmation_survive_output_flags(world, en
     )
     assert code == 0, output
     assert "Never synced:" in output
-    assert "Never synced. Delete anyway?" in output
+    deletes = "1 branch" if entry == "gw branch prune" else "1 worktree and 1 branch"
+    assert f"Never synced. Delete {deletes} anyway?" in output
     assert "git branch topic" in output
     assert world.git("rev-parse", "topic")
 
@@ -678,7 +682,8 @@ def test_nested_current_worktree_is_protected(world):
     row = next(
         r for r in json.loads(preview.stdout)["verdicts"] if r["branch"] == "topic"
     )
-    assert row["verdict"] == "remove"
+    assert (row["verdict"], row["reason"]) == ("keep", "current")
+    assert row["proof"]
     assert not row["eligible"]
     assert "you are standing in it" in row["protections"]
     result = run(world, "gw prune", "--delete", "all", "--yes", "--json", at=nested)
@@ -791,8 +796,9 @@ def test_batch_modes_keep_protected_refs(world, mode):
             )
             assert code == 0, output
             for name in tips:
-                assert not re.search(rf"^\s*\d+\s+\w+\s+{name}\s", output, re.M), output
-                assert re.search(rf"^\s*-\s+\w+\s+{name}\s", output, re.M), output
+                row = rf"\s+\w+\s+\S+\s+{name}\s"
+                assert not re.search(rf"^\s*\d+{row}", output, re.M), output
+                assert re.search(rf"^\s*-{row}", output, re.M), output
     assert not control.exists()
     assert (
         "eligible" not in world.git("branch", "--format=%(refname:short)").splitlines()

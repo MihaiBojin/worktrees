@@ -89,7 +89,10 @@ def test_delete_help_names_every_permission_value(world):
     p = cli(world, "-h", entry="gw branch prune")
     assert p.returncode == 0, p.stderr
     text = " ".join((p.stdout + p.stderr).split())
-    assert "empty branches or stashes; all permits both" in text
+    assert (
+        "permit unused branches, stashes, closed requests or commits only a "
+        "reflog holds; all permits every one" in text
+    )
 
 
 def test_multiple_exact_names_do_not_select_a_prefix(world):
@@ -293,7 +296,7 @@ def test_unrelated_history_is_unknown_without_an_operational_error(world):
     world.commit("README", "unrelated history\n")
     world.git("checkout", "main")
     row = status(world, "unrelated")["verdicts"][0]
-    assert row["verdict"] == "unknown"
+    assert (row["verdict"], row["reason"]) == ("keep", "unknown")
     assert not row["error"]
     assert "no common history" in row["why"]
 
@@ -337,11 +340,11 @@ def test_the_selector_and_the_plan_name_each_verdict(world):
     code, out = run_on_a_terminal(world, "gw branch prune", answer="1\nn\n")
     assert code == 0, out
     rows = {
-        ln.split()[2]: ln.split()[1]
+        ln.split()[3]: tuple(ln.split()[1:3])
         for ln in out.splitlines()
         if ln[:3].strip() in ("-", "1")
     }
-    assert rows == {"done": "remove"}
+    assert rows == {"done": ("remove", "merged")}
     assert "VERDICT" in out.split("deleting 1 branch:")[1]
 
 

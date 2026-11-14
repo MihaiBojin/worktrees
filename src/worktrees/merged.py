@@ -28,6 +28,21 @@ if TYPE_CHECKING:  # annotations only
 lacking = threading.Event()
 LACKING = "this partial clone lacks objects the proof needs"
 
+# What a branch's commits say about it: the reason a row carries when nothing
+# about its checkout decides it first.
+MERGED = "merged"
+UNUSED = "unused"
+STALE = "stale"
+CLOSED = "closed"
+OPEN = "open"
+PUSHED = "pushed"
+UNPUSHED = "unpushed"
+UNKNOWN = "unknown"
+
+# Reflog subjects that record a commit made on the branch, as opposed to one
+# that only moved it: a fast-forward, a reset or a rebase's finish.
+MADE = ("commit", "cherry-pick", "revert", "am:")
+
 
 @git("merge-base --is-ancestor $ref $head", ok=(0, 1))
 def is_ancestor(ref: str, head: str) -> None:
@@ -101,14 +116,23 @@ def squash_matches(
     ids = patch_ids(input=patch, repo=repo).lines
     if not ids:
         return False
+    return ids[0].split()[0] in _upstream_ids(base.out.strip(), head, repo, upstream)
+
+
+def _upstream_ids(
+    fork: str,
+    head: str,
+    repo: str | os.PathLike[str] | None,
+    upstream: dict[str, set[str]] | None,
+) -> set[str]:
+    """The patch-ids of the head's commits after `fork`, kept in `upstream`."""
     known = {} if upstream is None else upstream
-    fork = base.out.strip()
     if fork not in known:
         patches = upstream_patches(fork, head, repo=repo).out
         known[fork] = {
             line.split()[0] for line in patch_ids(input=patches, repo=repo).lines
         }
-    return ids[0].split()[0] in known[fork]
+    return known[fork]
 
 
 @git("merge-base --all $a $b", ok=(0, 1))
@@ -146,6 +170,111 @@ def own_commits(head: str, tip: str) -> None:
     """The branch's commits the head lacks, newest first."""
 
 
+@git("for-each-ref --count=1 --format=%(refname) --contains $sha refs/remotes/")
+def remote_holding(sha: str) -> None:
+    """A remote-tracking ref that holds the commit, if one does."""
+
+
+@git("reflog show --format=%H%x00%gs $ref --", ok=(0, 128))
+def reflog(ref: str) -> None:
+    """A ref's reflog, newest first: each commit, then what moved the ref there."""
+
+
+@git("config --get core.logAllRefUpdates", ok=(0, 1))
+def logs_ref_updates() -> None:
+    """`false` when git writes no reflog for a branch."""
+
+
+@git("rev-list $*commits --not --all $*kept")
+def unreachable(commits: list[str], kept: list[str]) -> None:
+    """The commits these reach that no ref, worktree HEAD or `kept` one does."""
+
+
+@git("rev-parse --verify --quiet $commit^1", ok=(0, 1))
+def first_parent(commit: str) -> None:
+    """The commit's first parent; nothing for a root commit."""
+
+
+@git("show --no-patch --format=%H%x00%s $*commits")
+def subjects(commits: list[str]) -> None:
+    """Each commit and its subject."""
+
+
+def reflog_shas(ref: str, repo: str | os.PathLike[str] | None = None) -> list[str]:
+    """Every commit a ref's reflog names, once each."""
+    entries = reflog(ref, repo=repo)
+    return list(dict.fromkeys(line.split("\0")[0] for line in entries.lines))
+
+
+def first_parent_reason(
+    branch: str, repo: str | os.PathLike[str] | None = None
+) -> tuple[str, str]:
+    """Whether a branch whose tip is on the head's first-parent history was used.
+
+    Its reflog tells a fresh branch from one whose commits went in by
+    fast-forward. With no reflog left, every commit the branch reaches is
+    still in the head, so nothing is lost by removing it.
+    """
+    entries = reflog(f"refs/heads/{branch}", repo=repo).lines if branch else []
+    if any(line.split("\0", 1)[-1].startswith(MADE) for line in entries):
+        return MERGED, "commits made on it are on the head ref's first-parent history"
+    if entries or not branch or logs_ref_updates(repo=repo).value == "false":
+        return UNUSED, "its tip is on the head ref's first-parent history"
+    return STALE, (
+        "its tip is on the head ref's first-parent history, and no reflog is "
+        "left to say it was used"
+    )
+
+
+def reflog_only(
+    lose: list[str],
+    keep: list[str],
+    head: str,
+    repo: str | os.PathLike[str] | None = None,
+    upstream: dict[str, set[str]] | None = None,
+) -> tuple[tuple[str, str], ...]:
+    """The commits only the reflogs being deleted reach, whose change the head
+    lacks, each with its subject.
+
+    `lose` names the commits of the reflogs a removal deletes, `keep` those of
+    the reflogs it leaves. A commit counts as in the head when its own patch
+    is there since it forked; one this partial clone cannot read counts as
+    missing.
+    """
+    commits = unreachable(lose, keep, repo=repo).lines if lose else []
+    try:
+        left = [c for c in commits if not change_in(c, head, repo, upstream)]
+    except MissingObjects:
+        lacking.set()
+        left = commits
+    if not left:
+        return ()
+    return tuple(
+        (sha, subject)
+        for sha, _, subject in (
+            line.partition("\0") for line in subjects(left, repo=repo).lines
+        )
+    )
+
+
+def change_in(
+    commit: str,
+    head: str,
+    repo: str | os.PathLike[str] | None = None,
+    upstream: dict[str, set[str]] | None = None,
+) -> bool:
+    """The commit's own change is in the head, by patch-id since it forked."""
+    base = merge_base(head, commit, repo=repo).value
+    parent = first_parent(commit, repo=repo).value
+    if not base or not parent:
+        return False
+    ids = patch_ids(input=combined_patch(parent, commit, repo=repo).out, repo=repo)
+    if not ids.lines:
+        # It changes nothing, so nothing of it can be lost.
+        return True
+    return ids.lines[0].split()[0] in _upstream_ids(base, head, repo, upstream)
+
+
 def branch_proof(
     branch: str,
     sha: str,
@@ -165,7 +294,7 @@ def branch_proof(
     from . import branch_forge
 
     if not head:
-        return "unknown", "the head ref does not resolve", "", None
+        return UNKNOWN, "the head ref does not resolve", "", None
     request = live or (
         branch_forge.request_for(branch, remote, sha, repo)
         if branch and remote and ask_forge
@@ -181,7 +310,7 @@ def branch_proof(
                 invalid = "the request's merge commit is not available locally"
             elif is_ancestor(request.merge_sha, head, repo=repo):
                 return (
-                    "remove",
+                    MERGED,
                     f"{request.noun} #{request.number} merged this tip "
                     + request.merged_into(head_branch),
                     "forge",
@@ -191,7 +320,7 @@ def branch_proof(
                 invalid = "the request's merge commit is not in the head branch"
     if sha in first_parents:
         return (
-            "empty",
+            UNUSED,
             "its tip is on the head ref's first-parent history",
             "first-parent",
             data,
@@ -200,14 +329,21 @@ def branch_proof(
         found = _local_proof(sha, head, repo)
     except MissingObjects:
         lacking.set()
-        return "unknown", LACKING, "", data
+        return UNKNOWN, LACKING, "", data
     if found:
-        return "remove", found[1], found[0], data
+        return MERGED, found[1], found[0], data
     if invalid:
-        return "unknown", invalid, "", data
+        return UNKNOWN, invalid, "", data
     if not merge_bases(sha, head, repo=repo).lines:
-        return "unknown", "no common history with the head branch", "", data
-    return "keep", "its commits are not contained in the head branch", "", data
+        return UNKNOWN, "no common history with the head branch", "", data
+    if request is not None and request.state == "CLOSED":
+        noun = f"{request.noun} #{request.number}"
+        return CLOSED, f"{noun} was closed without merging this tip", "", data
+    if request is not None and request.state == "OPEN":
+        return OPEN, f"{request.noun} #{request.number} is open for this tip", "", data
+    if remote_holding(sha, repo=repo).value:
+        return PUSHED, "its commits are on a remote, not in the head branch", "", data
+    return UNPUSHED, "its commits are only here, not in the head branch", "", data
 
 
 def boundary(

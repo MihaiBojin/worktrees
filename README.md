@@ -219,20 +219,38 @@ A checked-out branch appears only as its worktree, never as a loose branch.
 [Branch status](docs/commands/branch-status.md) describes the proofs;
 [branch prune](docs/commands/branch-prune.md) covers selection and recovery.
 
-| Verdict | Evidence |
-| --- | --- |
-| `remove` | a matching cached merged request, or local ancestry, squash or content proof |
-| `empty` | the tip is on the head ref's first-parent history |
-| `keep` | commits remain outside the head ref |
-| `unknown` | the CLI lacks valid evidence |
+A row's verdict is `remove` or `keep`, and its `reason` names the fact that
+decides it, the first in this table that applies:
 
-`empty` includes unused branches and branches merged by fast-forward without
-forge proof. Git cannot distinguish them. A verdict describes completion;
-`eligible` also checks protections and the deletion permissions you supplied.
-After the table, `gw prune` lists every worktree it holds back with each
-reason, and `gw remove` does the same for its target. The main checkout is
-left out, since nothing removes it. The `keep` and `unknown` evidence counts
-as a reason; the evidence for `remove` and `empty` does not.
+| Reason | Verdict | When |
+| --- | --- | --- |
+| `main-checkout` | `keep` | it is the main checkout |
+| `current` | `keep` | `gw prune` runs inside it |
+| `locked` | `keep` | the worktree is locked |
+| `missing` | `keep` | its directory is gone and its record locked |
+| `submodule` | `keep` | it has an initialized submodule or a submodule store |
+| `in-progress` | `keep` | a rebase, merge, cherry-pick, revert or bisect waits in it |
+| `uncommitted` | `keep` | it has uncommitted changes or untracked files |
+| `protected` | `keep` | its branch is `main`, `master` or the head branch |
+| `merged` | `remove` | a matching cached merged request, local ancestry, squash or content proof, or commits made on the branch that now sit on the head ref's first-parent history |
+| `closed` | `keep` | a request closed unmerged at this tip; `--delete closed` removes it |
+| `open` | `keep` | a request open at this tip |
+| `unused` | `keep` | the tip is on the head ref's first-parent history and its reflog records no commit made on it; `--delete empty` removes it |
+| `stale` | `remove` | the same, with no reflog left to say whether it was used |
+| `pushed` | `keep` | commits outside the head that a remote-tracking ref holds |
+| `unpushed` | `keep` | commits outside the head that only this repository holds |
+| `unknown` | `keep` | the CLI lacks valid evidence |
+
+Deleting a branch deletes its reflog, and removing a worktree deletes the
+worktree's own. A commit nothing else reaches goes with them, so a row whose
+deleted reflogs hold a commit whose patch the head lacks is held back, and
+the protection names `git show SHA` for each one. `eligible` also checks
+protections and the deletion permissions you supplied. The WHY column gives
+the evidence, then each protection that stands. A protection that `--delete`
+values lift ends with every value its row needs, such as
+`pass --delete empty --delete stashes`, and only where those values make
+the row eligible. For a target it keeps, `gw remove` prints every reason, and
+names a command with `--keep-branch` when only that removes the worktree.
 
 The CLI never deletes `main`, `master` or the head branch. It never removes
 the main checkout, locked or dirty worktrees, worktrees with untracked files,
@@ -250,15 +268,19 @@ Repeat `--delete` to combine categories:
 
 | Value | `gw prune`, `gw remove` | `gw branch prune` |
 | --- | --- | --- |
-| `empty` | permit an empty branch and its worktree | permit an empty branch |
+| `empty` | permit an `unused` branch and its worktree | permit an `unused` branch |
 | `stashes` | permit the branch's stashes | same |
-| `all` | both categories above | same |
+| `closed` | permit a branch whose request closed unmerged at its tip | same |
+| `reflog` | permit dropping commits only the deleted reflogs hold | same |
+| `all` | every value above | same |
 
 `gw branch status` rejects `--delete`. An unknown or unsupported value is a
-usage error before mutation. `--delete empty` changes eligibility, not the
+usage error before mutation. A `--delete` value changes eligibility, not the
 verdict. When only missing values hold worktrees back, `gw prune` names
 the command that grants them, keeping the values you passed:
-`gw prune --delete empty makes fix-parser eligible`.
+`gw prune --delete empty makes fix-parser eligible`. Without a terminal,
+the line that names `--yes` carries the `--delete` values and
+`--keep-branch` you passed, so running it removes what was counted.
 
 ```console
 gw prune --delete empty --delete stashes
@@ -268,19 +290,22 @@ gw remove old-checkout --keep-branch
 `--keep-branch` removes an otherwise unprotected checkout without completion
 proof and retains its branch and stashes, including a protected branch.
 A detached checkout has no branch to keep its commits, so it still needs
-proof.
-Every `--delete` value is a usage error with `--keep-branch`.
+proof. It keeps the branch's reflog but not the worktree's, so it takes
+`--delete reflog`, and every other `--delete` value is a usage error with it.
 
 ### Removal and recovery
 
 Removal deletes a worktree's ignored files: build output, caches and
 virtual environments are what most of them are. They have no recovery
-command, since Git never recorded their contents, so before confirmation
-the CLI discloses the path and branch, the branch restore command, stashes
-with their restore commands, and the ignored paths it will delete, sorted
-by name. Each ignored path reads as the pattern that
-ignores it names it, from the top level, with a trailing `/` on a
-directory: `__pycache__` lists `src/pkg/__pycache__/`, never the tracked
+command, since Git never recorded their contents. Before confirmation, the
+CLI discloses each thing it deletes or keeps, one line each, led by what
+happens to it: `delete worktree` with its path, `delete ignored` for each
+ignored path, sorted by name, `delete branch` and `delete stash` with their
+restore commands, or `keep branch` under `--keep-branch`. The question
+counts each kind: `delete 1 worktree, 1 ignored path and 1 branch? [y/N]`.
+Each ignored path reads as the pattern that ignores it names it, from the
+top level, with a trailing `/` on a directory: `__pycache__` lists
+`src/pkg/__pycache__/`, never the tracked
 `src/` above it. A pattern for a directory's contents, such as
 `path/to/ignored/*`, lists that directory once as `path/to/ignored/`.
 Below the list, `git -C PATH ls-files --others --ignored --exclude-standard`
@@ -517,8 +542,8 @@ parseable. Passing both is a usage error.
 | `gw merge` | no | yes |
 
 Other commands retain their own flags; use `--help`. Help, version and
-completion work without an assessment. `--only` filters assessment verdicts
-and can be repeated, including `--only empty`.
+completion work without an assessment. `--only` filters assessment verdicts,
+`remove` or `keep`, and can be repeated.
 
 Every JSON result is an object with `lastSync` and `head`:
 
@@ -560,7 +585,7 @@ gw list --json | jq -r '.worktrees[].path'
 | `gwh`, `gw help`, `gw h` | `gw --help` or `gw -h` |
 | a `--json` listing as an array, `.[]` | `gw list --json` object, `.worktrees[]` |
 
-`empty` requires explicit permission. `main` and `master` always remain
+An `unused` or `closed` row requires explicit permission. `main` and `master` always remain
 protected. Update scripts that assume a `remove` verdict alone permits
 deletion to check `eligible` too.
 

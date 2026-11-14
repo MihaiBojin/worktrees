@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 from pathlib import Path
 
@@ -63,15 +64,17 @@ def test_worktree_and_loose_branch_share_proof(world, history):
             world.git("commit", "--quiet", "-m", "squashed change")
             if history == "content":
                 world.commit("unrelated")
-    want = {
-        "new": "empty",
-        "old": "empty",
-        "fast-forward": "empty",
-        "merge": "remove",
-        "squash": "remove",
-        "content": "remove",
-        "unfinished": "keep",
-        "unrelated": "unknown",
+    # A branch whose tip is on the head's first-parent history reads as used
+    # when its reflog records a commit made on it, as unused otherwise.
+    want, reason = {
+        "new": ("keep", "unused"),
+        "old": ("keep", "unused"),
+        "fast-forward": ("remove", "merged"),
+        "merge": ("remove", "merged"),
+        "squash": ("remove", "merged"),
+        "content": ("remove", "merged"),
+        "unfinished": ("keep", "unpushed"),
+        "unrelated": ("keep", "unknown"),
     }[history]
     loose = {r["branch"]: r for r in rows(world, "gw branch status")}["feature"]
     wt = world.parent / ".worktrees" / "feature" / "repo"
@@ -79,6 +82,7 @@ def test_worktree_and_loose_branch_share_proof(world, history):
     world.git("worktree", "add", "--quiet", str(wt), "feature")
     attached = {r["branch"]: r for r in rows(world)}["feature"]
     assert loose["verdict"] == attached["verdict"] == want
+    assert loose["reason"] == attached["reason"] == reason
     assert loose["proof"] == attached["proof"]
     assert loose["sha"] == attached["sha"]
     assert loose["eligible"] == attached["eligible"] == (want == "remove")
@@ -99,7 +103,8 @@ def test_divergent_local_main_is_not_the_assessed_first_parent_history(world):
 
 @pytest.mark.parametrize("detached", [False, True])
 @pytest.mark.parametrize("protection", ["locked", "tracked", "untracked", "current"])
-def test_finished_worktree_protections_preserve_verdict(world, protection, detached):
+def test_a_checkout_fact_decides_a_finished_worktree(world, protection, detached):
+    """The checkout fact is the reason, and the branch's proof stays beside it."""
     wt = finished(world)
     if detached:
         world.git("checkout", "--quiet", "--detach", at=wt)
@@ -111,7 +116,12 @@ def test_finished_worktree_protections_preserve_verdict(world, protection, detac
         (wt / "untracked").write_text("keep")
     result = rows(world, at=wt if protection == "current" else None)
     row = next(r for r in result if r["path"] == str(wt))
-    assert row["verdict"] == "remove"
+    dirty = protection in ("tracked", "untracked")
+    assert row["verdict"] == "keep"
+    assert row["reason"] == ("uncommitted" if dirty else protection)
+    if dirty:
+        assert row["why"] == "it has uncommitted changes or untracked files"
+    assert row["proof"]
     assert not row["eligible"]
     assert row["protections"]
     assert wt.exists()
@@ -138,7 +148,7 @@ def test_initialized_submodule_blocks_finished_worktree(world, detached):
     if detached:
         world.git("checkout", "--quiet", "--detach", at=wt)
     row = next(r for r in rows(world) if r["path"] == str(wt))
-    assert row["verdict"] == "remove"
+    assert (row["verdict"], row["reason"]) == ("keep", "submodule")
     assert not row["eligible"]
     assert "git submodule deinit --all" in row["why"]
     assert (wt / "module" / "README").exists()
@@ -181,7 +191,7 @@ def test_a_locked_worktree_whose_directory_is_away_is_kept_and_assessed(world):
     away.rename(away.with_name("elsewhere"))
     done = world.merged_worktree("done")
     found = {r["branch"]: r for r in rows(world)}
-    assert found["away"]["verdict"] == "empty"
+    assert (found["away"]["verdict"], found["away"]["reason"]) == ("keep", "locked")
     assert not found["away"]["eligible"]
     assert "it is locked" in found["away"]["protections"]
     assert "its directory is missing" in found["away"]["protections"]
@@ -203,7 +213,7 @@ def test_protected_branch_names_with_nonconventional_remote_head(world, name):
     world.git("update-ref", "refs/remotes/origin/trunk", "trunk")
     world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
     loose = {r["branch"]: r for r in rows(world, "gw branch status")}[name]
-    assert loose["verdict"] == "empty"
+    assert (loose["verdict"], loose["reason"]) == ("keep", "protected")
     assert not loose["eligible"]
     assert "branch" in loose["why"]
     wt = world.root / f"protected-{name}"
@@ -313,12 +323,15 @@ def test_preview_preserves_repository_files_refs_stashes_and_stale_records(
     assert str(stale) in json.loads(result.stdout)["stale"]
 
 
-def test_empty_filter_preserves_ineligible_empty_rows(world):
+def test_keep_filter_preserves_ineligible_kept_rows(world):
     world.worktree("empty")
     finished(world)
-    result = rows(world, "gw prune", "--only", "empty")
-    assert {r["branch"] for r in result} == {"main", "empty"}
-    assert all(r["verdict"] == "empty" and not r["eligible"] for r in result)
+    result = rows(world, "gw prune", "--only", "keep")
+    assert {r["branch"]: r["reason"] for r in result} == {
+        "main": "main-checkout",
+        "empty": "unused",
+    }
+    assert all(r["verdict"] == "keep" and not r["eligible"] for r in result)
 
 
 @pytest.mark.parametrize(
@@ -527,10 +540,10 @@ def test_protected_branch_deletion_names_rule(world, name):
 @pytest.mark.parametrize(
     "history,want",
     [
-        ("unfinished", "unknown"),
-        ("fast-forward", "empty"),
-        ("merge", "remove"),
-        ("squash", "remove"),
+        ("unfinished", ("keep", "unknown")),
+        ("fast-forward", ("remove", "merged")),
+        ("merge", ("remove", "merged")),
+        ("squash", ("remove", "merged")),
     ],
 )
 def test_invalid_merged_request_preserves_independent_proof(
@@ -562,7 +575,7 @@ def test_invalid_merged_request_preserves_independent_proof(
     result = cli(world, "branch", "status", "feature", "--json", env=env)
     assert result.returncode == 0, result.stderr
     row = json.loads(result.stdout)["verdicts"][0]
-    assert row["verdict"] == want
+    assert (row["verdict"], row["reason"]) == want
     wt = world.root / "feature"
     world.git("worktree", "add", "--quiet", str(wt), "feature")
     preview = cli(world, "prune", "--json", env=env)
@@ -570,7 +583,7 @@ def test_invalid_merged_request_preserves_independent_proof(
     attached = next(
         r for r in json.loads(preview.stdout)["verdicts"] if r["branch"] == "feature"
     )
-    assert attached["verdict"] == want
+    assert (attached["verdict"], attached["reason"]) == want
     assert attached["proof"] == row["proof"]
 
 
@@ -669,13 +682,13 @@ def test_unrelated_equal_trees_are_unknown_for_loose_and_checked_out_branches(wo
         "rev-parse", "main^{tree}"
     )
     row = rows(world, "gw branch status", "feature")[0]
-    assert row["verdict"] == "unknown"
+    assert (row["verdict"], row["reason"]) == ("keep", "unknown")
     assert not row["eligible"]
     assert "no common history" in row["why"]
     wt = world.root / "feature"
     world.git("worktree", "add", "--quiet", str(wt), "feature")
     attached = next(row for row in rows(world) if row["branch"] == "feature")
-    assert attached["verdict"] == "unknown"
+    assert (attached["verdict"], attached["reason"]) == ("keep", "unknown")
     assert not attached["eligible"]
 
 
@@ -687,7 +700,7 @@ def test_mutating_prune_rejects_only_before_any_changes(world, entry, prefix):
     before = snapshot(world.repo)
     records = world.git("worktree", "list", "--porcelain")
     refs = world.git("show-ref")
-    result = run(world, entry, *prefix, "--only", "empty", "--yes", "--json")
+    result = run(world, entry, *prefix, "--only", "keep", "--yes", "--json")
     assert result.returncode == 2, result.stderr
     assert "--only" in result.stderr and "--yes" in result.stderr
     assert done.exists()
@@ -710,13 +723,14 @@ def test_finished_protected_names_are_ineligible_by_name_alone(world, name):
     loose = {row["branch"]: row for row in rows(world, "gw branch status")}
     assert loose["ordinary"]["verdict"] == "remove"
     assert loose["ordinary"]["eligible"]
-    assert loose[name]["verdict"] == "remove"
+    assert (loose[name]["verdict"], loose[name]["reason"]) == ("keep", "protected")
+    assert loose[name]["proof"]
     assert not loose[name]["eligible"]
     assert loose[name]["protections"] == ["it is a protected branch"]
     wt = world.root / name
     world.git("worktree", "add", "--quiet", str(wt), name)
     attached = next(row for row in rows(world) if row["branch"] == name)
-    assert attached["verdict"] == "remove"
+    assert (attached["verdict"], attached["reason"]) == ("keep", "protected")
     assert not attached["eligible"]
     assert attached["protections"] == ["it is a protected branch"]
 
@@ -815,7 +829,7 @@ def test_prune_yes_approves_metadata_modes_with_category_permissions(
         assert not done.exists()
         assert not world.git("branch", "--list", "done")
         assert f"git branch done {tip}" in result.stderr
-        assert "deleting ignored, unrecoverable: kept.secret" in result.stderr
+        assert "  delete ignored   kept.secret, unrecoverable\n" in result.stderr
         assert "git stash store -m" in result.stderr
     else:
         assert (done / "kept.secret").read_bytes() == b"keep until approved\n"
@@ -843,3 +857,149 @@ def test_untracked_files_protect_under_show_untracked_files_no(world):
     result = run(world, "gw prune", "--yes")
     assert result.returncode == 0, result.stderr
     assert (wt / "notes.txt").exists()
+
+
+# --------------------------------------------------------------------------
+# reasons the evidence gives
+# --------------------------------------------------------------------------
+
+
+def _reset_away(world) -> tuple[Path, str]:
+    """A merged branch whose reflogs alone hold a commit reset away before
+    the merge."""
+    wt = world.worktree("topic")
+    lost = world.commit("dropped.txt", "work\n", at=wt)
+    world.git("reset", "--quiet", "--hard", "main", at=wt)
+    world.commit("kept.txt", "kept\n", at=wt)
+    world.git("merge", "--quiet", "--no-ff", "-m", "merge", "topic")
+    return wt, lost
+
+
+def test_deleting_a_branch_drops_a_commit_only_its_reflogs_hold(world):
+    """Raw git: the reflogs go with the worktree and the branch, and nothing
+    reaches the commit after."""
+    wt, lost = _reset_away(world)
+    world.git("worktree", "remove", str(wt))
+    world.git("branch", "-D", "topic")
+    assert lost not in world.git("log", "--all", "--reflog", "--format=%H").split()
+
+
+def test_prune_holds_back_a_row_whose_reflog_alone_holds_a_commit(world):
+    """Only a --delete value that names reflog, after the diff is read, lets
+    it go, and the disclosure says how to get the commit back."""
+    wt, lost = _reset_away(world)
+    row = next(r for r in rows(world) if r["branch"] == "topic")
+    assert (row["verdict"], row["reason"]) == ("remove", "merged")
+    assert row["needs"] == ["reflog"]
+    assert row["protections"] == [
+        "its reflog alone holds 1 commit(s) the head branch lacks; "
+        f"see each with git show {lost[:12]}; pass --delete reflog"
+    ]
+    p = run(world, "gw prune", "--delete", "empty", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert wt.exists()
+
+    p = run(world, "gw prune", "--delete", "all", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert not wt.exists()
+    recover = f"git branch rescue-{lost[:7]} {lost}"
+    assert (
+        f"  delete reflog    {lost[:7]} dropped.txt, recover with: {recover}\n"
+    ) in p.stderr
+    world.git(*shlex.split(recover)[1:])
+    assert world.git("rev-parse", f"rescue-{lost[:7]}") == lost
+
+
+def test_a_rebased_predecessor_whose_change_merged_holds_nothing_back(world):
+    """A commit a rebase left behind is in the head when its patch is."""
+    wt = world.worktree("topic")
+    world.commit("change.txt", "x\n", at=wt)
+    world.commit("other.txt", "o\n")
+    world.git("rebase", "--quiet", "main", at=wt)
+    world.git("merge", "--quiet", "--squash", "topic")
+    world.git("commit", "--quiet", "-m", "squash topic")
+    row = next(r for r in rows(world) if r["branch"] == "topic")
+    assert (row["verdict"], row["reason"], row["eligible"]) == (
+        "remove",
+        "merged",
+        True,
+    )
+    assert row["protections"] == []
+
+
+def test_keep_branch_takes_reflog_for_commits_only_the_worktree_saw(world):
+    """--keep-branch keeps the branch's reflog, never the worktree's own."""
+    wt = finished(world)
+    world.git("checkout", "--quiet", "--detach", at=wt)
+    lost = world.commit("detached.txt", "d\n", at=wt)
+    world.git("checkout", "--quiet", "done", at=wt)
+
+    p = run(world, "gw remove", str(wt), "--keep-branch", "--yes")
+    assert p.returncode == 1, p.stderr
+    assert f"git show {lost[:12]}; pass --delete reflog" in p.stderr
+    assert wt.exists()
+    p = run(world, "gw remove", str(wt), "--keep-branch", "--delete", "reflog", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert not wt.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/done")
+
+    p = run(world, "gw remove", "done", "--keep-branch", "--delete", "empty")
+    assert p.returncode == 2
+    assert "--keep-branch takes only --delete reflog" in p.stderr
+
+
+@pytest.mark.parametrize(
+    "make",
+    ["gw add", "git worktree add -b", "git branch --no-track", "gw branch create"],
+)
+def test_a_fresh_branch_reads_unused_however_it_was_made(world, make):
+    """Each way a branch is made leaves a reflog entry, so `stale`, which
+    removes, never takes a new one. `git branch --no-track` is what
+    `gw fast-forward` runs to start the branch it moves to."""
+    path = world.parent / ".worktrees" / "fresh" / world.repo.name
+    if make == "gw add":
+        p = run(world, "gw add", "fresh")
+        assert p.returncode == 0, p.stderr
+    elif make == "git worktree add -b":
+        world.worktree("fresh")
+    elif make == "git branch --no-track":
+        world.git("branch", "--no-track", "fresh", "main")
+        path.parent.mkdir(parents=True)
+        world.git("worktree", "add", "--quiet", str(path), "fresh")
+    else:
+        path.parent.mkdir(parents=True)
+        world.git("worktree", "add", "--quiet", "--detach", str(path), "main")
+        p = run(world, "gw branch create", "fresh", at=path)
+        assert p.returncode == 0, p.stderr
+    row = next(r for r in rows(world) if r["branch"] == "fresh")
+    assert (row["verdict"], row["reason"]) == ("keep", "unused")
+
+
+def test_a_branch_with_nothing_of_its_own_and_no_reflog_left_is_stale(world):
+    """Every commit it reaches is in the head, so nothing is lost; with
+    reflogs turned off no branch has one, so none reads stale."""
+    world.worktree("old")
+    world.git("reflog", "expire", "--expire=now", "--all")
+    row = next(r for r in rows(world) if r["branch"] == "old")
+    assert (row["verdict"], row["reason"], row["eligible"]) == ("remove", "stale", True)
+    world.git("config", "core.logAllRefUpdates", "false")
+    row = next(r for r in rows(world) if r["branch"] == "old")
+    assert (row["verdict"], row["reason"]) == ("keep", "unused")
+
+
+def test_unmerged_commits_say_whether_a_remote_holds_them(world):
+    world.commit("t.txt", "t\n", at=world.worktree("topic"))
+    row = next(r for r in rows(world) if r["branch"] == "topic")
+    assert (row["verdict"], row["reason"]) == ("keep", "unpushed")
+    world.git("update-ref", "refs/remotes/origin/topic", "topic")
+    row = next(r for r in rows(world) if r["branch"] == "topic")
+    assert (row["verdict"], row["reason"]) == ("keep", "pushed")
+
+
+def test_an_operation_in_progress_keeps_a_finished_worktree(world):
+    wt = finished(world)
+    world.git("bisect", "start", at=wt)
+    row = next(r for r in rows(world) if r["path"] == str(wt))
+    assert (row["verdict"], row["reason"]) == ("keep", "in-progress")
+    assert "a bisect is in progress in it" in row["protections"]
+    assert not row["eligible"]
