@@ -13,7 +13,7 @@ gw remove fix-parser    # remove one worktree and its finished branch
 ```
 
 `gw sync` fetches every remote and asks the forge about each local branch.
-Every other command but `gw version`, `gw ci-checks`, `gw merge`, `gw hook`, help and completion
+Every other command but `gw version`, `gw ci-checks`, `gw merge`, help and completion
 runs it first once the last sync is a minute old, then works from local refs
 and that sync's evidence. `gw ci-checks` reads a pull request's checks from
 the forge each time it runs. With `WORKTREES_OFFLINE` set, nothing touches
@@ -36,7 +36,6 @@ repositories under the same worktree root are outside their scope.
 | `gw merge NUMBER --match-head-commit SHA` | | squash one checked GitHub PR, respecting native stacks and merge queues |
 | `gw ci-checks [NUMBER]` | | read a pull request's checks from GitHub or GitLab; `gw ci` for short |
 | `gw version` | | print the installed version |
-| `gw hook EVENT` | | lock this worktree for an agent session; the plugin's hooks run it |
 
 `gw` is the one command installed on `$PATH`, and `worktrees` is its long
 name. A shortcut is a function from the fish or zsh plugin that runs the `gw`

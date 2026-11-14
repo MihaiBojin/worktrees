@@ -6,18 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v gw >/dev/null 2>&1 || exit 0; gw hook start --client codex --rules \"${CLAUDE_PLUGIN_ROOT}/session.md\"",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "command -v gw >/dev/null 2>&1 || exit 0; gw hook end --client codex",
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; jq -Rs '{hookSpecificOutput: {hookEventName: \"SessionStart\", additionalContext: .}}' \"${CLAUDE_PLUGIN_ROOT}/session.md\"",
             "timeout": 15
           }
         ]

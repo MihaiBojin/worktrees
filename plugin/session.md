@@ -11,11 +11,14 @@ The worktrees plugin hands every session these rules when it starts.
   next with `gw branch create NAME`. A branch that builds on work not merged
   yet starts from it: `git switch --create NAME` while on that branch.
   `/worktrees:ship-it BRANCH ...` ships several, switching to each in turn.
-- When another session holds this worktree, as the line below says, do not
-  wait for it. In Claude Code, call `EnterWorktree` with a `name`, run
-  `git switch --create NEW BRANCH` there from the branch the other session
-  is on, and decide when shipping whether NEW stacks on it. In Codex, report
-  it and say to start a new session with `codex --worktree`.
+- Before editing, check that no other session is working here. The
+  worktree is in use when `git status --short` shows changes this session
+  did not make and the user did not ask it to continue, or when
+  `git worktree list --porcelain` shows it `locked` by another process.
+  Then do not wait. In Claude Code, call `EnterWorktree` with a `name`, run
+  `git switch --create NEW BRANCH` there from this worktree's branch, and
+  decide when shipping whether NEW stacks on it. In Codex, report it and
+  say to start a new session with `codex --worktree`.
 - A subagent that writes gets its own worktree (`isolation: "worktree"`).
   Commit before starting it, and have it start its branch with
   `git switch --create NAME PARENT_BRANCH`, since its worktree starts from
