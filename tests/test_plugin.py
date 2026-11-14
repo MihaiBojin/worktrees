@@ -5,6 +5,7 @@ prune skill runs read the JSON `gwp` and `gwbs` print."""
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -690,3 +691,26 @@ def test_ci_projection_keeps_the_failures_and_the_head(world, network) -> None:
     assert out["failing"] == [
         {"name": "lint", "workflow": "CI", "link": raw["checks"][1]["link"]}
     ]
+
+
+@pytest.mark.parametrize("name", ["hooks.json", "codex.json"])
+def test_each_client_hands_the_session_its_rules(name: str) -> None:
+    """The hook's own command prints session.md as the context JSON."""
+    hooks = json.loads((PLUGIN / "hooks" / name).read_text())["hooks"]
+    assert list(hooks) == ["SessionStart"]
+    command = hooks["SessionStart"][0]["hooks"][0]["command"]
+    proc = subprocess.run(
+        ["sh", "-c", command],
+        env={**os.environ, "CLAUDE_PLUGIN_ROOT": str(PLUGIN)},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    out = json.loads(proc.stdout)["hookSpecificOutput"]
+    assert out["hookEventName"] == "SessionStart"
+    assert out["additionalContext"] == (PLUGIN / "session.md").read_text()
+
+
+def test_codex_names_its_hooks() -> None:
+    manifest = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text())
+    assert manifest["hooks"] == "./hooks/codex.json"

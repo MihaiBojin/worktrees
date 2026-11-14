@@ -268,7 +268,6 @@ def _explain() -> int:
         new_branch,
         prune,
         repo,
-        session,
         verdicts,
         worktree,
     )
@@ -583,66 +582,6 @@ def run_prune(args: argparse.Namespace) -> int:
         names = ", ".join(render.out(v.label, render.BRANCH) for v in go)
         print(f"removed {len(go)} worktree(s): {names}")
     return 1 if failed else 0
-
-
-# --------------------------------------------------------------------------
-# hook
-# --------------------------------------------------------------------------
-
-
-def _add_hook_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "event",
-        choices=("start", "end"),
-        metavar="EVENT",
-        help="start or end, for the client's SessionStart or SessionEnd",
-    )
-    p.add_argument(
-        "--client",
-        choices=("claude", "codex"),
-        required=True,
-        help="the client running the hook",
-    )
-    p.add_argument(
-        "--rules",
-        default="",
-        metavar="FILE",
-        help="text to hand the session when it starts",
-    )
-
-
-def run_hook(args: argparse.Namespace) -> int:
-    """Answer a client's session hook. It never fails the session: whatever
-    goes wrong, the session starts, with the rules when they can be read."""
-    import contextlib
-    import json
-
-    from . import session
-
-    try:
-        event = json.loads(sys.stdin.read() or "{}")
-    except ValueError:
-        event = {}
-    cwd = str(event.get("cwd") or os.getcwd())
-    name = str(event.get("session_id") or "unknown")
-    if args.event == "end":
-        # A hook must not fail the client.
-        with contextlib.suppress(Exception):
-            session.release(name, cwd)
-        return 0
-    try:
-        status = session.claim(args.client, name, cwd)
-    except Exception as exc:  # a hook must not fail the client
-        status = f"The worktree lock could not be taken: {exc}"
-    try:
-        rules = Path(args.rules).read_text() if args.rules else ""
-    except OSError:
-        rules = ""
-    context = f"{rules.rstrip()}\n\n{status}".strip()
-    # No envelope: the client reads this object and nothing else.
-    output = {"hookEventName": "SessionStart", "additionalContext": context}
-    print(json.dumps({"hookSpecificOutput": output}))
-    return 0
 
 
 # --------------------------------------------------------------------------
@@ -1820,15 +1759,6 @@ _COMMANDS: dict[str, _Command] = {
         "sync is WORKTREES_SYNC_TTL seconds old, 60 by default.",
         shortcuts={"gws": ""},
     ),
-    "hook": _Command(
-        run_hook,
-        _add_hook_flags,
-        "lock this worktree for an agent session",
-        "Answer an agent client's SessionStart or SessionEnd hook, read as "
-        "JSON on stdin: lock the worktree the session runs in, or release it. "
-        "At the start it hands the session the rules in FILE.",
-        usage="EVENT",
-    ),
     "branch": _Command(
         run_branch,
         _add_branch_flags,
@@ -2092,7 +2022,7 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             raise _Stop("--only cannot be combined with --yes", 2)
         # Forge commands read live evidence and do not sync local refs first.
         if (
-            run not in (run_version, run_sync, run_ci, run_merge, run_hook)
+            run not in (run_version, run_sync, run_ci, run_merge)
             and not getattr(args, "explain", False)
             and not getattr(args, "complete", False)
             and not (hasattr(args, "name") and not args.name)

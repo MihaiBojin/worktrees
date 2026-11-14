@@ -244,17 +244,7 @@ def assess(
         if here and Path(wt.path).resolve() == Path(here).resolve() and wt.path != main:
             hard.append((CURRENT, "you are standing in it"))
         if "locked" in wt.flags:
-            from . import session
-
-            hard.append(
-                (
-                    LOCKED,
-                    "it is locked by an agent session that has ended; "
-                    f"git worktree unlock -- {shlex.quote(wt.path)} releases it"
-                    if session.ended(wt.lock)
-                    else "it is locked",
-                )
-            )
+            hard.append((LOCKED, "it is locked"))
         ignored_paths: tuple[str, ...] = ()
         ignored_groups: tuple[str, ...] = ()
         reflogs: dict[bool, tuple[tuple[str, str], ...]] = {}
