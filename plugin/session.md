@@ -11,6 +11,10 @@ The worktrees plugin hands every session these rules when it starts.
   next with `gw branch create NAME`. A branch that builds on work not merged
   yet starts from it: `git switch --create NAME` while on that branch.
   `/worktrees:ship-it BRANCH ...` ships several, switching to each in turn.
+- When a change the user decided on is implemented and its tests and checks
+  pass, ship it without being asked: `/worktrees:ship-it` commits it on its
+  own branch, pushes it, opens the pull request, fixes CI and merges it once
+  it is ready.
 - Before editing, check that no other session is working here. The
   worktree is in use when `git status --short` shows changes this session
   did not make and the user did not ask it to continue, or when
