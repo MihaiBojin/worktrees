@@ -413,9 +413,8 @@ checkout, with `(cd 'PATH' && command gw fast-forward --json)`. On the head
 branch it only fast-forwards; a refusal that the branch is ahead of the
 remote is reported, never worked around. Offer
 [the prune skill](../prune/SKILL.md) for the merged branches; removing them
-waits for the user. This worktree stays on the last branch it shipped, and
-[the new-branch skill](../new-branch/SKILL.md) starts the next piece of
-work here.
+waits for the user. This worktree stays on the last branch it shipped;
+`gw branch create` starts the next piece of work here.
 
 When step 1 started the branch on a head branch that held commits of its
 own, and step 4 pushed it, put the head branch back where its remote is,

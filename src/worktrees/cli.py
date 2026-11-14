@@ -79,12 +79,19 @@ def run_sync(args: argparse.Namespace) -> int:
     return code
 
 
-def _refresh(args: argparse.Namespace) -> None:
+def _refresh(
+    args: argparse.Namespace, meanwhile: Callable[[], bool] | None = None
+) -> bool:
     """Sync first when the shared evidence is due, and carry on if it fails.
 
     Its failures are warnings, since the command still runs on the evidence
-    it has; quiet and JSON hide them, as they hide the stale line.
+    it has; quiet and JSON hide them, as they hide the stale line. With
+    `meanwhile`, the sync runs on a thread while it does, and its answer is
+    returned; the spinner waits until it is done, so it never draws over a
+    question.
     """
+    import threading
+
     from . import sync
 
     try:
@@ -92,13 +99,45 @@ def _refresh(args: argparse.Namespace) -> None:
     except ValueError as exc:
         raise _Stop(str(exc), 2) from None
     if not due:
-        return
+        return meanwhile() if meanwhile else False
     quiet = getattr(args, "quiet", False)
-    with progress.running(not quiet and not getattr(args, "verbose", False)):
-        _, failures, warnings = sync.run()
+    spin = not quiet and not getattr(args, "verbose", False)
+    answer = False
+    if meanwhile is None:
+        with progress.running(spin):
+            _, failures, warnings = sync.run()
+    else:
+        done: dict = {}
+
+        def work() -> None:
+            try:
+                done["out"] = sync.run()
+            except BaseException as exc:  # raised again on the main thread
+                done["exc"] = exc
+
+        thread = threading.Thread(target=work, daemon=True)
+        thread.start()
+        answer = meanwhile()
+        with progress.running(spin):
+            thread.join()
+        if "exc" in done:
+            raise done["exc"]
+        _, failures, warnings = done["out"]
     if not quiet and not getattr(args, "json", False):
         for message in (*failures, *warnings):
             _warn(message)
+    return answer
+
+
+def _notices(args: argparse.Namespace) -> None:
+    """How fresh the evidence is. The never-synced line is on stderr under -q
+    and --json too: a caller acting on these verdicts needs to know no sync
+    stands behind them. -q and --json hide the rest."""
+    from . import sync
+
+    hushed = getattr(args, "json", False) or getattr(args, "quiet", False)
+    for notice in sync.freshness(quiet=True) if hushed else sync.notices():
+        _err(render.note(notice))
 
 
 def _same(a: str, b: str) -> bool:
@@ -554,6 +593,11 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "name", nargs="?", default="", metavar="NAME", help="the branch to start"
     )
+    p.add_argument(
+        "--here",
+        action="store_true",
+        help="start from the commit this checkout is on, without syncing",
+    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument(
         "-q", "--quiet", action="store_true", help="omit summaries and progress"
@@ -564,6 +608,24 @@ def _add_new_branch_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--explain", action="store_true", help="print every git command and exit"
     )
+
+
+def _stack_question(args: argparse.Namespace) -> str:
+    """The question to ask before starting NAME, or nothing to ask.
+
+    Only a person at a terminal standing on a branch other than the head
+    branch has a choice to make: on the head branch, stacking and starting
+    from the head ref are the same thing.
+    """
+    from . import repo as R
+
+    if args.json or not sys.stdin.isatty():
+        return ""
+    current = R.current_branch().value
+    head = R.head()
+    if not current or not head.branch or current == head.branch:
+        return ""
+    return render.ask(f"stack {args.name} on {current}, not {head.branch}?", "[y/N]")
 
 
 def run_new_branch(args: argparse.Namespace) -> int:
@@ -581,7 +643,21 @@ def run_new_branch(args: argparse.Namespace) -> int:
         return _needs(args, "NAME")
 
     try:
-        started = new_branch.create(args.name)
+        new_branch.check(args.name)
+        if args.here:
+            base = new_branch.here()
+        else:
+            question = _stack_question(args)
+
+            def ask() -> bool:
+                sys.stderr.write(question)
+                sys.stderr.flush()
+                return sys.stdin.readline().strip().lower() in ("y", "yes")
+
+            stack = _refresh(args, ask if question else None)
+            _notices(args)
+            base = new_branch.here() if stack else ""
+        started = new_branch.create(args.name, base=base)
     except new_branch.Refusal as exc:
         _err(render.fail(str(exc)))
         return 1
@@ -1644,8 +1720,10 @@ _BRANCH_COMMANDS: dict[str, _Command] = {
         run_new_branch,
         _add_new_branch_flags,
         "branch off the head branch",
-        "Branch NAME off the head ref and check it out. The branch has no "
-        "upstream, so a push never targets the head branch.",
+        "Branch NAME off the head ref with no upstream and check it out, or "
+        "off this checkout with --here, without syncing. On a terminal on a "
+        "branch other than the head branch, it asks whether to stack NAME "
+        "there while the sync runs.",
         usage="NAME",
         shortcuts={"gwbc": ""},
     ),
@@ -1951,25 +2029,20 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             and not (run is run_branch and not getattr(args, "branch_command", None))
         ):
             from . import repo as R
-            from . import sync
             from .git import options
 
             options.verbose = getattr(args, "verbose", False)
             R.require_offline_git()
-            # The never-synced line is on stderr under -q and --json too: a
-            # caller acting on these verdicts needs to know no sync stands
-            # behind them. -q and --json hide the rest.
-            hushed = getattr(args, "json", False) or getattr(args, "quiet", False)
             # list reads only the worktree records, which no fetch changes, so
-            # it neither syncs first nor says how fresh the evidence is.
-            if run is not run_list and R.toplevel().value:
+            # it neither syncs first nor says how fresh the evidence is. branch
+            # create syncs itself, since it asks its question during the sync.
+            creates = run is run_branch and args.branch_command == "create"
+            if run is not run_list and not creates and R.toplevel().value:
                 if run is run_fast_forward:
                     _fetch_now(args)
                 else:
                     _refresh(args)
-                shown = sync.freshness(quiet=True) if hushed else sync.notices()
-                for notice in shown:
-                    _err(render.note(notice))
+                _notices(args)
         code = run(args)
         merged = sys.modules.get("worktrees.merged")
         quiet = getattr(args, "quiet", False) or getattr(args, "json", False)

@@ -1,7 +1,7 @@
 {
   "name": "worktrees",
   "version": "0.10.0",
-  "description": "Start branches, read CI, rebase onto the head branch, describe, ship and merge pull requests, and prune finished worktrees through the worktrees CLI",
+  "description": "Read CI, rebase onto the head branch, describe, ship and merge pull requests, and prune finished worktrees through the worktrees CLI",
   "author": {
     "name": "Mihai Bojin",
     "url": "https://github.com/MihaiBojin"
@@ -24,7 +24,7 @@
   "interface": {
     "displayName": "worktrees",
     "shortDescription": "Branches, CI, rebases, pull requests and cleanup, through one CLI",
-    "longDescription": "Start a branch from the freshly fetched head branch, read a pull request's checks as compact JSON, keep its title and description true to its diff, and merge it once CI is green, reporting what was fixed on the way, or ship a change from uncommitted work to a merged pull request without being asked along the way. Rebase the branch you are on onto the head branch, resolving each conflict the rebase stops at, and remove the worktrees and branches the worktrees CLI proves finished, after asking.",
+    "longDescription": "Read a pull request's checks as compact JSON, keep its title and description true to its diff, and merge it once CI is green, reporting what was fixed on the way, or ship a change from uncommitted work to a merged pull request without being asked along the way. Rebase the branch you are on onto the head branch, resolving each conflict the rebase stops at, and remove the worktrees and branches the worktrees CLI proves finished, after asking.",
     "developerName": "Mihai Bojin",
     "category": "Developer Tools",
     "capabilities": [
@@ -32,7 +32,6 @@
       "Check and correct a pull request's title and description",
       "Fix failing checks, then merge with the repository's strategy",
       "Ship a change from uncommitted work to a merged pull request, unassisted",
-      "Start branches from the freshly fetched head branch",
       "Rebase this branch onto the head branch and resolve its conflicts",
       "Remove only the finished worktrees and branches you choose"
     ],

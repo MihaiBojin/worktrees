@@ -86,7 +86,11 @@ of the line alone, so no shortcut meets history expansion. `!!` would.
 `gw branch create` and `gw fast-forward` start branches, not worktrees.
 `gw branch create NAME` starts NAME off the head ref, as `origin new-branch`
 does, and keeps argparse's 2 for a usage error where `origin` has a single
-non-zero exit code.
+non-zero exit code. On a terminal, standing on a branch other than the head
+branch, it asks whether to stack NAME on that branch, and the sync it runs
+first runs on a thread meanwhile: `_refresh` starts the spinner only once
+the answer is in, so nothing draws over the question. `--here` starts NAME
+from the commit this checkout is on and syncs nothing.
 
 `gw fast-forward` starts a branch only when the one you stand on is proved
 finished, by the same `merged.branch_proof` that `gw prune` reads, or when
@@ -187,14 +191,13 @@ watching. A shortcut has no completion file of its own.
 
 ## The agent plugin reads `--json`
 
-`plugin/` ships with the CLI: seven skills, each a directory under
+`plugin/` ships with the CLI: six skills, each a directory under
 `plugin/skills/` named as its command is, `/worktrees:<name>` in Claude Code
 and `$worktrees:<name>` in Codex. Skills call `gw` from `$PATH`; nothing
 assumes a plugin root or a checkout at a known path.
 
 | skill | runs |
 | --- | --- |
-| `new-branch` | `gw sync`, then `gw branch create` |
 | `fast-forward` | `gw fast-forward --autostash --json`, then each rebase conflict until the branch is level |
 | `ci-checks` | `gw ci-checks --json`, `--wait` to wait without polling |
 | `describe-pr` | checks a review's title and body against its diff, and edits them |

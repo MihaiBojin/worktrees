@@ -114,6 +114,7 @@ __worktrees_merge() {
 
 __worktrees_branch_create() {
     _arguments -s \
+        '--here[start from the commit this checkout is on, without syncing]' \
         '--json[the result as data]' \
         '(-q --quiet)'{-q,--quiet}'[omit summaries and progress]' \
         '(-v --verbose)'{-v,--verbose}'[print every git command]' \

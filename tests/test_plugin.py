@@ -103,7 +103,6 @@ def test_every_skill_is_named_for_its_directory() -> None:
         "ci-checks",
         "describe-pr",
         "fast-forward",
-        "new-branch",
         "preflight",
         "prune",
         "ship-it",

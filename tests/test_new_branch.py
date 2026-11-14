@@ -1,14 +1,16 @@
-"""gw branch create: fetch, then branch off the head branch and check it out."""
+"""gw branch create: fetch, then branch off the head branch or this checkout."""
 
 from __future__ import annotations
 
 import json
+import os
+import pty
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-from conftest import argv, env_for
+from conftest import argv, env_for, online
 
 from worktrees import new_branch
 from worktrees.git import Refused, guard
@@ -172,3 +174,140 @@ def test_the_usage_line_names_what_was_typed(world) -> None:
     assert p.returncode == 2
     assert p.stderr.startswith("worktrees branch create needs NAME\n")
     assert "usage: worktrees branch create " in p.stderr
+
+
+def on_a_terminal(world, *args: str, answer: str, env=None) -> tuple[int, str]:
+    """A real tty on stdin, so the question is reachable."""
+    parent, child = pty.openpty()
+    proc = subprocess.Popen(
+        argv("gw branch create", *args),
+        cwd=str(world.repo),
+        stdin=child,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=env or env_for(world),
+    )
+    os.close(child)
+    os.write(parent, answer.encode())
+    out = proc.stdout.read() if proc.stdout else ""
+    proc.wait()
+    os.close(parent)
+    return proc.returncode, out
+
+
+def disk_remote(world) -> None:
+    """An origin on this disk, so a sync fetches for real and fast."""
+    bare = world.root / "upstream.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    world.git("remote", "add", "origin", str(bare))
+    world.git("push", "-q", "origin", "main")
+    world.git("fetch", "-q", "origin")
+    world.git("remote", "set-head", "origin", "main")
+
+
+def on_feature(world) -> str:
+    world.git("switch", "-q", "-c", "feature")
+    world.commit("feature work", "f\n")
+    return world.git("rev-parse", "HEAD")
+
+
+QUESTION = "stack next on feature, not main? [y/N]"
+
+
+def test_a_terminal_on_another_branch_can_stack_there(world) -> None:
+    tip = on_feature(world)
+    code, out = on_a_terminal(world, "next", answer="y\n")
+    assert code == 0, out
+    assert QUESTION in out
+    assert "next from feature at" in out
+    assert world.git("rev-parse", "HEAD") == tip
+
+
+def test_no_answer_starts_from_the_head_ref(world) -> None:
+    with_remote(world)
+    on_feature(world)
+    code, out = on_a_terminal(world, "next", answer="\n")
+    assert code == 0, out
+    assert QUESTION in out
+    assert world.git("rev-parse", "HEAD") == world.git(
+        "rev-parse", "refs/remotes/origin/main"
+    )
+
+
+def test_the_head_branch_asks_nothing(world) -> None:
+    code, out = on_a_terminal(world, "next", answer="y\n")
+    assert code == 0, out
+    assert "stack" not in out
+
+
+def test_without_a_terminal_nothing_is_asked(world) -> None:
+    with_remote(world)
+    on_feature(world)
+    p = branch_create(world, "next")
+    assert p.returncode == 0, p.stderr
+    assert "stack" not in p.stderr
+    assert world.git("rev-parse", "HEAD") == world.git(
+        "rev-parse", "refs/remotes/origin/main"
+    )
+
+
+def test_a_refused_name_is_refused_before_the_question(world) -> None:
+    on_feature(world)
+    world.git("branch", "taken", "main")
+    code, out = on_a_terminal(world, "taken", answer="y\n")
+    assert code == 1
+    assert "already a branch" in out
+    assert "stack" not in out
+
+
+def test_here_starts_from_the_local_head_branch(world) -> None:
+    """On the head branch, --here takes its last local commit, not the
+    remote's."""
+    with_remote(world)
+    world.commit("local-only", "x\n")
+    p = branch_create(world, "next", "--here", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["base"] == "refs/heads/main"
+    assert world.git("rev-parse", "HEAD") == world.git("rev-parse", "refs/heads/main")
+
+
+def test_here_stacks_on_another_branch(world) -> None:
+    tip = on_feature(world)
+    p = branch_create(world, "next", "--here", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["base"] == "refs/heads/feature"
+    assert world.git("rev-parse", "HEAD") == tip
+
+
+def test_here_does_not_sync(world) -> None:
+    disk_remote(world)
+    on_feature(world)
+
+    def run(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            argv("gw branch create", *args, "-v"),
+            cwd=str(world.repo),
+            capture_output=True,
+            text=True,
+            env=online(world),
+        )
+
+    p = run("stacked", "--here")
+    assert p.returncode == 0, p.stderr
+    assert "fetch" not in p.stderr
+    world.git("switch", "-q", "feature")
+    p = run("fresh")
+    assert p.returncode == 0, p.stderr
+    assert "fetch" in p.stderr
+
+
+def test_the_question_waits_for_the_sync_it_runs_beside(world) -> None:
+    disk_remote(world)
+    on_feature(world)
+    code, out = on_a_terminal(world, "next", answer="\n", env=online(world))
+    assert code == 0, out
+    assert QUESTION in out
+    assert world.git("rev-parse", "HEAD") == world.git(
+        "rev-parse", "refs/remotes/origin/main"
+    )

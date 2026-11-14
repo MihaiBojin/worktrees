@@ -1,4 +1,4 @@
-"""Start a branch from the locally resolved head ref."""
+"""Start a branch from the locally resolved head ref, or from this checkout."""
 
 from __future__ import annotations
 
@@ -64,11 +64,13 @@ class Refusal(Exception):
     """Why no branch was made. The message is the whole answer."""
 
 
-def create(
-    name: str,
-    repo: str | os.PathLike[str] | None = None,
-) -> Started:
-    """Branch `name` off the resolved head ref and check it out."""
+def here(repo: str | os.PathLike[str] | None = None) -> str:
+    """Where this checkout is: its branch as a full ref, or `HEAD` when detached."""
+    return R.symbolic_ref("HEAD", repo=repo).value or "HEAD"
+
+
+def check(name: str, repo: str | os.PathLike[str] | None = None) -> None:
+    """Refuse a name git will not take or that a branch already holds."""
     if not check_ref_format(name, repo=repo):
         raise Refusal(f"{render.branch(name)} is not a valid branch name")
     if R.ref_exists(f"refs/heads/{name}", repo=repo):
@@ -80,10 +82,19 @@ def create(
         )
     refuse_nested(name, repo=repo)
 
-    resolved = R.head(repo)
-    if not resolved.ref:
-        raise Refusal(resolved.unresolved)
-    base = R.symbolic_ref(resolved.ref, repo=repo).value or resolved.ref
+
+def create(
+    name: str,
+    repo: str | os.PathLike[str] | None = None,
+    base: str = "",
+) -> Started:
+    """Branch `name` off `base`, or the resolved head ref, and check it out."""
+    check(name, repo=repo)
+    if not base:
+        resolved = R.head(repo)
+        if not resolved.ref:
+            raise Refusal(resolved.unresolved)
+        base = R.symbolic_ref(resolved.ref, repo=repo).value or resolved.ref
 
     sha = short_sha(base, repo=repo)
     switch_create(name, base, repo=repo)
