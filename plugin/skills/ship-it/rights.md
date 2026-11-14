@@ -77,6 +77,11 @@ prefix_rule(
     justification="ship-it opens and describes the pull request",
 )
 prefix_rule(
+    pattern=["gh", "stack", "link"],
+    decision="allow",
+    justification="ship-it opens a stacked pull request",
+)
+prefix_rule(
     pattern=["gw", "merge"],
     decision="allow",
     justification="ship-it merges one checked GitHub pull request",

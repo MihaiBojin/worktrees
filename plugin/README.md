@@ -58,7 +58,7 @@ uv tool install git-worktrees
 ```
 
 The skills need `jq`, and `gh` or `glab` signed in for the forge the remote
-is on. The plugin installs none of them. Skills call `gw` from `$PATH`.
+is on; shipping a stack on GitHub needs `gh extension install github/gh-stack`. The plugin installs none of them. Skills call `gw` from `$PATH`.
 
 ## What runs without asking
 
@@ -115,6 +115,12 @@ In the main checkout it switches back to the head branch after each push. On a
 head branch that holds commits its remote does not, it starts the branch on
 them, ships it, then puts the head branch back where its remote is and
 prints the command that undoes that.
+
+Named branches that build on each other ship as a stack: each opens its
+pull request on the one below with `gh stack link`, so GitHub links them
+into a native stack, and they merge bottom first. On GitLab the merge
+request targets the branch below. A stack needs the `gh-stack` extension on
+GitHub.
 
 `/worktrees:ship-it 41 42` ships open pull requests instead, one at a time
 and a stack bottom first. Asking approves pushing fixes to each one's

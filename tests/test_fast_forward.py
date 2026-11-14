@@ -1135,12 +1135,14 @@ def test_the_live_query_asks_for_merged_requests(world, network, host) -> None:
     queries = [
         c for c in network.network_calls() if c[1:3] in (["pr", "list"], ["mr", "list"])
     ]
-    assert len(queries) == 1, network.network_calls()
-    query = queries[0]
+    # One asks for the newest request in any state, to find a stack; the
+    # other is the merged lookup this test is about.
     if host == "github.com":
-        assert query[query.index("--state") + 1] == "merged"
+        merged = [q for q in queries if q[q.index("--state") + 1] == "merged"]
     else:
-        assert "--merged" in query and "--all" not in query
+        merged = [q for q in queries if "--merged" in q]
+        assert all("--all" not in q for q in merged)
+    assert len(merged) == 1, network.network_calls()
 
 
 def test_a_failed_fetch_refuses_with_the_same_run_offline(world, network) -> None:
@@ -1821,3 +1823,89 @@ def test_a_rewrite_that_never_arrives_leaves_the_branch(
     asked = network.network_calls()
     assert any("repos/owner/repo/pulls/18" in call for call in asked)
     assert any("fetch" in call for call in asked)
+
+
+def open_row(branch: str, source: str, base: str, number: int) -> dict:
+    return {
+        **merged_row(branch, source, ""),
+        "number": number,
+        "state": "OPEN",
+        "url": f"https://github.com/owner/repo/pull/{number}",
+        "baseRefName": base,
+        "mergedAt": None,
+        "mergeCommit": None,
+    }
+
+
+def open_stack(world, network) -> None:
+    """parent and child, child's open request on parent's, parent's on main;
+    then main moves and parent is rebased onto it, leaving child behind."""
+    on_forge(world)
+    world.git("switch", "--quiet", "--create", "parent")
+    world.commit("a.txt", "a\n")
+    world.git("switch", "--quiet", "--create", "child")
+    world.commit("b.txt", "b\n")
+    world.git("switch", "--quiet", "main")
+    world.commit("m.txt", "m\n")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+    world.git("switch", "--quiet", "parent")
+    world.git("rebase", "--quiet", "main")
+    world.git("switch", "--quiet", "child")
+    network.answer(
+        {
+            "child": {
+                "merged": [],
+                "all": [
+                    open_row("child", world.git("rev-parse", "child"), "parent", 19)
+                ],
+            },
+            "parent": {
+                "merged": [],
+                "all": [
+                    open_row("parent", world.git("rev-parse", "parent"), "main", 18)
+                ],
+            },
+        }
+    )
+
+
+def test_a_branch_stacked_on_an_open_request_rebases_onto_its_parent(
+    world, network
+) -> None:
+    open_stack(world, network)
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["base"]) == ("rebased", "refs/heads/parent")
+    assert world.git("rev-parse", "child~1") == world.git("rev-parse", "parent")
+    assert world.git("rev-parse", "parent~1") == world.git("rev-parse", "main")
+
+
+def test_a_branch_level_with_its_open_parent_is_current(world, network) -> None:
+    open_stack(world, network)
+    world.git("rebase", "--quiet", "parent")
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["ahead"]) == ("current", 1)
+
+
+def test_a_parent_whose_request_closed_is_not_a_stack(world, network) -> None:
+    open_stack(world, network)
+    closed = {**open_row("parent", world.git("rev-parse", "parent"), "main", 18)}
+    closed["state"] = "CLOSED"
+    network.answer(
+        {
+            "child": {
+                "merged": [],
+                "all": [
+                    open_row("child", world.git("rev-parse", "child"), "parent", 19)
+                ],
+            },
+            "parent": {"merged": [], "all": [closed]},
+            "$api": {carriers("github.com", world.git("rev-parse", "child~1")): []},
+        }
+    )
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["base"] == "refs/remotes/origin/main"

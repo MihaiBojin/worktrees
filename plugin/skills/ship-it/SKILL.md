@@ -35,6 +35,7 @@ allowed-tools:
   - Bash(gh pr diff:*)
   - Bash(gh pr create:*)
   - Bash(gh pr edit:*)
+  - Bash(gh stack link:*)
   - Bash(gw merge:*)
   - Bash(gh run view:*)
   - Bash(gh run rerun:*)
@@ -96,8 +97,8 @@ Never edit those files yourself.
 With no arguments, work in the checkout the user is in, from step 1.
 
 Each named branch goes through steps 2 to 10 on its own, one after another
-in this worktree, and a branch built on another named branch goes after it.
-Step 2 commits the branch this worktree is on; then switch to the next:
+in this worktree. Step 2 commits the branch this worktree is on; then
+switch to the next:
 
 ```sh
 git switch --no-guess 'BRANCH'
@@ -112,6 +113,14 @@ pushing, the review, CI and the merge do not. In the main checkout, switch
 back to the head branch after each push, `git switch --no-guess
 'HEAD_BRANCH'`, so it is never left on another branch. Naming the head branch is the same as no argument in the checkout that
 holds it.
+
+Named branches that build on each other ship as a stack. A branch builds
+on another named branch when its history holds that branch's tip and that
+branch is not merged. Take the stack bottom first through steps 2 to 6,
+each branch above opening its review on the one below as step 5 says, then
+bottom first through steps 7 to 10. Once a branch's review is open on the
+one below, `gw fast-forward` levels it with that branch rather than the
+head branch.
 
 With numbers, each review goes through steps 7 to 10 on its own, one at a
 time in the order given, and a stack bottom first. One whose `pr.baseRef`
@@ -224,6 +233,21 @@ written to a file with the Write tool:
 gh pr create --base 'HEAD_BRANCH' --head 'BRANCH' --title 'TITLE' --body-file FILE
 glab mr create --target-branch 'HEAD_BRANCH' --source-branch 'BRANCH' --title 'TITLE' --description "$(cat FILE)" --yes
 ```
+
+A branch that builds on the named branch below it opens its review on that
+one instead. On GitHub, `gh stack link` pushes it, opens the pull request
+on the one below and links the two into a native stack; on GitLab the merge
+request targets the branch below:
+
+```sh
+gh stack link 'BELOW' 'BRANCH' --open
+glab mr create --target-branch 'BELOW' --source-branch 'BRANCH' --title 'TITLE' --description "$(cat FILE)" --yes
+```
+
+Then run step 3 again, which now levels the branch with the one below, and
+push it as step 4 does. `gh stack link` comes from the `gh-stack`
+extension, `gh extension install github/gh-stack`; without it, a stacked
+branch is a blocker.
 
 Then run [the describe-pr skill](../describe-pr/SKILL.md) on it.
 
