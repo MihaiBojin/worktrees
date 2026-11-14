@@ -172,7 +172,13 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> World:
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", "/dev/null")
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    (tmp_path / "gitconfig").write_text("[init]\n\tdefaultBranch = main\n")
+    # A commit or merge can start `git maintenance run --auto` in the
+    # background, whose lock files land in the snapshots tests compare.
+    (tmp_path / "gitconfig").write_text(
+        "[init]\n\tdefaultBranch = main\n"
+        "[maintenance]\n\tauto = false\n"
+        "[gc]\n\tauto = 0\n"
+    )
 
     w = World(tmp_path)
     w.repo.mkdir()
