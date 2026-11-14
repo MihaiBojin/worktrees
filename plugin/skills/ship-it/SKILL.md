@@ -4,8 +4,8 @@ description: >
   Take a change to a merged pull request or merge request, unassisted. With
   no arguments, the change in this checkout from uncommitted work: commit,
   bring the branch level with the head branch, push and open the review.
-  With branch names, the same for each branch, in the worktree that holds
-  it. With numbers, those open reviews, a stack bottom first. Then fix
+  With branch names, the same for each branch, switching this worktree to
+  each in turn. With numbers, those open reviews, a stack bottom first. Then fix
   failing CI, merge, and report what was fixed. Use when the user asks to
   ship, merge or land a change, a branch or a pull request. With
   --hold-merge, stop before the merge and print the command that makes it.
@@ -14,7 +14,6 @@ allowed-tools:
   - Bash(gw sync)
   - Bash(gw list --json)
   - Bash(gw branch create:*)
-  - Bash(command gw add:*)
   - Bash(gw fast-forward:*)
   - Bash(gw ci-checks:*)
   - Bash(jq:*)
@@ -26,6 +25,7 @@ allowed-tools:
   - Bash(git show:*)
   - Bash(git rev-parse:*)
   - Bash(git switch --create:*)
+  - Bash(git switch --no-guess:*)
   - Bash(git add --:*)
   - Bash(git commit:*)
   - Bash(GIT_EDITOR=true git rebase --continue)
@@ -95,11 +95,23 @@ Never edit those files yourself.
 
 With no arguments, work in the checkout the user is in, from step 1.
 
-Each named branch goes through steps 2 to 10 on its own, in the worktree
-that holds it, found or made as [fixing a failure](#fixing-a-failure)
-describes, with every command run there as `cd 'PATH' && COMMAND`. A branch
-neither this clone nor the remote has is a blocker. Naming the head branch
-is the same as no argument in the checkout that holds it.
+Each named branch goes through steps 2 to 10 on its own, one after another
+in this worktree, and a branch built on another named branch goes after it.
+Step 2 commits the branch this worktree is on; then switch to the next:
+
+```sh
+git switch --no-guess 'BRANCH'
+```
+
+If only the remote has the branch, `gw sync` and then
+`git branch 'BRANCH' refs/remotes/REMOTE/BRANCH` first. A branch neither
+this clone nor the remote has is a blocker. git refuses a branch checked out
+in another worktree: it is being worked on there, so report it and go on to
+the next. Only committing, levelling and fixing need the branch checked out;
+pushing, the review, CI and the merge do not. In the main checkout, switch
+back to the head branch after each push, `git switch --no-guess
+'HEAD_BRANCH'`, so it is never left on another branch. Naming the head branch is the same as no argument in the checkout that
+holds it.
 
 With numbers, each review goes through steps 7 to 10 on its own, one at a
 time in the order given, and a stack bottom first. One whose `pr.baseRef`
@@ -246,18 +258,9 @@ fixed, below.
 
 ### Fixing a failure
 
-This checkout's change is fixed here. A named review is fixed in the
-worktree that holds its branch, never in the main checkout:
-
-```sh
-gw list --json | jq -r --arg b 'BRANCH' '.worktrees[] | select(.branch == $b) | .path'
-```
-
-When none does, `command gw add 'BRANCH' --json` checks the local branch
-out in a new worktree and prints its `path`. If only the remote has the
-branch, `gw sync` and then `git branch 'BRANCH' refs/remotes/REMOTE/BRANCH`
-first. A review from a fork the user cannot push to is a blocker: report
-it. The branch must hold exactly `pr.headSha` before anything changes. If
+A failure is fixed on its review's branch, in this worktree. For a named
+review, switch to that branch as a [named branch](#which-change) does. A
+review from a fork the user cannot push to is a blocker: report it. The branch must hold exactly `pr.headSha` before anything changes. If
 it is behind, `git merge --ff-only` its remote-tracking ref; if it has
 diverged, stop and report it rather than choosing a side.
 
@@ -409,8 +412,10 @@ follow [the fast-forward skill](../fast-forward/SKILL.md) in that
 checkout, with `(cd 'PATH' && command gw fast-forward --json)`. On the head
 branch it only fast-forwards; a refusal that the branch is ahead of the
 remote is reported, never worked around. Offer
-[the prune skill](../prune/SKILL.md) for the merged branches' worktrees;
-removing them waits for the user.
+[the prune skill](../prune/SKILL.md) for the merged branches; removing them
+waits for the user. This worktree stays on the last branch it shipped, and
+[the new-branch skill](../new-branch/SKILL.md) starts the next piece of
+work here.
 
 When step 1 started the branch on a head branch that held commits of its
 own, and step 4 pushed it, put the head branch back where its remote is,

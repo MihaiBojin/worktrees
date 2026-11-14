@@ -44,8 +44,9 @@ and pick another name only if the user left the choice to you.
 Report the branch, the ref it came from and the commit, from `branch`,
 `base` and `sha`.
 
-## A branch in its own worktree
+## When to run it
 
-When the user wants the work in a worktree of its own, rather than this
-checkout, `command gw add 'NAME' --json` creates the branch the same way in
-a new directory and prints its `path`. Work there from then on.
+`gw branch create` moves this checkout to the new branch, so run it when
+the checkout's next work belongs there; the branch it leaves keeps its
+commits. A branch that builds on work not merged yet starts from that work
+instead: `git switch --create 'NAME'` on the branch it builds on.

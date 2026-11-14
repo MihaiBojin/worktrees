@@ -369,8 +369,8 @@ def test_ship_it_preapproves_publishing_alone() -> None:
     tools = _tools(SHIP_IT)
     for wanted in (
         "gw branch create fix-parser --json",
-        "command gw add fix-parser --json",
         "git switch --create fix-parser",
+        "git switch --no-guess fix-parser",
         "gw fast-forward --autostash --json",
         "gw ci-checks 41 --wait --json",
         "git add -- README",
@@ -392,6 +392,7 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "gw remove x --yes",
         "gw branch prune x --yes",
         "gw add x",
+        "command gw add x",
         "git push",
         "git push --force origin x",
         "git push origin --delete x",
@@ -608,7 +609,7 @@ def test_ship_it_finds_the_checkout_holding_the_head_branch(world) -> None:
 
     world.worktree("feature")
     raw = json.loads(_json(world, "gw list"))
-    flags, program = _skill_filter("ship-it", "gw list --json", nth=2)
+    flags, program = _skill_filter("ship-it", "gw list --json", nth=1)
     out = json.loads(_run_jq(flags, program, json.dumps(raw)))
     main = next(row for row in raw["worktrees"] if row["main"])
     assert out == {"branch": "main", "path": main["path"]}
@@ -620,17 +621,6 @@ def test_ship_it_finds_the_checkout_holding_the_head_branch(world) -> None:
     assert raw["head"]["ref"] == "refs/remotes/origin/main"
     out = json.loads(_run_jq(flags, program, json.dumps(raw)))
     assert out == {"branch": "main", "path": None}
-
-
-def test_ship_it_finds_the_worktree_holding_a_branch(world) -> None:
-    world.worktree("feat'quoted")
-    world.worktree("other")
-    raw = _json(world, "gw list")
-    flags, program = _skill_filter("ship-it", "gw list --json", nth=1)
-    out = _run_jq(flags, program, raw, b="feat'quoted")
-    rows = json.loads(raw)["worktrees"]
-    assert out.splitlines() == [r["path"] for r in rows if r["branch"] == "feat'quoted"]
-    assert len(out.splitlines()) == 1
 
 
 def test_ci_projection_keeps_the_failures_and_the_head(world, network) -> None:
