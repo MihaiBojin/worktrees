@@ -224,8 +224,8 @@ skill's commands to never writing `--force`, `--admin`, `--auto` or
 `--delete-branch`.
 
 The prune skill reads `gw prune --json` and
-`gw branch status --json`, preserving head/sync state and full rows for eligible, empty,
-stash-blocked and ignored-file cases. `tests/test_plugin.py` extracts the
+`gw branch status --json`, preserving head/sync state and full rows for eligible, empty
+and stash-blocked cases, and each worktree's ignored paths. `tests/test_plugin.py` extracts the
 actual jq filters and applies them to real CLI output. Checked-out branches
 are absent from the loose-branch list. Paths and restore commands must retain
 exact quoting.
@@ -605,12 +605,13 @@ unmerged requests are never proof.
 head branch are protected. Locked or dirty worktrees, untracked files,
 initialized submodules and a submodule store left by `deinit` block removal;
 `git worktree remove` refuses each. A locked worktree whose directory is away
-is assessed from its record. Ignored paths, empty branches and
-matching stashes require their own permission. `--yes` grants none.
+is assessed from its record. Empty branches and matching stashes require
+their own permission; ignored paths go with the worktree, listed in the
+disclosure first. `--yes` grants neither.
 `gw prune` also protects the current worktree; `gw remove` needs a second terminal
 confirmation for it. `--keep-branch` retains the branch and its stashes,
-needs no completion proof for an attached checkout, and combines only with
-`--delete ignored-files`.
+needs no completion proof for an attached checkout, and combines with no
+`--delete` value.
 
 The removal snapshot pins the branch and head SHAs, exact path, ignored
 paths and stash identities. Recheck after confirmation precedes plain
@@ -618,7 +619,7 @@ worktree removal, full-SHA ref deletion and approved stash drops. Ignored
 paths are what an ignore pattern names, so a matched directory is one entry;
 the snapshot is a path listing, not a recursive content fingerprint, and a
 file created inside a listed directory after assessment goes with it. The
-disclosure, the protection's count and the JSON `ignored` field list each
+disclosure and the JSON `ignored` field list each
 path as git does, from the top level, sorted, so a tracked directory above
 an ignored one never reads as ignored. A path whose pattern, found with
 `git check-ignore -v`, ends in a bare `*` or `**` reads as its directory,

@@ -21,7 +21,7 @@ KEEP = "keep"
 UNKNOWN = "unknown"
 
 # What `--delete all` grants a worktree.
-PERMISSIONS = frozenset(("empty", "ignored-files", "stashes"))
+PERMISSIONS = frozenset(("empty", "stashes"))
 
 
 def restore_command(branch: str, sha: str) -> str:
@@ -146,7 +146,6 @@ def assess(
     only: str,
     head: str,
     head_branch: str,
-    delete_ignored: bool,
     repo: str | os.PathLike[str] | None = None,
     here: str | None = None,
     ask_forge: bool = False,
@@ -199,7 +198,6 @@ def assess(
             protections.append("it is locked")
         ignored_paths: tuple[str, ...] = ()
         ignored_groups: tuple[str, ...] = ()
-        held = 0
         if wt.path != main and not Path(wt.path).is_dir():
             # A locked worktree keeps its record while its directory is away,
             # on a removable disk say. git refuses to remove it until it is
@@ -215,17 +213,11 @@ def assess(
                 protections.append(submodule)
             ignored_paths = tuple(status.ignored)
             ignored_groups = tuple(R.ignored_groups(wt.path, status.ignored))
-            held = len(ignored_groups)
         stashes = prune.stashes_on(wt.branch, entries, wt.sha, repo)
 
         def standing(granted: frozenset[str], keep: bool = keep_branch) -> list[str]:
             """The protections left once these --delete values are granted."""
-            left = list(protections)
-            if held and "ignored-files" not in granted:
-                left.append(
-                    f"it holds {held} ignored path(s); pass --delete ignored-files"
-                )
-            return left + prune.branch_protections(
+            return protections + prune.branch_protections(
                 wt.branch, head_branch, verdict, stashes, granted, keep
             )
 
@@ -238,7 +230,7 @@ def assess(
                 or (verdict == EMPTY and "empty" in granted)
             )
 
-        granted = permissions | {"ignored-files"} if delete_ignored else permissions
+        granted = permissions
         row = Verdict(
             verdict,
             wt.branch,

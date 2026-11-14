@@ -61,6 +61,8 @@ def test_permissions_combine_without_changing_empty_verdict(world, entry, values
     [
         ("gw prune", "--delete", "wat"),
         ("gw branch prune", "--delete", "ignored-files"),
+        ("gw prune", "--delete", "ignored-files"),
+        ("gw remove", "--delete", "ignored-files"),
         ("gw branch status", "--delete", "all"),
         *[
             ("gw remove", *flags)
@@ -521,22 +523,11 @@ def test_never_synced_disclosure_and_confirmation_survive_output_flags(world, en
     assert world.git("rev-parse", "topic")
 
 
-def test_keep_branch_still_requires_ignored_permission(world):
+def test_keep_branch_lists_the_ignored_files_it_deletes(world):
     world.commit(".gitignore", "*.secret\n")
     path = world.worktree("topic")
     (path / "private.secret").write_text("preserve")
-    denied = run(world, "gw remove", "topic", "--keep-branch", "--yes")
-    assert denied.returncode != 0
-    assert (path / "private.secret").read_text() == "preserve"
-    allowed = run(
-        world,
-        "gw remove",
-        "topic",
-        "--keep-branch",
-        "--delete",
-        "ignored-files",
-        "--yes",
-    )
+    allowed = run(world, "gw remove", "topic", "--keep-branch", "--yes")
     assert allowed.returncode == 0, allowed.stderr
     assert "private.secret" in allowed.stderr
     assert not path.exists()

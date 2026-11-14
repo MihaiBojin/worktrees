@@ -275,19 +275,14 @@ def _explain() -> int:
 # --------------------------------------------------------------------------
 
 
-def _add_delete_flags(p: argparse.ArgumentParser, *, branch: bool = False) -> None:
+def _add_delete_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--delete",
         action="append",
-        choices=("empty", "stashes", "all")
-        if branch
-        else ("empty", "ignored-files", "stashes", "all"),
+        choices=("empty", "stashes", "all"),
         default=[],
         metavar="VALUE",
-        help="permit empty branches or stashes; all permits both; repeat to combine"
-        if branch
-        else "permit empty branches, ignored-files or stashes; "
-        "all permits every category; repeat to combine",
+        help="permit empty branches or stashes; all permits both; repeat to combine",
     )
 
 
@@ -342,7 +337,6 @@ def _judge_all(
     only = getattr(args, "branch", "")
     permissions: frozenset[str] = getattr(args, "permissions", frozenset())
     keep_branch = getattr(args, "keep_branch", False)
-    ignored = "ignored-files" in permissions
     records = R.worktrees()
     # Cached forge evidence can settle a branch whose stacked changes differ
     # from the head branch's final content.
@@ -353,7 +347,6 @@ def _judge_all(
             only,
             head,
             head_branch,
-            ignored,
             ask_forge=ask_forge,
             permissions=permissions,
             keep_branch=keep_branch,
@@ -364,7 +357,6 @@ def _judge_all(
             only,
             head,
             head_branch,
-            ignored,
             ask_forge=ask_forge,
             # Targeted removal supplies its own candidate assessment.
             include_main=True,
@@ -419,10 +411,10 @@ def run_preview(args: argparse.Namespace) -> int:
                     # they are not all this repository's.
                     "neighbours": others,
                     # `ignored`, `ignoredPaths` and `sha` are fields rather
-                    # than facts to parse back out of `why`. A caller deciding
-                    # whether to pass --delete ignored-files wants the count
-                    # and the paths, not a sentence that happens to contain
-                    # them, and the sha is what the verdict was formed against.
+                    # than facts to parse back out of `why`. A caller showing
+                    # what a removal deletes wants the count and the paths,
+                    # not a sentence that happens to contain them, and the
+                    # sha is what the verdict was formed against.
                     "verdicts": _verdict_data(_only(args, rows)),
                 },
                 indent=2,
@@ -1936,12 +1928,10 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
         if getattr(args, "quiet", False) and getattr(args, "verbose", False):
             raise _Stop("--quiet and --verbose cannot be combined", 2)
         values = getattr(args, "delete", [])
-        if getattr(args, "keep_branch", False) and any(
-            value != "ignored-files" for value in values
-        ):
-            raise _Stop("--keep-branch accepts only --delete ignored-files", 2)
+        if getattr(args, "keep_branch", False) and values:
+            raise _Stop("--keep-branch takes no --delete value", 2)
         args.permissions = frozenset(
-            ("empty", "ignored-files", "stashes") if "all" in values else values
+            ("empty", "stashes") if "all" in values else values
         )
         if run is run_prune and args.only and args.yes:
             raise _Stop("--only cannot be combined with --yes", 2)

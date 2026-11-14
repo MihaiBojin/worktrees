@@ -247,7 +247,7 @@ def test_filters_preserve_exact_targets_permissions_and_restore_commands(world) 
     assert all(not v["paths"] for v in branches["branches"])
 
 
-def test_filters_keep_ignored_and_stash_permissions_distinct(world) -> None:
+def test_filters_offer_ignored_worktrees_and_keep_stashes_distinct(world) -> None:
     ignored = world.merged_worktree("ignored")
     (ignored / ".gitignore").write_text("secret\n")
     world.git("add", ".gitignore", at=ignored)
@@ -261,16 +261,11 @@ def test_filters_keep_ignored_and_stash_permissions_distinct(world) -> None:
     world.worktree("empty")
 
     out = _jq(_filter("gw prune"), _json(world, "gw prune"))
-    assert not out["worktrees"]
-    assert [v["branch"] for v in out["ignored"]] == ["ignored"]
-    assert out["ignored"][0]["ignored"] == 1
-    permitted = _jq(
-        _filter("gw prune"),
-        _json(world, "gw prune", "--delete", "ignored-files"),
-    )
-    assert [v["branch"] for v in permitted["worktrees"]] == ["ignored"]
-    assert not permitted["worktrees"][0]["protections"]
-    assert any(v["branch"] == "empty" and not v["eligible"] for v in permitted["empty"])
+    assert [v["branch"] for v in out["worktrees"]] == ["ignored"]
+    assert out["worktrees"][0]["ignoredPaths"] == ["secret"]
+    assert not out["worktrees"][0]["protections"]
+    assert "ignored" not in out
+    assert any(v["branch"] == "empty" and not v["eligible"] for v in out["empty"])
     branches = _jq(_filter("gw branch status"), _json(world, "gw branch status"))
     assert not branches["branches"]
     assert [v["branch"] for v in branches["stash_blocked"]] == ["loose-stashed"]

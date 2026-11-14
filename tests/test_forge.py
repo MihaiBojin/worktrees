@@ -39,15 +39,11 @@ def test_synced_request_proves_worktree_completion_without_an_upstream(world, ne
     assert worktree_status(world, network)["verdict"] == "remove"
 
 
-@pytest.mark.parametrize("protection", ["dirty", "ignored", "locked", "current"])
+@pytest.mark.parametrize("protection", ["dirty", "locked", "current"])
 def test_cached_forge_proof_keeps_worktree_protections(world, network, protection):
     wt = synced_worktree(world, network)
     if protection == "dirty":
         (wt / "feature").write_text("unfinished\n")
-    elif protection == "ignored":
-        world.git("config", "core.excludesFile", str(world.root / "ignore"))
-        (world.root / "ignore").write_text("cache\n")
-        (wt / "cache").write_text("keep\n")
     elif protection == "locked":
         world.git("worktree", "lock", str(wt))
     if protection == "current":

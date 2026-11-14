@@ -98,11 +98,8 @@ def test_divergent_local_main_is_not_the_assessed_first_parent_history(world):
 
 
 @pytest.mark.parametrize("detached", [False, True])
-@pytest.mark.parametrize(
-    "protection", ["locked", "tracked", "untracked", "ignored", "current"]
-)
+@pytest.mark.parametrize("protection", ["locked", "tracked", "untracked", "current"])
 def test_finished_worktree_protections_preserve_verdict(world, protection, detached):
-    world.commit(".gitignore", ".env\n")
     wt = finished(world)
     if detached:
         world.git("checkout", "--quiet", "--detach", at=wt)
@@ -112,8 +109,6 @@ def test_finished_worktree_protections_preserve_verdict(world, protection, detac
         (wt / "README").write_text("changed")
     elif protection == "untracked":
         (wt / "untracked").write_text("keep")
-    elif protection == "ignored":
-        (wt / ".env").write_text("secret")
     result = rows(world, at=wt if protection == "current" else None)
     row = next(r for r in result if r["path"] == str(wt))
     assert row["verdict"] == "remove"
@@ -579,14 +574,14 @@ def test_invalid_merged_request_preserves_independent_proof(
     assert attached["proof"] == row["proof"]
 
 
-def test_ignored_file_permission_cannot_prove_an_unfinished_branch(world):
+def test_ignored_files_never_prove_an_unfinished_branch(world):
     from test_cli import run_on_a_terminal
 
     world.commit(".gitignore", ".env\n")
     wt = world.worktree("busy")
     sha = world.commit("unfinished", at=wt)
     (wt / ".env").write_text("secret")
-    refused = run(world, "gw remove", "busy", "--delete", "ignored-files", "--yes")
+    refused = run(world, "gw remove", "busy", "--yes")
     assert refused.returncode != 0
     assert wt.exists()
     assert world.git("rev-parse", "refs/heads/busy") == sha
@@ -594,8 +589,6 @@ def test_ignored_file_permission_cannot_prove_an_unfinished_branch(world):
         world,
         "gw remove",
         "busy",
-        "--delete",
-        "ignored-files",
         "--keep-branch",
         answer="y\n",
     )
@@ -797,13 +790,15 @@ def test_prune_yes_approves_metadata_modes_with_category_permissions(
     world.commit(".gitignore", "*.secret\n")
     done = world.merged_worktree("done")
     (done / "kept.secret").write_bytes(b"keep until approved\n")
+    (done / "README").write_text("pending")
+    world.git("stash", "push", "-qm", "pending", at=done)
     tip = world.git("rev-parse", "done")
     result = run(
         world,
         "gw prune",
         *mode,
         "--yes",
-        *(["--delete", "ignored-files"] if permission else []),
+        *(["--delete", "stashes"] if permission else []),
     )
     assert result.returncode == 0, result.stderr
     assert "[y/N]" not in result.stderr
@@ -820,7 +815,8 @@ def test_prune_yes_approves_metadata_modes_with_category_permissions(
         assert not done.exists()
         assert not world.git("branch", "--list", "done")
         assert f"git branch done {tip}" in result.stderr
-        assert "ignored" in result.stderr
+        assert "deleting ignored, unrecoverable: kept.secret" in result.stderr
+        assert "git stash store -m" in result.stderr
     else:
         assert (done / "kept.secret").read_bytes() == b"keep until approved\n"
         assert world.git("rev-parse", "done") == tip

@@ -142,8 +142,8 @@ def test_status_json_is_data_on_stdout(world) -> None:
 
 
 def test_json_carries_the_ignored_count_as_a_number(world) -> None:
-    """A caller deciding whether to pass --delete ignored-files wants the count, not
-    a sentence it has to find the count inside."""
+    """A caller showing what a removal deletes wants the count, not a sentence
+    it has to find the count inside."""
     wt = world.worktree("holds-secrets")
     world.repo.joinpath(".gitignore").write_text(".env\n")
     world.git("add", ".gitignore")
@@ -159,8 +159,7 @@ def test_json_carries_the_ignored_count_as_a_number(world) -> None:
     assert row["verdict"] == "empty"
     assert not row["eligible"]
     assert rows["main"]["ignored"] == 0
-    # and the sentence still says it, for the person reading the table
-    assert "1 ignored path(s)" in row["why"]
+    assert "ignored" not in row["why"]
 
 
 def test_json_carries_the_sha_the_verdict_was_formed_against(world) -> None:
@@ -225,7 +224,7 @@ def test_json_carries_the_neighbour_count_as_a_number(world) -> None:
         (),
         (
             "--delete",
-            "ignored-files",
+            "empty",
         ),
     ],
 )
@@ -254,7 +253,7 @@ def test_prune_removes_exactly_what_status_marks(world, extra: tuple[str, ...]) 
 
     assert removed == marked
     assert "finished" in removed
-    assert ("holds-env" in removed) == bool(extra)
+    assert "holds-env" in removed
     for kept in ("busy", "mystery"):
         assert kept not in removed
 
@@ -406,9 +405,7 @@ def test_prune_says_every_reason_a_worktree_is_held_back(world) -> None:
     (world.worktree("busy") / "wip").write_text("x")
     world.commit("unmerged", at=world.worktree("open"))
     lines = {
-        "done": "done: it holds 1 ignored path(s); pass --delete ignored-files",
-        "idle": "idle: it holds 1 ignored path(s); pass --delete ignored-files; "
-        "the branch is empty; pass --delete empty",
+        "idle": "idle: the branch is empty; pass --delete empty",
         "busy": "busy: it has uncommitted changes or untracked files; "
         "the branch is empty; pass --delete empty",
         "open": "open: its commits are not contained in the head branch",
@@ -418,24 +415,9 @@ def test_prune_says_every_reason_a_worktree_is_held_back(world) -> None:
         p = run(world, "gw prune", *flags)
         assert p.returncode == 0, p.stderr
         shown = p.stderr.split("held back:\n", 1)[1].splitlines()
-        assert sorted(shown[:4]) == sorted(lines.values()), p.stderr
-        assert (
-            "gw prune --delete empty --delete ignored-files makes done, idle eligible"
-            in p.stderr
-        )
-    assert "nothing to remove" in p.stdout
-
-    p = run(world, "gw remove", "done")
-    assert p.returncode == 0, p.stderr
-    assert f"held back:\n{lines['done']}\n" in p.stderr
-
-    p = run(world, "gw prune", "--yes", "--delete", "ignored-files")
-    assert p.returncode == 0, p.stderr
-    assert lines["done"] not in p.stderr
-    assert lines["busy"] in p.stderr
-    assert "gw prune --delete empty --delete ignored-files makes idle eligible" in (
-        p.stderr
-    )
+        assert sorted(shown[:3]) == sorted(lines.values()), p.stderr
+        assert "gw prune --delete empty makes idle eligible" in p.stderr
+    assert "deleting ignored, unrecoverable: .env\n" in p.stderr
     assert not done.exists()
     assert idle.exists()
 
@@ -462,12 +444,13 @@ def test_the_table_prints_each_reason_on_its_own_line(world) -> None:
     `why` keeps them on one line. A reason naming its flag stays one line."""
     world.commit(".gitignore", ".env\n")
     idle = world.worktree("idle")
-    (idle / ".env").write_text("S=1\n")
+    (idle / ".gitignore").write_text("changed\n")
+    world.git("stash", "push", "--quiet", "-m", "wip", at=idle)
     (idle / "wip").write_text("x")
     reasons = [
         "its tip is on the head ref's first-parent history",
         "it has uncommitted changes or untracked files",
-        "it holds 1 ignored path(s); pass --delete ignored-files",
+        "its branch has stashes; pass --delete stashes",
     ]
 
     p = run(world, "gw prune", "--table", "--delete", "empty")
@@ -1036,37 +1019,32 @@ def test_remove_starts_on_the_worktree_you_stand_in_and_lists_main_unnumbered(
     assert "nothing picked" in out
 
 
-def test_remove_confirms_permitted_ignored_files_on_a_terminal(world) -> None:
-    """Every permitted ignored path is disclosed before confirmation."""
+def test_remove_lists_ignored_files_before_confirming_on_a_terminal(world) -> None:
+    """Every ignored path is disclosed before confirmation."""
     world.commit(".gitignore", ".env\n")
     wt = world.merged_worktree("holds")
     (wt / ".env").write_text("SECRET=1\n")
 
-    code, out = run_on_a_terminal(
-        world, "gw remove", "holds", "--delete", "ignored-files", answer="n\n"
-    )
+    code, out = run_on_a_terminal(world, "gw remove", "holds", answer="n\n")
     assert code == 0, out
     assert "deleting ignored, unrecoverable: .env" in out
     assert "nothing removed" in out
     assert wt.exists()
 
-    code, out = run_on_a_terminal(
-        world, "gw remove", "holds", "--delete", "ignored-files", answer="y\n"
-    )
+    code, out = run_on_a_terminal(world, "gw remove", "holds", answer="y\n")
     assert code == 0, out
     assert not wt.exists()
 
 
 def test_remove_suggests_keep_branch_only_where_it_would_remove(world) -> None:
-    """--keep-branch waives completion proof, and never ignored files."""
-    world.commit(".gitignore", ".env\n")
+    """--keep-branch waives completion proof, and never uncommitted changes."""
     holds = world.merged_worktree("holds")
-    (holds / ".env").write_text("S=1\n")
+    (holds / "README.md").write_text("changed\n")
     world.commit("b.txt", "b\n", at=world.worktree("open"))
 
     code, out = run_on_a_terminal(world, "gw remove", "holds", answer="")
     assert code == 1, out
-    assert "holds kept: it holds 1 ignored path(s); pass --delete ignored-files" in out
+    assert "holds kept: it has uncommitted changes or untracked files" in out
     assert "--keep-branch" not in out
 
     code, out = run_on_a_terminal(world, "gw remove", "open", answer="")

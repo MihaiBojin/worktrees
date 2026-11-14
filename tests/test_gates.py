@@ -68,7 +68,7 @@ def test_the_probe_separates_them(world) -> None:
 
     seen = {
         v.branch: v
-        for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+        for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main")
     }
     assert seen["squashed"].verdict == verdicts.REMOVE
     assert seen["squashed"].proof == "squash"
@@ -81,7 +81,7 @@ def test_a_branch_that_changed_nothing_is_empty(world) -> None:
     world.worktree("noop")
     seen = {
         v.branch: v
-        for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+        for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main")
     }
     assert seen["noop"].verdict == verdicts.EMPTY
     assert not seen["noop"].eligible
@@ -112,7 +112,7 @@ def test_git_takes_ignored_files_without_a_word(world) -> None:
     assert not wt.exists()
 
 
-def test_ignored_files_stop_the_verdict(world) -> None:
+def test_ignored_files_are_listed_and_removed_with_the_worktree(world) -> None:
     (world.repo / ".gitignore").write_text(".env\nnode_modules\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
@@ -123,20 +123,19 @@ def test_ignored_files_stop_the_verdict(world) -> None:
 
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
-    }["holds"]
-    assert v.verdict == verdicts.REMOVE
-    assert not v.eligible
-    assert "2 ignored path(s)" in v.why
-    assert "--delete ignored-files" in v.why
-
-    # --yes must not answer that question; only --delete ignored-files does.
-    v = {
-        x.branch: x
-        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", True)
+        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main")
     }["holds"]
     assert v.verdict == verdicts.REMOVE
     assert v.eligible
+    assert v.ignored == 2
+
+    from test_cli import run
+
+    p = run(world, "gw remove", "holds", "--yes")
+    assert p.returncode == 0, p.stderr
+    assert "deleting ignored, unrecoverable: .env\n" in p.stderr
+    assert "deleting ignored, unrecoverable: node_modules/\n" in p.stderr
+    assert not wt.exists()
 
 
 def test_ignored_directory_collapses_to_one_entry(world) -> None:
@@ -252,10 +251,10 @@ def test_the_disclosure_and_the_count_use_the_listing(world) -> None:
         (wt / "build" / "out" / name).write_text("x\n")
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main")
     }["logs"]
-    assert "it holds 2 ignored path(s)" in v.why
-    # The paths are data before permission is given, so a caller can decide.
+    assert v.eligible and v.ignored == 2
+    # The paths are data before removal, so a caller can show them.
     preview = run(world, "gw prune", "--json")
     rows = {r["branch"]: r for r in json.loads(preview.stdout)["verdicts"]}
     assert (rows["logs"]["ignored"], rows["logs"]["ignoredPaths"]) == (
@@ -263,7 +262,7 @@ def test_the_disclosure_and_the_count_use_the_listing(world) -> None:
         ["build/out/a.log", "build/out/b.log"],
     )
     assert rows["main"]["ignoredPaths"] == []
-    p = run(world, "gw prune", "--delete", "ignored-files", "--yes")
+    p = run(world, "gw prune", "--yes")
     assert p.returncode == 0, p.stderr
     assert p.stderr.count("deleting ignored, unrecoverable:") == 2
     assert "deleting ignored, unrecoverable: build/out/a.log\n" in p.stderr
@@ -284,9 +283,7 @@ def test_the_disclosure_names_the_command_that_lists_every_ignored_file(
     (wt / "cache" / "deep").mkdir(parents=True)
     for name in ("a", "deep/b"):
         (wt / "cache" / name).write_text("x\n")
-    code, out = run_on_a_terminal(
-        world, "gw remove", "cached", "--delete", "ignored-files", answer="n\n"
-    )
+    code, out = run_on_a_terminal(world, "gw remove", "cached", answer="n\n")
     assert code == 0, out
     assert "deleting ignored, unrecoverable: cache/\n" in out
     line = next(ln for ln in out.splitlines() if "list every ignored file: " in ln)
@@ -305,7 +302,7 @@ def test_the_disclosure_escapes_what_would_not_print(world) -> None:
     wt = world.merged_worktree("odd")
     for name in ("a\x1b[31mb.log", "x\ny.log", "café.log"):
         (wt / name).write_text("x\n")
-    p = run(world, "gw prune", "--delete", "ignored-files", "--yes")
+    p = run(world, "gw prune", "--yes")
     assert p.returncode == 0, p.stderr
     shown = [
         line.removeprefix("  deleting ignored, unrecoverable: ")
@@ -332,7 +329,7 @@ def test_a_branch_that_moved_since_the_verdict_is_not_deleted(world) -> None:
 
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main")
     }["squashed"]
     assert v.verdict == verdicts.REMOVE
 
@@ -357,7 +354,7 @@ def test_a_tag_cannot_answer_for_a_branch(world) -> None:
 
     v = {
         x.branch: x
-        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+        for x in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main")
     }["feature"]
     assert v.verdict != verdicts.REMOVE, "the tag answered for the branch"
 
@@ -426,7 +423,7 @@ def test_the_head_branch_is_never_proposed(world) -> None:
     # A worktree on the head branch itself, made the way git allows.
     world.git("worktree", "add", "--quiet", "--detach", str(path.parent / "x"), "main")
 
-    rows = verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    rows = verdicts.assess(R.worktrees(), "", "refs/heads/main", "main")
     assert all(v.branch != "main" for v in rows)
 
 
@@ -440,9 +437,7 @@ def test_a_tag_shadowing_the_head_branch_does_not_shadow_it(world) -> None:
     assert R.full_ref("origin/main") == "refs/remotes/origin/main"
     v = {
         x.branch: x
-        for x in verdicts.assess(
-            R.worktrees(), "", R.full_ref("origin/main"), "main", False
-        )
+        for x in verdicts.assess(R.worktrees(), "", R.full_ref("origin/main"), "main")
     }
     assert v["feature"].verdict != verdicts.REMOVE
 
@@ -452,7 +447,7 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
     path = world.parent / ".worktrees" / "detached" / "repo"
     path.parent.mkdir(parents=True)
     world.git("worktree", "add", "--quiet", "--detach", str(path), "main")
-    v = verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    v = verdicts.assess(R.worktrees(), "", "refs/heads/main", "main")
     assert len(v) == 1
     assert v[0].branch == ""
     assert v[0].label == "(detached)"
@@ -572,7 +567,7 @@ def test_no_unexpected_git_command_ran(world) -> None:
     from worktrees.git import commands, options
 
     world.merged_worktree("done")
-    verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    verdicts.assess(R.worktrees(), "", "refs/heads/main", "main")
 
     # The canary. An empty log is indistinguishable from a run that never
     # reached git, and would pass every assertion below. Named commands
@@ -649,7 +644,7 @@ def test_a_worktree_is_read_once(world) -> None:
 
     for name in ("a", "b", "c"):
         world.worktree(name)
-    verdicts.assess(R.worktrees(), "", "refs/heads/main", "main", False)
+    verdicts.assess(R.worktrees(), "", "refs/heads/main", "main")
 
     status = [argv for argv in options.log if "--ignored=matching" in argv]
     assert len(status) == 3, status
