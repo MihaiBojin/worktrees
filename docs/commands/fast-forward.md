@@ -125,6 +125,26 @@ push it with `--force-with-lease --force-if-includes`. After it takes its
 remote copy, that push sends only the commits made after the copy, or
 nothing.
 
+## Why not `gh stack rebase`
+
+GitHub's `gh stack` extension also rebases stacked branches. It does not
+replace this command:
+
+- It only knows stacks it set up in this worktree. It keeps them in a file
+  inside the worktree's own git directory, so a stack made with
+  `gh stack link`, on another machine or in another worktree is unknown
+  here. This command reads the stack from git and the forge.
+- It refuses to run while another worktree has one of the stack's branches
+  checked out.
+- When GitHub rewrites a branch after its parent merges, it keeps the local
+  branch and pushes over the rewrite. This command takes the rewrite, and
+  waits for it if it has not arrived.
+- `gh stack rebase --abort` runs `reset --hard` on every branch. In a test
+  with `rebase.autoStash` on, that lost an uncommitted change. This command
+  never runs `reset --hard`.
+
+It also works only with GitHub, and moves no stashes.
+
 ## Uncommitted changes
 
 Without `--autostash`, the merge and the rebase run with `--no-autostash`, so
