@@ -23,6 +23,9 @@ complete -c gw -n '__worktrees_on sync' -s v -l verbose -d 'print every command'
 complete -c gw -n '__worktrees_on sync' -s h -l help -d 'show the help and exit'
 
 complete -c gw -n '__worktrees_on version v' -s h -l help -d 'show the help and exit'
+complete -c gw -n '__worktrees_on hook' -l client -d 'the client running the hook' -xa 'claude codex'
+complete -c gw -n '__worktrees_on hook' -l rules -d 'text to hand the session when it starts' -rF
+complete -c gw -n '__worktrees_on hook' -s h -l help -d 'show the help and exit'
 
 complete -c gw -n '__worktrees_on prune p' -l table -d 'assess without prompting; uncoloured table'
 complete -c gw -n '__worktrees_on prune p' -l only -x -a 'remove keep' -d 'filter assessment; rejects --yes'

@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v gw >/dev/null 2>&1 || exit 0; gw hook start --client codex --rules \"${CLAUDE_PLUGIN_ROOT}/session.md\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v gw >/dev/null 2>&1 || exit 0; gw hook end --client codex",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
