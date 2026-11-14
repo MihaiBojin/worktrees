@@ -586,12 +586,20 @@ and asserts it.
 ## Verdicts and deletion are separate
 
 `merged.branch_proof` checks matching cached forge proof, first-parent
-membership, local completion proof, then remaining commits or absent evidence.
-The verdicts are `remove`, `empty`, `keep` and `unknown`. A branch merged by
-fast-forward without forge proof is `empty`, because Git cannot distinguish
-it from an unused branch. A worktree with uncommitted changes or untracked
-files is `keep`, with that as its evidence, whatever its branch proves. First-parent history belongs to the assessed head,
-not a divergent local counterpart.
+membership, local completion proof, absent evidence, the cached request's
+state, then whether a remote-tracking ref holds the tip. It returns a reason:
+`merged`, `unused`, `closed`, `open`, `pushed`, `unpushed` or `unknown`.
+`gw fast-forward` reads it as it is; prune's assessments split `unused` by
+the branch's reflog into `merged`, `unused` and `stale`, and put the
+checkout facts first, `uncommitted` among them. A row's verdict is `remove`
+for `merged` and `stale` and `keep` for every other reason. First-parent
+history belongs to the assessed head, not a divergent local counterpart.
+
+Removing a worktree deletes its HEAD reflog and deleting a branch its
+reflog. `merged.reflog_only` lists the commits only those reach, by
+`rev-list --not --all`, and keeps each whose own patch-id the head lacks;
+they hold the row back until `--delete reflog`, which `--delete all`
+includes and which is the one value `--keep-branch` takes.
 
 Content proof compares changed paths, modes and deletions against the head.
 It cannot settle a stacked branch whose intermediate content the head later

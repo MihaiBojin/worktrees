@@ -286,9 +286,9 @@ def fast_forward(
         live=request if request and request.source_sha == tip else None,
     )
     found = None
-    if verdict == "remove":
+    if verdict == merged.MERGED:
         found = (tip, proof, why)
-    elif verdict == "keep":
+    elif verdict not in (merged.UNUSED, merged.UNKNOWN):
         found = (
             _forge_boundary(
                 request, branch, tip, head_sha, resolved.branch, first_parents, repo
@@ -307,12 +307,12 @@ def fast_forward(
     # whose merged part is another branch's, a stacked branch whose parent
     # merged, keeps its name and its open request, and drops the merged
     # commits in place.
-    if found and (verdict == "remove" or request is not None):
+    if found and (verdict == merged.MERGED or request is not None):
         point, proof, why = found
         return _rotate(
             branch, base, name, start, proof, why, remote, repo, now, point, stash
         )
-    if verdict == "unknown":
+    if verdict == merged.UNKNOWN:
         raise Refusal(
             f"cannot tell whether {render.branch(branch)} is finished, so it is "
             f"left as it is: {why}"
@@ -326,7 +326,7 @@ def fast_forward(
         )
     _unnamed(name, start, f"{render.branch(branch)} is not finished: {why}")
 
-    if verdict == "empty":
+    if verdict == merged.UNUSED:
         previous_sha = _short(local, repo=repo)
         behind = _count(local, base, repo)
         before = _stash_shas(repo)

@@ -83,7 +83,7 @@ def test_a_branch_that_changed_nothing_is_empty(world) -> None:
         v.branch: v
         for v in verdicts.assess(R.worktrees(), "", "refs/heads/main", "main")
     }
-    assert seen["noop"].verdict == verdicts.EMPTY
+    assert (seen["noop"].verdict, seen["noop"].reason) == (verdicts.KEEP, "unused")
     assert not seen["noop"].eligible
 
 
@@ -451,7 +451,7 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
     assert len(v) == 1
     assert v[0].branch == ""
     assert v[0].label == "(detached)"
-    assert v[0].verdict == verdicts.EMPTY
+    assert (v[0].verdict, v[0].reason) == (verdicts.KEEP, "unused")
     assert not v[0].eligible
 
 

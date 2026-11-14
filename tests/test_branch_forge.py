@@ -116,7 +116,7 @@ def test_a_request_into_another_branch_needs_its_merge_on_the_first_parents(
     else:
         changes = {"target_branch": "parent", "merge_commit_sha": side}
     result = assess(world, provider, evidence(world, provider, **changes), network)
-    assert result["verdict"] == "unknown", result
+    assert (result["verdict"], result["reason"]) == ("keep", "unknown"), result
     assert result["why"] == "the request targeted a different branch"
 
 
@@ -244,3 +244,24 @@ def test_invalid_provider_identity_cannot_supply_proof(
         assert json.loads(deleted.stdout)["removed"] == []
         assert world.git("rev-parse", "feature") == tip
     assert network.network_calls() == before
+
+
+@pytest.mark.parametrize("state", ["closed", "open"])
+def test_an_unmerged_request_names_why_its_branch_is_kept(forge_world, state):
+    """A closed request at the tip keeps its branch until --delete closed;
+    the forge still holds its commits. An open one keeps it outright."""
+    world, provider, network = forge_world
+    native = {
+        "github": {"closed": "CLOSED", "open": "OPEN"},
+        "gitlab": {"closed": "closed", "open": "opened"},
+    }[provider][state]
+    row = evidence(world, provider, state=native)
+    env = stub(world, provider, [row], network)
+    p = cli(world, "branch", "status", "feature", "--json", env=env)
+    assert p.returncode == 0, p.stderr
+    result = json.loads(p.stdout)["verdicts"][0]
+    assert (result["verdict"], result["reason"]) == ("keep", state), result
+    assert result["needs"] == (["closed"] if state == "closed" else [])
+    p = cli(world, "branch", "prune", "feature", "--delete", "closed", "--yes", env=env)
+    assert (p.returncode == 0) == (state == "closed"), p.stderr
+    assert bool(world.git("branch", "--list", "feature")) == (state == "open")

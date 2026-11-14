@@ -9,7 +9,7 @@ import sys
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
     from . import branches
@@ -123,6 +123,8 @@ class Snapshot:
     ignored: tuple[str, ...] = ()
     stashes: tuple[tuple[str, str], ...] = ()
     ignored_groups: tuple[str, ...] = ()
+    # Commits only the deleted reflogs reach, with their subjects.
+    reflog: tuple[tuple[str, str], ...] = ()
 
 
 def stash_subjects(shas: list[str], entries: list[str]) -> tuple[tuple[str, str], ...]:
@@ -297,28 +299,56 @@ def stashes_on(
     return found
 
 
+class Fact(NamedTuple):
+    """Something that holds a row back: its reason code, the --delete value
+    that lifts it or '' when none does, and how it reads."""
+
+    code: str
+    value: str
+    text: str
+
+
+PROTECTED_WHY = "it is a protected branch"
+
+
+def protected(branch: str, head_branch: str) -> bool:
+    return bool(branch) and branch in ("main", "master", head_branch)
+
+
 def branch_protections(
     branch: str,
     head_branch: str,
-    verdict: str,
+    evidence: str,
     stashes: list[str],
     permissions: frozenset[str] = frozenset(),
     keep_branch: bool = False,
-) -> list[tuple[str, str]]:
-    """Branch rules that apply to loose refs and checked-out branches.
+) -> list[Fact]:
+    """Branch rules that apply to loose refs and checked-out branches."""
+    from . import merged
 
-    Each comes with the --delete value that lifts it, or '' when none does.
-    """
-    reasons: list[tuple[str, str]] = []
     if keep_branch and branch:
-        return reasons
-    if branch and branch in ("main", "master", head_branch):
-        return [("", "it is a protected branch")]
+        return []
+    if protected(branch, head_branch):
+        return [Fact("protected", "", PROTECTED_WHY)]
+    reasons: list[Fact] = []
     if stashes and "stashes" not in permissions:
-        reasons.append(("stashes", "its branch has stashes"))
-    if verdict == "empty" and "empty" not in permissions:
-        reasons.append(("empty", "the branch is empty"))
+        reasons.append(Fact("stashes", "stashes", "its branch has stashes"))
+    if evidence == merged.UNUSED and "empty" not in permissions:
+        reasons.append(Fact(merged.UNUSED, "empty", "the branch is empty"))
+    if evidence == merged.CLOSED and "closed" not in permissions:
+        reasons.append(Fact(merged.CLOSED, "closed", "its request is closed"))
     return reasons
+
+
+def reflog_fact(lost: Sequence[tuple[str, str]]) -> Fact:
+    """Commits only a deleted reflog reaches, each with the line that shows it."""
+    shown = " and ".join(f"git show {sha[:12]}" for sha, _ in lost)
+    return Fact(
+        "reflog",
+        "reflog",
+        f"its reflog alone holds {len(lost)} commit(s) the head branch lacks; "
+        f"see each with {shown}",
+    )
 
 
 def needed(
@@ -337,11 +367,11 @@ def delete_flags(values: Iterable[str], keep_branch: bool = False) -> str:
     return " ".join(words + [f"--delete {value}" for value in sorted(values)])
 
 
-def hinted(protections: list[tuple[str, str]], needs: Sequence[str]) -> list[str]:
+def hinted(protections: list[Fact], needs: Sequence[str]) -> list[str]:
     """Each protection as it reads, one that a needed value lifts ending with
     every value the row needs, so following that hint alone frees it."""
     hint = f"; pass {delete_flags(needs)}"
-    return [text + hint if value in needs else text for value, text in protections]
+    return [f.text + hint if f.value in needs else f.text for f in protections]
 
 
 def plan(
@@ -383,6 +413,9 @@ def plan(
                 ]
             )
             say(_line("", f"list every ignored file: {render.command(listing)}"))
+        for sha, subject in snapshot.reflog:
+            restore = f"git branch rescue-{sha[:7]} {sha}"
+            say(_line("delete reflog", f"{sha[:7]} {subject}, recover with: {restore}"))
         if not v.branch:
             continue
         short = render.err(snapshot.sha[:7], render.YELLOW)
@@ -420,6 +453,7 @@ def deletions(
             "ignored path",
             "ignored paths",
         ),
+        (sum(len(s.reflog) for s in snapshots), "reflog commit", "reflog commits"),
         (len(dropping), "branch", "branches"),
         (sum(len(s.stashes) for s in dropping), "stash", "stashes"),
     )

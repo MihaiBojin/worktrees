@@ -104,6 +104,7 @@ def _table(rows: list[branches.Verdict]) -> str:
         [
             (
                 Cell("VERDICT", BOLD),
+                Cell("REASON", BOLD),
                 Cell("ELIGIBLE", BOLD),
                 Cell("BRANCH", BOLD),
                 Cell("SHA", BOLD),
@@ -113,6 +114,7 @@ def _table(rows: list[branches.Verdict]) -> str:
             *[
                 (
                     _verdict(v),
+                    Cell(v.reason),
                     Cell("yes" if v.eligible else "no"),
                     Cell(v.branch, render.BRANCH),
                     Cell(v.sha[:12], YELLOW),
@@ -170,6 +172,7 @@ def _plan(go: list[branches.Verdict]) -> str:
         [
             (
                 Cell("VERDICT", BOLD),
+                Cell("REASON", BOLD),
                 Cell("BRANCH", BOLD),
                 Cell("SHA", BOLD),
                 Cell("WHY", BOLD),
@@ -177,6 +180,7 @@ def _plan(go: list[branches.Verdict]) -> str:
             *[
                 (
                     _verdict(v),
+                    Cell(v.reason),
                     Cell(v.branch, render.BRANCH),
                     Cell(v.sha[:12], YELLOW),
                     Cell("\n".join(v.reasons)),
@@ -214,6 +218,7 @@ def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:
                 (
                     Cell("", BOLD),
                     Cell("VERDICT", BOLD),
+                    Cell("REASON", BOLD),
                     Cell("BRANCH", BOLD),
                     Cell("SHA", BOLD),
                     Cell("WHY", BOLD),
@@ -224,6 +229,7 @@ def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:
                         # In its colour even here: keep and unknown are
                         # different reasons not to offer it.
                         _verdict(v),
+                        Cell(v.reason),
                         Cell(v.branch, DIM),
                         Cell(v.sha[:12], DIM),
                         Cell("\n".join(v.reasons), DIM),
@@ -234,6 +240,7 @@ def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:
                     (
                         Cell(str(i), BOLD),
                         _verdict(v),
+                        Cell(v.reason),
                         Cell(v.branch, render.BRANCH),
                         Cell(v.sha[:12], YELLOW),
                         Cell("\n".join(v.reasons)),

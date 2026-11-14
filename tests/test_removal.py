@@ -38,7 +38,7 @@ def stash(world, path, subject="pending") -> str:
         ("empty", "empty", "stashes"),
     ],
 )
-def test_permissions_combine_without_changing_empty_verdict(world, entry, values):
+def test_permissions_combine_without_changing_an_unused_verdict(world, entry, values):
     path = world.worktree("topic")
     sha = stash(world, path)
     if entry == "gw branch prune":
@@ -53,7 +53,8 @@ def test_permissions_combine_without_changing_empty_verdict(world, entry, values
     assert not world.git("stash", "list")
     assert sha in p.stderr
     if entry == "gw branch prune":
-        assert json.loads(p.stdout)["verdicts"][0]["verdict"] == "empty"
+        row = json.loads(p.stdout)["verdicts"][0]
+        assert (row["verdict"], row["reason"]) == ("keep", "unused")
 
 
 @pytest.mark.parametrize(
@@ -681,7 +682,8 @@ def test_nested_current_worktree_is_protected(world):
     row = next(
         r for r in json.loads(preview.stdout)["verdicts"] if r["branch"] == "topic"
     )
-    assert row["verdict"] == "remove"
+    assert (row["verdict"], row["reason"]) == ("keep", "current")
+    assert row["proof"]
     assert not row["eligible"]
     assert "you are standing in it" in row["protections"]
     result = run(world, "gw prune", "--delete", "all", "--yes", "--json", at=nested)
@@ -794,8 +796,9 @@ def test_batch_modes_keep_protected_refs(world, mode):
             )
             assert code == 0, output
             for name in tips:
-                assert not re.search(rf"^\s*\d+\s+\w+\s+{name}\s", output, re.M), output
-                assert re.search(rf"^\s*-\s+\w+\s+{name}\s", output, re.M), output
+                row = rf"\s+\w+\s+\S+\s+{name}\s"
+                assert not re.search(rf"^\s*\d+{row}", output, re.M), output
+                assert re.search(rf"^\s*-{row}", output, re.M), output
     assert not control.exists()
     assert (
         "eligible" not in world.git("branch", "--format=%(refname:short)").splitlines()

@@ -89,7 +89,7 @@ def test_partial_clone_assessment_never_fetches_or_writes(world, entry, args):
     assert result.returncode == 0, result.stderr
     rows = {r["branch"]: r for r in json.loads(result.stdout)["verdicts"]}
     lacking = rows["loose" if entry == "gw branch status" else "feature"]
-    assert lacking["verdict"] == "unknown"
+    assert (lacking["verdict"], lacking["reason"]) == ("keep", "unknown")
     assert lacking["why"].startswith("this partial clone lacks objects")
     assert git_snapshot(partial.repo) == before
     assert not any(
@@ -295,7 +295,7 @@ def test_partial_clone_usage_errors_precede_git_capability_checks(world):
     result = cli(
         partial,
         "--only",
-        "empty",
+        "keep",
         "--yes",
         entry="gw prune",
         env={**env, "PATH": f"{stub}{os.pathsep}{env['PATH']}"},

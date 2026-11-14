@@ -121,6 +121,7 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
         Cell("BRANCH", BOLD),
         Cell("PATH", BOLD),
         Cell("VERDICT", BOLD),
+        Cell("REASON", BOLD),
         Cell("ELIGIBLE", BOLD),
         Cell("WHY", BOLD),
     )
@@ -129,6 +130,7 @@ def _verdict_table(rows: list[verdicts.Verdict]) -> str:
             Cell(v.label, render.BRANCH),
             Cell(v.path, DIM),
             Cell(v.verdict, render.VERDICT.get(v.verdict, "")),
+            Cell(v.reason),
             Cell("yes" if v.eligible else "no"),
             Cell("\n".join(v.reasons)),
         )
@@ -142,6 +144,8 @@ def _verdict_data(rows: list[verdicts.Verdict]) -> list[dict]:
     return [
         {
             "verdict": v.verdict,
+            "reason": v.reason,
+            "needs": list(v.needs),
             "eligible": v.eligible,
             "proof": v.proof,
             "request": v.request,
@@ -191,8 +195,7 @@ def add_status_flags(p: argparse.ArgumentParser) -> None:
         action="append",
         choices=render.VERDICTS,
         metavar="VERDICT",
-        help="show only rows with this verdict (remove, empty, keep or unknown); "
-        "repeat for more",
+        help="show only rows with this verdict (remove or keep); repeat for both",
     )
 
 
@@ -269,10 +272,11 @@ def _add_delete_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--delete",
         action="append",
-        choices=("empty", "stashes", "all"),
+        choices=("empty", "stashes", "closed", "reflog", "all"),
         default=[],
         metavar="VALUE",
-        help="permit empty branches or stashes; all permits both; repeat to combine",
+        help="permit unused branches, stashes, closed requests or commits only "
+        "a reflog holds; all permits every one; repeat to combine",
     )
 
 
@@ -1931,11 +1935,11 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
         if getattr(args, "quiet", False) and getattr(args, "verbose", False):
             raise _Stop("--quiet and --verbose cannot be combined", 2)
         values = getattr(args, "delete", [])
-        if getattr(args, "keep_branch", False) and values:
-            raise _Stop("--keep-branch takes no --delete value", 2)
-        args.permissions = frozenset(
-            ("empty", "stashes") if "all" in values else values
-        )
+        if getattr(args, "keep_branch", False) and set(values) - {"reflog"}:
+            raise _Stop("--keep-branch takes only --delete reflog", 2)
+        from .verdicts import PERMISSIONS
+
+        args.permissions = PERMISSIONS if "all" in values else frozenset(values)
         if run is run_prune and args.only and args.yes:
             raise _Stop("--only cannot be combined with --yes", 2)
         # Forge commands read live evidence and do not sync local refs first.

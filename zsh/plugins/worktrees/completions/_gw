@@ -32,9 +32,9 @@ __worktrees_version() {
 __worktrees_prune() {
     _arguments -s \
         '--table[assess without prompting; uncoloured table]' \
-        '*--only[filter assessment; rejects --yes]:verdict:(remove empty keep unknown)' \
+        '*--only[filter assessment; rejects --yes]:verdict:(remove keep)' \
         '(-y --yes)'{-y,--yes}'[approve removal, including with --json or --table]' \
-        '*--delete[permit deletion categories]:value:(empty stashes all)' \
+        '*--delete[permit deletion categories]:value:(empty stashes closed reflog all)' \
         '--json[assess as JSON; --yes approves removal]' \
         '(-q --quiet)'{-q,--quiet}'[verdicts only]' \
         '(-v --verbose)'{-v,--verbose}'[print every git command]' \
@@ -72,7 +72,7 @@ __worktrees_select-main() {
 __worktrees_remove() {
     _arguments -s \
         '--keep-branch[retain the branch and its stashes]' \
-        '*--delete[permit deletion categories]:value:(empty stashes all)' \
+        '*--delete[permit deletion categories]:value:(empty stashes closed reflog all)' \
         '--table[assess without prompting; uncoloured table]' \
         '(-y --yes)'{-y,--yes}'[approve removal, including with --json or --table]' \
         '--json[assess as JSON; --yes approves removal]' \
@@ -123,7 +123,7 @@ __worktrees_branch_create() {
 
 __worktrees_branch_status() {
     _arguments -s \
-        '*--only[show only rows with this verdict]:verdict:(remove empty keep unknown)' \
+        '*--only[show only rows with this verdict]:verdict:(remove keep)' \
         '--json[verdicts and evidence as data]' \
         '(-q --quiet)'{-q,--quiet}'[omit the summary]' \
         '--explain[print every git command and exit]' \
@@ -136,7 +136,7 @@ __worktrees_branch_prune() {
         '--all[assess all local branches for deletion]' \
         '--dry-run[report without deleting]' \
         '(-y --yes)'{-y,--yes}'[skip deletion confirmation]' \
-        '*--delete[permit deletion categories]:value:(empty stashes all)' \
+        '*--delete[permit deletion categories]:value:(empty stashes closed reflog all)' \
         '--json[verdicts and evidence as data]' \
         '(-q --quiet)'{-q,--quiet}'[omit the summary]' \
         '(-v --verbose)'{-v,--verbose}'[print every command]' \

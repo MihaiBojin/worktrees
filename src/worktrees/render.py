@@ -145,7 +145,7 @@ def _lines(cell: Cell) -> list[Cell]:
 
 # What each verdict prints in, in `gw prune` and `gw branch status` alike, and in the
 # counts under them. A branch is the same bold magenta it is on stderr.
-VERDICT = {"remove": GREEN, "empty": DIM, "keep": BLUE, "unknown": YELLOW}
+VERDICT = {"remove": GREEN, "keep": BLUE}
 BRANCH = BOLD + MAGENTA
 VERDICTS = tuple(VERDICT)
 

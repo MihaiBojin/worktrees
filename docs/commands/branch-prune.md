@@ -22,8 +22,10 @@ assessment fields and completion proofs.
 ## Permission and confirmation
 
 `main`, `master` and the assessed head branch are always protected.
-`empty` needs `--delete empty`; matching branch stashes need
-`--delete stashes`. Values repeat and combine; `--delete all` grants both.
+An `unused` branch needs `--delete empty`, a `closed` one `--delete closed`,
+matching branch stashes `--delete stashes`, and commits only the branch's
+reflog holds `--delete reflog`. Values repeat and combine; `--delete all`
+grants every one.
 `--yes` skips confirmation
 and grants no permission. Unknown or unsupported values fail before mutation.
 

@@ -37,19 +37,34 @@ the only `main` or `master`, the newer committer date when both exist, and
 A remote HEAD that is a plain ref rather than a symbolic one takes its
 branch name from the one remote-tracking branch at its commit, and does
 not resolve when several sit there.
-Unresolved head means unknown verdicts and no mutation. `gw add`,
+Unresolved head means the `unknown` reason and no mutation. `gw add`,
 `gw branch create` and `gw fast-forward` also fail in that state.
 
-Completion checks run in this order:
+A row's verdict is `remove` or `keep`, and its `reason` is the first fact
+that applies. Checkout facts come first: `main-checkout`, `current`,
+`locked`, `missing`, `submodule`, `in-progress` (a rebase, merge,
+cherry-pick, revert or bisect waiting in the worktree's git directory) and
+`uncommitted`, then `protected` for `main`, `master` or the head branch.
+Each of these reads `keep`, and the branch's proof stays in `proof`. Without
+one, the completion checks run in this order:
 
-1. Matching cached forge proof gives `remove`.
-2. A tip on the assessed head's first-parent history gives `empty`.
-3. Local ancestry, squash or content proof gives `remove`.
-4. Commits outside the head give `keep`; absent or invalid evidence gives
-   `unknown`.
+1. Matching cached forge proof gives `merged`.
+2. A tip on the assessed head's first-parent history reads its branch's
+   reflog: a commit made on the branch gives `merged`; another entry, or
+   `core.logAllRefUpdates=false`, gives `unused`; no entry gives `stale`.
+3. Local ancestry, squash or content proof gives `merged`.
+4. Absent or invalid evidence gives `unknown`.
+5. A cached request at the tip gives `closed` or `open`.
+6. Commits a remote-tracking ref holds give `pushed`, others `unpushed`.
 
-A linked worktree with tracked changes or untracked files gives `keep`
-whatever these checks find, with that state as its evidence.
+`merged` and `stale` read `remove`; every other reason reads `keep`.
+
+Removal deletes the branch's reflog, and the worktree's own HEAD reflog.
+Assessment lists the commits those reach and no ref, worktree HEAD or kept
+reflog does, from `git rev-list COMMITS --not --all`, and keeps each whose
+own patch-id the head lacks since its merge base. Under `--keep-branch` only
+the worktree's reflog goes. Those commits hold the row back with a
+protection naming `git show SHA` for each, and `--delete reflog` lifts it.
 
 The first-parent set is computed once per assessment. A divergent local
 counterpart does not extend it. Local content proof compares every changed
@@ -79,8 +94,9 @@ kept. Detached worktrees receive the same checks.
 `gw prune` also protects the current worktree.
 
 Ignored paths are deleted with the worktree and listed before confirmation.
-Branch stashes require `--delete stashes`; an `empty` verdict requires
-`--delete empty`. Repeated values combine, and `all` expands to both.
+Branch stashes require `--delete stashes`, an `unused` row `--delete empty`,
+a `closed` row `--delete closed`, and reflog-only commits `--delete reflog`.
+Repeated values combine, and `all` expands to every one of them.
 `gw branch status` rejects `--delete`. Unsupported combinations fail at
 usage parsing before mutation. `--yes` grants neither permission. A
 protection these values lift ends with `pass --delete VALUE`, repeated for
@@ -91,8 +107,8 @@ passed.
 `gw remove --keep-branch` retains the branch and stashes and needs no completion
 proof for the checkout. A detached checkout has no branch to keep its
 commits and still needs proof. It permits a checkout on a protected branch, while
-all other worktree protections remain. No `--delete` value can be combined
-with it. When no `--delete` value alone makes a target eligible and
+all other worktree protections remain. Only `--delete reflog` can be
+combined with it. When no `--delete` value alone makes a target eligible and
 `--keep-branch` does, `gw remove` names that command in full.
 
 ## Deletion and recovery
@@ -101,9 +117,9 @@ Assessment pins the target path, branch ref and full SHA, assessed head ref
 and SHA, ignored path list, and matching stash SHAs and subjects. Disclosure
 prints one line for each thing deleted or kept, led by what happens to it:
 `delete worktree PATH`, `delete ignored PATH, unrecoverable` for each ignored
-path, sorted by name, `delete branch NAME at SHA` and `delete stash SHA` with
-their restore commands, or `keep branch NAME at SHA, and its stashes` under
-`--keep-branch`. An ignored path is shown as the
+path, sorted by name, `delete reflog SHA SUBJECT` with its recovery command,
+`delete branch NAME at SHA` and `delete stash SHA` with their restore
+commands, or `keep branch NAME at SHA` under `--keep-branch`. An ignored path is shown as the
 pattern that matched it names it, from the top level, with a trailing `/` on
 a directory, whichever ignore file holds the pattern: `*.log` shows
 `build/out/a.log` and `build/out/b.log`, and `__pycache__` shows
@@ -249,7 +265,9 @@ remote-tracking branch at a plain one's commit, or `refs/heads/main` or
 `refs/heads/master` when inferred. It is null when unresolved.
 
 Worktree and branch assessment put rows in `verdicts`. Both retain
-`verdict`, `eligible`, `proof`, `request`, `protections`, `stashes`, `branch`,
+`verdict`, `reason`, `needs` (every `--delete` value the row waits on, empty
+when none frees it), `eligible`, `proof`, `request`, `protections`,
+`stashes`, `branch`,
 `sha`, `why` and `undo`, the shell-quoted `git branch NAME SHA` that restores
 the branch; a detached worktree's `undo` is null. Worktree rows add exact
 `path`, the ignored paths the disclosure lists in `ignoredPaths` and their count in

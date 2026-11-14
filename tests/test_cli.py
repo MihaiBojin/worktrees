@@ -114,7 +114,7 @@ def test_status_leaves_a_removable_worktree_alone(world) -> None:
     p = run(world, "gw prune")
     assert p.returncode == 0, p.stderr
     assert "remove" in p.stdout
-    assert "1 remove, 1 empty, 0 keep, 0 unknown; 1 eligible" in p.stdout
+    assert "1 remove, 1 keep; 1 eligible" in p.stdout
     assert "gw prune --yes removes the 1 marked removable" in p.stderr
     assert wt.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/done")
@@ -186,7 +186,8 @@ def test_json_carries_the_ignored_count_as_a_number(world) -> None:
     rows = {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
     row = rows["holds-secrets"]
     assert row["ignored"] == 1
-    assert row["verdict"] == "empty"
+    # A fast-forward only moved it: no commit was made on it.
+    assert (row["verdict"], row["reason"]) == ("keep", "unused")
     assert not row["eligible"]
     assert rows["main"]["ignored"] == 0
     assert "ignored" not in row["why"]
@@ -433,10 +434,7 @@ def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
     assert p.returncode == 0, p.stderr
     assert "busy" in p.stdout
     assert "it has uncommitted changes" in p.stdout
-    assert (
-        "nothing to remove; 0 remove, 1 empty, 1 keep, 0 unknown; 0 eligible"
-        in p.stdout
-    )
+    assert "nothing to remove; 0 remove, 2 keep; 0 eligible" in p.stdout
     # The temporary root can hold the letters, as pytest-xdist's popen-gw0 does.
     assert "gw" not in p.stdout.replace(str(world.root), "")
 
@@ -464,9 +462,9 @@ def test_a_hint_names_every_value_its_row_needs_and_only_a_row_they_free(
     both = "pass --delete empty --delete stashes"
     dirty = "it has uncommitted changes or untracked files"
     expected = {
-        "idle": ("empty", ["the branch is empty; pass --delete empty"]),
+        "idle": ("keep", ["the branch is empty; pass --delete empty"]),
         "stashed": (
-            "empty",
+            "keep",
             [f"its branch has stashes; {both}", f"the branch is empty; {both}"],
         ),
         "busy": ("keep", [dirty]),
@@ -507,7 +505,8 @@ def test_a_protected_branch_names_no_delete_value(world) -> None:
     p = run(world, "gw prune", "--json")
     assert p.returncode == 0, p.stderr
     (row,) = [v for v in json.loads(p.stdout)["verdicts"] if v["branch"] == "main"]
-    assert row["verdict"] == "empty" and row["stashes"]
+    assert (row["verdict"], row["reason"]) == ("keep", "main-checkout")
+    assert row["stashes"]
     assert row["protections"] == [
         "it is the main checkout, and never removable",
         "it is a protected branch",
@@ -1047,13 +1046,16 @@ def test_status_lists_the_main_checkout_and_never_proposes_it(world) -> None:
     assert p.returncode == 0, p.stderr
     assert "it is the main checkout, and never removable" in p.stdout
     assert "ELIGIBLE" in p.stdout
-    assert "1 remove, 1 empty, 0 keep, 0 unknown; 1 eligible" in p.stdout
+    assert "1 remove, 1 keep; 1 eligible" in p.stdout
     rows = {
         v["branch"]: v
         for v in json.loads(run(world, "gw prune", "--json").stdout)["verdicts"]
     }
     assert set(rows) == {"main", "done"}
-    assert rows["main"]["verdict"] == "empty"
+    assert (rows["main"]["verdict"], rows["main"]["reason"]) == (
+        "keep",
+        "main-checkout",
+    )
     assert not rows["main"]["eligible"]
 
 
@@ -1129,7 +1131,7 @@ def test_remove_suggests_keep_branch_only_where_it_would_remove(world) -> None:
 
     code, out = run_on_a_terminal(world, "gw remove", "open", answer="")
     assert code == 1, out
-    assert "open kept: its commits are not contained in the head branch\n" in out
+    assert "open kept: its commits are only here, not in the head branch\n" in out
     assert (
         f"gw remove {shlex.quote(str(open_))} --keep-branch removes the worktree "
         "and retains the branch"
@@ -1344,21 +1346,21 @@ def test_status_only_shows_the_verdicts_asked_for(world) -> None:
     world.merged_worktree("done")
     whole = run(world, "gw prune")
     assert whole.returncode == 0, whole.stderr
-    assert "empty" in whole.stdout
+    assert "main-checkout" in whole.stdout
 
     p = run(world, "gw prune", "--only", "remove")
     assert p.returncode == 0, p.stderr
     table, _, counts = p.stdout.partition("\n\n")
-    assert "empty" not in table
+    assert "main-checkout" not in table
     assert counts.strip() == whole.stdout.partition("\n\n")[2].strip()
 
 
 def test_status_only_narrows_json_too(world) -> None:
     world.merged_worktree("done")
-    p = run(world, "gw prune", "--json", "--only", "empty")
+    p = run(world, "gw prune", "--json", "--only", "keep")
     assert p.returncode == 0, p.stderr
     verdicts = [v["verdict"] for v in json.loads(p.stdout)["verdicts"]]
-    assert verdicts and set(verdicts) == {"empty"}
+    assert verdicts and set(verdicts) == {"keep"}
 
 
 def test_only_takes_no_verdict_that_does_not_exist(world) -> None:

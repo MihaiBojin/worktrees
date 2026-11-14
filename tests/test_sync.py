@@ -40,8 +40,11 @@ def first_parent_proof(
     from test_branch_forge import evidence
 
     for name in names:
-        local_branch(world, name, path=name)
-        world.git("merge", "--quiet", "--ff-only", name)
+        # Made at the head's tip, as a branch fetched from someone else is:
+        # its reflog records no commit made on it, so only the forge can say
+        # that it merged.
+        world.commit(name, "branch\n")
+        world.git("branch", name)
     origin(world, provider + ".com")
     responses: dict = {}
     api = {
@@ -932,7 +935,10 @@ def test_new_branch_does_not_inherit_cached_request(world, network, provider):
     }
     assert rows["feature"]["verdict"] == "remove"
     assert rows["feature"]["proof"] == "forge"
-    assert rows["new-name"]["verdict"] == "empty"
+    assert (rows["new-name"]["verdict"], rows["new-name"]["reason"]) == (
+        "keep",
+        "unused",
+    )
     assert rows["new-name"]["request"] is None
     assert "new-name" not in json.loads(cache_path(world).read_text())["branches"]
     assert network.network_calls() == before
@@ -1009,9 +1015,9 @@ def test_failed_queries_invalidate_positive_proof(world, network, provider, tota
     rows = {
         r["branch"]: r for r in listing(world, network, "gw branch status")["verdicts"]
     }
-    assert rows["feature"]["verdict"] == "empty", rows["feature"]
+    assert rows["feature"]["reason"] == "unused", rows["feature"]
     assert rows["feature"]["request"] is None
-    assert rows["second"]["verdict"] == ("empty" if total else "remove")
+    assert rows["second"]["reason"] == ("unused" if total else "merged")
     assert network.network_calls() == before
 
 
@@ -1039,7 +1045,7 @@ def test_failed_fork_lookup_invalidates_previous_proof(world, network, provider)
         for r in listing(world, network, "gw branch status")["verdicts"]
         if r["branch"] == "feature"
     )
-    assert row["verdict"] == "empty", row
+    assert (row["verdict"], row["reason"]) == ("keep", "unused"), row
     assert row["request"] is None
     assert network.network_calls() == before
 
@@ -1179,13 +1185,16 @@ def test_unresolved_head_marks_real_preview_rows_unknown(world, network, head_so
         str(attached),
         str(detached),
     }
-    assert all(
-        r["verdict"] == "unknown" and not r["eligible"] for r in data["verdicts"]
-    )
+    assert {r["path"]: r["reason"] for r in data["verdicts"]} == {
+        str(world.repo): "main-checkout",
+        str(attached): "unknown",
+        str(detached): "unknown",
+    }
+    assert all(r["verdict"] == "keep" and not r["eligible"] for r in data["verdicts"])
     loose = listing(world, network, "gw branch status")
     assert {r["branch"] for r in loose["verdicts"]} == {"loose", "detached"}
     assert all(
-        r["verdict"] == "unknown" and not r["eligible"] for r in loose["verdicts"]
+        r["reason"] == "unknown" and not r["eligible"] for r in loose["verdicts"]
     )
     assert world.git("for-each-ref", "--format=%(refname) %(objectname)") == refs
     assert world.git("worktree", "list", "--porcelain") == records

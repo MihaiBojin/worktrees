@@ -355,15 +355,15 @@ def test_fish_dispatches_each_command_to_its_own_flags(world, prefix, entry):
 @pytest.mark.parametrize(
     "prefix,values",
     [
-        ("gwp --delete", {"empty", "stashes", "all"}),
-        ("gwr! --delete", {"empty", "stashes", "all"}),
-        ("gwbp --delete", {"empty", "stashes", "all"}),
-        ("gwp --only", {"remove", "empty", "keep", "unknown"}),
-        ("gwbs --only", {"remove", "empty", "keep", "unknown"}),
-        ("gw prune --delete", {"empty", "stashes", "all"}),
-        ("gw rm --delete", {"empty", "stashes", "all"}),
-        ("gw branch prune --delete", {"empty", "stashes", "all"}),
-        ("gw branch status --only", {"remove", "empty", "keep", "unknown"}),
+        ("gwp --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gwr! --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gwbp --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gwp --only", {"remove", "keep"}),
+        ("gwbs --only", {"remove", "keep"}),
+        ("gw prune --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gw rm --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gw branch prune --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gw branch status --only", {"remove", "keep"}),
     ],
 )
 def test_fish_offers_the_complete_option_value_set(world, prefix, values):
@@ -443,15 +443,15 @@ def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry):
 @pytest.mark.parametrize(
     "prefix,values",
     [
-        ("gwp --delete", {"empty", "stashes", "all"}),
-        ("gwr! --delete", {"empty", "stashes", "all"}),
-        ("gwbp --delete", {"empty", "stashes", "all"}),
-        ("gwp --only", {"remove", "empty", "keep", "unknown"}),
-        ("gwbs --only", {"remove", "empty", "keep", "unknown"}),
-        ("gw prune --delete", {"empty", "stashes", "all"}),
-        ("gw rm --delete", {"empty", "stashes", "all"}),
-        ("gw branch prune --delete", {"empty", "stashes", "all"}),
-        ("gw branch status --only", {"remove", "empty", "keep", "unknown"}),
+        ("gwp --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gwr! --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gwbp --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gwp --only", {"remove", "keep"}),
+        ("gwbs --only", {"remove", "keep"}),
+        ("gw prune --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gw rm --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gw branch prune --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gw branch status --only", {"remove", "keep"}),
     ],
 )
 def test_zsh_offers_the_complete_option_value_set(world, prefix, values):
