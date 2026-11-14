@@ -73,6 +73,7 @@ def local_refs() -> dict[str, tuple[str, str]]:
     }
 
 
+@merged.reusing
 def assess(
     names: list[str],
     head_sha: str,

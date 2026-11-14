@@ -153,6 +153,11 @@ def submodule_status() -> None:
     """Initialized submodules have a status prefix other than '-'."""
 
 
+@git("rev-parse --path-format=absolute --git-dir --git-path modules")
+def own_dirs() -> None:
+    """This worktree's own git directory, then where it keeps its submodules'."""
+
+
 @git("rev-parse --path-format=absolute --git-path modules")
 def modules_dir() -> None:
     """Where this worktree keeps its submodules' git directories."""
@@ -163,24 +168,51 @@ def git_dir() -> None:
     """This worktree's own git directory."""
 
 
-def in_progress(path: str) -> str:
-    """The operation waiting in this worktree, or ''."""
-    own = Path(git_dir(repo=path).value)
-    return next((what for name, what in OPERATIONS if (own / name).exists()), "")
+def git_dirs(path: str) -> tuple[str, str]:
+    """The worktree's git directory and its submodule store, from one call.
+
+    rev-parse ends each path with a newline and has no `-z` for these, so a
+    path that holds one cannot be told apart from two. Then each is asked
+    alone, which is what reading one value at a time always did.
+    """
+    answer = own_dirs(repo=path).out.removesuffix("\n").split("\n")
+    if len(answer) == 2:
+        return answer[0], answer[1]
+    return git_dir(repo=path).value, modules_dir(repo=path).value
 
 
-def submodule_protection(path: str) -> str:
+def in_progress(own: str) -> str:
+    """The operation waiting in the worktree whose git directory is `own`, or ''."""
+    return next((what for name, what in OPERATIONS if (Path(own) / name).exists()), "")
+
+
+def submodule_protection(path: str, store: str) -> str:
     """Why `git worktree remove` would refuse this worktree, if it would.
 
     git refuses while a submodule is initialized, and also while the
-    worktree's own modules directory exists, which `deinit` leaves behind.
+    worktree's own modules directory `store` exists, which `deinit` leaves
+    behind.
+
+    The store decides it alone when it is there, so `git submodule status`
+    runs only without one. That is also the case it can answer: once
+    `.gitmodules` is deleted it exits 128 with "no submodule mapping found",
+    while the store of the submodule it described is still in place.
+
+    It costs more than every other check on a worktree put together, so it
+    runs only where `.gitmodules` says a submodule can be initialized. git
+    initializes one from that file and keeps its git directory in the store.
+    With neither there, the one case left is a repository cloned by hand
+    into a gitlink's path, and `git worktree remove`, which runs without
+    `--force`, refuses that worktree itself.
     """
-    initialized = any(
-        line and not line.startswith("-") for line in submodule_status(repo=path).lines
-    )
-    store = modules_dir(repo=path).value
-    if not initialized and not Path(store).exists():
-        return ""
+    if not Path(store).exists():
+        if not (Path(path) / ".gitmodules").exists():
+            return ""
+        if not any(
+            line and not line.startswith("-")
+            for line in submodule_status(repo=path).lines
+        ):
+            return ""
     return (
         "it has an initialized submodule or a submodule store; run "
         f"git submodule deinit --all in it, then delete {store} once nothing "
@@ -188,6 +220,7 @@ def submodule_protection(path: str) -> str:
     )
 
 
+@merged.reusing
 def assess(
     records: list[R.Worktree],
     only: str,
@@ -256,10 +289,11 @@ def assess(
         elif wt.path != main:
             progress.say(f"{wt.label}: reading its status")
             status = R.status_of(wt.path)
-            submodule = submodule_protection(wt.path)
+            gitdir, store = git_dirs(wt.path)
+            submodule = submodule_protection(wt.path, store)
             if submodule:
                 hard.append((SUBMODULE, submodule))
-            operation = in_progress(wt.path)
+            operation = in_progress(gitdir)
             if operation:
                 hard.append((IN_PROGRESS, f"{operation} is in progress in it"))
             if status.dirty:
@@ -351,5 +385,8 @@ def assess(
         )
         return row
 
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    # Each check is a git process and the work is the CPU's, so a thread per
+    # core: more only queue behind each other and the interpreter lock.
+    workers = min(8, os.cpu_count() or 1)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         return [v for v in pool.map(judge, records) if v is not None]
