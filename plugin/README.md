@@ -1,13 +1,12 @@
 # worktrees, as an agent plugin
 
-Seven skills for Claude Code and Codex over the worktrees CLI. Each is
+Six skills for Claude Code and Codex over the worktrees CLI. Each is
 `/worktrees:NAME` in Claude Code and `$worktrees:NAME` in Codex, and an agent
 reaches for one on its own when a task matches its description, except
 `preflight`, which runs only when you call it.
 
 | skill | does |
 | --- | --- |
-| `new-branch` | fetches, then starts a branch off the remote's head |
 | `fast-forward` | brings this branch level with the head branch, through each rebase conflict |
 | `ci-checks` | reads a pull request's checks as JSON, and waits for them |
 | `describe-pr` | checks a pull request's title and body against its diff, and fixes them |
@@ -22,7 +21,7 @@ session runs in. None of them creates a worktree. The client creates the
 session's worktree (`claude --worktree`, `EnterWorktree`,
 `codex --worktree`), or a person does with `gw add` before the session
 starts. One worktree holds one branch after another: ship a branch, start
-the next with `new-branch`, and ship several at once with
+the next with `gw branch create` or `git switch --create`, and ship several at once with
 `ship-it BRANCH ...`, which switches the worktree to each in turn.
 
 ## Install

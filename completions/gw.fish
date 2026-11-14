@@ -86,6 +86,7 @@ complete -c gw -n '__worktrees_on merge' -s h -l help -d 'show the help and exit
 complete -c gw -n '__worktrees_on branch; and test (count (commandline -opc)) -eq 2' -a '(command gw branch --complete)'
 complete -c gw -n '__worktrees_on branch; and test (count (commandline -opc)) -eq 2' -s h -l help -d 'show the help and exit'
 
+complete -c gw -n '__worktrees_on_branch create' -l here -d 'start from the commit this checkout is on, without syncing'
 complete -c gw -n '__worktrees_on_branch create' -l json -d 'the result as data'
 complete -c gw -n '__worktrees_on_branch create' -s q -l quiet -d 'omit summaries and progress'
 complete -c gw -n '__worktrees_on_branch create' -s v -l verbose -d 'print every git command'

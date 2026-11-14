@@ -20,7 +20,7 @@ from .verdicts import REMOVE, Verdict, assess
 
 @git("worktree add --no-track -b $name -- $dest $base", mutates=True)
 def worktree_add(name: str, dest: str, base: str) -> None:
-    """--no-track, for the reason new-branch has it: a branch off the head
+    """--no-track, for the reason `gw branch create` has it: a branch off the head
     branch that tracked it would take it as its upstream."""
 
 

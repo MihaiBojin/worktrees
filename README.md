@@ -31,7 +31,7 @@ repositories under the same worktree root are outside their scope.
 | `gw branch status [NAME ...]` | `gwbs` | assess local branches without worktrees |
 | `gw branch prune [NAME ...]` | `gwbp` | confirm and delete eligible loose branches |
 | `gw add NAME [BASE]` | `gwa` | create or enter a worktree |
-| `gw branch create NAME` | `gwbc` | start a branch from the assessed head ref |
+| `gw branch create NAME` | `gwbc` | start a branch from the head ref, or stack it on this branch |
 | `gw fast-forward [NAME]` | `gwff` | rebase this branch onto the head ref, or move a merged one, and what came after its merge, to a new branch |
 | `gw merge NUMBER --match-head-commit SHA` | | squash one checked GitHub PR, respecting native stacks and merge queues |
 | `gw ci-checks [NUMBER]` | | read a pull request's checks from GitHub or GitLab; `gw ci` for short |
@@ -605,8 +605,8 @@ an update-ref delete that names no full sha
 
 ## Agent plugin
 
-[The agent plugin](plugin/README.md) gives Claude Code and Codex seven skills
-over these commands: start a branch, bring a branch level with the head
+[The agent plugin](plugin/README.md) gives Claude Code and Codex six skills
+over these commands: bring a branch level with the head
 branch through its rebase conflicts, read CI, keep a pull request's
 description true to its diff, ship a change or an open pull request
 through CI to its merge, prune finished worktrees and branches after
