@@ -17,6 +17,70 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.11.0 - 2026-11-14
+
+### Changed
+
+`gw prune`, `gw remove` and `gw branch status` give each row a verdict of
+`remove` or `keep` and a reason naming the fact that decides it, such as
+`merged`, `uncommitted`, `closed`, `unpushed` or `in-progress`, in a new
+REASON column and as `reason` and `needs` in the JSON. Scripts that read
+the `empty` or `unknown` verdicts, or pass `--only empty` or
+`--only unknown`, must read `reason` instead; `--only` takes `remove` or
+`keep`.
+
+A worktree with uncommitted changes or untracked files reads `keep`. A
+branch whose own commits went into the head branch by fast-forward reads
+`merged`, and one with nothing of its own and no reflog left reads `stale`;
+both are removed without `--delete empty`. Removal holds back a row whose
+deleted reflogs hold a commit the head branch lacks, printing `git show`
+for each, until `--delete reflog`. A branch whose pull request closed
+without merging is kept until `--delete closed`.
+
+A `pass --delete` hint appears only where those values free the row, and
+the `--yes` command a preview prints keeps the flags that made the row
+eligible; following either used to leave the row where it was. The
+confirmation lists each worktree, ignored path, reflog commit, branch and
+stash it deletes, and asks with their counts.
+
+`gw prune` and `gw remove` delete a worktree's ignored files without a
+permission, listing each ignored path before the confirmation. Drop
+`--delete ignored-files` from scripts: it is now a usage error, and
+`--keep-branch` takes no `--delete` value.
+
+### Removed
+
+The agent plugin's `new-branch` skill is removed; agents start branches
+with `gw branch create` or `git switch --create`.
+
+### Added
+
+`gw branch create NAME`, on a terminal and standing on a branch other
+than the head branch, asks whether to stack NAME on that branch while
+its sync runs. `--here` starts NAME from the commit this checkout is
+on without syncing.
+
+The agent plugin hands each Claude Code and Codex session the rules for
+how it uses its worktree, through a SessionStart hook that needs `jq`.
+Before editing, a session checks whether another one works in its
+worktree, from uncommitted changes it did not make or another process's
+lock, and moves to a worktree of its own when one does. The rules say to
+ship a change the user decided on once its checks pass, through
+`/worktrees:ship-it`, without being asked, merge included.
+
+### Fixed
+
+`gw add`, `gw branch create` and `gw fast-forward NAME` refuse a branch
+name that nests with an existing branch, such as `codex` beside
+`codex/plan`, and name the branch in the way. Git's own refusal named
+refs and lock files, and `gw add` left an empty directory behind.
+
+`/worktrees:ship-it BRANCH ...` ships each named branch from the
+worktree you run it in, switching to each in turn, and creates no
+worktree. A branch checked out in another worktree is reported and
+left alone. In the main checkout, ship-it switches back to the head
+branch after each push.
+
 ## 0.10.0 - 2026-11-13
 
 ### Added
