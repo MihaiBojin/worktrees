@@ -242,6 +242,18 @@ and explicit deletion categories. Each worktree goes through
 branches through `command gw branch prune`. The plugin never targets its current checkout. It reports
 partial checkout, branch and stash outcomes and actual restore commands.
 
+Both clients run `gw hook start` when a session starts and `gw hook end`
+when it ends, from `plugin/hooks/hooks.json` for Claude Code and
+`plugin/hooks/codex.json`, which the Codex manifest names. The start hands
+the session `plugin/session.md`, the rules for how a session uses its
+worktree, and takes git's worktree lock for it. The lock's reason names
+the client, the session and the client's process with its start time, as
+`session.OURS` reads it, so a later session replaces the lock of one that
+crashed and reports one still running. A lock Claude Code took for the same
+process is the session's already, and the main checkout is never locked.
+The hook never fails the session, and never syncs. A lock left by an ended
+session blocks removal like any lock, and `gw prune` names the unlock.
+
 The plugin carries the release version in three manifests, and
 `scripts/bump_version.py` stamps all three. `plugin/plugin.json` is the
 portable manifest, the Claude one with only the fields Agent Plugins v1 names;
@@ -430,8 +442,8 @@ when eight threads are asking at once.
 `gw sync` fetches every remote with `--prune --tags --no-prune-tags`, the
 default first, updates the default remote's HEAD and queries the forge for
 every local branch tip on eight threads. Every other command but
-`gw version`, `gw list`, `gw ci-checks`, `gw merge`, `gw fast-forward`, help and
-completion runs the same `sync.run` first when
+`gw version`, `gw list`, `gw ci-checks`, `gw merge`, `gw fast-forward`,
+`gw hook`, help and completion runs the same `sync.run` first when
 `sync.due` says so: the default remote's refs time is null or at least
 `WORKTREES_SYNC_TTL` seconds old, 60 by default. The forge time is not read,
 since a forge that keeps failing would sync before every command. Without a

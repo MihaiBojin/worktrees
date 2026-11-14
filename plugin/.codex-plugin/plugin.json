@@ -21,6 +21,7 @@
     "squash-merge"
   ],
   "skills": "./skills/",
+  "hooks": "./hooks/codex.json",
   "interface": {
     "displayName": "worktrees",
     "shortDescription": "Branches, CI, rebases, pull requests and cleanup, through one CLI",

@@ -29,6 +29,14 @@ __worktrees_version() {
     _arguments '(-h --help)'{-h,--help}'[show the help and exit]'
 }
 
+__worktrees_hook() {
+    _arguments -s \
+        '--client[the client running the hook]:client:(claude codex)' \
+        '--rules[text to hand the session when it starts]:file:_files' \
+        '(-h --help)'{-h,--help}'[show the help and exit]' \
+        '1:event:(start end)'
+}
+
 __worktrees_prune() {
     _arguments -s \
         '--table[assess without prompting; uncoloured table]' \
@@ -183,6 +191,7 @@ _gw() {
             case $words[1] in
                 sync) __worktrees_sync ;;
                 version|v) __worktrees_version ;;
+                hook) __worktrees_hook ;;
                 prune|p) __worktrees_prune ;;
                 add|a) __worktrees_add ;;
                 list|l) __worktrees_list ;;

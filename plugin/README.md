@@ -24,6 +24,15 @@ starts. One worktree holds one branch after another: ship a branch, start
 the next with `gw branch create` or `git switch --create`, and ship several at once with
 `ship-it BRANCH ...`, which switches the worktree to each in turn.
 
+A hook in each client runs `gw hook` when a session starts and ends. At the
+start it hands the session [these rules](session.md) and locks the worktree
+the session runs in with `git worktree lock`, naming the session. A second
+session started there is told the worktree is held, and Claude Code moves
+to a new worktree through `EnterWorktree`. The lock of a session that has
+ended is replaced by the next one, and `gw prune` names its unlock. The
+hooks need the CLI from the same release; without `gw` on `$PATH` they do
+nothing. Codex asks you to review and trust plugin hooks before they run.
+
 ## Install
 
 The plugin is listed in the `mihaibojin` marketplace, pinned to a release
