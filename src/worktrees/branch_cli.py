@@ -43,7 +43,7 @@ def _assessment_flags(p: argparse.ArgumentParser) -> None:
 
 def delete_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("-v", "--verbose", action="store_true", help="print every command")
-    _add_delete_flags(p, branch=True)
+    _add_delete_flags(p)
     p.add_argument(
         "names",
         nargs="*",

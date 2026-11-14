@@ -34,7 +34,7 @@ __worktrees_prune() {
         '--table[assess without prompting; uncoloured table]' \
         '*--only[filter assessment; rejects --yes]:verdict:(remove empty keep unknown)' \
         '(-y --yes)'{-y,--yes}'[approve removal, including with --json or --table]' \
-        '*--delete[permit deletion categories]:value:(empty ignored-files stashes all)' \
+        '*--delete[permit deletion categories]:value:(empty stashes all)' \
         '--json[assess as JSON; --yes approves removal]' \
         '(-q --quiet)'{-q,--quiet}'[verdicts only]' \
         '(-v --verbose)'{-v,--verbose}'[print every git command]' \
@@ -72,7 +72,7 @@ __worktrees_select-main() {
 __worktrees_remove() {
     _arguments -s \
         '--keep-branch[retain the branch and its stashes]' \
-        '*--delete[permit deletion categories]:value:(empty ignored-files stashes all)' \
+        '*--delete[permit deletion categories]:value:(empty stashes all)' \
         '--table[assess without prompting; uncoloured table]' \
         '(-y --yes)'{-y,--yes}'[approve removal, including with --json or --table]' \
         '--json[assess as JSON; --yes approves removal]' \

@@ -251,35 +251,34 @@ Repeat `--delete` to combine categories:
 | Value | `gw prune`, `gw remove` | `gw branch prune` |
 | --- | --- | --- |
 | `empty` | permit an empty branch and its worktree | permit an empty branch |
-| `ignored-files` | permit the worktree's ignored paths | usage error |
 | `stashes` | permit the branch's stashes | same |
-| `all` | all categories above | empty branches and stashes |
+| `all` | both categories above | same |
 
 `gw branch status` rejects `--delete`. An unknown or unsupported value is a
 usage error before mutation. `--delete empty` changes eligibility, not the
-verdict. Ignored files have no recovery command: Git never recorded their
-contents. When only missing values hold worktrees back, `gw prune` names
+verdict. When only missing values hold worktrees back, `gw prune` names
 the command that grants them, keeping the values you passed:
-`gw prune --delete ignored-files makes fix-parser eligible`.
+`gw prune --delete empty makes fix-parser eligible`.
 
 ```console
-gw prune --delete empty --delete ignored-files
+gw prune --delete empty --delete stashes
 gw remove old-checkout --keep-branch
-gw remove old-checkout --keep-branch --delete ignored-files
 ```
 
 `--keep-branch` removes an otherwise unprotected checkout without completion
 proof and retains its branch and stashes, including a protected branch.
 A detached checkout has no branch to keep its commits, so it still needs
 proof.
-It grants no ignored-file permission. Only `--delete ignored-files` combines
-with it; `empty`, `stashes` and `all` are usage errors with `--keep-branch`.
+Every `--delete` value is a usage error with `--keep-branch`.
 
 ### Removal and recovery
 
-Before confirmation, the CLI discloses the path and branch, the branch
-restore command, stashes with their restore commands, and ignored paths it
-will delete, sorted by name. Each ignored path reads as the pattern that
+Removal deletes a worktree's ignored files: build output, caches and
+virtual environments are what most of them are. They have no recovery
+command, since Git never recorded their contents, so before confirmation
+the CLI discloses the path and branch, the branch restore command, stashes
+with their restore commands, and the ignored paths it will delete, sorted
+by name. Each ignored path reads as the pattern that
 ignores it names it, from the top level, with a trailing `/` on a
 directory: `__pycache__` lists `src/pkg/__pycache__/`, never the tracked
 `src/` above it. A pattern for a directory's contents, such as
@@ -326,10 +325,9 @@ JSON carries it in `path` and `outcome.destination`.
 | `gwpa!` | `gw prune --delete all --yes` |
 | `gwr!` | `gw remove --yes` |
 
-`gwpa` permits deleting empty branches, ignored files and branch stashes, and
-still asks at a terminal. `gwpa!` and `gwr!` skip that question, as `gwp!`
-does. `gwr!` grants no deletion category: ignored files still need
-`gw remove --delete ignored-files`.
+`gwpa` permits deleting empty branches and branch stashes, and still asks
+at a terminal. `gwpa!` and `gwr!` skip that question, as `gwp!` does.
+`gwr!` grants no deletion category.
 
 ## Head and synchronization
 
@@ -555,7 +553,7 @@ gw list --json | jq -r '.worktrees[].path'
 | `gwp --dry-run` | `gw prune --json` or `gw prune --table` |
 | `gw list --list`, `gw list -l`, `gw prune --list` | `gw list --table`, `gw prune --table` |
 | `gwp --branch NAME` | `gw remove NAME` or a quoted exact path |
-| `--delete-ignored` | `--delete ignored-files` |
+| `--delete-ignored`, `--delete ignored-files` | none; removal deletes ignored files and lists them first |
 | `gwr --force`, `gwr -f` | `gw remove --keep-branch` |
 | `--no-fetch`, `--no-forge`, `--force-refresh`, refresh `-f` | `WORKTREES_OFFLINE=1` to stay offline; `gw sync` to refresh now |
 | `gw ls`, `gw NAME` | `gw list`, `gw list NAME` |

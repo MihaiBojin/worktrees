@@ -75,19 +75,17 @@ locked worktree whose directory is missing is assessed from its record and
 kept. Detached worktrees receive the same checks.
 `gw prune` also protects the current worktree.
 
-Ignored paths require `--delete ignored-files`; branch stashes require
-`--delete stashes`; an `empty` verdict requires `--delete empty`. Repeated
-values combine. `all` expands to those three for worktrees, and to empty
-branches and stashes for `gw branch prune`. `gw branch status` rejects
-`--delete`; `gw branch prune` rejects `ignored-files`. Unsupported
-combinations fail at usage parsing before mutation. `--yes` grants none of
-these permissions.
+Ignored paths are deleted with the worktree and listed before confirmation.
+Branch stashes require `--delete stashes`; an `empty` verdict requires
+`--delete empty`. Repeated values combine, and `all` expands to both.
+`gw branch status` rejects `--delete`. Unsupported combinations fail at
+usage parsing before mutation. `--yes` grants neither permission.
 
 `gw remove --keep-branch` retains the branch and stashes and needs no completion
 proof for the checkout. A detached checkout has no branch to keep its
 commits and still needs proof. It permits a checkout on a protected branch, while
-all other worktree protections remain. Only `--delete ignored-files` can be
-combined with it.
+all other worktree protections remain. No `--delete` value can be combined
+with it.
 
 ## Deletion and recovery
 
@@ -105,7 +103,7 @@ shows as itself. A path with a character that would not print is quoted and
 escaped as `git status` does. After the list, the disclosure prints
 `git -C PATH ls-files --others --ignored --exclude-standard`, with the path
 quoted to paste, which lists every ignored file the entries cover.
-The protection's count and the JSON `ignored` field count those entries.
+The JSON `ignored` field counts those entries.
 Quiet, JSON and automatic confirmation preserve that stderr disclosure. A never-synced repository asks
 `Never synced. Delete anyway?` unless `--yes` skips confirmation.
 

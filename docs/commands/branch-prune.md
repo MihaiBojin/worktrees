@@ -24,7 +24,7 @@ assessment fields and completion proofs.
 `main`, `master` and the assessed head branch are always protected.
 `empty` needs `--delete empty`; matching branch stashes need
 `--delete stashes`. Values repeat and combine; `--delete all` grants both.
-`ignored-files` is a usage error for this command. `--yes` skips confirmation
+`--yes` skips confirmation
 and grants no permission. Unknown or unsupported values fail before mutation.
 
 Before confirmation, stderr lists branches and SHAs, their branch restore

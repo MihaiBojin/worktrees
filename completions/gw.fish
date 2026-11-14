@@ -27,7 +27,7 @@ complete -c gw -n '__worktrees_on version v' -s h -l help -d 'show the help and 
 complete -c gw -n '__worktrees_on prune p' -l table -d 'assess without prompting; uncoloured table'
 complete -c gw -n '__worktrees_on prune p' -l only -x -a 'remove empty keep unknown' -d 'filter assessment; rejects --yes'
 complete -c gw -n '__worktrees_on prune p' -s y -l yes -d 'approve removal, including with --json or --table'
-complete -c gw -n '__worktrees_on prune p' -l delete -x -a 'empty ignored-files stashes all' -d 'permit deletion categories; repeat to combine'
+complete -c gw -n '__worktrees_on prune p' -l delete -x -a 'empty stashes all' -d 'permit deletion categories; repeat to combine'
 complete -c gw -n '__worktrees_on prune p' -l json -d 'assess as JSON; --yes approves removal'
 complete -c gw -n '__worktrees_on prune p' -s q -l quiet -d 'verdicts only'
 complete -c gw -n '__worktrees_on prune p' -s v -l verbose -d 'print every git command'
@@ -54,7 +54,7 @@ complete -c gw -n '__worktrees_on select-main main m' -s h -l help -d 'show the 
 # list's list: the main checkout is never one.
 complete -c gw -n '__worktrees_on remove rm' -a '(command gw remove --complete)'
 complete -c gw -n '__worktrees_on remove rm' -l keep-branch -d 'retain the branch and its stashes'
-complete -c gw -n '__worktrees_on remove rm' -l delete -x -a 'empty ignored-files stashes all' -d 'permit deletion categories; repeat to combine'
+complete -c gw -n '__worktrees_on remove rm' -l delete -x -a 'empty stashes all' -d 'permit deletion categories; repeat to combine'
 complete -c gw -n '__worktrees_on remove rm' -l table -d 'assess without prompting; uncoloured table'
 complete -c gw -n '__worktrees_on remove rm' -s y -l yes -d 'approve removal, including with --json or --table'
 complete -c gw -n '__worktrees_on remove rm' -l json -d 'assess as JSON; --yes approves removal'

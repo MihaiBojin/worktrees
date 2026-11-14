@@ -32,14 +32,13 @@ Read worktrees, then loose branches, using these pipelines:
 
 ```sh
 gw prune --json | jq -c '
-def permission: test("^(the branch is empty; pass --delete empty|its branch has stashes; pass --delete stashes|it holds [0-9]+ ignored path\\(s\\); pass --delete ignored-files)$");
+def permission: test("^(the branch is empty; pass --delete empty|its branch has stashes; pass --delete stashes)$");
 def grantable: .eligible == false and (.verdict == "remove" or .verdict == "empty") and all(.protections[]; permission);
 {
   head, lastSync,
   worktrees: [.verdicts[] | select(.eligible)],
   empty: [.verdicts[] | select(.verdict == "empty" and grantable)],
   stash_blocked: [.verdicts[] | select(grantable and (.stashes | length) > 0)],
-  ignored: [.verdicts[] | select(grantable and .ignored > 0)],
   kept: [.verdicts[] | select(.verdict == "keep")] | length,
   unknown: [.verdicts[] | select(.verdict == "unknown")] | length
 }'
@@ -90,12 +89,13 @@ removal reply does not erase that sync choice or require asking again.
 ## Show candidates and ask what to remove
 
 Show eligible worktrees first, then eligible loose branches, with their
-proofs and worktree paths. The `empty`, `stash_blocked` and `ignored` groups hold
+proofs and worktree paths. List each worktree's `ignoredPaths` under it:
+removal deletes them, and they cannot be restored. The `empty` and
+`stash_blocked` groups hold
 only rows that the matching deletion permissions would make eligible; the
 main checkout, the current checkout, protected branches and `keep` rows never
 appear there. Show those groups separately, retaining all their protections; offer those categories
-only when the user asks. Name ignored-file blockers separately, listing each
-row's `ignoredPaths` so the user can decide before granting permission. A row can
+only when the user asks. A row can
 have more than one blocker, so show every required permission.
 
 A checked-out branch is already represented by its worktree and is absent
@@ -112,8 +112,8 @@ A prior explicit selection and category approval for this cleanup already
 answers the question; do not ask again just because assessment was refreshed.
 
 Deletion permission covers only the category and targets the user approved:
-`empty`, `ignored-files` or `stashes`. `--yes` adds no permission. Explain
-that ignored files cannot be restored and that `empty` includes unused
+`empty` or `stashes`. `--yes` adds no permission. Explain that `empty`
+includes unused
 branches and fast-forward merges without forge proof. Keep other protections
 in place. If the user requests a blocked category, get the missing explicit
 permission before removing those rows. With no chosen targets, stop after

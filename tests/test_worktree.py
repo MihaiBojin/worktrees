@@ -419,10 +419,9 @@ def test_remove_refuses_an_unfinished_branch(world) -> None:
     assert wt.exists()
 
 
-def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
-    world,
-) -> None:
-    """The branch landed. The directory is what --delete ignored-files answers for."""
+def test_a_finished_branch_is_removed_with_its_ignored_files(world) -> None:
+    """The branch landed, so its checkout goes, and the disclosure names the
+    ignored files that go with it."""
     (world.repo / ".gitignore").write_text(".env\n")
     world.git("add", "--", ".gitignore")
     world.git("commit", "--quiet", "-m", "ignore")
@@ -430,14 +429,8 @@ def test_a_finished_branch_held_by_ignored_files_is_not_called_unfinished(
     (wt / ".env").write_text("SECRET=1\n")
 
     p = run(world, "gw remove", "holds", "--yes")
-    assert p.returncode == 1
-    assert "ignored path(s)" in p.stderr
-    assert "is not finished" not in p.stderr
-    assert "--delete ignored-files" in p.stderr
-    assert wt.exists()
-
-    p = run(world, "gw remove", "holds", "--yes", "--delete", "ignored-files")
     assert p.returncode == 0, p.stderr
+    assert "is not finished" not in p.stderr
     assert "deleting ignored, unrecoverable: .env" in p.stderr
     assert not wt.exists()
 
@@ -451,15 +444,7 @@ def test_keep_branch_names_the_ignored_files_it_is_about_to_delete(world) -> Non
     (wt / ".env").write_text("SECRET=1\n")
     world.commit("b.txt", "b\n", at=wt)
 
-    p = run(
-        world,
-        "gw remove",
-        "busy",
-        "--yes",
-        "--keep-branch",
-        "--delete",
-        "ignored-files",
-    )
+    p = run(world, "gw remove", "busy", "--yes", "--keep-branch")
     assert p.returncode == 0, p.stderr
     assert "deleting ignored, unrecoverable: .env" in p.stderr
     assert not wt.exists()
