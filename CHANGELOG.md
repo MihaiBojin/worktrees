@@ -17,6 +17,30 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.11.1 - 2026-11-15
+
+### Added
+
+`gw fast-forward` levels a branch stacked on another open pull request
+with that branch, so a stack stays in order while its bottom is
+reviewed. `/worktrees:ship-it` ships named branches that build on each
+other as a stack: it opens each pull request on the one below with
+`gh stack link --open`, which needs the `gh-stack` extension, and merges
+bottom first. Add `Bash(gh stack link *)` to Claude Code's permissions,
+or rerun `/worktrees:preflight`.
+
+### Changed
+
+`WORKTREES_SYNC_TTL` defaults to 5 minutes, and `gw fast-forward` keeps
+to it: it fetches once the last fetch is that old, or when the forge
+reports a merge the fetched head branch does not hold yet.
+
+### Fixed
+
+`gw prune` and `gw remove` keep a worktree whose submodule was initialized
+before its `.gitmodules` was deleted, with reason `submodule`. They stopped
+at exit 1 with "no submodule mapping found".
+
 ## 0.11.0 - 2026-11-14
 
 ### Changed
