@@ -156,6 +156,10 @@ def test_a_usage_error_and_a_refusal_are_recorded_with_how_they_ended(world):
         ["--explain"],
         ["--complete"],
         ["list", "--complete"],
+        # Not the exact words a completion file sends, so the parser reads it.
+        ["list", "--complete", "--json"],
+        ["remove", "--complete", "--yes"],
+        ["branch", "prune", "--complete", "--all"],
         ["list", "--help"],
         ["list", "-h"],
         ["prune", "--explain"],
@@ -177,11 +181,36 @@ def test_help_explain_and_completion_record_nothing(world, words, setting):
     assert files(world) == []
 
 
-def test_a_word_after_the_separator_is_a_value_and_the_run_is_recorded(world):
-    gw(world, "list", "--json", "--", "--help")
+@pytest.mark.parametrize("word", ["--help", "--complete", "--explain"])
+def test_a_word_after_the_separator_is_a_value_and_the_run_is_recorded(world, word):
+    p = gw(world, "list", "--json", "--", word)
+    assert p.returncode == 0, p.stderr
     rows = events(world)
-    assert rows[0]["argv"] == ["gw", "list", "--json", "--", "--help"]
+    assert rows[0]["argv"] == ["gw", "list", "--json", "--", word]
     assert rows[-1]["event"] == "invocation.end"
+    assert rows[-1]["code"] == 0
+
+
+def test_every_run_that_starts_also_ends(world):
+    """Whatever the words: a start with no end is a run a reader cannot close."""
+    world.worktree("topic")
+    for words in (
+        ["list", "--json"],
+        ["list", "--json", "--", "--complete"],
+        ["list", "--complete", "--json"],
+        ["add"],
+        ["add", "main"],
+        ["nonsense"],
+        ["prune", "--bogus"],
+        ["remove", "topic", "--help"],
+        ["version"],
+    ):
+        gw(world, *words)
+    rows = events(world)
+    starts = {r["run"] for r in named(rows, "invocation.start")}
+    ends = {r["run"] for r in named(rows, "invocation.end")}
+    assert starts == ends == {r["run"] for r in rows}
+    assert len(starts) == 7
 
 
 # --------------------------------------------------------------------------
@@ -332,6 +361,96 @@ def test_a_short_write_is_closed_and_its_rest_is_never_written(
     # The fragment was closed where it tore, so nothing has to close it now.
     assert all("torn" not in row for row in after)
     assert b"\n\n" not in path.read_bytes()
+
+
+def test_a_writer_already_open_survives_a_line_another_run_tears(logging):
+    """The fragment arrives after this process opened the file, so nothing it
+    learned at open says so: only the look under the lock, at each append."""
+    world = logging
+    env = {
+        **env_for(world),
+        "WORKTREES_AUDIT": "",
+        "WORKTREES_AUDIT_DIR": str(world.root / "audit"),
+    }
+    audit.begin("gw", ["sync"])
+    try:
+        [path] = files(world)
+        before = path.stat().st_size
+        torn = subprocess.run(
+            argv("gw", "version"),
+            cwd=str(world.repo),
+            capture_output=True,
+            text=True,
+            env=env,
+            preexec_fn=limited(before + 120),
+        )
+        assert torn.returncode == 0, torn.stderr
+        assert "audit log not written" in torn.stderr
+        # Reproduce the loss: an open end, left while this run held the file.
+        assert path.stat().st_size == before + 120
+        assert not path.read_bytes().endswith(b"\n")
+        audit.record(
+            "merge.outcome",
+            number=1,
+            head="h",
+            status="merged",
+            pr={},
+            sha=None,
+            uuid=None,
+            message="",
+        )
+    finally:
+        audit.end(0)
+
+    raw = path.read_text().split("\n")
+    fragment = raw[1]
+    assert len(fragment) == 120
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(fragment)
+    mine = parsed(world)
+    assert [r["event"] for r in mine] == [
+        "invocation.start",
+        "merge.outcome",
+        "invocation.end",
+    ]
+    # The line that closed the fragment says so, and only that line.
+    assert [r.get("torn", False) for r in mine] == [False, True, False]
+    assert "" not in raw[:-1]
+
+
+def test_without_the_lock_each_line_brings_its_own_newline(logging, monkeypatch):
+    """Where the file cannot be locked nothing is known about its end for as
+    long as a write takes, so no line trusts it."""
+    world = logging
+    monkeypatch.setattr(audit, "_lock", lambda fd: False)
+    audit.begin("gw", ["version"])
+    try:
+        [path] = files(world)
+        with open(path, "ab") as stream:
+            stream.write(b'{"v":1,"another run tore th')
+    finally:
+        audit.end(0)
+    assert [r["event"] for r in parsed(world)] == ["invocation.start", "invocation.end"]
+    assert parsed(world)[1]["torn"] is True
+    assert path.read_bytes().endswith(b"}\n")
+
+
+def test_a_held_lock_does_not_hold_a_command_up(logging, monkeypatch):
+    import fcntl
+
+    world = logging
+    monkeypatch.setattr(audit, "_LOCK_TRIES", 3)
+    audit.begin("gw", ["version"])
+    [path] = files(world)
+    holder = os.open(path, os.O_RDWR)
+    try:
+        fcntl.flock(holder, fcntl.LOCK_EX)
+        began = time.monotonic()
+        audit.end(0)
+        assert time.monotonic() - began < 2
+    finally:
+        os.close(holder)
+    assert [r["event"] for r in parsed(world)] == ["invocation.start", "invocation.end"]
 
 
 # --------------------------------------------------------------------------
@@ -853,6 +972,52 @@ def test_how_a_run_ended_is_a_kind_apart_from_its_message(world):
     assert refused["error"] and refused["errorDropped"] == 0
     assert broken["failure"] in ("git", "refused")
     assert broken["error"]
+
+
+@pytest.mark.parametrize(
+    ("words", "code", "failure", "said"),
+    [
+        (["add"], 2, "usage", "needs NAME"),
+        (["branch", "create"], 2, "usage", "needs NAME"),
+        (["add", "main"], 1, "refused", "already checked out"),
+        (["branch", "create", "main"], 1, "refused", "main"),
+        (["list", "no-such-worktree"], 1, "refused", "no worktree matches"),
+        (["remove", "no-such-worktree", "--yes"], 1, "refused", "no worktree matches"),
+        (["remove", "dirty", "--yes"], 1, "refused", "kept"),
+        (["fast-forward", "elsewhere", "--from", "no-such-ref"], 1, "refused", ""),
+        (["prune", "--quiet", "--verbose"], 2, "usage", "cannot be combined"),
+        (["prune", "--no-such-flag"], 2, "usage", None),
+    ],
+)
+def test_a_failure_a_command_handles_itself_still_has_its_kind(
+    world, words, code, failure, said
+):
+    """Each of these is printed and returned by the command's own handler,
+    and none reaches the one place that catches a refusal for every command."""
+    dirty = world.worktree("dirty")
+    (dirty / "untracked").write_text("x")
+    p = gw(world, *words)
+    assert p.returncode == code, p.stderr
+    end = events(world)[-1]
+    assert (end["event"], end["code"]) == ("invocation.end", code)
+    assert end["failure"] == failure
+    if said is None:
+        assert "error" not in end
+    else:
+        assert said in end["error"]
+
+
+def test_a_stopped_rebase_is_a_result_and_not_a_refusal(world):
+    world.git("switch", "--quiet", "--create", "fix-parser")
+    world.commit("README", "branch\n")
+    advance(world, "README", "main\n")
+    p = gw(world, "fast-forward", "--json")
+    assert p.returncode == 1
+    rows = events(world)
+    [moved] = named(rows, "fast-forward.outcome")
+    assert moved["result"] == "conflict"
+    assert (rows[-1]["code"], rows[-1]["failure"]) == (1, "result")
+    assert "error" not in rows[-1]
 
 
 def test_a_recheck_that_refuses_names_its_stage(logging, monkeypatch, capsys):

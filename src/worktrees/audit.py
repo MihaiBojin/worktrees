@@ -7,16 +7,13 @@ seeks, truncates, renames or deletes: retention is the reader's to decide.
 
 One `write` can still come back short, on a full disk or at a file size
 limit, and what it wrote is then a fragment nothing can take back. The rest
-of that line is never written, since another run may have appended in
-between. The fragment is closed with a newline when one can be written; when
-it cannot, the next run to open the file finds a last byte that is not a
-newline, starts its first line with one and marks that line `torn`. Either
-way the fragment is the only line lost, and a reader skips it as it would
-any line that is not JSON.
-
-Recording starts at `begin` and stops at `end`, which `cli.main` calls around
-one command. Outside that pair every function here returns at once, so code
-that imports the package and calls a git spec records nothing.
+of that line is never written. So that no later line is lost to it, each
+append takes the file's lock, looks at the last byte and begins with a
+newline of its own when that byte is not one; the line that does carries
+`torn`. The look and the write are under one lock, so it holds for a run
+that already had the file open when another run tore a line. The fragment
+is the only line lost, and a reader skips it as it would any line that is
+not JSON.
 
 A log that cannot be written is one warning on stderr and the command goes
 on: a full disk must not be what stops a person removing a worktree.
@@ -29,7 +26,7 @@ import os
 import sys
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 ENV = "WORKTREES_AUDIT"
@@ -97,7 +94,6 @@ class _State:
         "run",
         "seq",
         "started",
-        "unterminated",
     )
 
     def __init__(self) -> None:
@@ -113,9 +109,6 @@ class _State:
         self.lock = threading.Lock()
         # When `cli.main` was entered, so a run's time counts its parsing.
         self.started = 0.0
-        # The file ends in a fragment with no newline of its own: the next
-        # write begins with one, and the line it writes says so.
-        self.unterminated = False
 
 
 _state = _State()
@@ -123,6 +116,11 @@ _state = _State()
 
 def active() -> bool:
     return _state.on is not None
+
+
+def begun() -> bool:
+    """Whether this run has started recording, even if the log failed since."""
+    return bool(_state.run)
 
 
 def _user() -> str:
@@ -268,7 +266,6 @@ def end(code: int | None) -> None:
         with contextlib.suppress(OSError):
             os.close(_state.fd)
     _state.fd, _state.month = -1, ""
-    _state.unterminated = False
 
 
 def _since(began: float) -> int:
@@ -332,21 +329,27 @@ def record(event: str, **fields: object) -> None:
         try:
             _open(path, stamp[:7])
             _state.seq += 1
-            row = {
-                "v": SCHEMA,
-                "ts": f"{stamp}.{int(now % 1 * 1000):03d}Z",
-                "run": _state.run,
-                "seq": _state.seq,
-                "event": event,
-                **_state.base,
-                "cwd": cwd,
-                **fields,
-            }
-            if _state.unterminated:
-                # This line closes a fragment of an event that was lost.
-                row["torn"] = True
-            line = json.dumps(clean(row), separators=(",", ":")).encode("ascii")
-            _append(line + b"\n")
+            row = clean(
+                {
+                    "v": SCHEMA,
+                    "ts": f"{stamp}.{int(now % 1 * 1000):03d}Z",
+                    "run": _state.run,
+                    "seq": _state.seq,
+                    "event": event,
+                    **_state.base,
+                    "cwd": cwd,
+                    **fields,
+                }
+            )
+
+            fixed = row if isinstance(row, dict) else {}
+
+            def line(torn: bool) -> bytes:
+                # `torn`: this line closes a fragment of an event that was lost.
+                whole = {**fixed, "torn": True} if torn else fixed
+                return json.dumps(whole, separators=(",", ":")).encode("ascii")
+
+            _append(line)
         except TypeError as exc:
             # A field of a type no reader was promised: this event is not
             # written, the rest of the run still is, and the fault is said.
@@ -359,60 +362,97 @@ def record(event: str, **fields: object) -> None:
 
 
 def _open(path: Path, month: str) -> None:
-    """Hold the month's file open for appending, and learn how it ends."""
+    """Hold the month's file open for appending."""
     if _state.fd >= 0 and _state.month == month:
         return
     if _state.fd >= 0:
         os.close(_state.fd)
         _state.fd = -1
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Readable as well, for the one byte `_open_ended` looks at.
     _state.fd = os.open(
         path,
-        os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_CLOEXEC", 0),
+        os.O_RDWR | os.O_APPEND | os.O_CREAT | getattr(os, "O_CLOEXEC", 0),
         0o600,
     )
     _state.month = month
-    _state.unterminated = _fragment(path)
 
 
-def _fragment(path: Path) -> bool:
+# How long an append waits for the file's lock before it goes without one.
+_LOCK_TRIES = 50
+_LOCK_PAUSE = 0.002
+
+
+def _lock(fd: int) -> bool:
+    """Take the file's lock, or say it could not be had.
+
+    Never waits long: the lock is held for one `write`, and a log must not be
+    what holds a command up. False where there is no `flock`, on a filesystem
+    that refuses it, or when another process keeps it past the wait.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        return False
+    for _ in range(_LOCK_TRIES):
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except BlockingIOError:
+            time.sleep(_LOCK_PAUSE)
+        except OSError:
+            return False
+    return False
+
+
+def _unlock(fd: int) -> None:
+    import fcntl
+
+    with contextlib.suppress(OSError):
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def _open_ended(fd: int) -> bool:
     """Whether the file ends in bytes with no newline after them.
 
     Every complete line ends in one and is one `write`, so a last byte that
-    is anything else is the tail of a line some run could not finish. Two
-    runs that both find it both start with a newline, and the reader gets an
-    empty line, which it skips as it skips the fragment.
+    is anything else is the tail of a line some run could not finish.
     """
     try:
-        with open(path, "rb") as stream:
-            size = stream.seek(0, os.SEEK_END)
-            if not size:
-                return False
-            stream.seek(size - 1)
-            return stream.read(1) != b"\n"
-    except OSError:
+        size = os.fstat(fd).st_size
+        return bool(size) and os.pread(fd, 1, size - 1) != b"\n"
+    except (AttributeError, OSError):
         return False
 
 
-def _append(data: bytes) -> None:
-    """Write one line in one `write`, and never finish a line that tore."""
-    if _state.unterminated:
-        data = b"\n" + data
-    wrote = os.write(_state.fd, data)
-    if wrote == len(data):
-        _state.unterminated = False
-        return
-    # Short: what went out is a fragment, and another run may already have
-    # appended after it, so the rest cannot follow. Close the fragment when a
-    # newline still fits; when it does not, the next run to open the file
-    # finds the open end and starts with one.
-    try:
-        _state.unterminated = os.write(_state.fd, b"\n") != 1
-    except OSError:
-        _state.unterminated = True
-    import errno
+def _append(line: Callable[[bool], bytes]) -> None:
+    """Write one line in one `write`, after whatever the file ends in.
 
-    raise OSError(errno.EIO, f"short write, {wrote} of {len(data)} bytes")
+    Under the lock the last byte is known for as long as the write takes, in
+    every process that appends here, so a fragment is closed by the next line
+    whoever left it and whenever. Without the lock nothing is known for that
+    long, so the line brings a newline of its own whatever the file ends in,
+    and a reader meets an empty line it skips.
+    """
+    fd = _state.fd
+    locked = _lock(fd)
+    try:
+        torn = _open_ended(fd)
+        data = (b"\n" if torn or not locked else b"") + line(torn) + b"\n"
+        wrote = os.write(fd, data)
+        if wrote == len(data):
+            return
+        # Short: what went out is a fragment and its rest is never written.
+        # Close it here if a newline still fits; if not, the next append
+        # finds the open end and closes it.
+        with contextlib.suppress(OSError):
+            os.write(fd, b"\n")
+        import errno
+
+        raise OSError(errno.EIO, f"short write, {wrote} of {len(data)} bytes")
+    finally:
+        if locked:
+            _unlock(fd)
 
 
 def _warn(path: Path, exc: OSError) -> None:

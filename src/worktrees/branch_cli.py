@@ -11,6 +11,7 @@ from .cli import (
     _assessment_head,
     _err,
     _explain,
+    _failed,
     _json,
     _only,
     _records,
@@ -378,4 +379,6 @@ def delete(args: argparse.Namespace) -> int:
         _err(render.fail(f"{render.branch(v.branch)} kept: {v.why}"))
     if failures or any(v.error for v in rows):
         return 1
+    if held:
+        _failed("\n".join(f"{v.branch} kept: {v.why}" for v in held), "refused")
     return 3 if held else 0

@@ -575,23 +575,28 @@ sleep as arguments, so its tests run in-process without waiting.
 
 `audit.py` writes one JSON line per event to `audit-YYYY-MM.jsonl` under
 `$XDG_STATE_HOME/worktrees`, or `WORKTREES_AUDIT_DIR`. Each line is one
-`os.write` on an `O_APPEND` descriptor, so no lock is needed between
-processes and nothing here seeks, truncates, renames or deletes a file. A
-monthly name is what makes that hold: rotation by size would need a rename.
+`os.write` on an `O_APPEND` descriptor, and nothing here seeks, truncates,
+renames or deletes a file. A monthly name is what makes that hold: rotation
+by size would need a rename.
 
 Recording runs between `audit.begin` and `audit.end`. `_dispatch` begins
 once argparse has the words, so `--help`, which leaves inside `parse_args`,
-and `--explain` on any subcommand record nothing and print under a
-`WORKTREES_AUDIT` it does not take; no scan of the raw words would know an
-abbreviated `--hel` or a value after `--`. A usage error begins in `main`,
-as it leaves. `main` ends the run whichever way. Outside the pair every
+and a parsed `--explain` or `--complete` on any subcommand record nothing
+and answer under a `WORKTREES_AUDIT` it does not take; no scan of the raw
+words would know an abbreviated `--hel` or a value after `--`. A usage
+error begins in `main`, as it leaves. Every path from `main` to `_command`
+is inside the `try` whose `finally` ends the run, so no start lacks its end. Outside the pair every
 function returns at once, so a test or a caller that imports the package
 and runs a spec writes nothing.
 
-A line is one `os.write` and is never resumed: after a short write another
-process may have appended, so `_append` closes the fragment with a newline
-if one fits and raises. `_open` reads the last byte, and a file that does
-not end in a newline gets one before the first line, which carries `torn`.
+A line is one `os.write` and is never resumed: after a short write
+`_append` closes the fragment with a newline if one fits and raises. Each
+append takes `flock`, reads the last byte and writes under it, and a file
+that does not end in a newline gets one before the line, which carries
+`torn`. What the file ended in at open is never kept: another process can
+tear a line after that, and a look outside the lock races the write. The
+lock is tried for a tenth of a second; without it the line brings its own
+newline whatever the file ends in.
 
 Two places see every process: the `@git` wrapper and `forge._run`. Each
 times the run and calls `audit.ran`, filed as `reads`, `mutating` or
@@ -617,8 +622,10 @@ unlisted field, a missing one or another type fails. The reference is held
 to the same names. `audit.clean` raises on a type it does not know, so a
 new field of an odd type drops its event with a warning; nothing is ever
 written as a Python repr. A failure's kind and a removal's stage are fields
-of their own, `failure` and `failedStage`, and a cut output carries its
-count in `outDropped`, never a mark inside the text.
+of their own, `failure` and `failedStage`. A handler in `cli.py` that prints
+a refusal and returns goes through `_refuse`, which hands the kind to the
+log; one that only printed would end its run as `result`. A cut output
+carries its count in `outDropped`, never a mark inside the text.
 
 A write that fails turns recording off for the rest of the run and warns
 once through `progress.line`. `conftest.ENV` and an autouse fixture set

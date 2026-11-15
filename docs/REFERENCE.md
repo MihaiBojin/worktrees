@@ -197,9 +197,12 @@ Every command appends what it did to
 is `~/.local/state/worktrees` when that is unset. `WORKTREES_AUDIT_DIR`
 names another directory. One file holds every repository; each event names
 the directory it ran in. Help, `--explain` and completion record nothing, on
-a subcommand as at the top: `gw prune --help` and `gw prune --explain` write
-no line, and both still print when `WORKTREES_AUDIT` holds a value it does
-not take. A usage error is recorded, at exit 2.
+a subcommand as at the top: `gw prune --help`, `gw prune --explain` and
+`gw list --complete --json` write no line, and each still answers when
+`WORKTREES_AUDIT` holds a value it does not take. One of those words after
+`--` is a value, and that command is recorded. A usage error is recorded,
+at exit 2. Every run that writes an `invocation.start` writes its
+`invocation.end`.
 
 A line is one JSON object, written by one `write` to a descriptor opened
 with `O_APPEND`. Nothing seeks, truncates, renames or deletes a file, so
@@ -209,14 +212,18 @@ is ever removed: retention is yours, by month.
 
 A `write` that comes back short, on a full disk or at a file size limit,
 leaves a fragment that cannot be taken back. The rest of that line is never
-written, because another command may have appended after it; the fragment is
-closed with a newline when one fits, the command warns as for any failed
-write, and it records nothing more. When no newline fits, the next command
-to open the file finds a last byte that is not one, begins its first line
-with a newline and marks that line `torn: true`. Two commands that find the
-same open end both do, which leaves an empty line. So a reader skips a line
-that is empty or is not JSON: it is the one event lost, and every line
-after it is whole.
+written; the fragment is closed with a newline when one fits, the command
+warns as for any failed write, and it records nothing more. So that no later
+line is lost to a fragment left open, every append takes an advisory lock on
+the file, looks at its last byte and, when that is not a newline, begins
+with one and marks its line `torn: true`. The look and the write are under
+one lock, so this holds for a command that had the file open before another
+tore a line, as for one that starts after. The lock is held for one write
+and waited on for a tenth of a second at most. Where it cannot be had, on a
+filesystem without `flock` or past that wait, the line begins with a newline
+whatever the file ends in, which leaves an empty line. So a reader skips a
+line that is empty or is not JSON: a fragment is the one event lost, and
+every line after it is whole.
 
 ### Events
 
@@ -281,7 +288,10 @@ does a forge call whose `--method` is `PUT`, `POST`, `PATCH` or `DELETE`.
 `failure` is `usage` for a usage error, `refused` for a refusal, `git` for
 a git command that failed, `interrupted` for ctrl-c, `crash` for an
 exception nothing caught, and `result` when the command ran to its end and
-its answer is the exit code, as after a stopped rebase or a partial removal.
+its answer is the exit code, as after a stopped rebase or a partial removal. A
+refusal a command prints itself is `refused` like any other: a name already
+checked out, no worktree matching, a target kept, a fetch that failed. A
+missing argument is `usage`.
 
 `removal.proposed`, when a removal is disclosed and before any answer, and
 `removal.outcome`, when an approved removal was tried, share:
