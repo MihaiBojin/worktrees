@@ -296,7 +296,7 @@ the cause before changing anything:
 | the code or a test is wrong | fix it, run that test and the repository's checks |
 | formatting or generated files | run the repository's formatter or generator, read its diff |
 | a runner outage, a timeout, a flaky test shown to pass on retry | `gh run rerun RUN --failed` or `glab ci retry JOB`, once |
-| the base moved and the branch is out of date | steps 3 and 4 again, in the branch's worktree |
+| the base moved and the branch is out of date | `gw sync`, then steps 3 and 4 again, in the branch's worktree |
 
 Never make a check pass by skipping, deleting or loosening it, and never
 edit CI configuration to get past a failure unless the configuration is
@@ -433,7 +433,7 @@ gw list --json | jq -c '(.head.ref // "" | sub("^refs/remotes/[^/]+/|^refs/heads
 
 A null `path` means no checkout holds it, and nothing needs moving. Else
 follow [the fast-forward skill](../fast-forward/SKILL.md) in that
-checkout, with `(cd 'PATH' && command gw fast-forward --json)`. On the head
+checkout, with `(cd 'PATH' && gw sync && command gw fast-forward --json)`. On the head
 branch it only fast-forwards; a refusal that the branch is ahead of the
 remote is reported, never worked around. Offer
 [the prune skill](../prune/SKILL.md) for the merged branches; removing them

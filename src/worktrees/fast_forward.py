@@ -65,6 +65,10 @@ class Unfetched(Refusal):
     """The fetch or the forge query this run decides on did not answer."""
 
 
+class _Behind(Exception):
+    """The forge named a merge commit the head ref does not hold yet."""
+
+
 # `autostash` is `--autostash` or `--no-autostash`, whatever merge.autoStash
 # and rebase.autoStash say, so uncommitted changes move only when asked to,
 # and otherwise stay in the checkout or git refuses.
@@ -229,9 +233,30 @@ def fast_forward(
     one onto `name`, started from `start` or the head ref.
 
     `live` asks the forge, in this run, whether the branch merged; the
-    cached evidence is never read. `autostash` carries uncommitted work
-    across through git's own autostash.
+    cached evidence is never read. A merge the forge names that the head ref
+    does not hold yet means the last fetch came before it, so the run fetches
+    and decides again. `autostash` carries uncommitted work across through
+    git's own autostash.
     """
+    try:
+        return _level(name, start, repo, now, autostash, live, fetched=False)
+    except _Behind:
+        failures, _ = sync.fetch(repo)
+        if failures:
+            raise Unfetched("\n".join(failures)) from None
+        return _level(name, start, repo, now, autostash, live, fetched=True)
+
+
+def _level(
+    name: str,
+    start: str,
+    repo: str | os.PathLike[str] | None,
+    now: datetime | None,
+    autostash: bool,
+    live: bool,
+    fetched: bool,
+) -> Moved:
+    """`fast_forward`, raising `_Behind` unless this run has `fetched`."""
     stopped = stopped_rebase(repo)
     if stopped:
         return stopped
@@ -275,6 +300,11 @@ def fast_forward(
             return Moved(CURRENT, branch, parent, sha, branch, sha, ahead=ahead)
         return _replay(branch, parent, tip, None, None, stash, repo)
     head_sha = R.local_sha(base, repo=repo).value
+    # Asked before the branch is called level: one that holds the head ref
+    # as last fetched can be merged since.
+    request = merged_request(branch, remote, repo) if live else None
+    if request and request.state == "MERGED" and request.merge_sha:
+        _held(request.merge_sha, head_sha, fetched, repo)
     if merged.is_ancestor(base, local, repo=repo):
         _unnamed(name, start, f"{render.branch(branch)} already has {shown}")
         taken = _rewritten(branch, remote, head_sha, head_sha, tip, repo)
@@ -284,7 +314,6 @@ def fast_forward(
         ahead = _count(base, local, repo)
         return Moved(CURRENT, branch, base, sha, branch, sha, ahead=ahead)
 
-    request = merged_request(branch, remote, repo) if live else None
     first_parents = set(merged.first_parent_history(head_sha, repo=repo).lines)
     verdict, why, proof, _ = merged.branch_proof(
         branch,
@@ -308,7 +337,14 @@ def fast_forward(
             or merged.boundary(tip, head_sha, repo)
             or (
                 _parent_boundary(
-                    branch, tip, head_sha, resolved.branch, first_parents, remote, repo
+                    branch,
+                    tip,
+                    head_sha,
+                    resolved.branch,
+                    first_parents,
+                    remote,
+                    fetched,
+                    repo,
                 )
                 if live
                 else None
@@ -545,6 +581,7 @@ def _parent_boundary(
     head_branch: str,
     first_parents: set[str],
     remote: str,
+    fetched: bool,
     repo: str | os.PathLike[str] | None,
 ) -> tuple[str, str, str] | None:
     """The newest of the branch's commits another branch's merged request
@@ -571,9 +608,7 @@ def _parent_boundary(
             request.target_branch, request.merge_sha, head_branch, first_parents
         ):
             continue
-        if not merged.tree_of(request.merge_sha, repo=repo) or not merged.is_ancestor(
-            request.merge_sha, head, repo=repo
-        ):
+        if not _held(request.merge_sha, head, fetched, repo):
             continue
         point = next((commit for commit in own if commit in request.commits), "")
         if point:
@@ -1047,6 +1082,23 @@ def _awaited(
                 f"stacked pull request #{number}, so it is left as it is"
             )
         time.sleep(REWRITE_INTERVAL)
+
+
+def _held(
+    sha: str, head: str, fetched: bool, repo: str | os.PathLike[str] | None
+) -> bool:
+    """Whether the head ref holds the merge commit `sha`.
+
+    Before this run has fetched, a commit it lacks raises `_Behind`: the
+    forge saw a merge the last fetch did not bring.
+    """
+    if not sha:
+        return False
+    if merged.tree_of(sha, repo=repo) and merged.is_ancestor(sha, head, repo=repo):
+        return True
+    if not fetched:
+        raise _Behind
+    return False
 
 
 def _patch_order(

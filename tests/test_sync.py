@@ -382,9 +382,9 @@ def _cache(world, refs: str | None) -> None:
 @pytest.mark.parametrize(
     "age, ttl, due",
     [
-        (59, None, False),
-        (60, None, True),
-        (59, "", False),
+        (299, None, False),
+        (300, None, True),
+        (299, "", False),
         (3599, "3600", False),
         (3600, "3600", True),
         (0, "0", True),

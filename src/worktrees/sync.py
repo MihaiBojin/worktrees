@@ -16,7 +16,7 @@ _CACHE = "git-worktrees-sync.json"
 _FRESH = 10 * 60
 OFFLINE = "WORKTREES_OFFLINE"
 TTL = "WORKTREES_SYNC_TTL"
-_TTL = 60
+_TTL = 5 * 60
 NEVER = (
     "Never synced: verdicts use refs from the clone or last fetch and no forge evidence"
 )
@@ -265,8 +265,8 @@ def fetch(
 ) -> tuple[list[str], list[str]]:
     """Fetch the default remote now, whatever the TTL, and record when.
 
-    What `gw fast-forward` runs before it decides, since a pull request
-    merged a moment ago is the usual reason to run it. The forge evidence
+    What `gw fast-forward` runs before it decides when a sync is due, and
+    again when the forge names a merge the head ref does not hold. The forge evidence
     cached for every branch stays as it was. Returns the failures and the
     warnings; nothing to fetch is neither.
     """
