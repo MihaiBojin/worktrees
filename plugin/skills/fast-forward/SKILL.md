@@ -87,6 +87,17 @@ The result's fields:
 - `paths`: files with conflicts, relative to the top level
 - `stash`: the stash entry holding changes that did not re-apply
 - `stashes`: a partly merged, rotated or `adopted` branch's stashes, each with `sha`, `subject`, `after`, true for one made after the merged part, `moved`, the copy such a stash moved to, and `kept`, why one did not move
+- `retargeted`: the open review whose base the run moved to the head branch, with `number`, `url`, `from` and `to`; empty otherwise
+- `rescued`: the commits a merged branch gained after its merge, with `from`, the new `branch`, `commits`, the `url` of the review opened for them, and `kept`, why something was left; empty otherwise
+- `pushed`, `unpushed`: the commit the run pushed to the branch's remote copy, or why a push that was due did not happen
+
+The command writes to the forge and the remote in one case: the branch's
+open review still targets a branch whose own review merged. It moves that
+review's base to the head branch and, once the branch is level, pushes it
+under a lease. Report `retargeted` and `pushed` as done. Report a `rescued`
+entry every time: its `url` is a review opened for commits the user has not
+seen as a review, and a `kept` there, or an `unpushed`, is something only
+the user can settle. Never push for it yourself.
 
 ## Resolve a conflict
 

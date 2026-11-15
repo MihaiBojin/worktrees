@@ -7,6 +7,7 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from urllib.parse import quote
 
 from . import branch_forge, ci, forge
 from . import repo as R
@@ -102,6 +103,7 @@ def _scope(repository: str, number: int) -> Scope:
         raise Refused(f"#{number} has no base branch")
     info = row.get("stack")
     if info is None:
+        _unfinished_base(repository, number, base, row)
         return Scope(base, sha, None)
     if not isinstance(info, dict) or any(
         type(info.get(key)) is not int or info[key] < 1
@@ -176,6 +178,53 @@ def _scope(repository: str, number: int) -> Scope:
                 f"#{parent['number']}'s merge {commit}",
             )
     return Scope(base, sha, stack)
+
+
+def _unfinished_base(repository: str, number: int, base: str, row: dict) -> None:
+    """Refuse a pull request whose base is a branch a merged one left behind.
+
+    GitHub moves a stacked pull request's base only when the merged branch
+    is deleted. On a branch that still stands exactly where its own pull
+    request merged it, this one would merge into it and never reach the
+    default branch. A base that has moved on since is somebody's branch.
+    """
+    default = row["base"]["repo"].get("default_branch")
+    if not isinstance(default, str) or not default or base == default:
+        return
+    host, project = repository.split("/", 1)
+    _, branch = _request(repository, f"branches/{quote(base, safe='/')}")
+    tip = (
+        branch.get("commit", {}).get("sha")
+        if isinstance(branch.get("commit"), dict)
+        else None
+    )
+    owner = project.split("/", 1)[0]
+    listed = forge.query(
+        [
+            "gh",
+            "api",
+            f"repos/{project}/pulls?head={quote(f'{owner}:{base}', safe='')}"
+            "&state=closed&per_page=100",
+            "--hostname",
+            host,
+        ]
+    )
+    if not isinstance(tip, str) or listed is None:
+        raise Refused(f"could not read what merged from #{number}'s base {base}")
+    for parent in listed:
+        head = parent.get("head")
+        if (
+            parent.get("merged_at")
+            and isinstance(head, dict)
+            and head.get("sha") == tip
+        ):
+            source = row["head"].get("ref")
+            raise Refused(
+                f"#{number} targets {base}, which #{parent.get('number')} merged "
+                f"into {default}; merged there, it would never reach {default}.\n"
+                f"Run: gw fast-forward, in the checkout of {source}, which "
+                f"moves its base to {default}"
+            )
 
 
 def wait_stack(

@@ -511,3 +511,53 @@ def carried_by(
             )
         )
     return True, found
+
+
+def retarget(
+    request: Request,
+    target: str,
+    remote: str,
+    repo: str | os.PathLike[str] | None = None,
+) -> bool:
+    """Move an open request's base to `target`; whether the forge took it."""
+    selected = provider(remote, repo)
+    if selected is None:
+        return False
+    tool, repository = selected
+    if tool == "gh":
+        argv = ["gh", "pr", "edit", str(request.number)]
+        argv += ["--repo", repository, "--base", target]
+    else:
+        argv = ["glab", "mr", "update", str(request.number)]
+        argv += ["--repo", f"https://{repository}", "--target-branch", target]
+    return forge._execute(argv, repo) is not None
+
+
+def open_request(
+    branch: str,
+    target: str,
+    title: str,
+    body: str,
+    remote: str,
+    repo: str | os.PathLike[str] | None = None,
+) -> str:
+    """Open a request from `branch`, already on the remote, into `target`.
+
+    Its URL, the last one the tool prints, or nothing when it did not open.
+    """
+    selected = provider(remote, repo)
+    if selected is None:
+        return ""
+    tool, repository = selected
+    if tool == "gh":
+        argv = ["gh", "pr", "create", "--repo", repository, "--base", target]
+        argv += ["--head", branch, "--title", title, "--body", body]
+    else:
+        argv = ["glab", "mr", "create", "--repo", f"https://{repository}"]
+        argv += ["--source-branch", branch, "--target-branch", target]
+        argv += ["--title", title, "--description", body, "--yes"]
+    proc = forge._execute(argv, repo)
+    if proc is None:
+        return ""
+    urls = re.findall(r"https://\S+", proc.stdout)
+    return urls[-1] if urls else ""

@@ -466,7 +466,11 @@ moves to a new branch from the head ref or `--from`, named
 `YYYY-MM-DDThh-mm-ssZ/NAME` unless you name it. A branch whose own pull
 request squash-merged its first commits moves the same way, carrying only
 the commits made after the merge; a stacked branch whose parent merged keeps
-its name and drops the merged commits in place. `--autostash` carries uncommitted changes across. A branch
+its name and drops the merged commits in place. When that branch's open
+request still targets the merged parent, which a forge leaves there unless
+the parent's branch is deleted, the run moves its base to the head branch
+and pushes the branch under a lease; commits the parent gained after its
+merge get a branch and a request of their own first. `--autostash` carries uncommitted changes across. A branch
 already level exits 0 and changes nothing. [Fast-forward](docs/commands/fast-forward.md) gives the
 order of the checks, the JSON and the conflict loop.
 
@@ -475,7 +479,8 @@ order of the checks, the JSON and the conflict loop.
 [`gw merge`](docs/commands/merge.md) squashes one GitHub PR at its checked
 head SHA, including native stacked PRs. It waits up to ten minutes for lower
 stack members and the head rewrite, and respects the merge queue. A rewritten
-head returns `head-moved` at exit 4 without submitting. Submitted operations
+head returns `head-moved` at exit 4 without submitting. A base left on a
+branch whose own PR merged is refused, and `gw fast-forward` moves it. Submitted operations
 report `merged`, `enqueued`, `pending` or `failed`. The ship-it skill in
 Codex and Claude uses this command; both the CLI and plugin must be updated
 to provide it.

@@ -1939,3 +1939,391 @@ def test_a_parent_whose_request_closed_is_not_a_stack(world, network) -> None:
     p = gw_ff_online(world, network, "--json")
     assert p.returncode == 0, p.stderr
     assert json.loads(p.stdout)["base"] == "refs/remotes/origin/main"
+
+
+# --------------------------------------------------------------------------
+# an open request left on a branch whose own request merged
+# --------------------------------------------------------------------------
+
+
+# Child's pull request is in no native stack, so nothing waits for GitHub.
+NO_STACK = {"repos/owner/repo/pulls/19": {"number": 19}}
+
+
+def stale(world, network, **answers) -> tuple[str, str]:
+    """`stacked`, pushed, on GitHub: parent's request #17 merged into main and
+    its branch was kept, so child's open request #19 still targets parent.
+    Returns parent's tip and the squash."""
+    squash = stacked(world)
+    on_forge(world)
+    parent, child = world.git("rev-parse", "parent"), world.git("rev-parse", "child")
+    world.git("update-ref", "refs/remotes/origin/parent", parent)
+    world.git("update-ref", "refs/remotes/origin/child", child)
+    network.answer(
+        {
+            "child": {"merged": [], "all": [open_row("child", child, "parent", 19)]},
+            "parent": [merged_row("parent", parent, squash)],
+            "$api": NO_STACK,
+            **answers,
+        }
+    )
+    return parent, squash
+
+
+def forge_writes(network) -> list[list[str]]:
+    """Every call that changes the forge or the remote, without `git -C`."""
+    found = []
+    for tool, *args in network.calls():
+        if tool == "git" and args[:1] == ["-C"]:
+            args = args[2:]
+        if args[:1] == ["push"] or args[1:2] in (["edit"], ["update"], ["create"]):
+            found.append([tool, *args])
+    return found
+
+
+EDIT = ["gh", "pr", "edit", "19", "--repo", "github.com/owner/repo", "--base", "main"]
+PUSH = [
+    "git",
+    "push",
+    "--porcelain",
+    "--force-with-lease",
+    "--force-if-includes",
+    "origin",
+    "refs/heads/child:refs/heads/child",
+]
+
+
+def test_raw_git_merging_into_a_merged_branch_never_reaches_main(world) -> None:
+    """What a forge does with a request whose base stayed on the merged
+    branch: the merge succeeds, and main never sees the child's commit."""
+    stacked(world)
+    world.git("switch", "--quiet", "parent")
+    world.git("merge", "--quiet", "--squash", "child")
+    world.git("commit", "--quiet", "-m", "child (#19)")
+
+    assert world.git("ls-tree", "--name-only", "parent", "b.txt") == "b.txt"
+    assert world.git("ls-tree", "--name-only", "main", "b.txt") == ""
+
+
+def test_a_request_left_on_a_merged_branch_moves_to_the_head_branch(
+    world, network
+) -> None:
+    _, squash = stale(world, network)
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["branch"]) == ("rebased", "child")
+    assert payload["retargeted"] == {
+        "number": 19,
+        "url": "https://github.com/owner/repo/pull/19",
+        "from": "parent",
+        "to": "main",
+    }
+    assert payload["rescued"] == {}
+    assert world.git("rev-parse", "child~1") == squash
+    assert payload["pushed"] == world.git("rev-parse", "--short", "child")
+    assert forge_writes(network) == [EDIT, PUSH]
+
+
+def test_the_move_and_the_push_are_said_on_stderr(world, network) -> None:
+    stale(world, network)
+
+    p = gw_ff_online(world, network)
+    assert p.returncode == 0, p.stderr
+    assert "#19 now targets main, since parent merged" in p.stderr
+    assert "pushed child to origin at" in p.stderr
+
+
+def test_a_branch_already_level_is_retargeted_and_pushed(world, network) -> None:
+    """Rebased by hand, or by a run that stopped on a conflict."""
+    parent, _ = stale(world, network)
+    world.git("rebase", "--quiet", "--onto", "main", parent, "child")
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["retargeted"]["number"]) == ("current", 19)
+    assert forge_writes(network) == [EDIT, PUSH]
+
+
+def test_a_rebase_that_stops_moves_the_base_and_pushes_nothing(world, network) -> None:
+    stale(world, network)
+    world.commit("b.txt", "child, again\n")
+    advance(world, "b.txt", "main\n")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 1
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["retargeted"]["to"]) == ("conflict", "main")
+    assert (payload["pushed"], payload["unpushed"]) == ("", "")
+    assert forge_writes(network) == [EDIT]
+
+
+def test_a_push_git_refuses_leaves_the_branch_level_and_says_why(
+    world, network
+) -> None:
+    stale(world, network)
+
+    p = gw_ff_online(world, network, WT_PUSH_CODE="1")
+    assert p.returncode == 0, p.stderr
+    assert "child was not pushed to origin: git push exited 1" in p.stderr
+    assert world.git("rev-parse", "child~1") == world.git("rev-parse", "main")
+
+
+def test_a_forge_that_refuses_the_move_refuses_the_run(world, network) -> None:
+    stale(world, network, **{"$edit": 1})
+    tip = world.git("rev-parse", "child")
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 1
+    assert p.stdout == ""
+    assert "could not move pull request #19 from parent to main" in p.stderr
+    assert "Run: WORKTREES_OFFLINE=1 gw fast-forward --json" in p.stderr
+    assert world.git("rev-parse", "child") == tip
+
+
+def test_offline_moves_no_base_and_pushes_nothing(world, network) -> None:
+    stale(world, network)
+
+    p = gw_ff_online(world, network, "--json", WORKTREES_OFFLINE="1")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["retargeted"], payload["pushed"]) == (
+        "rebased",
+        {},
+        "",
+    )
+    assert network.network_calls() == []
+
+
+@pytest.mark.parametrize("state", ["CLOSED", "OPEN"])
+def test_a_parent_that_did_not_merge_keeps_the_base(world, network, state) -> None:
+    parent, _ = stale(world, network)
+    row = {**open_row("parent", parent, "main", 17), "state": state}
+    child = world.git("rev-parse", "child")
+    network.answer(
+        {
+            "child": {"merged": [], "all": [open_row("child", child, "parent", 19)]},
+            "parent": [row],
+            "$api": NO_STACK,
+        }
+    )
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["retargeted"] == {}
+    assert EDIT not in forge_writes(network)
+
+
+def test_a_parent_merged_into_another_branch_keeps_the_base(world, network) -> None:
+    """Its merge commit is not on main, so main is not where child belongs."""
+    parent, _ = stale(world, network)
+    world.git("switch", "--quiet", "--detach", "main")
+    elsewhere = world.commit("elsewhere.txt", "e\n")
+    world.git("switch", "--quiet", "child")
+    child = world.git("rev-parse", "child")
+    row = {**merged_row("parent", parent, elsewhere), "baseRefName": "release"}
+    network.answer(
+        {
+            "child": {"merged": [], "all": [open_row("child", child, "parent", 19)]},
+            "parent": [row],
+            "$api": NO_STACK,
+        }
+    )
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["retargeted"] == {}
+    assert EDIT not in forge_writes(network)
+
+
+def later_on_parent(world, name: str, body: str) -> str:
+    """One more commit pushed to parent after its request merged."""
+    world.git("switch", "--quiet", "parent")
+    subprocess.run(
+        ["git", "commit", "--quiet", "--allow-empty", "-m", "noise"],
+        cwd=world.repo,
+        check=True,
+    )
+    world.git("reset", "--quiet", "--soft", "HEAD~1")
+    (world.repo / name).write_text(body)
+    world.git("add", "--", name)
+    subprocess.run(
+        ["git", "commit", "--quiet", "-m", f"later: {name}"],
+        cwd=world.repo,
+        check=True,
+        env={**os.environ, "GIT_AUTHOR_NAME": "Somebody Else"},
+    )
+    sha = world.git("rev-parse", "HEAD")
+    world.git("update-ref", "refs/remotes/origin/parent", sha)
+    world.git("switch", "--quiet", "child")
+    return sha
+
+
+def test_commits_the_parent_gained_that_main_has_are_not_rescued(
+    world, network
+) -> None:
+    stale(world, network)
+    later_on_parent(world, "later.txt", "l\n")
+    advance(world, "later.txt", "l\n")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["rescued"], payload["retargeted"]["to"]) == ({}, "main")
+    assert forge_writes(network) == [EDIT, PUSH]
+
+
+def test_commits_the_parent_gained_get_a_branch_and_a_request_of_their_own(
+    world, network
+) -> None:
+    _, squash = stale(world, network)
+    later = later_on_parent(world, "later.txt", "l\n")
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    rescued = payload["rescued"]
+    assert STAMP.match(rescued["branch"]) and rescued["branch"].endswith("/parent")
+    assert rescued["commits"] == [world.git("rev-parse", "--short", later)]
+    assert rescued["url"] == "https://github.com/owner/repo/pull/99"
+    assert (rescued["from"], rescued["kept"]) == ("parent", "")
+    copy = f"refs/heads/{rescued['branch']}"
+    assert world.git("rev-parse", f"{copy}~1") == squash
+    assert world.git("log", "-1", "--format=%an|%s", copy) == (
+        "Somebody Else|later: later.txt"
+    )
+    assert world.git("diff", "--name-only", squash, copy) == "later.txt"
+    assert payload["retargeted"]["to"] == "main"
+
+    sent, opened, moved, pushed = forge_writes(network)
+    assert sent == ["git", "push", "--porcelain", "origin", f"{copy}:{copy}"]
+    assert opened[:9] == [
+        "gh",
+        "pr",
+        "create",
+        "--repo",
+        "github.com/owner/repo",
+        "--base",
+        "main",
+        "--head",
+        rescued["branch"],
+    ]
+    assert opened[opened.index("--title") + 1] == "later: later.txt"
+    assert "later: later.txt" in opened[opened.index("--body") + 1]
+    assert (moved, pushed) == (EDIT, PUSH)
+    # The checkout the run stands in was never on the rescued branch.
+    assert world.git("symbolic-ref", "--short", "HEAD") == "child"
+
+
+def test_the_rescue_is_said_on_stderr(world, network) -> None:
+    stale(world, network)
+    later_on_parent(world, "later.txt", "l\n")
+
+    p = gw_ff_online(world, network)
+    assert p.returncode == 0, p.stderr
+    assert "parent gained 1 commit after it merged; they are on" in p.stderr
+    assert "https://github.com/owner/repo/pull/99" in p.stderr
+
+
+def test_a_later_commit_that_does_not_apply_keeps_the_base(world, network) -> None:
+    stale(world, network)
+    later_on_parent(world, "a.txt", "parent, later\n")
+    advance(world, "a.txt", "main, later\n")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert payload["retargeted"] == {}
+    assert payload["rescued"]["branch"] == ""
+    assert "does not apply cleanly to main" in payload["rescued"]["kept"]
+    assert payload["result"] == "rebased"
+    assert [w[:2] for w in forge_writes(network)] == [["git", "push"]]
+    assert world.git("branch", "--list", "2*") == ""
+
+
+def test_a_rescue_that_cannot_be_pushed_is_taken_back(world, network) -> None:
+    stale(world, network)
+    later_on_parent(world, "later.txt", "l\n")
+
+    p = gw_ff_online(world, network, "--json", WT_PUSH_CODE="1")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert payload["retargeted"] == {}
+    assert "could not be pushed" in payload["rescued"]["kept"]
+    assert world.git("branch", "--list", "2*") == ""
+
+
+def test_a_rescue_whose_request_does_not_open_still_moves_the_base(
+    world, network
+) -> None:
+    """The commits are on a pushed branch, so nothing is lost by the move."""
+    stale(world, network, **{"$create": 1})
+    later_on_parent(world, "later.txt", "l\n")
+
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert payload["retargeted"]["to"] == "main"
+    assert payload["rescued"]["url"] == ""
+    assert "request could not be opened" in payload["rescued"]["kept"]
+    assert world.git("branch", "--list", "2*") != ""
+
+
+def test_a_lease_refuses_a_copy_this_clone_never_had(world) -> None:
+    """The push `gw fast-forward` makes, against a remote on this disk."""
+    restacked(world)
+    world.git("commit", "--quiet", "--allow-empty", "-m", "made here")
+    moved = F.Moved(F.REBASED, "child", "refs/remotes/origin/main", "")
+
+    published = F._publish(moved, "origin", world.repo)
+    assert published.pushed == ""
+    assert published.unpushed.startswith("[rejected]")
+
+    world.git("rebase", "--quiet", "origin/child")
+    published = F._publish(moved, "origin", world.repo)
+    assert published.pushed == world.git("rev-parse", "--short", "child")
+    assert world.git("rev-parse", "origin/child") == world.git("rev-parse", "child")
+
+
+@pytest.mark.parametrize(
+    "host, edit, create",
+    [
+        (
+            "github.com",
+            ["gh", "pr", "edit", "7", "--repo", "github.com/owner/repo"],
+            ["gh", "pr", "create", "--repo", "github.com/owner/repo"],
+        ),
+        (
+            "gitlab.com",
+            ["glab", "mr", "update", "7", "--repo", "https://gitlab.com/owner/repo"],
+            ["glab", "mr", "create", "--repo", "https://gitlab.com/owner/repo"],
+        ),
+    ],
+)
+def test_each_forge_is_written_through_its_own_tool(
+    world, network, monkeypatch, host, edit, create
+) -> None:
+    from worktrees import branch_forge
+
+    on_forge(world, host)
+    monkeypatch.setenv("PATH", network.env()["PATH"])
+    request = branch_forge.Request(
+        7, "OPEN", "x", "", "", "b", "", "a", "", "", "", False, "", ""
+    )
+
+    assert branch_forge.retarget(request, "main", "origin", world.repo)
+    assert branch_forge.open_request("b", "main", "T", "B", "origin", world.repo)
+    moved, opened = forge_writes(network)
+    assert moved[: len(edit)] == edit
+    assert moved[-2:] == [
+        "--base" if host == "github.com" else "--target-branch",
+        "main",
+    ]
+    assert opened[: len(create)] == create
+    if host == "gitlab.com":
+        assert opened[-1] == "--yes"

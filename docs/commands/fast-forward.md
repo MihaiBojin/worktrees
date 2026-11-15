@@ -21,8 +21,9 @@ a merge commit the fetched head ref lacks, it fetches before deciding. On the
 head branch it asks the forge nothing and moves to the head ref as the last
 fetch left it; `gw sync` first fetches now. The finished-branch proof and the
 search for a merged part both use that answer; neither reads the request
-cached by `gw sync`. When nothing else marks where a merged part ends, it
-also asks which merged request carried the branch's oldest commit. When the
+cached by `gw sync`. It reads the branch's open request and, when that
+targets another branch, that branch's newest request. When nothing else
+marks where a merged part ends, it also asks which merged request carried the branch's oldest commit. When the
 branch's remote copy still holds its merged part, it asks GitHub whether the
 branch's open pull request is in a native stack.
 
@@ -117,6 +118,50 @@ never arrives is a refusal that leaves the branch as it was, and its last
 line is the same command run offline, which rebases the branch here instead.
 A branch in no native stack is rebased without waiting.
 
+## A request left on a merged branch
+
+A forge moves a stacked request's base to the head branch only when the
+merged branch below it is deleted. In a repository that keeps merged
+branches, the request stays on that branch, and merging it there lands its
+commits on a finished branch: they never reach the head branch, and the
+forge still says merged.
+
+So when the branch's open request targets a branch whose own newest request
+merged, and the fetched head ref holds that merge commit, the run moves the
+request's base to the head branch, with `gh pr edit NUMBER --base` or
+`glab mr update NUMBER --target-branch`, before it levels the branch:
+`retargeted`. A merge into some other branch, off the head ref's
+first-parent history, moves nothing. A forge that refuses the move refuses
+the run before the branch changes.
+
+Once the branch is level, `rebased` or `current`, and its remote copy
+differs, the run pushes it with `git push --force-with-lease
+--force-if-includes`: `pushed` holds the commit sent. So does any run that
+drops a parent's merged commits from a branch with an open request, since
+the request reads the remote copy. git refuses when the copy holds commits
+this clone never had; the branch stays level here, `unpushed` says why, and
+the exit status is still 0. A rebase that stopped pushes nothing: push it
+with the same flags once it is finished. Offline, nothing is moved and
+nothing is pushed.
+
+The merged branch may have gained commits after its request merged, read
+from its remote copy. Each one whose change the head ref already has, by
+patch-id, needs nothing. The others are copied, oldest first, onto a new
+branch started from the head ref, named `YYYY-MM-DDThh-mm-ssZ/<branch>` as
+a rotation names one. Each copy is made as a cherry-pick makes it, under
+its own author and message, with `git merge-tree --write-tree` and `git
+commit-tree`, so no checkout moves. The new branch is pushed and a request
+opened for it into the head branch, titled with its first commit's subject:
+`rescued` names the branch, the commits and the request's `url`, and the
+line on stderr says the same. Then the base moves.
+
+A commit that does not apply cleanly to the head ref, or a new branch the
+remote refuses, leaves everything as it was: no branch, the base where it
+is, and `rescued.kept` saying why. The run still levels the branch, and
+`gw merge` goes on refusing its request. A request that could not be opened
+leaves the pushed branch, says so in `kept`, and the base still moves,
+since the commits are safe.
+
 A finished branch's name stays with its merged request on the forge, so the
 next change gets a name of its own. Without `NAME`, that name is the UTC time
 and the branch's name, `2026-11-08T09-05-03Z/fix-parser`, with any time a
@@ -128,10 +173,11 @@ The new branch has no upstream.
 
 A replayed commit that conflicts stops the rebase on the new branch.
 `git rebase --abort` leaves the new branch at the old tip, and the source
-branch never moves. A branch rebased in place has a remote copy to update:
-push it with `--force-with-lease --force-if-includes`. After it takes its
-remote copy, that push sends only the commits made after the copy, or
-nothing.
+branch never moves. A branch rebased in place has a remote copy to update.
+One with an open request that dropped a parent's merged commits is pushed by
+the run, as above; push any other with `--force-with-lease
+--force-if-includes`. After it takes its remote copy, that push sends only
+the commits made after the copy, or nothing.
 
 ## Why not `gh stack rebase`
 
@@ -224,6 +270,10 @@ command again reports the stopped rebase until it finishes, then `current`.
 | `paths` | files with conflicts, from the top level; empty once all are staged |
 | `stash` | the stash entry holding changes that did not re-apply |
 | `stashes` | a partly merged, rotated or `adopted` branch's stashes: `sha`, `subject`, `after`, `moved`, `kept` |
+| `retargeted` | the open request whose base moved to the head branch: `number`, `url`, `from`, `to`; empty otherwise |
+| `rescued` | the commits a merged branch gained afterwards: `from`, the new `branch`, `commits`, the request's `url`, and `kept`, why something was left; empty otherwise |
+| `pushed` | the commit the branch's remote copy was moved to; empty when nothing was pushed |
+| `unpushed` | why a push that was due did not happen |
 
 Exit 0 means the branch is level with `base`. Exit 1 is a `conflict` or a
 `stash-conflict`, with the JSON above, or a refusal, with nothing on stdout
