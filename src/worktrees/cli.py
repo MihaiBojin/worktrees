@@ -209,10 +209,13 @@ def _counted(rows: list[verdicts.Verdict]) -> str:
     return render.counted([v.verdict for v in rows]) + f"; {eligible} eligible"
 
 
-def _note_needs(args: argparse.Namespace, rows: list[verdicts.Verdict]) -> None:
+def _note_needs(
+    args: argparse.Namespace, rows: list[verdicts.Verdict], command: str = "gw prune"
+) -> None:
     """Name the command that makes the rows only a permission holds back eligible.
 
-    The command keeps the values already passed, so running it loses none.
+    The command keeps the values and the --keep-branch already passed, so
+    running it loses none.
     """
     from . import prune
 
@@ -220,12 +223,9 @@ def _note_needs(args: argparse.Namespace, rows: list[verdicts.Verdict]) -> None:
     if not held:
         return
     values = {value for v in held for value in v.needs} | args.permissions
+    flags = prune.delete_flags(sorted(values), getattr(args, "keep_branch", False))
     names = ", ".join(render.branch(v.label) for v in held)
-    _err(
-        render.note(
-            f"gw prune {prune.delete_flags(sorted(values))} makes {names} eligible"
-        )
-    )
+    _err(render.note(f"{command} {flags} makes {names} eligible"))
 
 
 def add_status_flags(p: argparse.ArgumentParser) -> None:
@@ -315,8 +315,9 @@ def _add_delete_flags(p: argparse.ArgumentParser) -> None:
         choices=("empty", "stashes", "closed", "reflog", "all"),
         default=[],
         metavar="VALUE",
-        help="permit unused branches, stashes, closed requests or commits only "
-        "a reflog holds; all permits every one; repeat to combine",
+        help="permit an empty branch (empty), the branch's stashes (stashes), a "
+        "request closed unmerged (closed), commits only a reflog holds (reflog), "
+        "or every one (all); repeat to combine",
     )
 
 
@@ -1324,17 +1325,57 @@ def _remove_preview(args: argparse.Namespace, rows: list[verdicts.Verdict]) -> i
         return 0
     print()
     print(_counted(rows))
-    if len(rows) == 1 and rows[0].eligible:
-        from . import prune
+    if len(rows) != 1:
+        return 0
+    sys.stdout.flush()
+    if not rows[0].eligible:
+        _note_ways_out(args, rows[0])
+        return 0
+    from . import prune
 
-        sys.stdout.flush()
-        # With the flags that made it eligible, or it removes nothing.
-        flags = prune.delete_flags(args.permissions, args.keep_branch)
-        command = " ".join(
-            filter(None, ("gw remove", shlex.quote(rows[0].path), flags, "--yes"))
-        )
-        _err(render.note(f"{command} removes it"))
+    # With the flags that made it eligible, or it removes nothing.
+    flags = prune.delete_flags(args.permissions, args.keep_branch)
+    command = " ".join(
+        filter(None, ("gw remove", shlex.quote(rows[0].path), flags, "--yes"))
+    )
+    _err(render.note(f"{command} removes it"))
     return 0
+
+
+def _note_ways_out(args: argparse.Namespace, row: verdicts.Verdict) -> None:
+    """Every command that removes a worktree gw remove keeps, as typed.
+
+    The --delete values it needs, as gw prune names them; --keep-branch,
+    where only that waives the proof; and, for uncommitted changes, the git
+    command that deletes the checkout with them. The guard refuses that one
+    to gw, so it is printed for a person who has looked to run.
+    """
+    from . import prune
+    from . import verdicts as V
+
+    target = f"gw remove {shlex.quote(row.path)}"
+    _note_needs(args, [row], target)
+    if row.keep_needs is not None:
+        flags = prune.delete_flags(row.keep_needs, keep_branch=True)
+        _err(
+            render.note(f"{target} {flags} removes the worktree and retains the branch")
+        )
+    if row.reason != V.UNCOMMITTED:
+        return
+    # It deletes the ignored paths and the HEAD reflog too, and says nothing.
+    lost = []
+    if row.ignored:
+        lost.append(V.many(row.ignored, "ignored path"))
+    if row.checkout_reflog:
+        commits = V.many(len(row.checkout_reflog), "commit")
+        lost.append(f"{commits} only its reflog holds")
+    force = shlex.join(["git", "worktree", "remove", "--force", row.path])
+    line = f"{force} deletes it anyway"
+    if lost:
+        line += ", with " + " and ".join(lost)
+    if row.branch:
+        line += f"; the branch {render.branch(row.branch)} stays"
+    _err(render.note(line))
 
 
 def run_remove(args: argparse.Namespace) -> int:
@@ -1400,14 +1441,7 @@ def run_remove(args: argparse.Namespace) -> int:
     if not chosen.eligible:
         reasons = "; ".join(chosen.held_back)
         _err(render.fail(f"{render.branch(chosen.label)} kept: {reasons}"))
-        if chosen.keep_needs is not None:
-            flags = prune.delete_flags(chosen.keep_needs, keep_branch=True)
-            _err(
-                render.note(
-                    f"gw remove {shlex.quote(chosen.path)} {flags} removes the "
-                    "worktree and retains the branch"
-                )
-            )
+        _note_ways_out(args, chosen)
         return 1
 
     prune.plan([chosen], _err, keep_branch=args.keep_branch)

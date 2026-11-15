@@ -433,7 +433,7 @@ def test_prune_prints_the_reason_rather_than_naming_the_command(world) -> None:
     p = run(world, "gw prune", "--yes")
     assert p.returncode == 0, p.stderr
     assert "busy" in p.stdout
-    assert "it has uncommitted changes" in p.stdout
+    assert "it has 1 untracked path" in p.stdout
     assert "nothing to remove; 0 remove, 2 keep; 0 eligible" in p.stdout
     # The temporary root can hold the letters, as pytest-xdist's popen-gw0 does.
     assert "gw" not in p.stdout.replace(str(world.root), "")
@@ -460,7 +460,7 @@ def test_a_hint_names_every_value_its_row_needs_and_only_a_row_they_free(
     open_ = world.worktree("open")
     world.commit("unmerged", at=open_)
     both = "pass --delete empty --delete stashes"
-    dirty = "it has uncommitted changes or untracked files"
+    dirty = "it has 1 untracked path"
     expected = {
         "idle": ("keep", ["the branch is empty; pass --delete empty"]),
         "stashed": (
@@ -1126,7 +1126,7 @@ def test_remove_suggests_keep_branch_only_where_it_would_remove(world) -> None:
 
     code, out = run_on_a_terminal(world, "gw remove", "holds", answer="")
     assert code == 1, out
-    assert "holds kept: it has uncommitted changes or untracked files" in out
+    assert "holds kept: it has 1 untracked path\n" in out
     assert "--keep-branch" not in out
 
     code, out = run_on_a_terminal(world, "gw remove", "open", answer="")
@@ -1141,6 +1141,87 @@ def test_remove_suggests_keep_branch_only_where_it_would_remove(world) -> None:
     assert p.returncode == 0, p.stderr
     assert not open_.exists()
     assert world.git("rev-parse", "--verify", "refs/heads/open")
+
+
+def test_remove_says_what_is_uncommitted_and_the_command_that_removes_it_anyway(
+    world,
+) -> None:
+    """The refusal names the changes git status found, and the git command
+    that deletes the checkout with them, ignored paths counted, branch kept.
+
+    gw never runs that command: the guard refuses `worktree remove --force`.
+    """
+    world.commit(".gitignore", ".env\n")
+    wt = world.worktree("dirty")
+    (wt / "README").write_text("changed\n")
+    (wt / "notes.txt").write_text("draft\n")
+    (wt / ".env").write_text("S=1\n")
+    force = (
+        f"git worktree remove --force {shlex.quote(str(wt))} deletes it anyway, "
+        "with 1 ignored path; the branch dirty stays"
+    )
+
+    code, out = run_on_a_terminal(world, "gw remove", "dirty", answer="")
+    assert code == 1, out
+    assert (
+        "dirty kept: it has uncommitted changes to 1 file and 1 untracked path\n" in out
+    )
+    assert force in out
+
+    p = run(world, "gw remove", "dirty")
+    assert p.returncode == 0, p.stderr
+    assert "it has uncommitted changes to 1 file and 1 untracked path" in p.stdout
+    assert force in p.stderr
+    assert force not in run(world, "gw remove", "dirty", "--quiet").stderr
+    assert force not in run(world, "gw remove", "dirty", "--json").stderr
+
+    subprocess.run(
+        shlex.split(force.split(" deletes ", 1)[0]), cwd=world.repo, check=True
+    )
+    assert not wt.exists()
+    assert world.git("rev-parse", "--verify", "refs/heads/dirty")
+
+
+def test_the_force_line_counts_the_commits_only_the_checkout_reflog_holds(
+    world,
+) -> None:
+    """A detached checkout's commits outlive it in its HEAD reflog alone, and
+    `git worktree remove --force` deletes that reflog. It has no branch to
+    say stays."""
+    wt = world.worktree("drifted")
+    world.git("checkout", "--quiet", "--detach", at=wt)
+    world.commit("one", at=wt)
+    world.commit("two", at=wt)
+    world.git("checkout", "--quiet", "--detach", "main", at=wt)
+    (wt / "notes.txt").write_text("draft\n")
+
+    p = run(world, "gw remove", str(wt))
+    assert p.returncode == 0, p.stderr
+    assert (
+        f"git worktree remove --force {shlex.quote(str(wt))} deletes it anyway, "
+        "with 2 commits only its reflog holds\n"
+    ) in p.stderr
+
+
+def test_remove_names_the_delete_command_gw_prune_would(world) -> None:
+    """The values a target needs, with the ones already passed, as the full
+    command, on a terminal and in a preview, the way gw prune names them."""
+    idle = world.worktree("idle")
+    target = f"gw remove {shlex.quote(str(idle))}"
+
+    code, out = run_on_a_terminal(world, "gw remove", "idle", answer="")
+    assert code == 1, out
+    assert f"{target} --delete empty makes idle eligible" in out
+
+    p = run(world, "gw remove", "idle", "--delete", "stashes")
+    assert p.returncode == 0, p.stderr
+    assert f"{target} --delete empty --delete stashes makes idle eligible" in p.stderr
+
+    code, out = run_on_a_terminal(
+        world, "gw remove", "idle", "--delete", "empty", answer="y\n"
+    )
+    assert code == 0, out
+    assert not idle.exists()
 
 
 def test_remove_asks_before_removing_an_unfinished_worktree_and_keeps_the_branch(

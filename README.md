@@ -249,8 +249,13 @@ protections and the deletion permissions you supplied. The WHY column gives
 the evidence, then each protection that stands. A protection that `--delete`
 values lift ends with every value its row needs, such as
 `pass --delete empty --delete stashes`, and only where those values make
-the row eligible. For a target it keeps, `gw remove` prints every reason, and
-names a command with `--keep-branch` when only that removes the worktree.
+the row eligible. For a target it keeps, `gw remove` prints every reason and
+each command that removes it: `gw remove PATH --delete VALUE`, carrying the
+values you passed, as `gw prune` names them; `--keep-branch` when only that
+waives the proof; and, for uncommitted changes or untracked paths,
+`git worktree remove --force PATH`, which deletes the checkout with them and
+keeps the branch. That line counts the ignored paths and reflog-only commits
+that go too. gw never runs it.
 
 The CLI never deletes `main`, `master` or the head branch. It never removes
 the main checkout, locked or dirty worktrees, worktrees with untracked files,
