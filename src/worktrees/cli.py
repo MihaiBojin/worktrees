@@ -28,11 +28,12 @@ def _err(text: str) -> None:
     progress.line(text)
 
 
-def _failed(message: str) -> None:
-    """Hand the audit log the refusal a command is about to end with."""
+def _failed(message: str, kind: str) -> None:
+    """Hand the audit log the refusal a command is about to end with, and
+    which of `audit.FAILURES` it is."""
     from . import audit
 
-    audit.failed(message)
+    audit.failed(message, kind)
 
 
 def _warn(text: str) -> None:
@@ -1727,14 +1728,15 @@ def _fast_complete(words: list[str]) -> int | None:
     try:
         return answer()
     except KeyboardInterrupt:
+        _failed("", "interrupted")
         _err("")
         return 130
     except Refused as exc:
-        _failed(str(exc))
+        _failed(str(exc), "refused")
         _err(render.fail(str(exc)))
         return 3
     except GitError as exc:
-        _failed(str(exc))
+        _failed(str(exc), "git")
         _err(render.fail(str(exc)))
         return 1
 
@@ -2131,6 +2133,7 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
         code = exc.code if isinstance(exc.code, int) else int(exc.code is not None)
         if code:
             _audited(prog, args_in, strict=False)
+            audit.failed("", "usage")
         raise
     finally:
         audit.end(code)
@@ -2162,13 +2165,13 @@ def _command(args_in: list[str], prog: str) -> int:
         # command or a shorthand.
         render.setup()
         word = shlex.quote(args_in[0])
-        _err(
-            render.fail(
-                f"{prog}: {word} is not a command\n"
-                f"Run: gw list {word} to pick a worktree, or gw --help"
-            )
+        message = (
+            f"{prog}: {word} is not a command\n"
+            f"Run: gw list {word} to pick a worktree, or gw --help"
         )
+        _err(render.fail(message))
         _audited(prog, args_in, strict=False)
+        _failed(message, "usage")
         return 2
 
     p = _parser(prog, "Git worktree commands that refuse to lose work.")
@@ -2253,18 +2256,19 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             )
         return code
     except KeyboardInterrupt:
+        _failed("", "interrupted")
         _err("")
         return 130
     except _Stop as exc:
-        _failed(str(exc))
+        _failed(str(exc), "usage" if exc.code == 2 else "refused")
         _err(render.fail(str(exc)))
         return exc.code
     except Refused as exc:
-        _failed(str(exc))
+        _failed(str(exc), "refused")
         _err(render.fail(str(exc)))
         return 3
     except GitError as exc:
-        _failed(str(exc))
+        _failed(str(exc), "git")
         _err(render.fail(str(exc)))
         return 1
 

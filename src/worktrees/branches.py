@@ -217,9 +217,9 @@ def delete(
         # Kept before anything was tried: the audit log hears of it too.
         refused = prune.Outcome(branch=row.branch, retained=list(row.stashes))
         refused.failed.append(str(exc))
-        prune.audit_outcome(row, refused)
+        prune.audit_outcome(row, refused, stage="recheck")
         raise
-    prune.audit_outcome(row, outcome)
+    prune.audit_outcome(row, outcome, stage="branch")
     return outcome
 
 

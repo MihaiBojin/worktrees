@@ -211,54 +211,150 @@ same open end both do, which leaves an empty line. So a reader skips a line
 that is empty or is not JSON: it is the one event lost, and every line
 after it is whole.
 
-Every event carries `v` (1), `ts` in UTC to the millisecond, `run`, which
-one invocation's events share, `seq`, counted from 1 within the run,
-`event`, `user`, `host`, `pid`, `version` and `cwd`.
+### Events
 
-| event | when | fields |
+The field names, types and values below are the contract for `v` 1, and
+`tests/audit_schema.py` holds every event the tests read to them: no field
+that is not listed, none missing, each of its type. A field is always
+present unless its row says it can be absent. A string that does not apply
+is empty, not absent, and null is used only where a row says so. Counts and
+times are whole numbers, zero or more.
+
+Every event carries:
+
+| field | type | meaning |
 | --- | --- | --- |
-| `invocation.start` | a command begins | `argv` as typed, `records`, `terminal` |
-| `exec` | a `git`, `gh` or `glab` process ended | `tool`, `argv`, `code`, `ok`, `ms`, `mutates`, and `out` and `err` when it changes something or failed |
-| `removal.proposed` | a removal is disclosed, before any answer | the target, `deletes`, `restore`, `undo`, `recovery` |
-| `removal.outcome` | an approved removal was tried | the target, `result`, each step's outcome, `restore`, `undo`, `recovery` |
-| `fast-forward.outcome` | `gw fast-forward` decided | its `--json` result, `previous_full_sha`, `full_sha`, `restore`, `undo` |
-| `merge.outcome` | `gw merge` returned | `number`, `head` and its `--json` result |
-| `invocation.end` | the command ends | `code`, `ms`, and `error` after a refusal or failure |
+| `v` | number | 1 |
+| `ts` | string | UTC, `YYYY-MM-DDThh:mm:ss.mmmZ` |
+| `run` | string | 16 hex digits, shared by one invocation's events |
+| `seq` | number | counted from 1 within the run |
+| `event` | string | one of the seven below |
+| `user`, `host` | string | who ran it and where |
+| `pid` | number | the `gw` process |
+| `version` | string | the `gw` release |
+| `cwd` | string | where the process stood, empty if that directory is gone |
+| `torn` | `true`, or absent | this line closes a fragment left by a lost event |
+
+`invocation.start`, when a command begins:
+
+| field | type | meaning |
+| --- | --- | --- |
+| `argv` | list of strings | the command as typed, one element per word |
+| `records` | list of strings | which of `reads`, `mutating` and `forge` are on |
+| `terminal` | boolean | stdin is a terminal |
+
+`exec`, when a `git`, `gh` or `glab` process ended:
+
+| field | type | meaning |
+| --- | --- | --- |
+| `tool` | string | `git`, `gh` or `glab` |
+| `argv` | list of strings | one element per argument, never joined or split |
+| `code` | number or null | exit code; null when it never started or timed out |
+| `ok` | boolean | the code is one its caller takes as an answer |
+| `ms` | number | how long it ran |
+| `mutates` | boolean | it changes something |
+| `out`, `err` | string, or absent | the first 4000 characters it printed; present only when it changes something or failed, and printed something |
+| `outDropped`, `errDropped` | number, or absent | characters left off after those; present exactly when the text is, and 0 when it is whole |
 
 An `exec` whose `ok` is true exited with a code its caller takes as an
-answer, which for some reads includes 1 or 128. `code` is null for a forge
-command that never started or ran out of time. `out` and `err` keep the
-first 4000 characters. A `git fetch` counts as changing something, since it
-moves and prunes remote-tracking refs, and so does a forge call whose
-`--method` is `PUT`, `POST`, `PATCH` or `DELETE`.
+answer, which for some reads includes 1 or 128. A `git fetch` counts as
+changing something, since it moves and prunes remote-tracking refs, and so
+does a forge call whose `--method` is `PUT`, `POST`, `PATCH` or `DELETE`.
 
-A removal's target is its `branch`, full `sha`, `path`, `reason`, `proof`,
-`evidence`, the forge `request` the assessment used, `permissions`, `head`,
-`notices` and `repository`: the common directory, the default remote and its
-URL. `result` is `completed`, `partial` when a step failed after another
-took effect, or `refused` when nothing was removed; `worktreeRemoved`,
-`branchRemoved`, `stashesDropped`, `stashesRetained`, `stashesAbsent`,
-`ignoredDeleted` and `failed` say which. A `removal.proposed` with no
-`removal.outcome` in the same run was declined or refused before it started.
+`invocation.end`, when the command ends:
+
+| field | type | meaning |
+| --- | --- | --- |
+| `code` | number or null | exit code; null after an exception nothing caught |
+| `ms` | number | from entry to exit |
+| `failure` | string or null | null at exit 0, else how it ended, below |
+| `error` | string, or absent | the message of a refusal or failure, first 4000 characters |
+| `errorDropped` | number, or absent | characters left off; present exactly when `error` is |
+
+`failure` is `usage` for a usage error, `refused` for a refusal, `git` for
+a git command that failed, `interrupted` for ctrl-c, `crash` for an
+exception nothing caught, and `result` when the command ran to its end and
+its answer is the exit code, as after a stopped rebase or a partial removal.
+
+`removal.proposed`, when a removal is disclosed and before any answer, and
+`removal.outcome`, when an approved removal was tried, share:
+
+| field | type | meaning |
+| --- | --- | --- |
+| `branch` | string | empty for a detached worktree |
+| `sha` | string | the full commit the branch or worktree was on |
+| `path` | string | the worktree, empty for a loose branch |
+| `reason`, `proof`, `evidence` | string | the verdict's reason, its proof and what the proof found |
+| `request` | object or null | the forge request the assessment used, as its JSON gives it |
+| `permissions` | list of strings | the `--delete` values granted |
+| `repository` | object | `commonDir`, `remote` and `url`, each a string |
+| `head` | object or null | `branch` and `sha` of the head assessed against; null when refused before assessment |
+| `notices` | list of strings | the sync and head notices in force |
+| `keepBranch` | boolean | `--keep-branch` was given |
+| `restore` | list of objects | the recovery actions, below |
+| `undo` | list of strings | each action's `command`, in order |
+| `recovery` | string | what can and cannot come back |
+
+`removal.proposed` adds `deletes`, an object: `worktree` and `branch`,
+strings, empty for what stays, and `stashes`, `reflog` and `ignored`, lists
+of full SHAs, full SHAs and paths. `removal.outcome` adds:
+
+| field | type | meaning |
+| --- | --- | --- |
+| `result` | string | `completed`, `partial` when a step failed after another took effect, `refused` when nothing was removed |
+| `worktreeRemoved`, `branchRemoved` | boolean | each step on its own |
+| `stashesDropped`, `stashesRetained`, `stashesAbsent` | list of strings | full SHAs |
+| `ignoredDeleted` | list of strings | ignored paths that went with the worktree |
+| `failed` | list of strings | each failure's message |
+| `failedStage` | string or null | null when nothing failed, else `recheck`, `worktree`, `branch` or `stashes`: the step that stopped it |
+
+A `removal.proposed` with no `removal.outcome` in the same run was declined
+or refused before it started.
+
+`fast-forward.outcome`, when `gw fast-forward` decided, carries the fields
+of [its `--json` result](commands/fast-forward.md), under the names and
+types that has: `result`, `branch`, `base`, `sha`, `previous`,
+`previous_sha`, `proof`, `why`, `boundary`, `adopted`, `stopped_at`,
+`subject` and `stash`, strings; `ahead`, `behind` and `carried`, numbers;
+`paths`, a list of strings; and `stashes`, a list of objects. It adds
+`previous_full_sha` and `full_sha`, strings that are empty when the short
+one no longer resolves, and `restore` and `undo`.
+
+`merge.outcome`, when `gw merge` returned, carries `number`, a number,
+`head`, the SHA it was asked to merge at, and the fields of
+[its `--json` result](commands/merge.md): `status` and `message`, strings,
+`sha` and `uuid`, strings or null, and `pr`, an object.
+
+### Recovery actions
 
 `restore` holds one object for each thing the event took, or would take,
-so a program reads recovery as fields and parses no shell line:
+so a program reads recovery as fields and parses no shell line. Each has:
 
-| `kind` | restores | fields beside `sha`, `argv` and `command` |
+| field | type | meaning |
+| --- | --- | --- |
+| `kind` | string | `branch`, `stash`, `reflog-commit` or `previous-tip` |
+| `sha` | string | the full commit to restore |
+| `argv` | list of strings | the command, one element per word, nothing quoted |
+| `command` | string | the same words shell-quoted, for pasting |
+
+and the fields its `kind` needs, each a string and absent for another kind:
+
+| `kind` | restores | fields |
 | --- | --- | --- |
 | `branch` | a deleted branch | `branch` |
 | `stash` | a dropped stash | `subject` |
 | `reflog-commit` | a commit only a deleted reflog reached | `subject`, and `branch`, the `rescue-SHORT` name it is given |
 | `previous-tip` | where a branch stood before `gw fast-forward` moved it | `of`, that branch, and `branch`, the `rescue-SHORT` name |
 
-`sha` is the full one. `argv` is the command as separate words with nothing
-quoted, and `command` is the same words shell-quoted for pasting. `undo` is
-every `command`, in the same order. A proposal lists only what would go: a
-branch kept by `--keep-branch` keeps its stashes, so neither appears. An
-outcome lists only what went, so a retained branch has no action. The
-commands work until Git garbage collection prunes the commit: recording a
-SHA protects no object. Ignored and untracked files have no action, and
-`ignoredDeleted` lists the first.
+`undo` is every `command`, in the same order. A proposal lists only what
+would go: a branch kept by `--keep-branch` keeps its stashes, so neither
+appears. An outcome lists only what went, so a retained branch has no
+action. The commands work until Git garbage collection prunes the commit:
+recording a SHA protects no object. Ignored and untracked files have no
+action, and `ignoredDeleted` lists the first. A stash subject is the one
+git kept, in which each run of spaces is one.
+
+### Settings
 
 `WORKTREES_AUDIT` chooses what is recorded. Unset, empty or `all` records
 everything, and `off` records nothing. Otherwise it is a comma-separated

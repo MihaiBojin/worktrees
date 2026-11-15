@@ -585,6 +585,15 @@ only what went, so a kept or retained branch, and its stashes, have none. They a
 only while the log is on. `Moved` carries short shas, so `_audit_moved`
 resolves both ends before it writes one.
 
+`tests/audit_schema.py` lists every event's fields, types and values, and
+`events()` in `tests/test_audit.py` holds each event a test reads to it: an
+unlisted field, a missing one or another type fails. The reference is held
+to the same names. `audit.clean` raises on a type it does not know, so a
+new field of an odd type drops its event with a warning; nothing is ever
+written as a Python repr. A failure's kind and a removal's stage are fields
+of their own, `failure` and `failedStage`, and a cut output carries its
+count in `outDropped`, never a mark inside the text.
+
 A write that fails turns recording off for the rest of the run and warns
 once through `progress.line`. `conftest.ENV` and an autouse fixture set
 `WORKTREES_AUDIT=off`; `tests/test_audit.py` turns it on at a directory of

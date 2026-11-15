@@ -89,6 +89,7 @@ class _State:
         "base",
         "began",
         "error",
+        "failure",
         "fd",
         "lock",
         "month",
@@ -106,6 +107,7 @@ class _State:
         self.began = 0.0
         self.base: dict = {}
         self.error = ""
+        self.failure = ""
         self.fd = -1
         self.month = ""
         self.lock = threading.Lock()
@@ -161,7 +163,8 @@ def clean(value: object) -> object:
     whichever caller built the field.
     """
     if isinstance(value, str):
-        return scrub(value)
+        # A message built for a terminal carries its colour; the log does not.
+        return scrub(_plain(value))
     if isinstance(value, dict):
         return {scrub(str(k)): clean(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
@@ -170,7 +173,11 @@ def clean(value: object) -> object:
         return [clean(v) for v in sorted(value, key=str)]
     if value is None or isinstance(value, (bool, int, float)):
         return value
-    return scrub(str(value))
+    if isinstance(value, os.PathLike):
+        return scrub(os.fspath(value))
+    # No catch-all: `str()` of anything else would put a Python repr in the
+    # log for a reader to parse. The event is dropped and the caller warned.
+    raise TypeError(f"{type(value).__name__} has no place in an audit event")
 
 
 def _plain(text: str) -> str:
@@ -182,11 +189,20 @@ def _plain(text: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
-def _clip(text: str) -> str:
+def _clip(text: str) -> tuple[str, int]:
+    """The start of `text`, and how many characters were left off."""
     text = scrub(text.strip())
-    if len(text) <= _CLIP:
-        return text
-    return text[:_CLIP] + f"… ({len(text) - _CLIP} more characters)"
+    return text[:_CLIP], max(0, len(text) - _CLIP)
+
+
+def _clipped(fields: dict, name: str, text: str) -> None:
+    """Put `text` under `name`, and beside it the count that was left off, so
+    no reader has to recognise a truncation mark inside the text."""
+    fields[name], fields[f"{name}Dropped"] = _clip(text)
+
+
+# How a command that did not exit 0 ended, apart from what it said.
+FAILURES = ("usage", "refused", "git", "interrupted", "crash", "result")
 
 
 def arrive() -> None:
@@ -210,7 +226,7 @@ def begin(prog: str, argv: Sequence[str]) -> None:
     _state.on = on
     _state.run = os.urandom(8).hex()
     _state.seq = 0
-    _state.error = ""
+    _state.error = _state.failure = ""
     _state.began = _state.started or time.monotonic()
     _state.base = {
         "user": _user(),
@@ -226,20 +242,28 @@ def begin(prog: str, argv: Sequence[str]) -> None:
     )
 
 
-def failed(message: str) -> None:
-    """Keep the refusal or failure a command ended with, for its last line."""
-    _state.error = _plain(message)
+def failed(message: str, kind: str) -> None:
+    """Keep the kind of refusal or failure a command ended with, one of
+    `FAILURES`, and what it said, for its last line."""
+    _state.error, _state.failure = _plain(message), kind
 
 
 def end(code: int | None) -> None:
     """Record how the command ended and stop recording."""
     if active():
-        fields: dict = {"code": code, "ms": _since(_state.began)}
+        # `result`: it ran to its end and its answer is the exit code, as a
+        # stopped rebase's is. `crash`: it left by an exception nothing caught.
+        failure = (
+            None
+            if code == 0
+            else _state.failure or ("crash" if code is None else "result")
+        )
+        fields: dict = {"code": code, "ms": _since(_state.began), "failure": failure}
         if _state.error:
-            fields["error"] = _clip(_state.error)
+            _clipped(fields, "error", _state.error)
         record("invocation.end", **fields)
     _state.on = None
-    _state.run, _state.error, _state.started = "", "", 0.0
+    _state.run, _state.error, _state.failure, _state.started = "", "", "", 0.0
     if _state.fd >= 0:
         with contextlib.suppress(OSError):
             os.close(_state.fd)
@@ -282,9 +306,9 @@ def ran(
     }
     if mutates or not ok:
         if out.strip():
-            fields["out"] = _clip(out)
+            _clipped(fields, "out", out)
         if err.strip():
-            fields["err"] = _clip(err)
+            _clipped(fields, "err", err)
     record("exec", **fields)
 
 
@@ -323,6 +347,10 @@ def record(event: str, **fields: object) -> None:
                 row["torn"] = True
             line = json.dumps(clean(row), separators=(",", ":")).encode("ascii")
             _append(line + b"\n")
+        except TypeError as exc:
+            # A field of a type no reader was promised: this event is not
+            # written, the rest of the run still is, and the fault is said.
+            _warn_event(event, exc)
         except OSError as exc:
             # One warning, then nothing more is tried: a log that failed once
             # would fail on each of the forty commands after it.
@@ -397,3 +425,9 @@ def _warn(path: Path, exc: OSError) -> None:
             f"this command goes on unrecorded; {ENV}=off turns the log off"
         )
     )
+
+
+def _warn_event(event: str, exc: TypeError) -> None:
+    from . import progress, render
+
+    progress.line(render.warn(f"audit event {event} not written: {exc}"))

@@ -13,6 +13,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import audit_schema
 import pytest
 from conftest import argv, env_for
 from test_fast_forward import advance, with_work
@@ -57,7 +58,7 @@ def parsed(world) -> list[dict]:
             rows.append(json.loads(line))
         except json.JSONDecodeError:
             continue
-    return rows
+    return [audit_schema.check(row) for row in rows]
 
 
 def events(world) -> list[dict]:
@@ -66,7 +67,7 @@ def events(world) -> list[dict]:
     for path in files(world):
         text = path.read_text()
         assert text.endswith("\n")
-        rows += [json.loads(line) for line in text.splitlines()]
+        rows += [audit_schema.check(json.loads(line)) for line in text.splitlines()]
     return rows
 
 
@@ -139,6 +140,10 @@ def test_a_usage_error_and_a_refusal_are_recorded_with_how_they_ended(world):
     assert gw(world, "remove", "--bogus-flag").returncode == 2
     ends = named(events(world), "invocation.end")
     assert [r["code"] for r in ends] == [2, 2, 2]
+    assert [r["failure"] for r in ends] == ["usage", "usage", "usage"]
+    assert "is not a command" in ends[0]["error"]
+    # argparse printed that one itself, so there is a kind and no message.
+    assert "error" not in ends[2]
     assert "cannot be combined" in ends[1]["error"]
     assert "\x1b" not in ends[1]["error"]
 
@@ -557,6 +562,9 @@ def test_a_partial_failure_records_each_step_on_its_own(
     assert outcome["branchRemoved"] is False
     assert outcome["result"] == ("partial" if step == "ref" else "refused")
     assert outcome["failed"]
+    # Which step, apart from what it said.
+    assert outcome["failedStage"] == ("branch" if step == "ref" else "worktree")
+    assert rows[-1]["failure"] == "result"
     assert outcome["sha"] == sha
     # The branch stayed, so nothing recorded claims to restore it.
     assert outcome["undo"] == []
@@ -783,7 +791,11 @@ def test_a_restore_action_round_trips_through_the_log(logging, subject):
     finally:
         audit.end(0)
 
-    [row] = named(events(world), "removal.outcome")
+    # A bare event, to carry the actions alone; they are held to the schema.
+    [row] = [
+        r for r in map(json.loads, lines(world)) if r["event"] == "removal.outcome"
+    ]
+    audit_schema._fits(row["restore"], [audit_schema.ACTION], "restore")
     assert row["restore"] == built
     reflog, branch, stash = row["restore"]
     assert (reflog["kind"], reflog["sha"], reflog["subject"]) == (
@@ -820,3 +832,123 @@ def test_a_rebase_records_its_previous_tip_as_a_restore_action(world):
     }
     subprocess.run(action["argv"], check=True, cwd=world.repo)
     assert world.git("rev-parse", f"rescue-{was[:7]}") == was
+
+
+# --------------------------------------------------------------------------
+# what a reader is promised about each field
+# --------------------------------------------------------------------------
+
+
+def test_how_a_run_ended_is_a_kind_apart_from_its_message(world):
+    world.merged_branch("gone")
+    assert gw(world, "version").returncode == 0
+    # Not a terminal and nothing named: a refusal, at exit 3.
+    assert gw(world, "branch", "prune", "--yes").returncode == 3
+    # A base that is no commit: git's failure, at exit 1.
+    assert gw(world, "add", "topic", "no-such-base").returncode != 0
+    ok, refused, broken = named(events(world), "invocation.end")
+    assert (ok["code"], ok["failure"]) == (0, None)
+    assert "error" not in ok
+    assert (refused["code"], refused["failure"]) == (3, "refused")
+    assert refused["error"] and refused["errorDropped"] == 0
+    assert broken["failure"] in ("git", "refused")
+    assert broken["error"]
+
+
+def test_a_recheck_that_refuses_names_its_stage(logging, monkeypatch, capsys):
+    world = logging
+    world.merged_worktree("topic")
+    original = prune.check_head
+
+    def moved(*args, **kwargs):
+        world.commit("late")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(prune, "check_head", moved)
+    assert cli.gw(["remove", "topic", "--yes", "--json"]) == 1
+    capsys.readouterr()
+    [outcome] = named(events(world), "removal.outcome")
+    assert (outcome["result"], outcome["failedStage"]) == ("refused", "recheck")
+    assert outcome["restore"] == []
+
+
+def test_a_completed_removal_has_no_failed_stage(world):
+    world.merged_worktree("topic")
+    assert gw(world, "prune", "--yes").returncode == 0
+    [outcome] = named(events(world), "removal.outcome")
+    assert (outcome["failed"], outcome["failedStage"]) == ([], None)
+
+
+def test_what_was_cut_from_an_output_is_a_count_beside_it(logging):
+    world = logging
+    audit.begin("gw", ["sync"])
+    try:
+        for err in ("x" * 4000, "y" * 4001, "z" * 9000):
+            audit.ran(
+                "git",
+                ["git", "fetch"],
+                1,
+                time.monotonic(),
+                category="mutating",
+                mutates=True,
+                ok=False,
+                err=err,
+            )
+        audit.failed("m" * 5000, "git")
+    finally:
+        audit.end(1)
+    rows = events(world)
+    whole, one, many = named(rows, "exec")
+    assert (len(whole["err"]), whole["errDropped"]) == (4000, 0)
+    assert (len(one["err"]), one["errDropped"]) == (4000, 1)
+    assert (many["err"], many["errDropped"]) == ("z" * 4000, 5000)
+    # Nothing printed, nothing recorded: neither field, not an empty one.
+    assert "out" not in whole and "outDropped" not in whole
+    assert (len(rows[-1]["error"]), rows[-1]["errorDropped"]) == (4000, 1000)
+
+
+def test_a_value_no_reader_was_promised_is_never_written_as_its_repr(logging, capsys):
+    world = logging
+    audit.begin("gw", ["version"])
+    try:
+        audit.record("merge.outcome", pr=object())
+        assert "audit event merge.outcome not written" in capsys.readouterr().err
+        # One event is lost and the run goes on being recorded.
+        assert audit.active()
+    finally:
+        audit.end(0)
+    [log] = files(world)
+    assert "object at 0x" not in log.read_text()
+    assert [r["event"] for r in events(world)] == ["invocation.start", "invocation.end"]
+
+
+def test_a_message_is_recorded_without_the_colour_a_terminal_gave_it():
+    assert audit.clean({"failed": ["\x1b[1mgit branch\x1b[0m exited 1"]}) == {
+        "failed": ["git branch exited 1"]
+    }
+
+
+def test_the_schema_refuses_what_it_does_not_list(world):
+    assert gw(world, "version").returncode == 0
+    start = events(world)[0]
+    for broken in (
+        {**start, "extra": 1},
+        {k: v for k, v in start.items() if k != "terminal"},
+        {**start, "terminal": "yes"},
+        {**start, "seq": True},
+        {**start, "records": ["everything"]},
+        {**start, "event": "invocation.begin"},
+    ):
+        with pytest.raises(AssertionError):
+            audit_schema.check(broken)
+
+
+def test_the_reference_names_every_field_and_value_a_reader_meets():
+    text = (Path(__file__).parents[1] / "docs" / "REFERENCE.md").read_text()
+    section = text[text.index("## Audit log") : text.index("## Sync cache")]
+    missing = sorted(n for n in audit_schema.names() if f"`{n}`" not in section)
+    assert not missing, f"fields the reference does not name: {missing}"
+    values = [*audit_schema.EVENTS, *audit.FAILURES, *prune.STAGES, *audit.CATEGORIES]
+    values += ["completed", "partial", "refused", *audit_schema.ACTION.shapes]
+    unsaid = sorted(v for v in values if f"`{v}`" not in section)
+    assert not unsaid, f"values the reference does not name: {unsaid}"

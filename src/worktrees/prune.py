@@ -261,7 +261,7 @@ def _repository(repo: str | os.PathLike[str] | None) -> dict:
             "url": url,
         }
     except GitError:
-        return {}
+        return {"commonDir": "", "remote": "", "url": ""}
 
 
 def _target(v: Verdict | branches.Verdict, snapshot: Snapshot | None, repo) -> dict:
@@ -276,10 +276,12 @@ def _target(v: Verdict | branches.Verdict, snapshot: Snapshot | None, repo) -> d
         "request": v.request,
         "permissions": sorted(v.permissions),
         "repository": _repository(repo),
+        # Null when the target was refused before it had been assessed.
+        "head": {"branch": snapshot.head.branch, "sha": snapshot.head.sha}
+        if snapshot
+        else None,
+        "notices": list(snapshot.head.notices) if snapshot else [],
     }
-    if snapshot:
-        fields["head"] = {"branch": snapshot.head.branch, "sha": snapshot.head.sha}
-        fields["notices"] = list(snapshot.head.notices)
     return fields
 
 
@@ -361,11 +363,23 @@ def audit_proposed(v: Verdict | branches.Verdict, keep_branch: bool, repo=None) 
     )
 
 
-def audit_outcome(v: Verdict | branches.Verdict, outcome: Outcome, repo=None) -> None:
+# Where a removal stopped, in the order it works.
+STAGES = ("recheck", "worktree", "branch", "stashes")
+
+
+def audit_outcome(
+    v: Verdict | branches.Verdict, outcome: Outcome, repo=None, *, stage: str = ""
+) -> None:
     """Record what a removal did, each step on its own: a removed worktree
-    beside a retained branch is `partial`, and neither is `refused`."""
+    beside a retained branch is `partial`, and neither is `refused`.
+
+    `stage` is the step the caller had reached when it failed. The ref goes
+    before the stashes, so a failure with the branch gone is the stashes'.
+    """
     if not audit.active():
         return
+    if outcome.failed and outcome.branch_removed:
+        stage = "stashes"
     snapshot = v.snapshot
     took = outcome.worktree_removed or outcome.branch_removed or bool(outcome.dropped)
     result = "completed" if not outcome.failed else "partial" if took else "refused"
@@ -383,6 +397,7 @@ def audit_outcome(v: Verdict | branches.Verdict, outcome: Outcome, repo=None) ->
         if snapshot and outcome.worktree_removed
         else [],
         failed=list(outcome.failed),
+        failedStage=stage if outcome.failed else None,
         **_recovery(
             restores(snapshot, outcome.branch_removed, outcome.dropped)
             if snapshot and took

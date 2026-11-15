@@ -120,6 +120,7 @@ def remove(chosen: Verdict, say, repo=None) -> prune.Outcome:
         path=chosen.path, branch=chosen.branch, retained=list(chosen.stashes)
     )
     main = R.main_worktree(repo)
+    stage = "recheck"
     try:
         snapshot = chosen.snapshot
         if snapshot is None:
@@ -152,15 +153,17 @@ def remove(chosen: Verdict, say, repo=None) -> prune.Outcome:
         standing_in = bool(here) and Path(here).resolve() == Path(chosen.path).resolve()
         if standing_in:
             os.chdir(main)
+        stage = "worktree"
         prune.worktree_remove(chosen.path, repo=main)
         outcome.worktree_removed = True
         outcome.destination = main if standing_in else ""
         _prune_empty_parents(Path(chosen.path).parent, main)
         if chosen.branch and not chosen.keep_branch:
+            stage = "branch"
             prune.delete_ref(snapshot, outcome, main)
     except (GitError, Refused) as exc:
         outcome.failed.append(str(exc))
-    prune.audit_outcome(chosen, outcome, main)
+    prune.audit_outcome(chosen, outcome, main, stage=stage)
     prune.report(outcome, say)
     return outcome
 
