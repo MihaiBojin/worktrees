@@ -272,8 +272,13 @@ on a line of its own so it is never cut. `needs:` ends a record with every
 The path is in `--json`, not in the table. Off a terminal and under
 `--table` the box is drawn with `+`, `-` and `|` and nothing wraps. In
 `--json`, a protection those values lift ends with them, such as
-`pass --delete empty --delete stashes`. For a target it keeps, `gw remove` prints every reason, and
-names a command with `--keep-branch` when only that removes the worktree.
+`pass --delete empty --delete stashes`. For a target it keeps, `gw remove` prints every reason and
+each command that removes it: `gw remove PATH --delete VALUE`, carrying the
+values you passed, as `gw prune` names them; `--keep-branch` when only that
+waives the proof; and, for uncommitted changes or untracked paths,
+`git worktree remove --force PATH`, which deletes the checkout with them and
+keeps the branch. That line counts the ignored paths and reflog-only commits
+that go too. gw never runs it.
 
 The CLI never deletes `main`, `master` or the head branch. It never removes
 the main checkout, locked or dirty worktrees, worktrees with untracked files,

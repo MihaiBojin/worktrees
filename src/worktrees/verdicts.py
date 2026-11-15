@@ -38,8 +38,6 @@ DONE = frozenset((merged.MERGED, merged.STALE, merged.UNUSED, merged.CLOSED))
 # Every --delete value, and what `--delete all` grants.
 PERMISSIONS = frozenset(("empty", "stashes", "closed", "reflog"))
 
-DIRTY = "it has uncommitted changes or untracked files"
-
 # Files in a worktree's git directory while an operation waits for it.
 OPERATIONS = (
     ("rebase-merge", "a rebase"),
@@ -49,6 +47,21 @@ OPERATIONS = (
     ("REVERT_HEAD", "a revert"),
     ("BISECT_LOG", "a bisect"),
 )
+
+
+def many(n: int, noun: str) -> str:
+    """`1 file`, `2 files`."""
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def dirty(status: R.Status) -> str:
+    """What `git status` holds that a commit does not, as it found it."""
+    parts = []
+    if status.changed:
+        parts.append(f"uncommitted changes to {many(status.changed, 'file')}")
+    if status.untracked:
+        parts.append(many(status.untracked, "untracked path"))
+    return "it has " + " and ".join(parts)
 
 
 def restore_command(branch: str, sha: str) -> str:
@@ -104,6 +117,9 @@ class Verdict:
         # --keep-branch, when no --delete value alone does; None when
         # --keep-branch would not.
         self.keep_needs: tuple[str, ...] | None = None
+        # Commits only the worktree's own HEAD reflog holds, which removing
+        # the checkout deletes even when the branch stays.
+        self.checkout_reflog: tuple[tuple[str, str], ...] = ()
 
     @property
     def label(self) -> str:
@@ -300,7 +316,7 @@ def assess(
             if operation:
                 hard.append((IN_PROGRESS, f"{operation} is in progress in it"))
             if status.dirty:
-                hard.append((UNCOMMITTED, DIRTY))
+                hard.append((UNCOMMITTED, dirty(status)))
             ignored_paths = tuple(status.ignored)
             ignored_groups = tuple(R.ignored_groups(wt.path, status.ignored))
             own = merged.reflog_shas("HEAD", wt.path)
@@ -376,6 +392,7 @@ def assess(
         row.eligible = eligible(granted)
         row.needs = needs
         row.keep_needs = keep_needs
+        row.checkout_reflog = reflogs.get(True, ())
         row.snapshot = prune.Snapshot(
             state,
             wt.branch,

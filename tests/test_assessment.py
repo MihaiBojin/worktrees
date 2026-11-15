@@ -120,7 +120,13 @@ def test_a_checkout_fact_decides_a_finished_worktree(world, protection, detached
     assert row["verdict"] == "keep"
     assert row["reason"] == ("uncommitted" if dirty else protection)
     if dirty:
-        assert row["why"] == "it has uncommitted changes or untracked files"
+        assert (
+            row["why"]
+            == {
+                "tracked": "it has uncommitted changes to 1 file",
+                "untracked": "it has 1 untracked path",
+            }[protection]
+        )
     assert row["proof"]
     assert not row["eligible"]
     assert row["protections"]
@@ -893,7 +899,7 @@ def test_untracked_files_protect_under_show_untracked_files_no(world):
     world.git("config", "status.showUntrackedFiles", "no")
     row = next(r for r in rows(world) if r["branch"] == "done")
     assert not row["eligible"]
-    assert "it has uncommitted changes or untracked files" in row["protections"]
+    assert "it has 1 untracked path" in row["protections"]
     result = run(world, "gw prune", "--yes")
     assert result.returncode == 0, result.stderr
     assert (wt / "notes.txt").exists()

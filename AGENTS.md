@@ -638,7 +638,9 @@ both ways was 18 of an assessment's 35 calls over nine worktrees.
 no call site can assemble its way past it. `reset --hard`, a forced `checkout`
 or `switch`, `clean -f`, a bare `push --force`, `worktree remove --force`,
 `branch -D` and an `update-ref` delete that names no full sha are refused
-absolutely. There is no flag, and `--yes` least of all.
+absolutely. There is no flag, and `--yes` least of all. `gw remove` prints
+`git worktree remove --force PATH` beside a dirty target's refusal, for a
+person who has looked to run; nothing here runs it.
 
 Those seven are `RULES`, a tuple, each row carrying the name `--explain`
 prints, the clause the refusal ends with, and the test. The footer `--explain`
