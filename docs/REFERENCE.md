@@ -185,17 +185,31 @@ failed and per-target outcomes in one object with head and sync state.
 
 ## Audit log
 
-Every command but help, `--explain` and completion appends what it did to
+Every command appends what it did to
 `audit-YYYY-MM.jsonl`, by UTC month, in `$XDG_STATE_HOME/worktrees`, which
 is `~/.local/state/worktrees` when that is unset. `WORKTREES_AUDIT_DIR`
 names another directory. One file holds every repository; each event names
-the directory it ran in.
+the directory it ran in. Help, `--explain` and completion record nothing, on
+a subcommand as at the top: `gw prune --help` and `gw prune --explain` write
+no line, and both still print when `WORKTREES_AUDIT` holds a value it does
+not take. A usage error is recorded, at exit 2.
 
 A line is one JSON object, written by one `write` to a descriptor opened
 with `O_APPEND`. Nothing seeks, truncates, renames or deletes a file, so
 commands running side by side interleave whole lines and an earlier line is
 never changed. The directory is created `0700` and each file `0600`. No file
 is ever removed: retention is yours, by month.
+
+A `write` that comes back short, on a full disk or at a file size limit,
+leaves a fragment that cannot be taken back. The rest of that line is never
+written, because another command may have appended after it; the fragment is
+closed with a newline when one fits, the command warns as for any failed
+write, and it records nothing more. When no newline fits, the next command
+to open the file finds a last byte that is not one, begins its first line
+with a newline and marks that line `torn: true`. Two commands that find the
+same open end both do, which leaves an empty line. So a reader skips a line
+that is empty or is not JSON: it is the one event lost, and every line
+after it is whole.
 
 Every event carries `v` (1), `ts` in UTC to the millisecond, `run`, which
 one invocation's events share, `seq`, counted from 1 within the run,
@@ -205,9 +219,9 @@ one invocation's events share, `seq`, counted from 1 within the run,
 | --- | --- | --- |
 | `invocation.start` | a command begins | `argv` as typed, `records`, `terminal` |
 | `exec` | a `git`, `gh` or `glab` process ended | `tool`, `argv`, `code`, `ok`, `ms`, `mutates`, and `out` and `err` when it changes something or failed |
-| `removal.proposed` | a removal is disclosed, before any answer | the target, `deletes`, `undo`, `recovery` |
-| `removal.outcome` | an approved removal was tried | the target, `result`, each step's outcome, `undo`, `recovery` |
-| `fast-forward.outcome` | `gw fast-forward` decided | its `--json` result, `previous_full_sha`, `full_sha`, `undo` |
+| `removal.proposed` | a removal is disclosed, before any answer | the target, `deletes`, `restore`, `undo`, `recovery` |
+| `removal.outcome` | an approved removal was tried | the target, `result`, each step's outcome, `restore`, `undo`, `recovery` |
+| `fast-forward.outcome` | `gw fast-forward` decided | its `--json` result, `previous_full_sha`, `full_sha`, `restore`, `undo` |
 | `merge.outcome` | `gw merge` returned | `number`, `head` and its `--json` result |
 | `invocation.end` | the command ends | `code`, `ms`, and `error` after a refusal or failure |
 
@@ -227,12 +241,24 @@ took effect, or `refused` when nothing was removed; `worktreeRemoved`,
 `ignoredDeleted` and `failed` say which. A `removal.proposed` with no
 `removal.outcome` in the same run was declined or refused before it started.
 
-`undo` holds shell-quoted commands for what the event took, or would take:
-`git branch NAME SHA`, `git stash store -m SUBJECT SHA`, and
-`git branch rescue-SHORT SHA` for a commit only a deleted reflog reached or
-for where a rebased branch stood. They work until Git garbage collection
-prunes the commit: recording a SHA protects no object. Ignored and untracked
-files have no command, and `ignoredDeleted` lists the first.
+`restore` holds one object for each thing the event took, or would take,
+so a program reads recovery as fields and parses no shell line:
+
+| `kind` | restores | fields beside `sha`, `argv` and `command` |
+| --- | --- | --- |
+| `branch` | a deleted branch | `branch` |
+| `stash` | a dropped stash | `subject` |
+| `reflog-commit` | a commit only a deleted reflog reached | `subject`, and `branch`, the `rescue-SHORT` name it is given |
+| `previous-tip` | where a branch stood before `gw fast-forward` moved it | `of`, that branch, and `branch`, the `rescue-SHORT` name |
+
+`sha` is the full one. `argv` is the command as separate words with nothing
+quoted, and `command` is the same words shell-quoted for pasting. `undo` is
+every `command`, in the same order. A proposal lists only what would go: a
+branch kept by `--keep-branch` keeps its stashes, so neither appears. An
+outcome lists only what went, so a retained branch has no action. The
+commands work until Git garbage collection prunes the commit: recording a
+SHA protects no object. Ignored and untracked files have no action, and
+`ignoredDeleted` lists the first.
 
 `WORKTREES_AUDIT` chooses what is recorded. Unset, empty or `all` records
 everything, and `off` records nothing. Otherwise it is a comma-separated
@@ -242,9 +268,12 @@ and a `gh` or `glab` call. A category not named stays on, so `reads=off`
 leaves the invocation, every change and every outcome. Any other value is a
 usage error at exit 2.
 
-The user and password inside a URL are removed from every argument, output
-and message before it is written; `git@host:path` is kept as it is. A
-command's arguments are otherwise recorded as typed, and so is a path.
+The user and password inside a URL are removed from every string in an
+event as it is serialized, at any depth: an argument, an output, a message,
+a stash or commit subject, a `restore` action. `git@host:path` is kept as it
+is. A restore command for a stash whose subject held a credential therefore
+stores it under the subject without one. A command's arguments are
+otherwise recorded as typed, and so is a path.
 
 A log that cannot be written is one warning on stderr, under `--quiet` and
 `--json` too, and the command goes on unrecorded. Nothing reaches stdout.

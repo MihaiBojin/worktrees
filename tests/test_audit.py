@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import pty
+import resource
+import signal
 import stat
 import subprocess
 import time
@@ -39,6 +41,23 @@ def gw(world, *args: str, at: Path | None = None, **extra: str):
 
 def files(world) -> list[Path]:
     return sorted((world.root / "audit").glob("*"))
+
+
+def lines(world) -> list[str]:
+    return [
+        line for path in files(world) for line in path.read_text().split("\n") if line
+    ]
+
+
+def parsed(world) -> list[dict]:
+    """Every line that is an event, as a reader that skips a fragment has it."""
+    rows = []
+    for line in lines(world):
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
 
 
 def events(world) -> list[dict]:
@@ -124,16 +143,40 @@ def test_a_usage_error_and_a_refusal_are_recorded_with_how_they_ended(world):
     assert "\x1b" not in ends[1]["error"]
 
 
-def test_help_and_completion_record_nothing(world):
-    for words in (
+@pytest.mark.parametrize(
+    "words",
+    [
         ["--help"],
         [],
         ["--explain"],
         ["--complete"],
         ["list", "--complete"],
-    ):
-        assert gw(world, *words).returncode == 0
+        ["list", "--help"],
+        ["list", "-h"],
+        ["prune", "--explain"],
+        ["prune", "--yes", "--explain"],
+        ["remove", "topic", "--help"],
+        ["branch", "prune", "--help"],
+        ["fast-forward", "--explain"],
+        # argparse takes an unambiguous prefix of a long option.
+        ["prune", "--hel"],
+        ["prune", "--expl"],
+    ],
+)
+@pytest.mark.parametrize("setting", ["", "nonsense"])
+def test_help_explain_and_completion_record_nothing(world, words, setting):
+    """Whatever `WORKTREES_AUDIT` holds: help stays usable under a bad value."""
+    p = gw(world, *words, WORKTREES_AUDIT=setting)
+    assert p.returncode == 0, p.stderr
+    assert "WORKTREES_AUDIT takes" not in p.stderr
     assert files(world) == []
+
+
+def test_a_word_after_the_separator_is_a_value_and_the_run_is_recorded(world):
+    gw(world, "list", "--json", "--", "--help")
+    rows = events(world)
+    assert rows[0]["argv"] == ["gw", "list", "--json", "--", "--help"]
+    assert rows[-1]["event"] == "invocation.end"
 
 
 # --------------------------------------------------------------------------
@@ -167,6 +210,123 @@ def test_runs_side_by_side_interleave_whole_lines(world):
     for row in rows:
         by_run.setdefault(row["run"], []).append(row["seq"])
     assert all(seqs == list(range(1, len(seqs) + 1)) for seqs in by_run.values())
+
+
+def limited(size: int):
+    """A file size limit for a child, which is told of it by a short write
+    and then an error, not by a signal: the way a full disk is met."""
+
+    def apply() -> None:
+        signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+        resource.setrlimit(resource.RLIMIT_FSIZE, (size, size))
+
+    return apply
+
+
+def test_a_torn_line_loses_itself_and_nothing_after_it(world):
+    env = {
+        **env_for(world),
+        "WORKTREES_AUDIT": "",
+        "WORKTREES_AUDIT_DIR": str(world.root / "audit"),
+    }
+    torn = subprocess.run(
+        argv("gw", "version"),
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=env,
+        preexec_fn=limited(120),
+    )
+    assert torn.returncode == 0, torn.stderr
+    assert torn.stderr.count("audit log not written") == 1
+    [path] = files(world)
+    fragment = path.read_bytes()
+    # Reproduce the loss: a fragment the limit left no room to close.
+    assert len(fragment) == 120
+    assert not fragment.endswith(b"\n")
+
+    assert gw(world, "version").returncode == 0
+    after = path.read_bytes()
+    assert after.startswith(fragment + b"\n")
+    first, *rest = lines(world)
+    assert first == fragment.decode()
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(first)
+    rows = [json.loads(line) for line in rest]
+    assert rows[0]["event"] == "invocation.start"
+    assert rows[0]["torn"] is True
+    assert all("torn" not in row for row in rows[1:])
+    assert rows[-1]["event"] == "invocation.end"
+
+    # A third run finds a file that ends as it should and marks nothing.
+    assert gw(world, "version").returncode == 0
+    later = [r for r in parsed(world) if r["run"] != rows[0]["run"]]
+    assert later and all("torn" not in row for row in later)
+
+
+def test_runs_side_by_side_all_survive_a_fragment_left_before_them(world):
+    (world.root / "audit").mkdir()
+    name = time.strftime("audit-%Y-%m.jsonl", time.gmtime())
+    (world.root / "audit" / name).write_bytes(b'{"v":1,"event":"invocation.st')
+    with ThreadPoolExecutor(8) as pool:
+        done = list(pool.map(lambda _: gw(world, "list", "--json"), range(8)))
+    assert all(p.returncode == 0 for p in done)
+
+    bad = []
+    for line in lines(world):
+        try:
+            json.loads(line)
+        except json.JSONDecodeError:
+            bad.append(line)
+    assert bad == ['{"v":1,"event":"invocation.st']
+    rows = parsed(world)
+    assert len(named(rows, "invocation.start")) == 8
+    assert len(named(rows, "invocation.end")) == 8
+    assert any(r.get("torn") for r in rows)
+    by_run: dict[str, list[int]] = {}
+    for row in rows:
+        by_run.setdefault(row["run"], []).append(row["seq"])
+    assert all(seqs == list(range(1, len(seqs) + 1)) for seqs in by_run.values())
+
+
+def test_a_short_write_is_closed_and_its_rest_is_never_written(
+    logging, monkeypatch, capsys
+):
+    world = logging
+    real, calls = os.write, []
+
+    def short(fd, data):
+        calls.append(bytes(data))
+        if len(calls) == 2:
+            return real(fd, bytes(data)[:10])
+        return real(fd, data)
+
+    monkeypatch.setattr(os, "write", short)
+    audit.begin("gw", ["version"])
+    try:
+        audit.record("second", detail="x" * 50)
+        assert not audit.active()
+        audit.record("third")
+    finally:
+        monkeypatch.setattr(os, "write", real)
+        audit.end(0)
+    assert "audit log not written" in capsys.readouterr().err
+    # The start, the torn line, and the newline that closes it. Nothing
+    # resumes the fragment, and nothing is written once the log has failed.
+    assert len(calls) == 3
+    assert calls[2] == b"\n"
+    [path] = files(world)
+    raw = path.read_bytes()
+    assert raw.endswith(calls[1][:10] + b"\n")
+    assert [r["event"] for r in parsed(world)] == ["invocation.start"]
+
+    audit.begin("gw", ["version"])
+    audit.end(0)
+    after = parsed(world)[1:]
+    assert [r["event"] for r in after] == ["invocation.start", "invocation.end"]
+    # The fragment was closed where it tore, so nothing has to close it now.
+    assert all("torn" not in row for row in after)
+    assert b"\n\n" not in path.read_bytes()
 
 
 # --------------------------------------------------------------------------
@@ -494,3 +654,169 @@ def test_nothing_is_recorded_outside_a_run(logging):
     audit.record("stray", detail=1)
     prune.stash_list(repo=world.repo)
     assert files(world) == []
+
+
+# --------------------------------------------------------------------------
+# every string in an event is scrubbed, and recovery is data
+# --------------------------------------------------------------------------
+
+
+def test_clean_scrubs_every_string_however_deep():
+    secret = "https://bob:hunter2@example.invalid/r"
+    given = {
+        "undo": [f"git stash store -m 'see {secret}' abc"],
+        "restore": [{"argv": ["git", "-m", secret], "subject": secret}],
+        "nested": {"deeper": ({secret}, 3, None, True)},
+        secret: "as a key",
+    }
+    kept = json.dumps(audit.clean(given))
+    assert "hunter2" not in kept
+    assert "https://example.invalid/r" in kept
+    assert json.loads(kept)["nested"]["deeper"][1:] == [3, None, True]
+
+
+def test_a_credential_in_a_stash_subject_never_reaches_the_log(world):
+    path = world.merged_worktree("topic")
+    (path / "README").write_text("pending")
+    subject = "check https://bob:review-test-secret@example.invalid/repo"
+    world.git("stash", "push", "-qm", subject, at=path)
+    assert "review-test-secret" in world.git("stash", "list")
+
+    p = gw(world, "prune", "--delete", "all", "--yes")
+    assert p.returncode == 0, p.stderr
+    [log] = files(world)
+    assert "review-test-secret" not in log.read_text()
+    rows = events(world)
+    for row in (*named(rows, "removal.proposed"), *named(rows, "removal.outcome")):
+        [stashed] = [r for r in row["restore"] if r["kind"] == "stash"]
+        assert stashed["subject"] == "On topic: check https://example.invalid/repo"
+        assert any("https://example.invalid/repo" in line for line in row["undo"])
+
+
+def test_a_kept_branch_keeps_its_stashes_out_of_what_is_proposed(world):
+    path = world.merged_worktree("topic")
+    (path / "README").write_text("pending")
+    world.git("stash", "push", "-qm", "on topic", at=path)
+    (world.repo / "README").write_text("pending on main")
+    world.git("stash", "push", "-qm", "on main")
+    before = world.git("stash", "list").splitlines()
+    assert len(before) == 2
+
+    p = gw(world, "remove", "topic", "--keep-branch", "--yes")
+    assert p.returncode == 0, p.stderr
+    rows = events(world)
+    [proposed] = named(rows, "removal.proposed")
+    [outcome] = named(rows, "removal.outcome")
+    assert proposed["deletes"]["stashes"] == []
+    for row in (proposed, outcome):
+        assert row["restore"] == []
+        assert row["undo"] == []
+    assert outcome["worktreeRemoved"] is True
+    assert outcome["branchRemoved"] is False
+    assert world.git("stash", "list").splitlines() == before
+
+
+def test_recovery_is_fields_a_program_reads_without_a_shell(world):
+    path = world.merged_worktree("topic")
+    tip = world.git("rev-parse", "refs/heads/topic")
+    (path / "README").write_text("pending")
+    said = "it's pending: Unicode caf\u00e9 and  two spaces"
+    world.git("stash", "push", "-qm", said, at=path)
+    stashed = world.git("rev-parse", "refs/stash")
+    # As git keeps it: a reflog message has each run of spaces made one.
+    subject = world.git("log", "-g", "-1", "--format=%gs", "refs/stash")
+    assert subject == "On topic: it's pending: Unicode caf\u00e9 and two spaces"
+
+    p = gw(world, "prune", "--delete", "all", "--yes")
+    assert p.returncode == 0, p.stderr
+    [outcome] = named(events(world), "removal.outcome")
+    branch, stash = outcome["restore"]
+    assert branch == {
+        "kind": "branch",
+        "sha": tip,
+        "branch": "topic",
+        "argv": ["git", "branch", "topic", tip],
+        "command": f"git branch topic {tip}",
+    }
+    assert (stash["kind"], stash["sha"]) == ("stash", stashed)
+    assert stash["subject"] == subject
+    assert stash["argv"] == ["git", "stash", "store", "-m", stash["subject"], stashed]
+    # The line a person pastes is the same actions, in the same order.
+    assert outcome["undo"] == [branch["command"], stash["command"]]
+
+    # Run each as the argv it is: no shell, and nothing parsed out of text.
+    assert not world.git("stash", "list")
+    for action in outcome["restore"]:
+        subprocess.run(action["argv"], check=True, cwd=world.repo)
+    assert world.git("rev-parse", "refs/heads/topic") == tip
+    assert world.git("rev-parse", "refs/stash") == stashed
+    assert world.git("log", "-g", "-1", "--format=%gs", "refs/stash") == subject
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        "plain",
+        'it\'s "quoted" $(and) `more`; rm -rf ~',
+        "caf\u00e9 \u2603 \U0001f600",
+        "line one\nline two\n",
+        "tab\there  and   spaces ",
+    ],
+)
+def test_a_restore_action_round_trips_through_the_log(logging, subject):
+    world = logging
+    tip, lost, held = "a" * 40, "b" * 40, "c" * 40
+    head = prune.HeadState(
+        "refs/heads/main", "refs/heads/main", tip, "main", frozenset(), ()
+    )
+    snapshot = prune.Snapshot(
+        head=head,
+        branch=subject,
+        sha=tip,
+        stashes=((held, subject),),
+        reflog=((lost, subject),),
+    )
+    built = prune.restores(snapshot, True, [held])
+    audit.begin("gw", ["prune"])
+    try:
+        audit.record("removal.outcome", restore=built)
+    finally:
+        audit.end(0)
+
+    [row] = named(events(world), "removal.outcome")
+    assert row["restore"] == built
+    reflog, branch, stash = row["restore"]
+    assert (reflog["kind"], reflog["sha"], reflog["subject"]) == (
+        "reflog-commit",
+        lost,
+        subject,
+    )
+    assert reflog["argv"] == ["git", "branch", f"rescue-{lost[:7]}", lost]
+    assert (branch["branch"], branch["argv"][2]) == (subject, subject)
+    assert (stash["subject"], stash["argv"][4]) == (subject, subject)
+    # The pasted line says the same thing to a shell, for each of them.
+    for action in row["restore"]:
+        echoed = subprocess.run(
+            ["sh", "-c", f"printf '%s\\0' {action['command']}"],
+            capture_output=True,
+            check=True,
+        ).stdout
+        assert echoed.decode().split("\0")[:-1] == action["argv"]
+
+
+def test_a_rebase_records_its_previous_tip_as_a_restore_action(world):
+    was = with_work(world)
+    advance(world)
+    assert gw(world, "fast-forward", "--json").returncode == 0
+    [moved] = named(events(world), "fast-forward.outcome")
+    [action] = moved["restore"]
+    assert action == {
+        "kind": "previous-tip",
+        "sha": was,
+        "of": "fix-parser",
+        "branch": f"rescue-{was[:7]}",
+        "argv": ["git", "branch", f"rescue-{was[:7]}", was],
+        "command": f"git branch rescue-{was[:7]} {was}",
+    }
+    subprocess.run(action["argv"], check=True, cwd=world.repo)
+    assert world.git("rev-parse", f"rescue-{was[:7]}") == was

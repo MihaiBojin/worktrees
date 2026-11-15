@@ -577,11 +577,11 @@ gw list --json | jq -r '.worktrees[].path'
 Each command appends what it did, one JSON object per line, to
 `~/.local/state/worktrees/audit-YYYY-MM.jsonl`: the command as typed, every
 `git`, `gh` and `glab` process with its exit code and duration, and each
-removal with the full SHA and the commands that undo it. Lines are only ever
-appended, and no file is ever deleted.
+removal with the full SHA and what restores it, as fields and as commands
+to paste. Lines are only ever appended, and no file is ever deleted.
 
 ```console
-$ jq -c 'select(.event == "removal.outcome") | {ts, host, branch, result, undo}' \
+$ jq -c 'select(.event == "removal.outcome") | {ts, host, branch, result, restore}' \
     ~/.local/state/worktrees/audit-*.jsonl
 $ jq -c 'select(.event == "exec" and .mutates) | {ts, ms, code, argv}' \
     ~/.local/state/worktrees/audit-*.jsonl

@@ -258,7 +258,7 @@ def _repository(repo: str | os.PathLike[str] | None) -> dict:
         return {
             "commonDir": R.shared_dir(repo),
             "remote": name,
-            "url": audit.scrub(url),
+            "url": url,
         }
     except GitError:
         return {}
@@ -283,18 +283,56 @@ def _target(v: Verdict | branches.Verdict, snapshot: Snapshot | None, repo) -> d
     return fields
 
 
-def _undo(snapshot: Snapshot, branch: bool, stashes: Iterable[str]) -> list[str]:
-    """The shell-quoted lines that put back what a removal takes."""
+def restores(snapshot: Snapshot, branch: bool, stashes: Iterable[str]) -> list[dict]:
+    """What puts back each thing a removal takes, as fields and as a command.
+
+    `argv` is the command with nothing quoted, for a program to run or read;
+    `command` is the same words shell-quoted, for a person to paste. Each
+    carries the full sha and whichever of the branch and subject it restores,
+    so nothing has to be parsed back out of a shell line.
+    """
     subjects = dict(snapshot.stashes)
-    lines = [f"git branch rescue-{sha[:7]} {sha}" for sha, _ in snapshot.reflog]
+    rows: list[dict] = [
+        {
+            "kind": "reflog-commit",
+            "sha": sha,
+            "subject": subject,
+            "branch": f"rescue-{sha[:7]}",
+            "argv": ["git", "branch", f"rescue-{sha[:7]}", sha],
+        }
+        for sha, subject in snapshot.reflog
+    ]
     if branch and snapshot.branch:
-        lines.append(restore_command(snapshot.branch, snapshot.sha))
-    lines += [
-        f"git stash store -m {shlex.quote(subjects[sha])} {sha}"
+        rows.append(
+            {
+                "kind": "branch",
+                "sha": snapshot.sha,
+                "branch": snapshot.branch,
+                "argv": ["git", "branch", snapshot.branch, snapshot.sha],
+            }
+        )
+    rows += [
+        {
+            "kind": "stash",
+            "sha": sha,
+            "subject": subjects[sha],
+            "argv": ["git", "stash", "store", "-m", subjects[sha], sha],
+        }
         for sha in stashes
         if sha in subjects
     ]
-    return lines
+    for row in rows:
+        row["command"] = shlex.join(row["argv"])
+    return rows
+
+
+def _recovery(rows: list[dict]) -> dict:
+    """The fields an event carries for `rows`: each action, and its line."""
+    return {
+        "restore": rows,
+        "undo": [row["command"] for row in rows],
+        "recovery": _RECOVERY,
+    }
 
 
 def audit_proposed(v: Verdict | branches.Verdict, keep_branch: bool, repo=None) -> None:
@@ -314,8 +352,12 @@ def audit_proposed(v: Verdict | branches.Verdict, keep_branch: bool, repo=None) 
             "reflog": [sha for sha, _ in snapshot.reflog],
             "ignored": list(snapshot.ignored_groups),
         },
-        undo=_undo(snapshot, drops, [sha for sha, _ in snapshot.stashes]),
-        recovery=_RECOVERY,
+        # Only what would go: a kept branch keeps its stashes.
+        **_recovery(
+            restores(
+                snapshot, drops, [sha for sha, _ in snapshot.stashes] if drops else []
+            )
+        ),
     )
 
 
@@ -340,11 +382,12 @@ def audit_outcome(v: Verdict | branches.Verdict, outcome: Outcome, repo=None) ->
         ignoredDeleted=list(snapshot.ignored_groups)
         if snapshot and outcome.worktree_removed
         else [],
-        failed=[audit.scrub(f) for f in outcome.failed],
-        undo=_undo(snapshot, outcome.branch_removed, outcome.dropped)
-        if snapshot and took
-        else [],
-        recovery=_RECOVERY,
+        failed=list(outcome.failed),
+        **_recovery(
+            restores(snapshot, outcome.branch_removed, outcome.dropped)
+            if snapshot and took
+            else []
+        ),
     )
 
 

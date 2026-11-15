@@ -553,23 +553,35 @@ sleep as arguments, so its tests run in-process without waiting.
 processes and nothing here seeks, truncates, renames or deletes a file. A
 monthly name is what makes that hold: rotation by size would need a rename.
 
-Recording runs between `audit.begin` and `audit.end`, which `cli.main` calls
-around `_command`. Outside the pair every function returns at once, so a test
-or a caller that imports the package and runs a spec writes nothing. Help,
-`--explain` and anything with `--complete` return before `begin`.
+Recording runs between `audit.begin` and `audit.end`. `_dispatch` begins
+once argparse has the words, so `--help`, which leaves inside `parse_args`,
+and `--explain` on any subcommand record nothing and print under a
+`WORKTREES_AUDIT` it does not take; no scan of the raw words would know an
+abbreviated `--hel` or a value after `--`. A usage error begins in `main`,
+as it leaves. `main` ends the run whichever way. Outside the pair every
+function returns at once, so a test or a caller that imports the package
+and runs a spec writes nothing.
+
+A line is one `os.write` and is never resumed: after a short write another
+process may have appended, so `_append` closes the fragment with a newline
+if one fits and raises. `_open` reads the last byte, and a file that does
+not end in a newline gets one before the first line, which carries `torn`.
 
 Two places see every process: the `@git` wrapper and `forge._run`. Each
 times the run and calls `audit.ran`, filed as `reads`, `mutating` or
 `forge`; `WORKTREES_AUDIT` turns each off by name and `off` turns off the
 log. A spec holding `fetch` is filed as mutating though it is not declared
 `mutates`. What a process printed is kept only when it changes something or
-failed. `audit.scrub` takes the user and password out of any URL before a
-value is written.
+failed. `audit.clean` walks the whole event as `record` serializes it and
+scrubs every string, so no caller scrubs its own fields and none can forget.
 
 `prune.audit_proposed` runs in `prune.plan` and `prune.audit_outcome` after
 `worktree.remove` and `branches.delete`, the second also when the recheck
-refuses. They build `undo` from the snapshot and from what the outcome says
-went, so a retained branch has no restore line. They ask git for the remote
+refuses. `prune.restores` builds one action per thing taken, with its kind,
+full sha, branch or subject and an unquoted `argv`; `command` and `undo` are
+`shlex.join` of that, so the line a person pastes cannot disagree with the
+fields a program reads. A proposal passes only what would go and an outcome
+only what went, so a kept or retained branch, and its stashes, have none. They ask git for the remote
 only while the log is on. `Moved` carries short shas, so `_audit_moved`
 resolves both ends before it writes one.
 

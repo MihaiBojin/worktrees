@@ -820,12 +820,26 @@ def _audit_moved(moved: fast_forward.Moved) -> None:
             return ""
 
     was, now = full(moved.previous_sha), full(moved.sha)
+    restore = []
+    if was and was != now:
+        argv = ["git", "branch", f"rescue-{was[:7]}", was]
+        restore.append(
+            {
+                "kind": "previous-tip",
+                "sha": was,
+                "of": moved.previous or moved.branch,
+                "branch": f"rescue-{was[:7]}",
+                "argv": argv,
+                "command": shlex.join(argv),
+            }
+        )
     audit.record(
         "fast-forward.outcome",
         **moved.data(),
         previous_full_sha=was,
         full_sha=now,
-        undo=[f"git branch rescue-{was[:7]} {was}"] if was and was != now else [],
+        restore=restore,
+        undo=[row["command"] for row in restore],
     )
 
 
@@ -2106,21 +2120,39 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     from . import audit
 
     render.setup()
-    try:
-        audit.begin(prog, args_in)
-    except audit.Invalid as exc:
-        _err(render.fail(str(exc)))
-        return 2
+    audit.arrive()
     code: int | None = None
     try:
         code = _command(args_in, prog)
         return code
     except SystemExit as exc:
-        # argparse leaves this way: 2 for a usage error, 0 after --help.
+        # argparse leaves this way: 0 after --help, which is not recorded,
+        # and 2 for a usage error, which left before recording began.
         code = exc.code if isinstance(exc.code, int) else int(exc.code is not None)
+        if code:
+            _audited(prog, args_in, strict=False)
         raise
     finally:
         audit.end(code)
+
+
+def _audited(prog: str, words: list[str], *, strict: bool = True) -> bool:
+    """Start the audit log for a command that is going to run or be refused.
+
+    After the words are parsed, so `gw prune --help` and `gw prune --explain`
+    record nothing and print even when `WORKTREES_AUDIT` holds a value it
+    does not take. False when it does and `strict` asks to hear of it; a
+    usage error is already the answer, and says nothing more.
+    """
+    from . import audit
+
+    try:
+        audit.begin(prog, words)
+    except audit.Invalid as exc:
+        if strict:
+            _err(render.fail(str(exc)))
+            return False
+    return True
 
 
 def _command(args_in: list[str], prog: str) -> int:
@@ -2136,6 +2168,7 @@ def _command(args_in: list[str], prog: str) -> int:
                 f"Run: gw list {word} to pick a worktree, or gw --help"
             )
         )
+        _audited(prog, args_in, strict=False)
         return 2
 
     p = _parser(prog, "Git worktree commands that refuse to lose work.")
@@ -2158,6 +2191,8 @@ def _command(args_in: list[str], prog: str) -> int:
 def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
     render.setup()
     args = p.parse_args(argv)
+    if not getattr(args, "explain", False) and not _audited(p.prog, argv):
+        return 2
     # argparse gives a subparser its own prog; rebuild it rather than reach
     # into the private table for it. The alias the caller typed, not the
     # canonical name, so a usage line echoes what they wrote.
