@@ -468,6 +468,10 @@ class Fact(NamedTuple):
     code: str
     value: str
     text: str
+    # How a table says it when `text` holds commands: the words, then each
+    # command on a line of its own.
+    brief: str = ""
+    commands: tuple[str, ...] = ()
 
 
 PROTECTED_WHY = "it is a protected branch"
@@ -504,12 +508,15 @@ def branch_protections(
 
 def reflog_fact(lost: Sequence[tuple[str, str]]) -> Fact:
     """Commits only a deleted reflog reaches, each with the line that shows it."""
-    shown = " and ".join(f"git show {sha[:12]}" for sha, _ in lost)
+    commands = tuple(f"git show {sha[:12]}" for sha, _ in lost)
+    counted = "1 commit" if len(lost) == 1 else f"{len(lost)} commits"
     return Fact(
         "reflog",
         "reflog",
         f"its reflog alone holds {len(lost)} commit(s) the head branch lacks; "
-        f"see each with {shown}",
+        f"see each with {' and '.join(commands)}",
+        f"its reflog alone holds {counted} the head branch lacks; see each with:",
+        commands,
     )
 
 
@@ -536,6 +543,27 @@ def hinted(protections: list[Fact], needs: Sequence[str]) -> list[str]:
     return [f.text + hint if f.value in needs else f.text for f in protections]
 
 
+def details(
+    evidence: str, facts: Sequence[Fact], needs: Sequence[str]
+) -> list[str | render.Cell]:
+    """A row's reasons as a table shows them under it: the evidence, each
+    protection that stands, a command on a line of its own, and once, last,
+    the flags that would make the row eligible."""
+    lines: list[str | render.Cell] = [evidence]
+    for fact in facts:
+        text = fact.brief or fact.text
+        if text != evidence:
+            lines.append(text)
+        lines += [
+            render.Cell(f"    {command}", render.BOLD) for command in fact.commands
+        ]
+    if needs:
+        lines.append(
+            render.Cell.of(("needs: ", render.DIM), (delete_flags(needs), render.BOLD))
+        )
+    return lines
+
+
 def plan(
     go: Sequence[Verdict | branches.Verdict],
     say: Callable[[str], None],
@@ -545,11 +573,13 @@ def plan(
 ) -> None:
     """Disclose the immutable assessed state before confirmation: one line
     for each thing that goes or stays, led by what happens to it."""
-    for v in go:
+    for i, v in enumerate(go):
         snapshot = v.snapshot
         if snapshot is None:
             raise Refused("no assessed deletion snapshot")
         audit_proposed(v, keep_branch, repo)
+        if i:
+            say("")
         for notice in snapshot.head.notices:
             say(render.note(notice))
         say(render.branch(v.branch or "(detached)"))
@@ -575,10 +605,12 @@ def plan(
                     "--exclude-standard",
                 ]
             )
-            say(_line("", f"list every ignored file: {render.command(listing)}"))
+            say(_line("", "list every ignored file:"))
+            say(_command(render.command(listing)))
         for sha, subject in snapshot.reflog:
             restore = f"git branch rescue-{sha[:7]} {sha}"
-            say(_line("delete reflog", f"{sha[:7]} {subject}, recover with: {restore}"))
+            say(_line("delete reflog", f"{sha[:7]} {subject}, recover with:"))
+            say(_command(render.command(restore)))
         if not v.branch:
             continue
         short = render.err(snapshot.sha[:7], render.YELLOW)
@@ -587,20 +619,23 @@ def plan(
             kept = ", and its stashes" if snapshot.stashes else ""
             say(_line("keep branch", f"{at}{kept}"))
             continue
-        say(
-            _line(
-                "delete branch",
-                f"{at}, restore with: {render.restore(v.branch, snapshot.sha)}",
-            )
-        )
+        say(_line("delete branch", f"{at}, restore with:"))
+        say(_command(render.restore(v.branch, snapshot.sha)))
         for sha, subject in snapshot.stashes:
             restore = f"git stash store -m {shlex.quote(subject)} {sha}"
-            say(_line("delete stash", f"{sha[:7]}, restore with: {restore}"))
+            say(_line("delete stash", f"{sha[:7]}, restore with:"))
+            say(_command(render.command(restore)))
 
 
 def _line(label: str, value: str) -> str:
     """A disclosure line, its values in one column under the longest label."""
     return f"  {label:<15}  {value}"
+
+
+def _command(text: str) -> str:
+    """A command under the disclosure line that introduces it, on a line of
+    its own so it is never the tail of a long one."""
+    return f"  {'':<15}    {text}"
 
 
 def deletions(

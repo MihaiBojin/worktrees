@@ -176,8 +176,15 @@ current checkout.
 
 Terminal `gw prune` and `gw prune --yes` clear stale Git worktree bookkeeping
 before assessment, whether or not removal is approved. `gw list` and pruning
-assessment modes never write refs, cache files or directories; they return
-before stale-record pruning, deletion disclosure and confirmation. The sync
+assessment modes never write refs or directories; they return
+before stale-record pruning, deletion disclosure and confirmation. An
+assessment saves the proofs it found in `git-worktrees-proofs.json` in the
+Git common directory, so the next one does not ask git for them again. Each
+is a fact about a branch's commit and the head's, both named by full SHA, so
+it has no age: the file holds one head commit's proofs and starts again when
+the head moves. A partial clone saves only a yes, since a fetch can bring the
+object a no was missing. What a checkout holds, `git status` and the rest, is
+read on every run and never saved. The sync
 that runs before them when one is due writes remote-tracking refs, the
 remote's new tags and the sync cache, and nothing else. Pruning
 JSON with `--yes` includes the assessment verdicts and the actual removed,

@@ -286,8 +286,12 @@ def test_the_disclosure_names_the_command_that_lists_every_ignored_file(
     code, out = run_on_a_terminal(world, "gw remove", "cached", answer="n\n")
     assert code == 0, out
     assert "  delete ignored   cache/, unrecoverable\n" in out
-    line = next(ln for ln in out.splitlines() if "list every ignored file: " in ln)
-    command = shlex.split(line.split("list every ignored file: ", 1)[1])
+    lines = out.splitlines()
+    at = next(
+        i for i, ln in enumerate(lines) if ln.endswith("list every ignored file:")
+    )
+    # The command is the line under it, whole.
+    command = shlex.split(lines[at + 1])
     assert command[:3] == ["git", "-C", str(wt)]
     listed = subprocess.run(command, capture_output=True, text=True, check=True)
     assert listed.stdout.splitlines() == ["cache/a", "cache/deep/b"]

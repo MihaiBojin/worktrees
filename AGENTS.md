@@ -410,6 +410,20 @@ Padding runs on the text and painting after it. The other order counts an
 escape sequence as width, and every column under a coloured cell sits crooked
 by exactly the length of the code.
 
+An assessment prints `render.records`, not `render.table`: a box with one
+record a worktree or branch, a line of short cells and then its reasons
+across the box, so a reason has the terminal's width and not a last column's.
+A reason that is a string is prose and wraps to `render.columns`; one that is
+a `Cell` is a command or a path and is never broken, widening the box when it
+must, so it pastes back. `prune.details` builds them from the row's `Fact`s:
+the evidence, each protection, each of a fact's commands on its own line,
+and `needs:` once, last. The JSON `protections` keep the one-line wording
+with `; pass --delete ...`, which the prune skill reads. The worktree's path
+is in `--json` and the removal disclosure, not in the box. `render.ruled`
+picks box characters for a UTF-8 terminal and `+`, `-` and `|` otherwise;
+`--table` sets `render.plain`, which turns both wrapping and box characters
+off, since a script reads it.
+
 stdout carries the path `cd $(gw add x)` reads and the JSON `jq` parses, so a
 redirect, a pipe, a non-empty `NO_COLOR`, or `TERM=dumb` mean the bytes go out
 as they would have without the module. `NO_COLOR=` is not a request to turn it
@@ -523,6 +537,18 @@ length of one `assess`: a commit's tree, a merge base, the patch-ids of the
 head's commits after a fork point. Those are facts about the objects. Nothing
 outside an assessment keeps them, since `gw fast-forward` fetches and an
 object missing a moment ago can appear, and a failed answer is never kept.
+
+Two of those answers outlive the run: `_local_proof` for a tip and
+`change_in` for a reflog commit, each against the head's full SHA, saved in
+`git-worktrees-proofs.json` in the Git common directory and replaced
+atomically when the assessment ends. They have no TTL, since neither commit
+changes; the file holds one head's answers and starts again when the head
+moves, which bounds it. A partial clone saves only a yes, because a fetch
+can bring the object a no lacked without moving the head, and an entry that
+is not the shape `merged.py` wrote is asked again. Nothing a checkout holds
+is saved: `git status`, submodules, an operation in progress, reflogs and
+stashes are read on every run, since they are what stops a worktree with
+work in it being offered.
 
 `git submodule status` is the costliest check, so the store decides alone
 when it exists, and without one the check runs only where `.gitmodules`

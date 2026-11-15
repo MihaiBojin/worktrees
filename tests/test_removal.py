@@ -269,7 +269,7 @@ def test_prune_json_carries_the_command_that_restores_each_branch(world, name):
     assert _row(run(world, "gw prune", "--json"), str(path))["undo"] == undo
     p = run(world, "gw prune", "--yes", "--json")
     assert _row(p, str(path))["undo"] == undo
-    assert f"restore with: {undo}\n" in p.stderr
+    assert f"restore with:\n                     {undo}\n" in p.stderr
     assert not path.exists()
     assert not world.git("for-each-ref", "--format=%(refname)", f"refs/heads/{name}")
     subprocess.run(shlex.split(undo), cwd=world.repo, check=True)
@@ -1033,7 +1033,7 @@ def test_removed_ignored_entry_invalidates_approval(world, entry):
         assert stdout == b""
     else:
         assert b"VERDICT" in stdout and b"ELIGIBLE" in stdout
-        assert str(path).encode() in stdout
+        assert b"| topic " in stdout
     assert path.exists()
     assert (path / "merged-topic").read_text() == "x"
     assert not (path / "old.secret").exists()
@@ -1049,7 +1049,7 @@ def test_remove_without_a_terminal_assesses_and_removes_nothing(world):
     path = world.merged_worktree("topic")
     p = run(world, "gw remove", "topic")
     assert p.returncode == 0, p.stderr
-    assert "VERDICT" in p.stdout and str(path) in p.stdout
+    assert "VERDICT" in p.stdout and "| topic " in p.stdout
     assert f"gw remove {shlex.quote(str(path))} --yes removes it" in p.stderr
     # A bare path on stdout is what the gw function changes into.
     assert not any(line == str(path) for line in p.stdout.splitlines())
@@ -1057,7 +1057,8 @@ def test_remove_without_a_terminal_assesses_and_removes_nothing(world):
     assert world.git("rev-parse", "topic")
     quiet = run(world, "gw remove", "topic", "-q")
     assert quiet.returncode == 0, quiet.stderr
-    assert quiet.stdout.count("\n") == 2  # the header and the one row
+    # The box alone: the header, the one row and its reason, and four rules.
+    assert quiet.stdout.count("\n") == 7
     assert "removes it" not in quiet.stderr
 
 

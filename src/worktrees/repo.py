@@ -27,20 +27,24 @@ def git_version() -> None:
     """The installed Git release, without reading repository objects."""
 
 
-def require_offline_git() -> None:
-    """Refuse implicit object retrieval on unpatched partial clones."""
+def partial(repo: str | os.PathLike[str] | None = None) -> bool:
+    """Whether this clone leaves objects on a promisor remote."""
     values = {}
-    for record in partial_clone_config().out.split("\0"):
+    for record in partial_clone_config(repo=repo).out.split("\0"):
         if record:
             key, separator, value = record.partition("\n")
             values[key] = value if separator else None
-    partial = any(
+    return any(
         not key.endswith(".promisor")
         or value is None
         or value.lower() not in ("", "false", "no", "off", "0")
         for key, value in values.items()
     )
-    if not partial:
+
+
+def require_offline_git() -> None:
+    """Refuse implicit object retrieval on unpatched partial clones."""
+    if not partial():
         return
     import re
 
