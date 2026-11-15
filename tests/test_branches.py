@@ -85,14 +85,17 @@ def test_a_named_checked_out_branch_is_never_deleted(world, where):
     assert world.git("rev-parse", "refs/heads/done") == sha
 
 
-def test_delete_help_names_every_permission_value(world):
-    p = cli(world, "-h", entry="gw branch prune")
+@pytest.mark.parametrize("entry", ["gw branch prune", "gw prune", "gw remove"])
+def test_delete_help_names_every_permission_value(world, entry):
+    """Each value as typed, beside what it permits, in every command that
+    takes --delete."""
+    from worktrees.verdicts import PERMISSIONS
+
+    p = cli(world, "-h", entry=entry)
     assert p.returncode == 0, p.stderr
     text = " ".join((p.stdout + p.stderr).split())
-    assert (
-        "permit unused branches, stashes, closed requests or commits only a "
-        "reflog holds; all permits every one" in text
-    )
+    for value in (*sorted(PERMISSIONS), "all"):
+        assert f"({value})" in text, value
 
 
 def test_multiple_exact_names_do_not_select_a_prefix(world):

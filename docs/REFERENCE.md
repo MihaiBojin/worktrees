@@ -108,8 +108,13 @@ passed.
 proof for the checkout. A detached checkout has no branch to keep its
 commits and still needs proof. It permits a checkout on a protected branch, while
 all other worktree protections remain. Only `--delete reflog` can be
-combined with it. When no `--delete` value alone makes a target eligible and
-`--keep-branch` does, `gw remove` names that command in full.
+combined with it. For a target it keeps, `gw remove` names in full the
+`--delete` command that makes it eligible, carrying the values passed;
+otherwise the `--keep-branch` command, when that does. A target held by
+uncommitted changes or untracked paths, and by no lock, submodule or
+operation in progress, also gets `git worktree remove --force PATH`, with a
+count of the ignored paths and reflog-only commits it deletes and the branch
+it keeps.
 
 ## Deletion and recovery
 
