@@ -593,9 +593,10 @@ the subcommands they are; `is_ancestor` beats `merge_base`, because
 the caller wants.
 
 A spec with `ok=` wide enough to swallow an error is a spec that has to be
-tested on what it returns rather than on its exit code. `upstream_of` takes
-`ok=(0, 1, 128)`, so a typo in one of its flags exits 128, reads as "no
-upstream", and turns every branch into `unknown` with nothing failing.
+tested on what it returns rather than on its exit code. `tree_of` takes
+`ok=(0, 128)` for a ref that does not resolve, and a typo in its `^{tree}`
+exits 128 too. The squash proof and the forge proof would then answer no for
+every branch, and nothing would fail.
 
 The network calls belong to sync. Their results distinguish failed
 refs refresh from partial forge refresh; assessments retain usable local
