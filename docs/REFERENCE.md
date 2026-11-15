@@ -230,15 +230,16 @@ warning print before the next sync is due.
 
 Every command except `gw sync`, `gw version`, `gw list`, `gw fast-forward`,
 help and completion runs sync first when one is due: the default remote's
-refs time is null, or at least `WORKTREES_SYNC_TTL` seconds old. The TTL is 60 when the variable is unset or
+refs time is null, or at least `WORKTREES_SYNC_TTL` seconds old. The TTL is 300 when the variable is unset or
 empty, takes whole seconds with `0` meaning every command, and anything else
 is a usage error at exit 2. The forge time is not read. Without a default
 remote nothing syncs first, since sync records nothing there. That sync's
 failures and warnings go to stderr as warnings, hidden under `-q` and
 `--json`; the command keeps its own stdout and exit status. `gw fast-forward`
-fetches the default remote on every run instead and asks the forge for the
-branch's newest merged request, and either failing is a refusal whose last
-line is the same command under `WORKTREES_OFFLINE=1`.
+fetches the default remote instead when one is due, asks the forge for the
+branch's newest merged request in every run, and fetches again when that
+answer names a merge the head ref lacks. A failed fetch or forge query is a
+refusal whose last line is the same command under `WORKTREES_OFFLINE=1`.
 
 `WORKTREES_OFFLINE` with a non-empty value turns every sync off. No command
 syncs first, `WORKTREES_SYNC_TTL` goes unread, and `gw sync` refuses at

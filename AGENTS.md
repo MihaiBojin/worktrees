@@ -127,11 +127,13 @@ ref or `--from`. Commits after the merged part are replayed onto it with
 a time an earlier rotation put in front, and a name held here or on the
 default remote is refused.
 
-It decides on evidence read in the same run. It fetches the default remote
-whatever the TTL and asks the forge for the branch's newest merged request,
-never reading the cached one, since a pull request merged a moment ago is
-the usual reason to run it. Either failing is a refusal whose last line is
-the same command under `WORKTREES_OFFLINE=1`.
+It fetches the default remote when a sync is due and asks the forge for
+the branch's newest merged request in every run, never reading the cached
+one, since a pull request merged a moment ago is the usual reason to run it.
+A merge commit the forge names that the head ref lacks raises `_Behind`
+before anything moves, and `fast_forward` fetches and decides once more.
+A failed fetch or forge query is a refusal whose last line is the same
+command under `WORKTREES_OFFLINE=1`.
 
 A branch whose open request targets another branch with an open request,
 a stacked one, is levelled with that branch instead of the head ref:
@@ -454,14 +456,14 @@ every local branch tip on eight threads. Every other command but
 `gw version`, `gw list`, `gw ci-checks`, `gw merge`, `gw fast-forward`, help and
 completion runs the same `sync.run` first when
 `sync.due` says so: the default remote's refs time is null or at least
-`WORKTREES_SYNC_TTL` seconds old, 60 by default. The forge time is not read,
+`WORKTREES_SYNC_TTL` seconds old, 300 by default. The forge time is not read,
 since a forge that keeps failing would sync before every command. Without a
 default remote nothing syncs first, because sync records nothing there.
 `gw list` reads only the worktree records, so it never syncs first and
 prints no word about how fresh the evidence is; its `--json` takes `head`
-and `lastSync` from the cache. `gw fast-forward` runs `sync.fetch` on
-every run instead, which fetches the default remote and records the refs
-time.
+and `lastSync` from the cache. `gw fast-forward` runs `sync.fetch`
+instead when one is due, which fetches the default remote and records the
+refs time.
 
 A failed sync before a command is a warning, and the command goes on with
 the evidence it has; quiet and JSON hide the warning. A failed fetch before

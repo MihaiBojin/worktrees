@@ -1187,9 +1187,9 @@ def test_a_forge_that_cannot_be_asked_refuses(world, network, failure) -> None:
     assert world.git("rev-parse", "HEAD") == before
 
 
-def test_a_merge_after_the_last_sync_is_fetched_within_the_ttl(world) -> None:
-    """A pull request merged a moment ago is the usual reason to run this, so
-    it fetches whatever the last sync's age."""
+def test_a_fetch_waits_for_the_ttl(world) -> None:
+    """A run within WORKTREES_SYNC_TTL of the last fetch fetches nothing, so a
+    merge pushed since is unseen until the next fetch is due."""
     from conftest import online
 
     upstream = world.root / "upstream.git"
@@ -1214,16 +1214,46 @@ def test_a_merge_after_the_last_sync_is_fetched_within_the_ttl(world) -> None:
     world.git("commit", "--quiet", "-m", "fix-parser (#1)", at=other)
     world.git("push", "--quiet", "origin", "main", at=other)
 
-    p = subprocess.run(
-        argv("gw fast-forward", "--json"),
-        cwd=world.repo,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert p.returncode == 0, p.stderr
-    payload = json.loads(p.stdout)
+    def run(**extra: str) -> dict:
+        p = subprocess.run(
+            argv("gw fast-forward", "--json"),
+            cwd=world.repo,
+            env={**env, **extra},
+            capture_output=True,
+            text=True,
+        )
+        assert p.returncode == 0, p.stderr
+        return json.loads(p.stdout)
+
+    assert run()["result"] == "current"
+    payload = run(WORKTREES_SYNC_TTL="0")
     assert (payload["result"], payload["proof"]) == ("rotated", "squash")
+
+
+def fetches(network) -> int:
+    return sum(1 for call in network.calls() if call[0] == "git" and "fetch" in call)
+
+
+def test_a_merge_the_forge_names_and_the_head_ref_lacks_is_fetched(
+    world, network
+) -> None:
+    """Within the TTL, a merge commit the last fetch did not bring makes the
+    run fetch before deciding."""
+    with_work(world)
+    on_forge(world)
+    network.answer({})
+
+    assert gw_ff_online(world, network).returncode == 0
+    assert fetches(network) == 1
+    assert gw_ff_online(world, network).returncode == 0
+    assert fetches(network) == 1
+
+    tip = world.git("rev-parse", "fix-parser")
+    network.answer({"fix-parser": [merged_row("fix-parser", tip, "a" * 40)]})
+    p = gw_ff_online(world, network, "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["result"] == "current"
+    assert fetches(network) == 2
 
 
 # --------------------------------------------------------------------------

@@ -726,16 +726,16 @@ def _offline_retry(args: argparse.Namespace) -> str:
     return f"Run: {sync.OFFLINE}=1 {args.typed}"
 
 
-def _fetch_now(args: argparse.Namespace) -> None:
-    """Fetch the default remote before fast-forward decides, whatever the TTL.
+def _fetch_due(args: argparse.Namespace) -> None:
+    """Fetch the default remote before fast-forward decides, when one is due.
 
-    A failed fetch is a refusal rather than a warning: a pull request merged
-    a moment ago is the usual reason to run the command, and only a fetch
-    brings its squash commit.
+    A failed fetch is a refusal rather than a warning: fast-forward moves
+    branches on what the fetch brings. It fetches the default remote and no
+    forge evidence, which it asks for itself.
     """
     from . import sync
 
-    if sync.offline():
+    if not sync.due():
         return
     quiet = args.quiet or args.verbose
     with progress.running(not quiet):
@@ -1808,7 +1808,7 @@ _COMMANDS: dict[str, _Command] = {
         "refresh remote refs and forge evidence",
         "Fetch every remote and its tags, and record which local branch tips "
         "the forge has merged. Every other command runs it first once the last "
-        "sync is WORKTREES_SYNC_TTL seconds old, 60 by default.",
+        "sync is WORKTREES_SYNC_TTL seconds old, 300 by default.",
         shortcuts={"gws": ""},
     ),
     "branch": _Command(
@@ -2099,7 +2099,7 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             creates = run is run_branch and args.branch_command == "create"
             if run is not run_list and not creates and R.toplevel().value:
                 if run is run_fast_forward:
-                    _fetch_now(args)
+                    _fetch_due(args)
                 else:
                     _refresh(args)
                 _notices(args)

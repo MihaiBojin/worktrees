@@ -14,9 +14,12 @@ gwff --json
 ## Fresh evidence
 
 A pull request merged on the forge a moment ago is the usual reason to run
-this, so it decides on evidence read in the same run. It fetches the default
-remote on every run, whatever `WORKTREES_SYNC_TTL` says, and asks the forge
-for the branch's newest merged request. The finished-branch proof and the
+this. It fetches the default remote when the last fetch is
+`WORKTREES_SYNC_TTL` seconds old, 5 minutes by default, and asks the forge
+for the branch's newest merged request in every run. When that answer names
+a merge commit the fetched head ref lacks, it fetches before deciding. On the
+head branch it asks the forge nothing and moves to the head ref as the last
+fetch left it; `gw sync` first fetches now. The finished-branch proof and the
 search for a merged part both use that answer; neither reads the request
 cached by `gw sync`. When nothing else marks where a merged part ends, it
 also asks which merged request carried the branch's oldest commit. When the

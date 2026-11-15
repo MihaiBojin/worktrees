@@ -67,8 +67,9 @@ before you ran anything, perhaps one the user paused in `git rebase -i`.
 Show its `stopped_at`, `subject` and `paths`, and ask before resolving or
 continuing it. Continue on your own only a rebase this request started.
 
-The command fetches and asks the forge on every run, so the head ref is the
-remote's. Under `WORKTREES_OFFLINE`, when `lastSync.refs` is null or more than
+The command fetches once the last fetch is `WORKTREES_SYNC_TTL` seconds old,
+and whenever the forge names a merge the head ref lacks. On the head branch,
+after a merge, run `gw sync` first so it sees the remote's tip. Under `WORKTREES_OFFLINE`, when `lastSync.refs` is null or more than
 10 minutes old after the run, say the head ref can be behind the remote. Do
 not run `gw sync` yourself.
 
