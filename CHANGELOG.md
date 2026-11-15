@@ -17,6 +17,14 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.11.2 - 2026-11-15
+
+### Removed
+
+`gw --explain` no longer lists `rev-parse --abbrev-ref
+--symbolic-full-name $branch@{upstream}` or `for-each-ref
+--format=%(upstream:track)`. No command ran either of them.
+
 ## 0.11.1 - 2026-11-15
 
 ### Added
