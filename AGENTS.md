@@ -510,7 +510,22 @@ cohorts in `repo.require_offline_git`. Lower reported vendor versions refuse;
 full clones keep older Git compatibility. Offline proof uses read-only
 patch-id input and creates no synthetic commits.
 
-The per-worktree checks run on eight threads. Mutations remain serial.
+The per-worktree checks run on a thread per core, eight at most. Each is a
+git process whose work is the CPU's, so more threads than cores only queue
+behind each other and the interpreter lock; `sync` keeps eight, since its
+threads wait on the network. Mutations remain serial.
+
+An assessment asks every worktree the same questions about the head, so
+`merged.reuse()` keeps the answers that name objects by full SHA for the
+length of one `assess`: a commit's tree, a merge base, the patch-ids of the
+head's commits after a fork point. Those are facts about the objects. Nothing
+outside an assessment keeps them, since `gw fast-forward` fetches and an
+object missing a moment ago can appear, and a failed answer is never kept.
+
+`git submodule status` is the costliest check, so the store decides alone
+when it exists, and without one the check runs only where `.gitmodules`
+exists. The store outlives a deleted `.gitmodules`, which is also when
+`submodule status` itself fails with "no submodule mapping found".
 
 `gw ci-checks` takes GitHub's review and checks from one `gh pr view` with
 `statusCheckRollup` and `commits`. Commit messages and checks describe the

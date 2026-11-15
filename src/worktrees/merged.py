@@ -13,12 +13,16 @@ between them.
 
 from __future__ import annotations
 
+import functools
 import os
+import re
 import threading
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, ParamSpec, TypeVar
 
 from .errors import MissingObjects
-from .git import git
+from .git import Run, git
 
 if TYPE_CHECKING:  # annotations only
     from . import branch_forge
@@ -27,6 +31,72 @@ if TYPE_CHECKING:  # annotations only
 # can say once why those branches are unknown.
 lacking = threading.Event()
 LACKING = "this partial clone lacks objects the proof needs"
+
+# Answers about objects named by full SHA, kept while one assessment runs. A
+# commit's tree, the merge base of two commits and the patch-ids of a range
+# are facts about those objects, so every worktree asking the same question
+# takes the first answer rather than a git process of its own. Only inside
+# `reuse()`: a command that fetches can make an object appear that a moment
+# ago was missing, and an answer kept from before would be stale.
+_kept: dict[tuple[object, ...], object] | None = None
+_kept_lock = threading.Lock()
+_FULL_SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+P = ParamSpec("P")
+T = TypeVar("T")
+
+
+@contextmanager
+def reuse() -> Iterator[None]:
+    """Keep answers about immutable objects until the block ends."""
+    global _kept
+    outer = _kept
+    _kept = {} if outer is None else outer
+    try:
+        yield
+    finally:
+        _kept = outer
+
+
+def reusing(fn: Callable[P, T]) -> Callable[P, T]:
+    """Run `fn` inside `reuse()`, for an assessment as a whole."""
+
+    @functools.wraps(fn)
+    def call(*args: P.args, **kwargs: P.kwargs) -> T:
+        with reuse():
+            return fn(*args, **kwargs)
+
+    return call
+
+
+def _recall(key: tuple[object, ...], ask: Callable[[], object]) -> object:
+    kept = _kept
+    if kept is None:
+        return ask()
+    with _kept_lock:
+        if key in kept:
+            return kept[key]
+    answer = ask()
+    if not isinstance(answer, Run) or answer.code in (0, 1):
+        # Not a failure: 128 can mean an object this clone lacks.
+        with _kept_lock:
+            kept.setdefault(key, answer)
+    return answer
+
+
+def _by_sha(fn: Callable[..., Run]) -> Callable[..., Run]:
+    """Keep a git call's answer while `reuse()` holds, for full SHAs only."""
+
+    @functools.wraps(fn)
+    def call(*shas: str, repo: str | os.PathLike[str] | None = None) -> Run:
+        if _kept is None or not all(_FULL_SHA.fullmatch(s) for s in shas):
+            return fn(*shas, repo=repo)
+        where = None if repo is None else os.fspath(repo)
+        answer = _recall((fn.__name__, shas, where), lambda: fn(*shas, repo=repo))
+        assert isinstance(answer, Run)
+        return answer
+
+    return call
+
 
 # What a branch's commits say about it: the reason a row carries when nothing
 # about its checkout decides it first.
@@ -49,11 +119,13 @@ def is_ancestor(ref: str, head: str) -> None:
     """Non-zero means 'no', not 'broken'."""
 
 
+@_by_sha
 @git("merge-base $a $b", ok=(0, 1, 128))
 def merge_base(a: str, b: str) -> None:
     """The commit two refs last had in common."""
 
 
+@_by_sha
 @git("rev-parse $ref^{tree}", ok=(0, 128))
 def tree_of(ref: str) -> None:
     """The tree a ref points at."""
@@ -128,13 +200,24 @@ def _upstream_ids(
     """The patch-ids of the head's commits after `fork`, kept in `upstream`."""
     known = {} if upstream is None else upstream
     if fork not in known:
-        patches = upstream_patches(fork, head, repo=repo).out
-        known[fork] = {
-            line.split()[0] for line in patch_ids(input=patches, repo=repo).lines
-        }
+
+        def ask() -> set[str]:
+            patches = upstream_patches(fork, head, repo=repo).out
+            return {
+                line.split()[0] for line in patch_ids(input=patches, repo=repo).lines
+            }
+
+        if _FULL_SHA.fullmatch(fork) and _FULL_SHA.fullmatch(head):
+            where = None if repo is None else os.fspath(repo)
+            found = _recall(("upstream", fork, head, where), ask)
+            assert isinstance(found, set)
+            known[fork] = found
+        else:
+            known[fork] = ask()
     return known[fork]
 
 
+@_by_sha
 @git("merge-base --all $a $b", ok=(0, 1))
 def merge_bases(a: str, b: str) -> None:
     """Every best common ancestor; none for unrelated histories."""

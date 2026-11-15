@@ -185,6 +185,42 @@ def test_a_submodule_store_left_by_deinit_blocks_removal_until_deleted(world):
     assert not wt.exists()
 
 
+def test_a_submodule_kept_after_its_gitmodules_went_still_blocks_removal(world):
+    """The store outlives `.gitmodules`, so the check still runs without it."""
+    module = world.root / "module"
+    world.git("init", "--quiet", "-b", "main", str(module))
+    world.commit("README", at=module)
+    wt = world.worktree("done")
+    world.git(
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "--quiet",
+        str(module),
+        "module",
+        at=wt,
+    )
+    world.git("commit", "--quiet", "-m", "module", at=wt)
+    world.git("rm", "--quiet", ".gitmodules", at=wt)
+    world.git("commit", "--quiet", "-m", "no gitmodules", at=wt)
+    world.git("merge", "--quiet", "--no-ff", "-m", "merge", "done")
+    assert not (wt / ".gitmodules").exists()
+    row = next(r for r in rows(world) if r["path"] == str(wt))
+    assert (row["verdict"], row["reason"]) == ("keep", "submodule")
+    assert not row["eligible"]
+    assert (wt / "module" / "README").exists()
+
+
+def test_a_worktree_that_cannot_hold_a_submodule_is_not_asked_about_one(world):
+    """`git submodule status` is the costliest check, and answers nothing here."""
+    world.merged_worktree("done")
+    result = run(world, "gw prune", "--json", "-v")
+    assert result.returncode == 0, result.stderr
+    assert "--git-dir --git-path modules" in result.stderr
+    assert "submodule status" not in result.stderr
+
+
 def test_a_locked_worktree_whose_directory_is_away_is_kept_and_assessed(world):
     away = world.worktree("away")
     world.git("worktree", "lock", str(away))
