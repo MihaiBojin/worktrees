@@ -77,7 +77,7 @@ the plugin's tag to the same release, as each manager below describes.
 ### fish
 
 ```console
-fisher install MihaiBojin/worktrees@v0.11.1
+fisher install MihaiBojin/worktrees@v0.11.2
 ```
 
 Fisher copies `functions/`, `completions/` and `conf.d/` from the repository
@@ -94,7 +94,7 @@ the untagged one holds the files.
 Antidote takes a `path:` into the repository, and `branch:` takes a tag:
 
 ```
-MihaiBojin/worktrees branch:v0.11.1 path:zsh/plugins/worktrees   # in zsh_plugins.txt
+MihaiBojin/worktrees branch:v0.11.2 path:zsh/plugins/worktrees   # in zsh_plugins.txt
 ```
 
 The plugin puts its own `functions/` and `completions/` on `fpath` and
@@ -169,8 +169,8 @@ its stdout stays the version alone for a script to read.
 An excerpt of `gw --help`'s release lines with matching CLI and shell releases:
 
 ```console
-worktrees 0.11.1: git worktree commands that refuse to lose work
-The shell plugin here is 0.11.1, the same release as these commands.
+worktrees 0.11.2: git worktree commands that refuse to lose work
+The shell plugin here is 0.11.2, the same release as these commands.
 ```
 
 A shell without the variable has no plugin loaded, or one older than the
@@ -249,8 +249,13 @@ protections and the deletion permissions you supplied. The WHY column gives
 the evidence, then each protection that stands. A protection that `--delete`
 values lift ends with every value its row needs, such as
 `pass --delete empty --delete stashes`, and only where those values make
-the row eligible. For a target it keeps, `gw remove` prints every reason, and
-names a command with `--keep-branch` when only that removes the worktree.
+the row eligible. For a target it keeps, `gw remove` prints every reason and
+each command that removes it: `gw remove PATH --delete VALUE`, carrying the
+values you passed, as `gw prune` names them; `--keep-branch` when only that
+waives the proof; and, for uncommitted changes or untracked paths,
+`git worktree remove --force PATH`, which deletes the checkout with them and
+keeps the branch. That line counts the ignored paths and reflog-only commits
+that go too. gw never runs it.
 
 The CLI never deletes `main`, `master` or the head branch. It never removes
 the main checkout, locked or dirty worktrees, worktrees with untracked files,
