@@ -245,11 +245,34 @@ Deleting a branch deletes its reflog, and removing a worktree deletes the
 worktree's own. A commit nothing else reaches goes with them, so a row whose
 deleted reflogs hold a commit whose patch the head lacks is held back, and
 the protection names `git show SHA` for each one. `eligible` also checks
-protections and the deletion permissions you supplied. The WHY column gives
-the evidence, then each protection that stands. A protection that `--delete`
-values lift ends with every value its row needs, such as
-`pass --delete empty --delete stashes`, and only where those values make
-the row eligible. For a target it keeps, `gw remove` prints every reason, and
+protections and the deletion permissions you supplied.
+
+The table is a box with one record for each worktree: a line of short
+answers, then the reasons across the full width, wrapped to the terminal.
+
+```
+┌───────────────┬─────────┬────────┬──────────────────────┐
+│ BRANCH        │ VERDICT │ REASON │ ELIGIBLE             │
+├───────────────┼─────────┼────────┼──────────────────────┤
+│ release-0.8.0 │ keep    │ closed │ no                   │
+├───────────────┴─────────┴────────┴──────────────────────┤
+│ pull request #182 was closed without merging this tip   │
+│ its request is closed                                   │
+│ its reflog alone holds 2 commits the head branch lacks; │
+│   see each with:                                        │
+│     git show 54a199e1f797                               │
+│     git show ea8faa8208f5                               │
+│ needs: --delete closed --delete reflog                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+The reasons are the evidence, then each protection that stands, a command
+on a line of its own so it is never cut. `needs:` ends a record with every
+`--delete` value it needs, and only where those values make it eligible.
+The path is in `--json`, not in the table. Off a terminal and under
+`--table` the box is drawn with `+`, `-` and `|` and nothing wraps. In
+`--json`, a protection those values lift ends with them, such as
+`pass --delete empty --delete stashes`. For a target it keeps, `gw remove` prints every reason, and
 names a command with `--keep-branch` when only that removes the worktree.
 
 The CLI never deletes `main`, `master` or the head branch. It never removes
@@ -276,9 +299,20 @@ Repeat `--delete` to combine categories:
 
 `gw branch status` rejects `--delete`. An unknown or unsupported value is a
 usage error before mutation. A `--delete` value changes eligibility, not the
-verdict. When only missing values hold worktrees back, `gw prune` names
-the command that grants them, keeping the values you passed:
-`gw prune --delete empty makes fix-parser eligible`. Without a terminal,
+verdict. When only missing values hold worktrees back, `gw prune` says so
+and prints the command that grants them on a line of its own, keeping the
+values you passed, then the worktrees it frees. The command takes no names;
+`gw remove NAME` targets one worktree.
+
+```
+→ 2 worktrees are held back only by a permission. To make them eligible, run:
+
+      gw prune --delete closed --delete reflog
+
+  frees: gw-design, release-0.8.0
+```
+
+Without a terminal,
 the line that names `--yes` carries the `--delete` values and
 `--keep-branch` you passed, so running it removes what was counted.
 

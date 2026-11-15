@@ -295,7 +295,8 @@ def test_prune_asks_before_removing(world) -> None:
     assert code == 0, out
     assert f"done\n  delete worktree  {wt}\n" in out
     assert "  delete branch    done at " in out
-    assert ", restore with: git branch done " in out
+    # The command on a line of its own, under the line that introduces it.
+    assert re.search(r", restore with:\r?\n +git branch done ", out), out
     assert "delete 1 worktree and 1 branch? [y/N]" in out
     assert not wt.exists()
 
@@ -314,8 +315,8 @@ def test_the_question_counts_each_kind_it_deletes(world) -> None:
     assert code == 0, out
     assert "  delete ignored   .env, unrecoverable\n" in out
     assert (
-        f"  delete stash     {stash[:7]}, restore with: "
-        f"git stash store -m 'On done: saved' {stash}\n"
+        f"  delete stash     {stash[:7]}, restore with:\n"
+        f"                     git stash store -m 'On done: saved' {stash}\n"
     ) in out
     assert "delete 1 worktree, 1 ignored path, 1 branch and 1 stash? [y/N]" in out
     assert wt.exists()
@@ -376,7 +377,9 @@ def test_prune_deletes_the_branch_and_the_empty_parents(world) -> None:
     assert not (world.parent / ".worktrees" / "done").exists()
     assert p.stdout.splitlines()[-1] == "removed 1 worktree(s): done"
     assert p.stdout.count("VERDICT") == 1
-    assert str(world.repo) in p.stdout and str(wt) in p.stdout
+    # The table names each worktree by its branch; the path is in --json.
+    assert "| main " in p.stdout and "| done " in p.stdout
+    assert str(wt) not in p.stdout
 
 
 def test_a_squash_merged_branch_goes_with_its_checkout(world) -> None:
@@ -392,7 +395,7 @@ def test_a_squash_merged_branch_goes_with_its_checkout(world) -> None:
     assert not wt.exists()
     assert "squashed" not in world.git("branch", "--format=%(refname:short)").split()
     assert "kept" not in p.stderr
-    assert "restore with: git branch squashed " in p.stderr
+    assert re.search(r"restore with:\n +git branch squashed ", p.stderr)
 
 
 def test_prune_clears_a_stale_record(world) -> None:
@@ -480,12 +483,17 @@ def test_a_hint_names_every_value_its_row_needs_and_only_a_row_they_free(
 
     p = run(world, "gw prune")
     assert p.returncode == 0, p.stderr
-    assert "held back" not in p.stderr
     assert p.stdout.count(dirty) == 1
+    # The command on a line of its own, since it takes no names, between
+    # what it is for and the worktrees it frees.
     assert (
-        "gw prune --delete empty --delete stashes makes idle, stashed eligible"
-        in p.stderr
-    )
+        "\n2 worktrees are held back only by a permission. "
+        "To make them eligible, run:\n"
+        "\n"
+        "    gw prune --delete empty --delete stashes\n"
+        "\n"
+        "frees: idle, stashed\n\n"
+    ) in p.stderr
 
     for name, path in (("idle", idle), ("stashed", stashed)):
         hint = rows[name]["protections"][0].split("; pass ", 1)[1]
@@ -514,31 +522,49 @@ def test_a_protected_branch_names_no_delete_value(world) -> None:
 
 
 def test_the_table_prints_each_reason_on_its_own_line(world) -> None:
-    """WHY holds the evidence, then each protection under it, while the JSON
-    `why` keeps them on one line. A reason naming its flag stays one line."""
+    """A worktree is one line of short answers, then its reasons across the
+    box: the evidence, each protection, and once, last, the flags that free
+    it. The path is in the JSON, whose `why` keeps the reasons on one line."""
     world.commit(".gitignore", ".env\n")
     idle = world.worktree("idle")
     (idle / "README").write_text("saved\n")
     world.git("stash", "push", "--quiet", "-m", "saved", at=idle)
-    every = "pass --delete empty --delete stashes"
     reasons = [
         "its tip is on the head ref's first-parent history",
-        f"its branch has stashes; {every}",
-        f"the branch is empty; {every}",
+        "its branch has stashes",
+        "the branch is empty",
     ]
+    needs = "--delete empty --delete stashes"
 
     p = run(world, "gw prune", "--table")
     assert p.returncode == 0, p.stderr
-    lines = p.stdout.splitlines()
-    at = next(i for i, line in enumerate(lines) if line.startswith("idle "))
-    column = lines[0].index("WHY")
-    assert lines[at][column:] == reasons[0]
-    assert [line[column:] for line in lines[at + 1 : at + 3]] == reasons[1:]
-    assert all(not line[:column].strip() for line in lines[at + 1 : at + 3])
+    lines = p.stdout[: p.stdout.index("\n\n")].splitlines()
+    assert len({len(line) for line in lines}) == 1, p.stdout
+    assert [cell.strip() for cell in lines[1].strip("|").split("|")] == [
+        "BRANCH",
+        "VERDICT",
+        "REASON",
+        "ELIGIBLE",
+    ]
+    at = next(i for i, line in enumerate(lines) if line.startswith("| idle "))
+    assert [cell.strip() for cell in lines[at].strip("|").split("|")] == [
+        "idle",
+        "keep",
+        "unused",
+        "no",
+    ]
+    assert lines[at + 1].startswith("+-")
+    under = [line.strip("|").strip() for line in lines[at + 2 : at + 6]]
+    assert under == [*reasons, f"needs: {needs}"]
+    assert lines[at + 6].startswith("+-")
+    assert str(idle) not in p.stdout and "PATH" not in p.stdout
 
     p = run(world, "gw prune", "--json")
     (row,) = [v for v in json.loads(p.stdout)["verdicts"] if v["branch"] == "idle"]
-    assert row["why"] == "; ".join(reasons)
+    assert row["path"] == str(idle)
+    assert row["why"] == "; ".join(
+        [reasons[0], *(f"{reason}; pass {needs}" for reason in reasons[1:])]
+    )
 
 
 def test_version_is_a_command_and_not_a_flag(world) -> None:
@@ -910,7 +936,8 @@ def test_branch_stashes_prevent_pruning(world) -> None:
 
     p = run(world, "gw prune", "-y")
     assert p.returncode == 0, p.stderr
-    assert "its branch has stashes; pass --delete stashes" in p.stdout
+    assert "| its branch has stashes " in p.stdout
+    assert "| needs: --delete stashes " in p.stdout
     assert wt.exists()
     # And it did outlive it.
     assert world.git("stash", "list")
@@ -1029,7 +1056,7 @@ def test_ctrl_c_at_every_prompt(world, entry, args, prompt, table) -> None:
     if table:
         assert out.count(b"VERDICT") == 1
         assert b"ELIGIBLE" in out
-        assert all(str(path).encode() in out for path in (world.repo, *paths))
+        assert all(f" {path.parent.name} ".encode() in out for path in paths)
     else:
         assert out == b""
     assert stderr.endswith(prompt + "\n"), stderr
@@ -1710,8 +1737,8 @@ def test_prune_shows_full_assessment_before_confirmation(world, quiet):
         assert ready, "the assessment table must be visible before answering"
         table = os.read(proc.stdout.fileno(), 65536)
         assert b"VERDICT" in table and b"ELIGIBLE" in table
-        for path in (world.repo, finished, empty):
-            assert str(path).encode() in table, table.decode()
+        for name in ("main", "finished", "empty"):
+            assert f" {name} ".encode() in table, table.decode()
         assert b"remove" in table and b"empty" in table
         os.write(parent, b"n\n")
         stdout, stderr = proc.communicate(timeout=30)
@@ -1747,8 +1774,10 @@ def test_prune_list_stdout_terminal_has_no_colour(world, flags):
     finished = world.merged_worktree("finished")
     code, out = run_with_a_terminal_on_stdout(world, "gw prune", *flags)
     assert code == 0, out
-    assert "VERDICT" in out and str(finished) in out
+    assert "VERDICT" in out and " finished " in out
     assert "\033[" not in out
+    # --table is what a script reads, so its rules are ASCII on a terminal too.
+    assert out.lstrip().startswith("+-") and "│" not in out
     assert finished.exists() == ("--yes" not in flags)
 
 
@@ -1756,7 +1785,7 @@ def test_prune_only_assesses_on_terminal(world):
     finished = world.merged_worktree("finished")
     code, out = run_on_a_terminal(world, "gw prune", "--only", "remove", answer="y\n")
     assert code == 0, out
-    assert str(finished) in out and "VERDICT" in out
+    assert " finished " in out and "VERDICT" in out
     assert "[y/N]" not in out
     assert "git branch finished " not in out
     assert finished.exists()
@@ -1777,7 +1806,7 @@ def test_prune_verbose_assessment_keeps_metadata_and_state(world, network, mode,
     if "--json" in mode:
         assert any(v["eligible"] for v in json.loads(result.stdout)["verdicts"])
     else:
-        assert "VERDICT" in result.stdout and str(path) in result.stdout
+        assert "VERDICT" in result.stdout and " done " in result.stdout
 
 
 @pytest.mark.parametrize("entry,prefix", [("gw prune", ()), ("gw", ("prune",))])
@@ -1823,16 +1852,16 @@ def test_prune_metadata_on_terminal_uses_explicit_approval(world, mode, approved
     assert cache.read_bytes() == b'{"sentinel": true}\n'
     if approved:
         assert not finished.exists()
-        assert "restore with: git branch finished " in out
+        assert re.search(r"restore with:\r?\n +git branch finished ", out), out
     else:
         assert snapshot(finished) == finished_before
         assert snapshot(world.repo) == repo_before
         assert world.git("show-ref") == refs
         assert world.git("worktree", "list", "--porcelain") == records
         # The disclosure, not the JSON row's `undo`, which carries the same words.
-        assert "restore with: git branch finished " not in out
+        assert not re.search(r"restore with:\r?\n +git branch finished ", out), out
     if mode == "--table":
-        assert "VERDICT" in out and str(finished) in out
+        assert "VERDICT" in out and " finished " in out
     else:
         if approved:
             out = out[out.index("{\n") :]

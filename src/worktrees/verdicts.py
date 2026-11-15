@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from . import prune
     from .prune import HeadState, Snapshot
 
 from . import merged, progress
@@ -92,6 +93,8 @@ class Verdict:
         self.proof = proof
         self.request = request
         self.protections = protections or []
+        # The same protections as facts, for a table to lay out.
+        self.facts: list[prune.Fact] = []
         self.stashes = stashes or []
         self.eligible = False
         # Every --delete value an ineligible row needs; empty when no value
@@ -367,6 +370,7 @@ def assess(
             stashes=stashes,
             reason=reason,
         )
+        row.facts = standing(granted)
         row.permissions = permissions
         row.keep_branch = keep_branch
         row.eligible = eligible(granted)

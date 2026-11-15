@@ -154,29 +154,38 @@ def _refuse_ambiguous(found: list[R.Worktree]) -> None:
         )
 
 
+def _records(
+    head: Row, rows: list[render.Record], ink: render.Ink | None = None
+) -> str:
+    """A box of records, as wide as the terminal the stream is on allows."""
+    stream = sys.stderr if ink is render.err else sys.stdout
+    return render.records(head, rows, render.columns(stream), render.ruled(stream), ink)
+
+
 def _verdict_table(rows: list[verdicts.Verdict]) -> str:
-    """The assessment table for worktree previews and pruning."""
+    """The assessment for worktree previews and pruning: each worktree's short
+    answers on one line and its reasons under them. The path is in --json."""
+    from . import prune
 
     head: Row = (
         Cell("BRANCH", BOLD),
-        Cell("PATH", BOLD),
         Cell("VERDICT", BOLD),
         Cell("REASON", BOLD),
         Cell("ELIGIBLE", BOLD),
-        Cell("WHY", BOLD),
     )
-    body: list[Row] = [
+    body: list[render.Record] = [
         (
-            Cell(v.label, render.BRANCH),
-            Cell(v.path, DIM),
-            Cell(v.verdict, render.VERDICT.get(v.verdict, "")),
-            Cell(v.reason),
-            Cell("yes" if v.eligible else "no"),
-            Cell("\n".join(v.reasons)),
+            (
+                Cell(v.label, render.BRANCH),
+                Cell(v.verdict, render.VERDICT.get(v.verdict, "")),
+                Cell(v.reason),
+                Cell("yes" if v.eligible else "no"),
+            ),
+            prune.details(v.evidence, v.facts, v.needs),
         )
         for v in rows
     ]
-    return table([head, *body])
+    return _records(head, body)
 
 
 def _verdict_data(rows: list[verdicts.Verdict]) -> list[dict]:
@@ -210,22 +219,44 @@ def _counted(rows: list[verdicts.Verdict]) -> str:
 
 
 def _note_needs(args: argparse.Namespace, rows: list[verdicts.Verdict]) -> None:
-    """Name the command that makes the rows only a permission holds back eligible.
+    """Say which command makes the rows only a permission holds back eligible.
 
-    The command keeps the values already passed, so running it loses none.
+    The command stands on a line of its own, since it takes no names, and it
+    keeps the values already passed, so running it loses none.
     """
+    import textwrap
+
     from . import prune
 
     held = [v for v in rows if v.needs]
     if not held:
         return
     values = {value for v in held for value in v.needs} | args.permissions
-    names = ", ".join(render.branch(v.label) for v in held)
-    _err(
-        render.note(
-            f"gw prune {prune.delete_flags(sorted(values))} makes {names} eligible"
-        )
+    one = len(held) == 1
+    intro = (
+        "1 worktree is held back only by a permission. To make it eligible, run:"
+        if one
+        else f"{len(held)} worktrees are held back only by a permission. "
+        "To make them eligible, run:"
     )
+    # Wrapped as plain names and painted after, so a code is never counted.
+    width = render.columns(sys.stderr)
+    names = textwrap.wrap(
+        ", ".join(v.label for v in held),
+        max((width or 10**6) - 9, 20),
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+    known = sorted({v.label for v in held}, key=len, reverse=True)
+    listed = [
+        ", ".join(render.branch(n) if n in known else n for n in line.split(", "))
+        for line in names
+    ]
+    frees = ["frees: " + listed[0], *("       " + line for line in listed[1:])]
+    command = render.command(f"gw prune {prune.delete_flags(sorted(values))}")
+    _err("")
+    _err(render.note("\n".join([intro, "", f"    {command}", "", *frees])))
+    _err("")
 
 
 def add_status_flags(p: argparse.ArgumentParser) -> None:
@@ -506,6 +537,7 @@ def run_prune(args: argparse.Namespace) -> int:
 
     if args.table:
         render.out.on = False
+        render.plain = True
     if args.only or (
         not args.yes and (args.json or args.table or not sys.stdin.isatty())
     ):
@@ -1319,6 +1351,7 @@ def _remove_preview(args: argparse.Namespace, rows: list[verdicts.Verdict]) -> i
         return 0
     if args.table:
         render.out.on = False
+        render.plain = True
     print(_verdict_table(rows))
     if args.quiet:
         return 0
