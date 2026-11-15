@@ -545,6 +545,39 @@ pipeline whose parents
 are the current head and the target's tip. `ci.wait` takes its clock and
 sleep as arguments, so its tests run in-process without waiting.
 
+## The audit log is appended, never edited
+
+`audit.py` writes one JSON line per event to `audit-YYYY-MM.jsonl` under
+`$XDG_STATE_HOME/worktrees`, or `WORKTREES_AUDIT_DIR`. Each line is one
+`os.write` on an `O_APPEND` descriptor, so no lock is needed between
+processes and nothing here seeks, truncates, renames or deletes a file. A
+monthly name is what makes that hold: rotation by size would need a rename.
+
+Recording runs between `audit.begin` and `audit.end`, which `cli.main` calls
+around `_command`. Outside the pair every function returns at once, so a test
+or a caller that imports the package and runs a spec writes nothing. Help,
+`--explain` and anything with `--complete` return before `begin`.
+
+Two places see every process: the `@git` wrapper and `forge._run`. Each
+times the run and calls `audit.ran`, filed as `reads`, `mutating` or
+`forge`; `WORKTREES_AUDIT` turns each off by name and `off` turns off the
+log. A spec holding `fetch` is filed as mutating though it is not declared
+`mutates`. What a process printed is kept only when it changes something or
+failed. `audit.scrub` takes the user and password out of any URL before a
+value is written.
+
+`prune.audit_proposed` runs in `prune.plan` and `prune.audit_outcome` after
+`worktree.remove` and `branches.delete`, the second also when the recheck
+refuses. They build `undo` from the snapshot and from what the outcome says
+went, so a retained branch has no restore line. They ask git for the remote
+only while the log is on. `Moved` carries short shas, so `_audit_moved`
+resolves both ends before it writes one.
+
+A write that fails turns recording off for the rest of the run and warns
+once through `progress.line`. `conftest.ENV` and an autouse fixture set
+`WORKTREES_AUDIT=off`; `tests/test_audit.py` turns it on at a directory of
+its own. [Audit log](docs/REFERENCE.md#audit-log) lists the events.
+
 ## Every git command is one spec
 
 The spec is the command as you would type it, with `$name` where a value goes.

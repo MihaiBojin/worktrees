@@ -567,6 +567,25 @@ gw prune --json | jq '.verdicts[] | select(.eligible)'
 gw list --json | jq -r '.worktrees[].path'
 ```
 
+## Audit log
+
+Each command appends what it did, one JSON object per line, to
+`~/.local/state/worktrees/audit-YYYY-MM.jsonl`: the command as typed, every
+`git`, `gh` and `glab` process with its exit code and duration, and each
+removal with the full SHA and the commands that undo it. Lines are only ever
+appended, and no file is ever deleted.
+
+```console
+$ jq -c 'select(.event == "removal.outcome") | {ts, host, branch, result, undo}' \
+    ~/.local/state/worktrees/audit-*.jsonl
+$ jq -c 'select(.event == "exec" and .mutates) | {ts, ms, code, argv}' \
+    ~/.local/state/worktrees/audit-*.jsonl
+```
+
+`WORKTREES_AUDIT=reads=off` leaves out read-only git commands,
+`WORKTREES_AUDIT=off` turns the log off, and `WORKTREES_AUDIT_DIR` moves it.
+[The reference](docs/REFERENCE.md#audit-log) lists every event and field.
+
 ## Migration
 
 | Removed interface | Current interface |

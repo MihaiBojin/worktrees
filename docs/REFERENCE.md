@@ -178,6 +178,76 @@ remote's new tags and the sync cache, and nothing else. Pruning
 JSON with `--yes` includes the assessment verdicts and the actual removed,
 failed and per-target outcomes in one object with head and sync state.
 
+## Audit log
+
+Every command but help, `--explain` and completion appends what it did to
+`audit-YYYY-MM.jsonl`, by UTC month, in `$XDG_STATE_HOME/worktrees`, which
+is `~/.local/state/worktrees` when that is unset. `WORKTREES_AUDIT_DIR`
+names another directory. One file holds every repository; each event names
+the directory it ran in.
+
+A line is one JSON object, written by one `write` to a descriptor opened
+with `O_APPEND`. Nothing seeks, truncates, renames or deletes a file, so
+commands running side by side interleave whole lines and an earlier line is
+never changed. The directory is created `0700` and each file `0600`. No file
+is ever removed: retention is yours, by month.
+
+Every event carries `v` (1), `ts` in UTC to the millisecond, `run`, which
+one invocation's events share, `seq`, counted from 1 within the run,
+`event`, `user`, `host`, `pid`, `version` and `cwd`.
+
+| event | when | fields |
+| --- | --- | --- |
+| `invocation.start` | a command begins | `argv` as typed, `records`, `terminal` |
+| `exec` | a `git`, `gh` or `glab` process ended | `tool`, `argv`, `code`, `ok`, `ms`, `mutates`, and `out` and `err` when it changes something or failed |
+| `removal.proposed` | a removal is disclosed, before any answer | the target, `deletes`, `undo`, `recovery` |
+| `removal.outcome` | an approved removal was tried | the target, `result`, each step's outcome, `undo`, `recovery` |
+| `fast-forward.outcome` | `gw fast-forward` decided | its `--json` result, `previous_full_sha`, `full_sha`, `undo` |
+| `merge.outcome` | `gw merge` returned | `number`, `head` and its `--json` result |
+| `invocation.end` | the command ends | `code`, `ms`, and `error` after a refusal or failure |
+
+An `exec` whose `ok` is true exited with a code its caller takes as an
+answer, which for some reads includes 1 or 128. `code` is null for a forge
+command that never started or ran out of time. `out` and `err` keep the
+first 4000 characters. A `git fetch` counts as changing something, since it
+moves and prunes remote-tracking refs, and so does a forge call whose
+`--method` is `PUT`, `POST`, `PATCH` or `DELETE`.
+
+A removal's target is its `branch`, full `sha`, `path`, `reason`, `proof`,
+`evidence`, the forge `request` the assessment used, `permissions`, `head`,
+`notices` and `repository`: the common directory, the default remote and its
+URL. `result` is `completed`, `partial` when a step failed after another
+took effect, or `refused` when nothing was removed; `worktreeRemoved`,
+`branchRemoved`, `stashesDropped`, `stashesRetained`, `stashesAbsent`,
+`ignoredDeleted` and `failed` say which. A `removal.proposed` with no
+`removal.outcome` in the same run was declined or refused before it started.
+
+`undo` holds shell-quoted commands for what the event took, or would take:
+`git branch NAME SHA`, `git stash store -m SUBJECT SHA`, and
+`git branch rescue-SHORT SHA` for a commit only a deleted reflog reached or
+for where a rebased branch stood. They work until Git garbage collection
+prunes the commit: recording a SHA protects no object. Ignored and untracked
+files have no command, and `ignoredDeleted` lists the first.
+
+`WORKTREES_AUDIT` chooses what is recorded. Unset, empty or `all` records
+everything, and `off` records nothing. Otherwise it is a comma-separated
+list of `reads=on|off`, `mutating=on|off` and `forge=on|off`, which file
+each `exec`: a read-only git command, a git command that changes something,
+and a `gh` or `glab` call. A category not named stays on, so `reads=off`
+leaves the invocation, every change and every outcome. Any other value is a
+usage error at exit 2.
+
+The user and password inside a URL are removed from every argument, output
+and message before it is written; `git@host:path` is kept as it is. A
+command's arguments are otherwise recorded as typed, and so is a path.
+
+A log that cannot be written is one warning on stderr, under `--quiet` and
+`--json` too, and the command goes on unrecorded. Nothing reaches stdout.
+
+The agent plugin's skills run `git push`, `gh pr create` and
+`glab mr merge` themselves, so those are not in the log; every `gw` command
+a skill runs is.
+
 ## Sync cache
 
 Only sync invokes `git fetch`, `git remote set-head`, `gh` or `glab`:

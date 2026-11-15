@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, NamedTuple
 if TYPE_CHECKING:
     from . import branches
 
-from . import render
+from . import audit, render
 from . import repo as R
-from .git import Refused, git
+from .git import GitError, Refused, git
 from .verdicts import REMOVE as REMOVE
 from .verdicts import Verdict, restore_command
 
@@ -244,6 +244,110 @@ def report(outcome: Outcome, say: Callable[[str], None]) -> None:
         say(render.fail(failure))
 
 
+_RECOVERY = (
+    "a branch, stash or reflog commit comes back with its command until "
+    "git gc prunes the commit; ignored and untracked files do not come back"
+)
+
+
+def _repository(repo: str | os.PathLike[str] | None) -> dict:
+    """Which repository an audit event is about, its remote URL scrubbed."""
+    try:
+        name = R.remote(repo)
+        url = R.config_get(f"remote.{name}.url", repo=repo).value if name else ""
+        return {
+            "commonDir": R.shared_dir(repo),
+            "remote": name,
+            "url": audit.scrub(url),
+        }
+    except GitError:
+        return {}
+
+
+def _target(v: Verdict | branches.Verdict, snapshot: Snapshot | None, repo) -> dict:
+    """What an audit event says of one target, as it was assessed."""
+    fields: dict = {
+        "branch": v.branch,
+        "sha": snapshot.sha if snapshot else v.sha,
+        "path": snapshot.path if snapshot else "",
+        "reason": v.reason,
+        "proof": v.proof,
+        "evidence": v.evidence,
+        "request": v.request,
+        "permissions": sorted(v.permissions),
+        "repository": _repository(repo),
+    }
+    if snapshot:
+        fields["head"] = {"branch": snapshot.head.branch, "sha": snapshot.head.sha}
+        fields["notices"] = list(snapshot.head.notices)
+    return fields
+
+
+def _undo(snapshot: Snapshot, branch: bool, stashes: Iterable[str]) -> list[str]:
+    """The shell-quoted lines that put back what a removal takes."""
+    subjects = dict(snapshot.stashes)
+    lines = [f"git branch rescue-{sha[:7]} {sha}" for sha, _ in snapshot.reflog]
+    if branch and snapshot.branch:
+        lines.append(restore_command(snapshot.branch, snapshot.sha))
+    lines += [
+        f"git stash store -m {shlex.quote(subjects[sha])} {sha}"
+        for sha in stashes
+        if sha in subjects
+    ]
+    return lines
+
+
+def audit_proposed(v: Verdict | branches.Verdict, keep_branch: bool, repo=None) -> None:
+    """Record a removal as disclosed, before anyone has agreed to it."""
+    snapshot = v.snapshot
+    if not audit.active() or snapshot is None:
+        return
+    drops = bool(v.branch) and not keep_branch
+    audit.record(
+        "removal.proposed",
+        **_target(v, snapshot, repo),
+        keepBranch=keep_branch,
+        deletes={
+            "worktree": snapshot.path,
+            "branch": v.branch if drops else "",
+            "stashes": [sha for sha, _ in snapshot.stashes] if drops else [],
+            "reflog": [sha for sha, _ in snapshot.reflog],
+            "ignored": list(snapshot.ignored_groups),
+        },
+        undo=_undo(snapshot, drops, [sha for sha, _ in snapshot.stashes]),
+        recovery=_RECOVERY,
+    )
+
+
+def audit_outcome(v: Verdict | branches.Verdict, outcome: Outcome, repo=None) -> None:
+    """Record what a removal did, each step on its own: a removed worktree
+    beside a retained branch is `partial`, and neither is `refused`."""
+    if not audit.active():
+        return
+    snapshot = v.snapshot
+    took = outcome.worktree_removed or outcome.branch_removed or bool(outcome.dropped)
+    result = "completed" if not outcome.failed else "partial" if took else "refused"
+    audit.record(
+        "removal.outcome",
+        **_target(v, snapshot, repo),
+        result=result,
+        keepBranch=bool(getattr(v, "keep_branch", False)),
+        worktreeRemoved=outcome.worktree_removed,
+        branchRemoved=outcome.branch_removed,
+        stashesDropped=list(outcome.dropped),
+        stashesRetained=list(outcome.retained),
+        stashesAbsent=list(outcome.skipped),
+        ignoredDeleted=list(snapshot.ignored_groups)
+        if snapshot and outcome.worktree_removed
+        else [],
+        failed=[audit.scrub(f) for f in outcome.failed],
+        undo=_undo(snapshot, outcome.branch_removed, outcome.dropped)
+        if snapshot and took
+        else [],
+        recovery=_RECOVERY,
+    )
+
+
 def removable(verdicts: list[Verdict]) -> list[Verdict]:
     """Only rows whose proof and protections permit deletion."""
     return [v for v in verdicts if v.eligible]
@@ -387,6 +491,7 @@ def plan(
         snapshot = v.snapshot
         if snapshot is None:
             raise Refused("no assessed deletion snapshot")
+        audit_proposed(v, keep_branch, repo)
         for notice in snapshot.head.notices:
             say(render.note(notice))
         say(render.branch(v.branch or "(detached)"))

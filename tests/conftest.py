@@ -53,6 +53,8 @@ PATH = _path()
 # Fixed dates make the first commit's sha a constant, so a test may assert on
 # a literal one. WORKTREES_OFFLINE stops a command syncing before it runs,
 # which would fetch a remote at github.com for real; `Network.env` clears it.
+# WORKTREES_AUDIT=off keeps a test from writing an audit log it never reads;
+# tests/test_audit.py turns it on, at a directory of its own.
 ENV = {
     "GIT_AUTHOR_NAME": "T",
     "GIT_AUTHOR_EMAIL": "t@localhost",
@@ -61,6 +63,7 @@ ENV = {
     "GIT_COMMITTER_EMAIL": "t@localhost",
     "GIT_COMMITTER_DATE": "@1700000000 +0000",
     "WORKTREES_OFFLINE": "1",
+    "WORKTREES_AUDIT": "off",
 }
 
 
@@ -190,6 +193,13 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> World:
     w.commit("README")
     monkeypatch.chdir(w.repo)
     return w
+
+
+@pytest.fixture(autouse=True)
+def no_audit_log(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test that calls `cli.main` in-process, with or without `world`,
+    writes nothing under the home directory of whoever runs the suite."""
+    monkeypatch.setenv("WORKTREES_AUDIT", "off")
 
 
 @pytest.fixture(autouse=True)

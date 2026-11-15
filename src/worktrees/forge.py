@@ -4,10 +4,32 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 
+from . import audit
 from .git import options
 
 REDIRECTS = ("GH_REPO", "GITLAB_REPO")
+_WRITES = ("PUT", "POST", "PATCH", "DELETE")
+
+
+def _audit(
+    argv: list[str], code: int | None, began: float, stdout: str, stderr: str
+) -> None:
+    if not audit.active():
+        return
+    at = argv.index("--method") + 1 if "--method" in argv else len(argv)
+    audit.ran(
+        argv[0],
+        argv,
+        code,
+        began,
+        category="forge",
+        mutates=argv[at : at + 1] in ([m] for m in _WRITES),
+        ok=code == 0,
+        out=stdout,
+        err=stderr,
+    )
 
 
 def _trace(argv: list[str], code: int, stdout: str, stderr: str) -> None:
@@ -23,6 +45,7 @@ def _run(
     """Run a forge command with repository redirects removed, or None when it
     could not start or ran out of time."""
     options.log.append(tuple(argv))
+    began = time.monotonic()
     try:
         proc = subprocess.run(
             argv,
@@ -35,7 +58,10 @@ def _run(
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         _trace(argv, 1, "", str(exc))
+        # No exit code: it never started, or ran out of time.
+        _audit(argv, None, began, "", str(exc))
         return None
+    _audit(argv, proc.returncode, began, proc.stdout, proc.stderr)
     _trace(argv, proc.returncode, proc.stdout, proc.stderr)
     return proc
 

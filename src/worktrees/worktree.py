@@ -160,6 +160,7 @@ def remove(chosen: Verdict, say, repo=None) -> prune.Outcome:
             prune.delete_ref(snapshot, outcome, main)
     except (GitError, Refused) as exc:
         outcome.failed.append(str(exc))
+    prune.audit_outcome(chosen, outcome, main)
     prune.report(outcome, say)
     return outcome
 
