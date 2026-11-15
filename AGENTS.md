@@ -188,6 +188,14 @@ A completion asks the CLI for its candidates rather than deriving them, and
 by a tab, which fish reads directly and zsh splits for `_describe`. Hidden from
 `--help`, because a person has `gw --help` and `--table` for the same answers.
 
+Every TAB runs one, so `main()` answers the exact words the completion files
+send before it builds a parser: `gw list`, `gw remove`, `gw branch`,
+`gw branch status` and `gw branch prune`, each followed by `--complete`.
+Building the argparse tree costs more than the answer, and on Python 3.14 a
+parser imports `_colorize` as it is made. Any other words reach the parser,
+so a typo still gets its usage error. The output is the same either way, and
+`tests/test_completions.py` drives it through both shells.
+
 No shell file holds a candidate or a rank. What `completions/gw.fish` and
 `_gw` do carry is each subcommand's flags, and `tests/test_completions.py`
 diffs those against `gw <command> --help` in both directions for both shells:

@@ -41,6 +41,13 @@ def _assessment_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--complete", action="store_true", help=argparse.SUPPRESS)
 
 
+def complete() -> int:
+    """Every local branch and its tip, for `gw branch status` and `prune`."""
+    for name, (sha, _) in branches.local_refs().items():
+        print(f"{name}\t{sha[:12]}")
+    return 0
+
+
 def delete_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("-v", "--verbose", action="store_true", help="print every command")
     _add_delete_flags(p)
@@ -65,8 +72,7 @@ def _prepare(
 ) -> tuple[str, str, str, str, list[branches.Verdict], set[str]] | None:
     options.verbose = args.verbose
     if args.complete:
-        for name, (sha, _) in branches.local_refs().items():
-            print(f"{name}\t{sha[:12]}")
+        complete()
         return None
     if args.explain:
         _explain()

@@ -129,6 +129,48 @@ def test_complete_lists_every_command_and_shorthand(world) -> None:
     assert all("\t" in line for line in p.stdout.splitlines())
 
 
+@pytest.mark.parametrize(
+    ("words", "assesses"),
+    [
+        ("list", False),
+        ("remove", False),
+        ("branch", False),
+        ("branch status", True),
+        ("branch prune", True),
+    ],
+)
+def test_a_completion_builds_no_parser(world, words: str, assesses: bool) -> None:
+    """Each TAB runs one, so it is answered before argparse is built.
+
+    On Python 3.14 a parser imports `_colorize` as it is made, and the parser
+    tree with `verdicts` behind it cost a worktree completion half its time.
+    """
+    probe = (
+        "import argparse, sys\n"
+        "built = []\n"
+        "made = argparse.ArgumentParser.__init__\n"
+        "def init(self, *a, **k):\n"
+        "    built.append(1)\n"
+        "    made(self, *a, **k)\n"
+        "argparse.ArgumentParser.__init__ = init\n"
+        "from worktrees.cli import gw\n"
+        "code = gw()\n"
+        "print(bool(built), 'worktrees.verdicts' in sys.modules, file=sys.stderr)\n"
+        "raise SystemExit(code)\n"
+    )
+    world.worktree("topic")
+    p = subprocess.run(
+        [sys.executable, "-c", probe, *words.split(), "--complete"],
+        cwd=str(world.repo),
+        capture_output=True,
+        text=True,
+        env=env_for(world),
+    )
+    assert p.returncode == 0, p.stderr
+    assert p.stdout
+    assert p.stderr.split() == ["False", str(assesses)]
+
+
 def _complete(entry: str, world, at=None) -> list[str]:
     p = subprocess.run(
         argv(entry, "--complete"),
