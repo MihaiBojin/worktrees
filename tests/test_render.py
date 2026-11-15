@@ -237,3 +237,79 @@ def test_a_prompt_is_a_bold_question_and_dim_answers(stderr_colour) -> None:
     assert render.ask("remove 1?", "[y/N]") == (
         f"{render.BOLD}remove 1?{render.RESET} {render.DIM}[y/N]{render.RESET} "
     )
+
+
+HEAD = ("BRANCH", "VERDICT")
+LONG = "pull request #182 was closed without merging this tip of the branch"
+
+
+def test_records_wrap_prose_to_the_width_and_never_break_a_command() -> None:
+    """A reason wraps to the terminal; a command is a Cell and stays whole,
+    widening the box when it has to, so it pastes back."""
+    from worktrees.render import Cell, records
+
+    command = "    git show 54a199e1f797"
+    drawn = records(HEAD, [(("topic", "keep"), [LONG, Cell(command)])], width=40)
+    lines = drawn.splitlines()
+    assert {len(line) for line in lines} == {40}
+    assert lines[5:9] == [
+        "| pull request #182 was closed without |",
+        "|   merging this tip of the branch     |",
+        "|     git show 54a199e1f797            |",
+        "+--------------------------------------+",
+    ]
+
+    tight = records(HEAD, [(("topic", "keep"), [LONG, Cell(command)])], width=10)
+    assert command in tight
+    assert len({len(line) for line in tight.splitlines()}) == 1
+
+
+def test_records_off_a_terminal_wrap_nothing() -> None:
+    from worktrees.render import records
+
+    drawn = records(HEAD, [(("topic", "keep"), [LONG])])
+    assert f"| {LONG} |" in drawn.splitlines()
+
+
+def test_records_join_columns_only_where_a_line_has_them() -> None:
+    """Box characters when asked, the last column stretched to the box's
+    edge, and a rule's joints matching the lines above and below it."""
+    from worktrees.render import records
+
+    drawn = records(
+        HEAD, [(("one", "keep"), ["a longer reason than both"]), (("two", "keep"), [])]
+    )
+    assert drawn == (
+        "+--------+------------------+\n"
+        "| BRANCH | VERDICT          |\n"
+        "+--------+------------------+\n"
+        "| one    | keep             |\n"
+        "+--------+------------------+\n"
+        "| a longer reason than both |\n"
+        "+--------+------------------+\n"
+        "| two    | keep             |\n"
+        "+--------+------------------+"
+    )
+    boxed = records(HEAD, [(("one", "keep"), ["why"])], lines=True).splitlines()
+    assert boxed[0] == "┌────────┬─────────┐"
+    assert boxed[2] == "├────────┼─────────┤"
+    assert boxed[4] == "├────────┴─────────┤"
+    assert boxed[-1] == "└──────────────────┘"
+
+
+def test_a_reflog_fact_puts_each_command_on_a_line_of_its_own() -> None:
+    from worktrees import prune
+
+    fact = prune.reflog_fact([("a" * 40, "one"), ("b" * 40, "two")])
+    shown = prune.details("merged", [fact], ("reflog",))
+    assert [line if isinstance(line, str) else line.text for line in shown] == [
+        "merged",
+        "its reflog alone holds 2 commits the head branch lacks; see each with:",
+        "    git show aaaaaaaaaaaa",
+        "    git show bbbbbbbbbbbb",
+        "needs: --delete reflog",
+    ]
+    # The JSON keeps the one line the prune skill reads.
+    assert fact.text.endswith(
+        "see each with git show aaaaaaaaaaaa and git show bbbbbbbbbbbb"
+    )

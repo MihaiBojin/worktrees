@@ -16,7 +16,9 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import shutil
 import sys
+import textwrap
 from collections.abc import Sequence
 from typing import IO
 
@@ -129,6 +131,124 @@ def table(rows: list[Row], ink: Ink | None = None) -> str:
             padded = [c.painted(widths[i], ink) for i, c in enumerate(cells[:-1])]
             lines.append("  ".join([*padded, cells[-1].painted(0, ink)]).rstrip())
     return "\n".join(lines)
+
+
+# Set by --table, which is what a script reads: no wrapping and no box
+# characters, on a terminal too.
+plain = False
+
+
+def columns(stream: IO[str]) -> int | None:
+    """The width a terminal gives this stream, or None when it is not one.
+
+    Nothing wraps off a terminal: a pipe or a file gets each line whole.
+    """
+    if plain:
+        return None
+    try:
+        if not stream.isatty():
+            return None
+    except (AttributeError, ValueError):
+        return None
+    return shutil.get_terminal_size().columns
+
+
+def ruled(stream: IO[str]) -> bool:
+    """Would box-drawing characters on this stream reach something that draws
+    them? A terminal that takes UTF-8; anything else gets `+`, `-` and `|`."""
+    if plain or os.environ.get("TERM", "") == "dumb":
+        return False
+    try:
+        return (
+            stream.isatty() and "utf" in (getattr(stream, "encoding", "") or "").lower()
+        )
+    except (AttributeError, ValueError):
+        return False
+
+
+# Corners and joints row by row, then the two strokes.
+_RULES = {True: "┌┬┐├┼┤└┴┘─│", False: "+++++++++-|"}
+# A reason shorter than this is not worth wrapping to.
+_NARROWEST = 24
+
+Record = tuple[Row, Sequence["str | Cell"]]
+
+
+def records(
+    head: Row,
+    rows: Sequence[Record],
+    width: int | None = None,
+    lines: bool = False,
+    ink: Ink | None = None,
+) -> str:
+    """A box of records: each a line of short cells under `head`, then its
+    details across the full width of the box.
+
+    A detail that is a string is prose and wraps to `width`, the terminal's;
+    one that is a Cell is a command or a path and is never broken, so it
+    pastes back whole. With no `width` nothing wraps. The last column
+    stretches so both kinds of line end at the same edge. `lines` draws with
+    box characters, and without it with `+`, `-` and `|`.
+    """
+    ink = ink or out
+    tl, tm, tr, ml, mm, mr, bl, bm, br, dash, bar = tuple(_RULES[lines])
+    grid = [[c if isinstance(c, Cell) else Cell(c) for c in row] for row in [head]]
+    grid += [[c if isinstance(c, Cell) else Cell(c) for c in row] for row, _ in rows]
+    widths = [max(len(row[i].text) for row in grid) for i in range(len(head))]
+    natural = sum(widths) + 3 * (len(widths) - 1)
+
+    details = [d for _, found in rows for d in found]
+    # What cannot be broken sets the least the box can be: a whole Cell, or
+    # the longest word of a line of prose.
+    fixed = max(
+        [natural]
+        + [len(d.text) for d in details if isinstance(d, Cell)]
+        + [len(w) + 2 for d in details if isinstance(d, str) for w in d.split()]
+    )
+    prose = max([len(d) for d in details if isinstance(d, str)], default=0)
+    limit = None if width is None else max(width - 4, _NARROWEST)
+    inner = max(fixed, prose if limit is None else min(prose, limit))
+    widths[-1] += inner - natural
+
+    def rule(left: str, joint: str, right: str) -> str:
+        return ink(left + joint.join(dash * (w + 2) for w in widths) + right, DIM)
+
+    edge = ink(bar, DIM)
+
+    def short(cells: list[Cell]) -> str:
+        painted = [c.painted(widths[i], ink) for i, c in enumerate(cells)]
+        return f"{edge} " + f" {edge} ".join(painted) + f" {edge}"
+
+    def wide(cell: Cell) -> str:
+        return f"{edge} {cell.painted(inner, ink)} {edge}"
+
+    result = [rule(tl, tm, tr), short(grid[0])]
+    open_below = True  # whether the line above ends in column joints
+    for cells, (_, found) in zip(grid[1:], rows, strict=True):
+        result.append(rule(ml, mm if open_below else tm, mr))
+        result.append(short(cells))
+        open_below = True
+        wrapped: list[Cell] = []
+        for detail in found:
+            if isinstance(detail, Cell):
+                wrapped.append(detail)
+                continue
+            wrapped += [
+                Cell(line)
+                for line in textwrap.wrap(
+                    detail,
+                    inner,
+                    subsequent_indent="  ",
+                    break_long_words=False,
+                    break_on_hyphens=False,
+                )
+            ]
+        if wrapped:
+            result.append(rule(ml, bm, mr))
+            result += [wide(cell) for cell in wrapped]
+            open_below = False
+    result.append(rule(bl, bm if open_below else dash, br))
+    return "\n".join(result)
 
 
 def _lines(cell: Cell) -> list[Cell]:
@@ -263,7 +383,10 @@ def _message(
     if base:
         head = base + head.replace(RESET, RESET + base) + RESET
     lines = [f"{err(symbol, BOLD + code)} {head}"]
-    lines += [f"  {err(line.replace(RESET, RESET + detail), detail)}" for line in rest]
+    lines += [
+        f"  {err(line.replace(RESET, RESET + detail), detail)}" if line else ""
+        for line in rest
+    ]
     return "\n".join(lines)
 
 
