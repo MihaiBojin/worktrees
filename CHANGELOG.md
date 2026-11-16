@@ -17,6 +17,18 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.12.1 - 2026-11-16
+
+### Changed
+
+`gw prune` rechecks every worktree you approved in one pass, on the same
+threads as the first assessment, then removes them one at a time. In a
+repository where `git status` takes half a minute, removing several
+worktrees no longer waits that long for each one. Each removal still
+refuses a ref an earlier removal moved and a checkout dirtied since, and
+an ignored path written after the batch recheck goes with its worktree.
+`gw remove` rechecks its one target as it removes it, as before.
+
 ## 0.12.0 - 2026-11-16
 
 ### Changed
