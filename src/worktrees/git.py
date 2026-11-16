@@ -22,10 +22,11 @@ import inspect
 import os
 import shlex
 import subprocess
+import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Protocol
 
-from . import progress, render
+from . import audit, progress, render
 from .errors import GitError, MissingObjects, Refused
 
 Argv = tuple[str, ...]
@@ -356,6 +357,9 @@ def git(
         )
     accept = tuple(ok)
     tokens = shlex.split(spec)
+    # A fetch moves remote-tracking refs and prunes them, so the audit log
+    # files it with the commands that change something.
+    writes = mutates or "fetch" in tokens
 
     def decorate(fn: Callable[..., Any]) -> GitCall:
         signature = inspect.signature(fn)
@@ -394,6 +398,7 @@ def git(
 
             options.log.append(tuple(full))
             environ = {**os.environ, **(env or {}), "GIT_NO_LAZY_FETCH": "1"}
+            began = time.monotonic()
             proc = subprocess.run(
                 full,
                 capture_output=True,
@@ -405,6 +410,18 @@ def git(
             )
             stdout = proc.stdout.decode("utf-8", "surrogateescape")
             stderr = proc.stderr.decode("utf-8", "surrogateescape")
+            if audit.active():
+                audit.ran(
+                    "git",
+                    full,
+                    proc.returncode,
+                    began,
+                    category="mutating" if writes else "reads",
+                    mutates=writes,
+                    ok=proc.returncode in accept,
+                    out=stdout,
+                    err=stderr,
+                )
             if options.verbose:
                 # After it ran, so the command and its answer print as one
                 # block even when eight threads are asking at once.

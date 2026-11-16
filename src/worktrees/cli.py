@@ -28,6 +28,22 @@ def _err(text: str) -> None:
     progress.line(text)
 
 
+def _failed(message: str, kind: str) -> None:
+    """Hand the audit log the refusal a command is about to end with, and
+    which of `audit.FAILURES` it is."""
+    from . import audit
+
+    audit.failed(message, kind)
+
+
+def _refuse(message: str, kind: str = "refused") -> None:
+    """Print a refusal the command handles itself, and tell the audit log
+    which kind it is: a handler that only printed would leave the run's end
+    reading as a result the command reached."""
+    _failed(message, kind)
+    _err(render.fail(message))
+
+
 def _warn(text: str) -> None:
     _err(render.warn(text))
 
@@ -697,7 +713,7 @@ def run_new_branch(args: argparse.Namespace) -> int:
             base = new_branch.here() if stack else ""
         started = new_branch.create(args.name, base=base)
     except new_branch.Refusal as exc:
-        _err(render.fail(str(exc)))
+        _refuse(str(exc))
         return 1
 
     if args.json:
@@ -802,12 +818,13 @@ def run_fast_forward(args: argparse.Namespace) -> int:
             live=not sync.offline(),
         )
     except ff.Unfetched as exc:
-        _err(render.fail(f"{exc}\n{_offline_retry(args)}"))
+        _refuse(f"{exc}\n{_offline_retry(args)}")
         return 1
     except new_branch.Refusal as exc:
-        _err(render.fail(str(exc)))
+        _refuse(str(exc))
         return 1
 
+    _audit_moved(moved)
     if args.json:
         print(_json(moved.data(), indent=2))
     if moved.result == ff.CONFLICT:
@@ -826,6 +843,49 @@ def run_fast_forward(args: argparse.Namespace) -> int:
         print(_moved(moved))
         _stashes(moved)
     return 0
+
+
+def _audit_moved(moved: fast_forward.Moved) -> None:
+    """Record where a run left the branch, and the line that keeps the
+    commit it stood on reachable under a name.
+
+    The result carries short shas, which is what a person reads. A log read
+    a month later wants the whole one, so both ends are resolved here.
+    """
+    from . import audit
+
+    if not audit.active():
+        return
+    from . import prune
+
+    def full(short: str) -> str:
+        try:
+            return prune.sha_of(f"{short}^{{commit}}").value if short else ""
+        except GitError:
+            return ""
+
+    was, now = full(moved.previous_sha), full(moved.sha)
+    restore = []
+    if was and was != now:
+        argv = ["git", "branch", f"rescue-{was[:7]}", was]
+        restore.append(
+            {
+                "kind": "previous-tip",
+                "sha": was,
+                "of": moved.previous or moved.branch,
+                "branch": f"rescue-{was[:7]}",
+                "argv": argv,
+                "command": shlex.join(argv),
+            }
+        )
+    audit.record(
+        "fast-forward.outcome",
+        **moved.data(),
+        previous_full_sha=was,
+        full_sha=now,
+        restore=restore,
+        undo=[row["command"] for row in restore],
+    )
 
 
 def _unapplied(moved: fast_forward.Moved) -> None:
@@ -1010,6 +1070,11 @@ def run_merge(args: argparse.Namespace) -> int:
         raise Refused(f"gw merge uses the forge, and {sync.OFFLINE} is set")
     options.verbose = args.verbose
     result = pr_merge.merge(args.number, args.match_head_commit, args.subject, body)
+    from . import audit
+
+    audit.record(
+        "merge.outcome", number=args.number, head=args.match_head_commit, **result
+    )
     if args.json:
         print(_json(result))
     else:
@@ -1060,7 +1125,7 @@ def run_ci(args: argparse.Namespace) -> int:
             progress.say("reading checks")
             snapshot = ci.wait(reader) if args.wait else reader()
     except ci.Unreadable as exc:
-        _err(render.fail(str(exc)))
+        _refuse(str(exc))
         return 1
 
     if snapshot["stale"]:
@@ -1198,7 +1263,7 @@ def run_add(args: argparse.Namespace) -> int:
     try:
         landed = wt_mod.add(args.name, args.base, warn=warn)
     except new_branch.Refusal as exc:
-        _err(render.fail(str(exc)))
+        _refuse(str(exc))
         return 1
     if not args.quiet and not args.json:
         made = "on a new branch" if landed.created else "on the branch already here"
@@ -1237,7 +1302,7 @@ def run_list(args: argparse.Namespace) -> int:
         return 0
 
     if not found:
-        _err(render.fail("no worktree matches"))
+        _refuse("no worktree matches")
         return 1
 
     if args.table or not sys.stdin.isatty():
@@ -1444,12 +1509,10 @@ def run_remove(args: argparse.Namespace) -> int:
     candidates = [by_path[w.path] for w in found if w.path in by_path]
 
     if not candidates:
-        _err(
-            render.fail(
-                "no worktree matches"
-                if args.query
-                else "no worktrees besides the main checkout"
-            )
+        _refuse(
+            "no worktree matches"
+            if args.query
+            else "no worktrees besides the main checkout"
         )
         return 1
 
@@ -1477,7 +1540,7 @@ def run_remove(args: argparse.Namespace) -> int:
 
     if not chosen.eligible:
         reasons = "; ".join(chosen.held_back)
-        _err(render.fail(f"{render.branch(chosen.label)} kept: {reasons}"))
+        _refuse(f"{render.branch(chosen.label)} kept: {reasons}")
         _note_ways_out(args, chosen)
         return 1
 
@@ -1708,12 +1771,15 @@ def _fast_complete(words: list[str]) -> int | None:
     try:
         return answer()
     except KeyboardInterrupt:
+        _failed("", "interrupted")
         _err("")
         return 130
     except Refused as exc:
+        _failed(str(exc), "refused")
         _err(render.fail(str(exc)))
         return 3
     except GitError as exc:
+        _failed(str(exc), "git")
         _err(render.fail(str(exc)))
         return 1
 
@@ -2068,7 +2134,7 @@ def _needs(args: argparse.Namespace, what: str) -> int:
     Both on stderr, since a shell function prints nothing it captured from a
     command that failed.
     """
-    _err(render.fail(f"{args.prog} needs {what}"))
+    _refuse(f"{args.prog} needs {what}", "usage")
     _err("")
     args.parser.print_help(sys.stderr)
     return 2
@@ -2094,17 +2160,60 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
     if args_in == ["--explain"]:
         render.setup()
         return _explain()
+    from . import audit
+
+    render.setup()
+    audit.arrive()
+    code: int | None = None
+    try:
+        code = _command(args_in, prog)
+        return code
+    except SystemExit as exc:
+        # argparse leaves this way: 0 after --help, which is not recorded,
+        # and 2 for a usage error, which left before recording began.
+        code = exc.code if isinstance(exc.code, int) else int(exc.code is not None)
+        if code and not audit.begun():
+            # Nothing began, so argparse refused the words themselves.
+            _audited(prog, args_in, strict=False)
+            audit.failed("", "usage")
+        raise
+    finally:
+        audit.end(code)
+
+
+def _audited(prog: str, words: list[str], *, strict: bool = True) -> bool:
+    """Start the audit log for a command that is going to run or be refused.
+
+    After the words are parsed, so `gw prune --help` and `gw prune --explain`
+    record nothing and print even when `WORKTREES_AUDIT` holds a value it
+    does not take. False when it does and `strict` asks to hear of it; a
+    usage error is already the answer, and says nothing more.
+    """
+    from . import audit
+
+    try:
+        audit.begin(prog, words)
+    except audit.Invalid as exc:
+        if strict:
+            _err(render.fail(str(exc)))
+            return False
+    return True
+
+
+def _command(args_in: list[str], prog: str) -> int:
+    """Run one command; the audit log records what happens in here."""
     if args_in[0] not in _CANONICAL:
         # A worktree is reached through `gw list`, so no name competes with a
         # command or a shorthand.
         render.setup()
         word = shlex.quote(args_in[0])
-        _err(
-            render.fail(
-                f"{prog}: {word} is not a command\n"
-                f"Run: gw list {word} to pick a worktree, or gw --help"
-            )
+        message = (
+            f"{prog}: {word} is not a command\n"
+            f"Run: gw list {word} to pick a worktree, or gw --help"
         )
+        _err(render.fail(message))
+        _audited(prog, args_in, strict=False)
+        _failed(message, "usage")
         return 2
 
     p = _parser(prog, "Git worktree commands that refuse to lose work.")
@@ -2127,6 +2236,10 @@ def main(argv: list[str] | None = None, prog: str = "worktrees") -> int:
 def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
     render.setup()
     args = p.parse_args(argv)
+    # The parsed flags, not the raw words: `--complete` after `--` is a query.
+    meta = getattr(args, "explain", False) or getattr(args, "complete", False)
+    if not meta and not _audited(p.prog, argv):
+        return 2
     # argparse gives a subparser its own prog; rebuild it rather than reach
     # into the private table for it. The alias the caller typed, not the
     # canonical name, so a usage line echoes what they wrote.
@@ -2187,15 +2300,19 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             )
         return code
     except KeyboardInterrupt:
+        _failed("", "interrupted")
         _err("")
         return 130
     except _Stop as exc:
+        _failed(str(exc), "usage" if exc.code == 2 else "refused")
         _err(render.fail(str(exc)))
         return exc.code
     except Refused as exc:
+        _failed(str(exc), "refused")
         _err(render.fail(str(exc)))
         return 3
     except GitError as exc:
+        _failed(str(exc), "git")
         _err(render.fail(str(exc)))
         return 1
 

@@ -210,6 +210,29 @@ def delete(
     first_parents: set[str] | None = None,
 ) -> prune.Outcome:
     """Recheck the approved ref and stashes, then return every cleanup outcome."""
+    try:
+        outcome = _delete(
+            row, head_ref, head_sha, head_branch, remote, ask_forge, first_parents
+        )
+    except (GitError, Refused, ValueError) as exc:
+        # Kept before anything was tried: the audit log hears of it too.
+        refused = prune.Outcome(branch=row.branch, retained=list(row.stashes))
+        refused.failed.append(str(exc))
+        prune.audit_outcome(row, refused, stage="recheck")
+        raise
+    prune.audit_outcome(row, outcome, stage="branch")
+    return outcome
+
+
+def _delete(
+    row: Verdict,
+    head_ref: str,
+    head_sha: str,
+    head_branch: str,
+    remote: str,
+    ask_forge: bool,
+    first_parents: set[str] | None,
+) -> prune.Outcome:
     snapshot = row.snapshot
     if snapshot is None:
         raise Refused("no assessed deletion snapshot")
