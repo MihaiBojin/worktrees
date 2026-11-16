@@ -237,6 +237,8 @@ class Network:
             'if [ "$1" = -C ]; then dir=$2; shift 2; set -- -C "$dir" "$@"; '
             "sub=$3; next=$4; remote=$5; else sub=$1; next=$2; remote=$3; fi\n"
             'if [ "$sub" = fetch ]; then exit "${WT_FETCH_CODE:-0}"; fi\n'
+            # A push never leaves the machine: the remote is at github.com.
+            'if [ "$sub" = push ]; then exit "${WT_PUSH_CODE:-0}"; fi\n'
             'if [ "$sub" = remote ] && [ "$next" = set-head ]; then\n'
             '    if [ -n "$WT_HEAD_CODE" ]; then exit "$WT_HEAD_CODE"; fi\n'
             '    if [ "$1" = -C ]; then set -- -C "$2"; else set --; fi\n'
@@ -304,6 +306,16 @@ class Network:
             "    if isinstance(answers, int): sys.exit(answers)\n"
             "    print(json.dumps(answers))\n"
             "    sys.exit(0)\n"
+            # A write: `$edit` is the exit code of a moved base, and
+            # `$create` the URL of the request opened, or its exit code.
+            "if args[1:2] in (['edit'], ['update']):\n"
+            "    sys.exit(json.loads(responses.read_text()).get('$edit', 0))\n"
+            "if args[1:2] == ['create']:\n"
+            "    made = json.loads(responses.read_text()).get(\n"
+            "        '$create', 'https://github.com/owner/repo/pull/99')\n"
+            "    if isinstance(made, int): sys.exit(made)\n"
+            "    print(made)\n"
+            "    sys.exit(0)\n"
             "flag = '--head' if tool == 'gh' else '--source-branch'\n"
             "branch = args[args.index(flag) + 1]\n"
             "answer = json.loads(responses.read_text()).get(branch, [])\n"
@@ -342,6 +354,8 @@ class Network:
             f"{code}"
             "if command[:1] == ['fetch']:\n"
             "    sys.exit(int(os.environ.get('WT_FETCH_CODE', '0')))\n"
+            "if command[:1] == ['push']:\n"
+            "    sys.exit(int(os.environ.get('WT_PUSH_CODE', '0')))\n"
             "if command[:2] == ['remote', 'set-head']:\n"
             "    if os.environ.get('WT_HEAD_CODE'):\n"
             "        sys.exit(int(os.environ['WT_HEAD_CODE']))\n"
@@ -382,7 +396,7 @@ class Network:
                 args = args[2:]
             if (
                 tool in ("gh", "glab")
-                or args[:1] == ["fetch"]
+                or args[:1] in (["fetch"], ["push"])
                 or args[:2] == ["remote", "set-head"]
             ):
                 found.append(call)

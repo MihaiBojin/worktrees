@@ -332,8 +332,9 @@ or refused before it started.
 of [its `--json` result](commands/fast-forward.md), under the names and
 types that has: `result`, `branch`, `base`, `sha`, `previous`,
 `previous_sha`, `proof`, `why`, `boundary`, `adopted`, `stopped_at`,
-`subject` and `stash`, strings; `ahead`, `behind` and `carried`, numbers;
-`paths`, a list of strings; and `stashes`, a list of objects. It adds
+`subject`, `stash`, `pushed` and `unpushed`, strings; `ahead`, `behind` and
+`carried`, numbers; `paths`, a list of strings; `stashes`, a list of
+objects; and `retargeted` and `rescued`, objects. It adds
 `previous_full_sha` and `full_sha`, strings that are empty when the short
 one no longer resolves, and `restore` and `undo`.
 

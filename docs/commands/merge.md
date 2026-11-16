@@ -31,6 +31,16 @@ latest merge time each need containment. Each commit is read from
 `merge_commit_sha`. `compare/{merge}...{head}` must report `behind_by: 0`.
 A timeout refuses at exit 3 and names the condition still unmet.
 
+A pull request in no native stack whose base is not the default branch is
+checked for a base left behind. GitHub moves a stacked pull request's base
+only when the merged branch below it is deleted. When the base branch
+stands exactly at the head commit of a merged pull request from it, this
+one would merge into a finished branch and never reach the default branch,
+so the command refuses at exit 3 and names the remedy: `gw fast-forward` in
+the branch's checkout, which moves the base and pushes the branch. A base
+that has moved on since its merge, or that no pull request merged, is
+merged into as asked. A read that fails refuses.
+
 Once the stack settles, a head different from `--match-head-commit` returns
 `head-moved` at exit 4 with the new SHA in `sha`. Nothing is submitted. Run
 `gw ci-checks NUMBER --wait --json`, require that SHA and passed checks in a

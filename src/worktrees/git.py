@@ -277,6 +277,7 @@ class GitCall(Protocol):
         *args: Any,
         repo: str | os.PathLike[str] | None = None,
         input: str | None = None,
+        environ: Mapping[str, str] | None = None,
         **kwargs: Any,
     ) -> Run: ...
 
@@ -345,6 +346,9 @@ def git(
     mutates  takes the repository's shared refs, so it runs serially
     env      pinned environment, for a command whose output must be reproducible
 
+    A call may add `environ`, values that are not arguments: the author a
+    copied commit keeps.
+
     A value goes in three ways. `$name` anywhere, including inside a token, so
     `--format=$fmt` stays one element. `$*name` splats a list at that position.
     Anything the body returns is appended as a tail, for arguments with no
@@ -379,6 +383,7 @@ def git(
             *args: Any,
             repo: str | os.PathLike[str] | None = None,
             input: str | None = None,
+            environ: Mapping[str, str] | None = None,
             **kwargs: Any,
         ) -> Run:
             bound = signature.bind(*args, **kwargs)
@@ -397,7 +402,12 @@ def git(
             full += argv
 
             options.log.append(tuple(full))
-            environ = {**os.environ, **(env or {}), "GIT_NO_LAZY_FETCH": "1"}
+            setting = {
+                **os.environ,
+                **(env or {}),
+                **(environ or {}),
+                "GIT_NO_LAZY_FETCH": "1",
+            }
             began = time.monotonic()
             proc = subprocess.run(
                 full,
@@ -405,7 +415,7 @@ def git(
                 input=input.encode("utf-8", "surrogateescape")
                 if input is not None
                 else None,
-                env=environ,
+                env=setting,
                 check=False,
             )
             stdout = proc.stdout.decode("utf-8", "surrogateescape")

@@ -137,8 +137,21 @@ command under `WORKTREES_OFFLINE=1`.
 
 A branch whose open request targets another branch with an open request,
 a stacked one, is levelled with that branch instead of the head ref:
-`fast_forward.stacked_on` reads both requests from the forge in the same
+`fast_forward._stack` reads both requests from the forge in the same
 run, and the branch below levels with the head ref in its own run.
+
+When the request below merged instead and its branch was kept, the forge
+leaves the open request on that finished branch, where a merge never
+reaches the head branch. `_retarget` moves its base to the head branch,
+the one forge write `gw fast-forward` makes on its own, and `_publish`
+pushes the branch under a lease once it is level; a branch with an open
+request that dropped a parent's merged commits is pushed the same way.
+Commits the finished branch gained after its merge that the head ref
+lacks, by `merged.change_in`, go first: `_rescue` copies them without a
+checkout onto a dated branch from the head ref, pushes it and opens its
+request, and a copy that cannot be made leaves the base where it is.
+`gw merge` refuses a base that stands at a merged request's head commit,
+so a run that skipped this still cannot land there.
 
 Every other branch keeps its name. One with no commits of its own
 fast-forwards and one with commits is rebased, both with `--no-autostash`
@@ -226,8 +239,9 @@ of rules writes both. `tests/test_plugin.py` holds every skill's
 `allowed-tools` to reads, `gw sync` and `gw branch create`: no pattern
 covers a removal, a merge, a push, a rerun or a checkout that moves. Three
 exceptions are each skill's job: `describe-pr` may edit a review,
-`fast-forward` runs `gw fast-forward` and the conflict loop its own test
-lists, and `ship-it`, invoked to publish one change or the reviews it
+`fast-forward` runs `gw fast-forward`, which moves a base left on a merged
+branch and pushes the branch it levelled, and the conflict loop its own
+test lists, and `ship-it`, invoked to publish one change or the reviews it
 names, commits, pushes, opens and edits the review, reruns CI and merges,
 as its own test lists. None pre-approves a removal.
 
@@ -796,4 +810,5 @@ directory too, since `GIT_CONFIG_GLOBAL` does not reach `git/ignore`, the
 default `core.excludesFile`. `WORKTREES_OFFLINE=1` in `conftest.ENV` stops
 a command syncing first, which would fetch a remote at `github.com` for
 real. `Network.env` clears it for the fake network, and `conftest.online`
-for a remote on disk.
+for a remote on disk. The fake network's git answers `push` itself, as it
+does `fetch`, and its `gh` and `glab` answer an edit and a create.

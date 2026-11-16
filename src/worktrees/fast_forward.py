@@ -12,6 +12,12 @@ as with a stacked branch whose parent merged, it keeps its name and drops the
 merged commits in place. A branch whose open request targets another open
 request's branch, a stacked one, is rebased onto that branch instead, so the
 stack stays in order. The head branch itself only ever fast-forwards.
+
+A request still targeting a branch whose own request merged would land on
+that finished branch, so its base moves to the head branch, and the branch,
+once level, is pushed under a lease. Commits the finished branch gained
+after its merge, which the head ref lacks, are copied to a branch of their
+own with a request of their own first.
 """
 
 from __future__ import annotations
@@ -176,6 +182,30 @@ def commit_tree(message: str, parents: list[str], tree: str) -> None:
     """A commit of `tree`, with `-p SHA` in `parents` for each parent."""
 
 
+@git(
+    "push --porcelain --force-with-lease --force-if-includes $remote $refspec",
+    ok=(0, 1, 128),
+    mutates=True,
+)
+def push_leased(remote: str, refspec: str) -> None:
+    """Update a branch's remote copy, only while it is what this clone saw."""
+
+
+@git("push --porcelain $remote $refspec", ok=(0, 1, 128), mutates=True)
+def push_new(remote: str, refspec: str) -> None:
+    """Send a branch this run made; git refuses a name the remote has."""
+
+
+@git("rev-list --reverse $tip --not $*known")
+def commits_beyond(tip: str, known: list[str]) -> None:
+    """The commits `tip` reaches and none of `known` does, oldest first."""
+
+
+@git("show --no-patch --format=%an%n%ae%n%aI%n%B $commit")
+def authored(commit: str) -> None:
+    """A commit's author name, email and date, then its message."""
+
+
 @dataclass
 class Moved:
     """Where the checkout stands after one run, and how it got there."""
@@ -201,6 +231,15 @@ class Moved:
     # A partly merged branch's stashes, each made after `boundary` or not,
     # the copy one made after it moved to, and why one made after it stayed.
     stashes: list[dict] = field(default_factory=list)
+    # The open request whose base this run moved to the head branch: its
+    # number, url, the branch it targeted and the one it targets now.
+    retargeted: dict = field(default_factory=dict)
+    # The commits that branch gained after its merge, copied to a branch of
+    # their own: its name, the commits, the request opened for them, or why
+    # they were left.
+    rescued: dict = field(default_factory=dict)
+    pushed: str = ""  # the commit the branch's remote copy was moved to
+    unpushed: str = ""  # why a push that was due did not happen
 
     def data(self) -> dict:
         return asdict(self)
@@ -238,13 +277,21 @@ def fast_forward(
     and decides again. `autostash` carries uncommitted work across through
     git's own autostash.
     """
+    done: dict = {}
     try:
-        return _level(name, start, repo, now, autostash, live, fetched=False)
-    except _Behind:
-        failures, _ = sync.fetch(repo)
-        if failures:
-            raise Unfetched("\n".join(failures)) from None
-        return _level(name, start, repo, now, autostash, live, fetched=True)
+        try:
+            return _level(name, start, repo, now, autostash, live, False, done)
+        except _Behind:
+            failures, _ = sync.fetch(repo)
+            if failures:
+                raise Unfetched("\n".join(failures)) from None
+            return _level(name, start, repo, now, autostash, live, True, done)
+    except Refusal as exc:
+        # The base moved, or a request opened, before the run was refused.
+        said = notices(done.get("retargeted") or {}, done.get("rescued") or {})
+        if not said:
+            raise
+        raise type(exc)("\n".join([str(exc), *said])) from None
 
 
 def _level(
@@ -255,8 +302,12 @@ def _level(
     autostash: bool,
     live: bool,
     fetched: bool,
+    done: dict,
 ) -> Moved:
-    """`fast_forward`, raising `_Behind` unless this run has `fetched`."""
+    """`fast_forward`, raising `_Behind` unless this run has `fetched`.
+
+    `done` keeps what the run wrote to the forge, for the pass after a fetch.
+    """
     stopped = stopped_rebase(repo)
     if stopped:
         return stopped
@@ -276,7 +327,6 @@ def _level(
     if not resolved.ref:
         raise Refusal(resolved.unresolved)
     base = R.symbolic_ref(resolved.ref, repo=repo).value or resolved.ref
-    shown = render.ref(R.ref_name(base))
     stash = "--autostash" if autostash else "--no-autostash"
 
     head_name = R.ref_name(base)
@@ -289,7 +339,8 @@ def _level(
 
     local = f"refs/heads/{branch}"
     tip = R.local_sha(local, repo=repo).value
-    parent = stacked_on(branch, remote, head_name, repo) if live else ""
+    stack = _stack(branch, remote, head_name, repo) if live else _Stack()
+    parent = stack.ref
     if parent:
         # The parent is still open, so the branch is level with the parent's
         # tip, not the head ref; the parent levels with the head ref itself.
@@ -305,6 +356,53 @@ def _level(
     request = merged_request(branch, remote, repo) if live else None
     if request and request.state == "MERGED" and request.merge_sha:
         _held(request.merge_sha, head_sha, fetched, repo)
+    if live and "retargeted" not in done:
+        _retarget(stack, remote, head_name, head_sha, fetched, now, repo, done)
+    moved = _settle(
+        branch,
+        base,
+        name,
+        start,
+        remote,
+        resolved.branch,
+        request,
+        live,
+        fetched,
+        stash,
+        now,
+        repo,
+    )
+    moved.retargeted = done.get("retargeted") or {}
+    moved.rescued = done.get("rescued") or {}
+    # A request open on the forge reads the branch's remote copy, and the
+    # copy still holds what the rebase dropped.
+    if stack.request is not None and (
+        moved.retargeted or (moved.result == REBASED and moved.boundary)
+    ):
+        return _publish(moved, remote, repo)
+    return moved
+
+
+def _settle(
+    branch: str,
+    base: str,
+    name: str,
+    start: str,
+    remote: str,
+    head_branch: str,
+    request: branch_forge.Request | None,
+    live: bool,
+    fetched: bool,
+    stash: str,
+    now: datetime | None,
+    repo: str | os.PathLike[str] | None,
+) -> Moved:
+    """Level a branch that is neither the head branch nor stacked on an
+    open request: leave it, rotate it, fast-forward it or rebase it."""
+    shown = render.ref(R.ref_name(base))
+    local = f"refs/heads/{branch}"
+    tip = R.local_sha(local, repo=repo).value
+    head_sha = R.local_sha(base, repo=repo).value
     if merged.is_ancestor(base, local, repo=repo):
         _unnamed(name, start, f"{render.branch(branch)} already has {shown}")
         taken = _rewritten(branch, remote, head_sha, head_sha, tip, repo)
@@ -319,7 +417,7 @@ def _level(
         branch,
         tip,
         head_sha,
-        resolved.branch,
+        head_branch,
         remote,
         False,
         first_parents,
@@ -332,7 +430,7 @@ def _level(
     elif verdict not in (merged.UNUSED, merged.UNKNOWN):
         found = (
             _forge_boundary(
-                request, branch, tip, head_sha, resolved.branch, first_parents, repo
+                request, branch, tip, head_sha, head_branch, first_parents, repo
             )
             or merged.boundary(tip, head_sha, repo)
             or (
@@ -340,7 +438,7 @@ def _level(
                     branch,
                     tip,
                     head_sha,
-                    resolved.branch,
+                    head_branch,
                     first_parents,
                     remote,
                     fetched,
@@ -475,35 +573,271 @@ def _replay(
     return moved
 
 
+@dataclass
+class _Stack:
+    """What the forge says the branch's open request is stacked on."""
+
+    request: branch_forge.Request | None = None  # the branch's open request
+    # The newest request from the branch that one targets, open or not.
+    below: branch_forge.Request | None = None
+    ref: str = ""  # that branch, while its own request is open
+
+
+def _stack(
+    branch: str,
+    remote: str,
+    head_branch: str,
+    repo: str | os.PathLike[str] | None = None,
+) -> _Stack:
+    """The branch's open request and the request of the branch it targets.
+
+    The branch's open request names its parent as the branch it targets. A
+    parent whose own newest request is no longer open has merged or closed:
+    `ref` is empty, and `_retarget` reads `below` for which.
+    """
+    if not remote or branch_forge.provider(remote, repo) is None:
+        return _Stack()
+
+    def newest(name: str) -> branch_forge.Request | None:
+        answered, request = branch_forge.fetch_request(name, remote, repo)
+        if not answered or request is None:
+            return None
+        return request if branch_forge.identified(request, remote, repo) else None
+
+    request = newest(branch)
+    if request is None or request.state not in OPEN:
+        return _Stack()
+    parent = request.target_branch
+    if not parent or parent == head_branch:
+        return _Stack(request)
+    below = newest(parent)
+    if below is None or below.state not in OPEN:
+        return _Stack(request, below)
+    for ref in (f"refs/heads/{parent}", f"refs/remotes/{remote}/{parent}"):
+        if R.ref_exists(ref, repo=repo):
+            return _Stack(request, below, ref)
+    return _Stack(request, below)
+
+
 def stacked_on(
     branch: str,
     remote: str,
     head_branch: str,
     repo: str | os.PathLike[str] | None = None,
 ) -> str:
-    """The ref of the branch an open request stacks this one on, or nothing.
+    """The ref of the branch an open request stacks this one on, or nothing."""
+    return _stack(branch, remote, head_branch, repo).ref
 
-    The branch's open request names its parent as the branch it targets. A
-    parent whose own newest request is no longer open has merged or closed,
-    and the rest of this module handles that branch as it always has.
+
+def _retarget(
+    stack: _Stack,
+    remote: str,
+    head_branch: str,
+    head: str,
+    fetched: bool,
+    now: datetime | None,
+    repo: str | os.PathLike[str] | None,
+    done: dict,
+) -> None:
+    """Move the open request's base to the head branch when the branch it
+    targets is finished, and record in `done` what was retargeted and what
+    was rescued first.
+
+    A forge moves a stacked request's base itself only when the merged
+    branch is deleted. Left on that branch, the request would merge into it,
+    and its commits would never reach the head branch. The branch counts as
+    finished when its newest request merged and the fetched head ref holds
+    the merge commit. Commits it gained afterwards are rescued first, and a
+    rescue that could not be made leaves the base where it is.
     """
-    if not remote or branch_forge.provider(remote, repo) is None:
-        return ""
+    request, below = stack.request, stack.below
+    if request is None or below is None or below.state != "MERGED":
+        done["retargeted"] = {}
+        return
+    target = request.target_branch
+    landed = (
+        below.source_branch == target
+        and bool(below.merge_sha)
+        and (
+            below.target_branch == head_branch
+            or below.merge_sha
+            in set(merged.first_parent_history(head, repo=repo).lines)
+        )
+    )
+    # Raises `_Behind` before anything is recorded, so the pass after the
+    # fetch decides again.
+    if not landed or not _held(below.merge_sha, head, fetched, repo):
+        done["retargeted"] = {}
+        return
+    done["rescued"] = _rescue(below, remote, head_branch, head, now, repo)
+    done["retargeted"] = {}
+    if done["rescued"] and not done["rescued"]["branch"]:
+        return
+    if not branch_forge.retarget(request, head_branch, remote, repo):
+        raise Unfetched(
+            f"the forge could not move {request.noun} #{request.number} from "
+            f"{render.branch(target)} to {render.branch(head_branch)}"
+        )
+    done["retargeted"] = {
+        "number": request.number,
+        "url": request.url,
+        "from": target,
+        "to": head_branch,
+    }
 
-    def open_request(name: str) -> branch_forge.Request | None:
-        answered, request = branch_forge.fetch_request(name, remote, repo)
-        if not answered or request is None or request.state not in OPEN:
-            return None
-        return request if branch_forge.identified(request, remote, repo) else None
 
-    request = open_request(branch)
-    parent = request.target_branch if request else ""
-    if not parent or parent == head_branch or open_request(parent) is None:
-        return ""
-    for ref in (f"refs/heads/{parent}", f"refs/remotes/{remote}/{parent}"):
-        if R.ref_exists(ref, repo=repo):
-            return ref
-    return ""
+def _rescue(
+    below: branch_forge.Request,
+    remote: str,
+    head_branch: str,
+    head: str,
+    now: datetime | None,
+    repo: str | os.PathLike[str] | None,
+) -> dict:
+    """Copy the commits a merged branch gained after its merge, and the head
+    ref lacks, onto a new branch from the head ref, and open its request.
+
+    Empty when there are none. The copies are made as a cherry-pick makes
+    them, without a checkout: each commit's change merged onto the one
+    before, under its own author and message. `branch` is empty, and `kept`
+    says why, when nothing was copied; a branch that was pushed and has no
+    `url` could not have its request opened.
+    """
+    parent = below.source_branch
+    tip = R.local_sha(f"refs/remotes/{remote}/{parent}", repo=repo).value
+    if not tip or tip == below.source_sha:
+        return {}
+    rescued = {"from": parent, "branch": "", "commits": [], "url": "", "kept": ""}
+    if not merged.tree_of(below.source_sha, repo=repo):
+        rescued["kept"] = (
+            f"this clone lacks {below.source_sha}, where {below.noun} "
+            f"#{below.number} merged {parent}, so what came after is unknown"
+        )
+        return rescued
+    later = commits_beyond(tip, [head, below.source_sha], repo=repo).lines
+    at, tree = head, merged.tree_of(head, repo=repo).value
+    copied: list[tuple[str, str]] = []
+    for commit in later:
+        if merged.change_in(commit, head, repo=repo):
+            continue
+        first = merged.first_parent(commit, repo=repo).value
+        merge = merge_tree(first, at, commit, repo=repo) if first else None
+        if not merge:
+            rescued["kept"] = (
+                f"{_short(commit, repo=repo)} does not apply cleanly to "
+                f"{render.branch(head_branch)}"
+            )
+            return rescued
+        if merge.lines[0] == tree:
+            continue
+        name, email, date, message = authored(commit, repo=repo).value.split("\n", 3)
+        tree = merge.lines[0]
+        at = commit_tree(
+            message,
+            ["-p", at],
+            tree,
+            repo=repo,
+            environ={
+                "GIT_AUTHOR_NAME": name,
+                "GIT_AUTHOR_EMAIL": email,
+                "GIT_AUTHOR_DATE": date,
+            },
+        ).out.strip()
+        copied.append((_short(commit, repo=repo), message.split("\n", 1)[0]))
+    if not copied:
+        return {}
+    rescued["commits"] = [sha for sha, _ in copied]
+    chosen = rotation_name(parent, now)
+    if (
+        not check_ref_format(chosen, repo=repo)
+        or R.ref_exists(f"refs/heads/{chosen}", repo=repo)
+        or R.ref_exists(f"refs/remotes/{remote}/{chosen}", repo=repo)
+    ):
+        rescued["kept"] = f"{render.branch(chosen)} could not be made here"
+        return rescued
+    try:
+        refuse_nested(chosen, repo=repo)
+    except Refusal as exc:
+        rescued["kept"] = str(exc)
+        return rescued
+    branch_at(chosen, at, repo=repo)
+    pushed = push_new(remote, f"refs/heads/{chosen}:refs/heads/{chosen}", repo=repo)
+    if not pushed:
+        delete_ref(f"refs/heads/{chosen}", at, repo=repo)
+        rescued["kept"] = f"{render.branch(chosen)} could not be pushed: " + (
+            _refused(pushed)
+        )
+        return rescued
+    rescued["branch"] = chosen
+    listed = "".join(f"- {sha} {subject}\n" for sha, subject in copied)
+    rescued["url"] = branch_forge.open_request(
+        chosen,
+        head_branch,
+        copied[0][1],
+        f"{below.noun.capitalize()} #{below.number} merged `{parent}`. The "
+        f"branch gained these commits afterwards, and `{head_branch}` does not "
+        f"have them:\n\n{listed}",
+        remote,
+        repo,
+    )
+    if not rescued["url"]:
+        rescued["kept"] = "it is pushed, and its request could not be opened"
+    return rescued
+
+
+def _publish(moved: Moved, remote: str, repo: str | os.PathLike[str] | None) -> Moved:
+    """Push the levelled branch over its remote copy, under a lease.
+
+    Only a branch that is level and has a copy that differs: a stopped
+    rebase is pushed by whoever finishes it. git refuses when the copy holds
+    commits this clone never had, and the branch is then left unpushed.
+    """
+    if moved.result not in (CURRENT, REBASED) or not remote:
+        return moved
+    local = f"refs/heads/{moved.branch}"
+    copy = R.local_sha(f"refs/remotes/{remote}/{moved.branch}", repo=repo).value
+    tip = R.local_sha(local, repo=repo).value
+    if not copy or copy == tip:
+        return moved
+    pushed = push_leased(remote, f"{local}:{local}", repo=repo)
+    if pushed:
+        moved.pushed = _short(local, repo=repo)
+    else:
+        moved.unpushed = _refused(pushed)
+    return moved
+
+
+def _refused(pushed) -> str:
+    """Why a push failed: the ref git rejected, or the last thing it said."""
+    for line in pushed.out.splitlines():
+        if line.startswith("!"):
+            return line.split("\t")[-1].strip()
+    said = pushed.err.strip().splitlines()
+    return said[-1] if said else f"git push exited {pushed.code}"
+
+
+def notices(retargeted: dict, rescued: dict) -> list[str]:
+    """What a run wrote to the forge, a line each, for a person to read."""
+    said = []
+    if rescued and rescued["branch"]:
+        opened = rescued["url"] or rescued["kept"]
+        count = _commits(len(rescued["commits"]))
+        said.append(
+            f"{render.branch(rescued['from'])} gained {count} "
+            f"after it merged; they are on {render.branch(rescued['branch'])} now: "
+            f"{opened}"
+        )
+    elif rescued:
+        said.append(
+            f"{render.branch(rescued['from'])} gained commits after it merged, "
+            f"and they were left there: {rescued['kept']}"
+        )
+    if retargeted:
+        said.append(
+            f"#{retargeted['number']} now targets {render.branch(retargeted['to'])}, "
+            f"since {render.branch(retargeted['from'])} merged"
+        )
+    return said
 
 
 # GitHub's and GitLab's words for a request still open.

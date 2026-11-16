@@ -719,3 +719,70 @@ def test_parents_merged_in_the_same_second_both_need_containment(
         assert proc.returncode == 0, proc.stderr
         assert len(writes(github)) == 1
     assert any(COMPARE in c for c in github.network_calls())
+
+
+# --------------------------------------------------------------------------
+# a base left on a branch whose own pull request merged
+# --------------------------------------------------------------------------
+
+BRANCH = "repos/owner/repo/branches/parent"
+FROM_PARENT = "repos/owner/repo/pulls?head=owner%3Aparent&state=closed&per_page=100"
+
+
+def stale_base(github, tip: str = BASE, routes: dict | None = None) -> None:
+    """#7 targets `parent`, a branch that stands at `tip`; #6 merged it at
+    BASE into main."""
+    repo = {"full_name": "owner/repo", "default_branch": "main"}
+    github.answer(
+        {
+            "$view": {**_pr(), "baseRefName": "parent"},
+            "$api": {
+                PR: pull(base={"ref": "parent", "repo": repo}),
+                ASYNC: merged(),
+                BRANCH: {"name": "parent", "commit": {"sha": tip}},
+                FROM_PARENT: [
+                    {"number": 6, "merged_at": "2026-11-08T00:00:00Z"}
+                    | {"head": {"ref": "parent", "sha": BASE}}
+                ],
+                **(routes or {}),
+            },
+        }
+    )
+
+
+def test_a_base_left_on_a_merged_branch_is_refused(world, github) -> None:
+    stale_base(github)
+
+    p = run(world, github)
+    assert p.returncode == 3
+    assert p.stdout == ""
+    assert "#7 targets parent, which #6 merged into main" in p.stderr
+    assert "gw fast-forward, in the checkout of feature" in p.stderr
+    assert writes(github) == []
+
+
+def test_a_base_that_moved_on_since_its_merge_is_somebodys_branch(
+    world, github
+) -> None:
+    stale_base(github, tip=REWRITE)
+
+    p = run(world, github)
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["status"] == "merged"
+
+
+def test_a_base_no_pull_request_merged_is_merged_into(world, github) -> None:
+    stale_base(github, routes={FROM_PARENT: []})
+
+    p = run(world, github)
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["status"] == "merged"
+
+
+def test_a_base_that_cannot_be_read_refuses(world, github) -> None:
+    stale_base(github, routes={FROM_PARENT: 1})
+
+    p = run(world, github)
+    assert p.returncode == 3
+    assert "could not read what merged from #7's base parent" in p.stderr
+    assert writes(github) == []

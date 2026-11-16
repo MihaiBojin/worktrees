@@ -827,6 +827,8 @@ def run_fast_forward(args: argparse.Namespace) -> int:
     _audit_moved(moved)
     if args.json:
         print(_json(moved.data(), indent=2))
+    else:
+        _published(moved)
     if moved.result == ff.CONFLICT:
         # On stderr whatever the format, as every failure is: --json has
         # already put the same facts on stdout.
@@ -843,6 +845,30 @@ def run_fast_forward(args: argparse.Namespace) -> int:
         print(_moved(moved))
         _stashes(moved)
     return 0
+
+
+def _published(moved: fast_forward.Moved) -> None:
+    """What the run wrote to the forge and the remote, or why it did not."""
+    from . import fast_forward as ff
+    from . import repo as R
+
+    for line in ff.notices(moved.retargeted, moved.rescued):
+        left = moved.rescued and not moved.rescued["url"]
+        _err((render.warn if left and "gained" in line else render.note)(line))
+    remote = R.remote()
+    if moved.pushed:
+        _err(
+            render.note(
+                f"pushed {render.branch(moved.branch)} to {remote} at {moved.pushed}"
+            )
+        )
+    if moved.unpushed:
+        _err(
+            render.warn(
+                f"{render.branch(moved.branch)} was not pushed to {remote}: "
+                f"{moved.unpushed}"
+            )
+        )
 
 
 def _audit_moved(moved: fast_forward.Moved) -> None:

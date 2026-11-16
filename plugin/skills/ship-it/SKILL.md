@@ -129,6 +129,14 @@ not merged: it would land on that branch rather than the head branch.
 Report it as waiting on that one. After each merge, read the next review
 and its CI again. A queued or pending merge does not unblock the next review.
 
+One whose `pr.baseRef` is still the branch of a review this run merged
+would land on that finished branch: the forge moves the base itself only
+when the merged branch is deleted, and GitHub only for a native stack
+otherwise. Switch to its branch as a [named branch](#which-change) does and
+run step 3 there. `gw fast-forward` moves the base to the head branch,
+drops the merged commits and pushes the branch; then read the review again
+and take it from step 7.
+
 ## 1. A branch of its own
 
 ```sh
@@ -202,6 +210,13 @@ with these defaults in place of its questions:
 A `rotated` result with `carried` 0 and nothing left uncommitted means the
 change is already merged: report the merged review and stop. Otherwise the
 branch to ship is the one checked out now.
+
+A `retargeted`, a `pushed` and a `rescued` in the result are rows for the
+record. `rescued.url` is a review the command opened for commits the merged
+branch below gained after its merge: name it in the outcome and leave it
+open, since this run was not asked to ship it. A `rescued.kept` with no
+`branch` means those commits could not be copied and the base did not move:
+a blocker for this review. An `unpushed` is step 4's rejected push.
 
 ## 4. Push
 
@@ -385,6 +400,9 @@ Exit 0 covers `merged` and `enqueued`; it alone does not prove a merge.
 Exit 1 covers `pending` and `failed`. Exit 4 is `head-moved`: nothing was
 submitted. A refusal exits 3 with stderr and no JSON. An unknown command or
 invalid arguments exits 2. Report refusals as written. Do not retry through `gh pr merge` or `gh api`.
+The one refusal with a remedy names a base left on a merged branch: run
+step 3 in the branch's worktree, as [which change](#which-change) says,
+then return to step 7 for this PR.
 
 On the first `head-moved` for this PR, record that its one retry is in use.
 `NEW_SHA` is the result's `sha`. Return to step 7 for this PR and run:
@@ -469,6 +487,7 @@ with the reason, and its URL. Then the record, one short row per problem:
 | #41 | body named a flag the diff removed | dropped the line |
 | #41 | `lint` failed: unused import in `ci.py` | removed it, pushed `3f2a9c1` |
 | #42 | `tests` timed out on the runner | reran the job; passed |
+| #42 | base still on #41's merged branch | `gw fast-forward` moved it to `main`, pushed `8c1d2ab` |
 
 No problems is a line saying so. A blocker names the branch, worktree or
 commit that holds the unfinished work. Then the head branch put back and
