@@ -17,6 +17,59 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.12.0 - 2026-11-16
+
+### Changed
+
+`gw prune`, `gw remove` and `gw branch status` print each worktree or
+branch as a record in a box: one line with BRANCH, VERDICT, REASON and
+ELIGIBLE, then its reasons across the full width, wrapped to the
+terminal. The PATH and WORKTREE columns are gone, from `--table` too,
+which draws the box with `+`, `-` and `|` and wraps nothing. A script
+that parsed those columns should read `--json`, whose `why` and
+`protections` keep their wording.
+
+A command inside a reason, such as `git show SHA`, gets a line of its own
+and is never broken, and the `--delete` values a row needs are named once,
+as `needs:`. The hint for missing `--delete` values prints its command on
+a line of its own with the worktrees it frees listed under it, and the
+removal disclosure puts each restore and listing command on its own line,
+with a blank line between targets.
+
+A dirty worktree's reason says what `git status` found, such as
+`it has uncommitted changes to 9 files and 1 untracked path`, in place
+of `it has uncommitted changes or untracked files`, in tables and in
+the JSON `why` and `protections`. Scripts matching the old text should
+read `reason`, which stays `uncommitted`. The `--delete` help names
+each value beside what it permits.
+
+### Added
+
+When `gw remove` keeps a worktree, it names the full command that
+removes it: `gw remove PATH --delete VALUE`, carrying the values you
+passed, as `gw prune` names its own. For uncommitted changes or
+untracked paths it names `git worktree remove --force PATH`, with a
+count of the ignored paths and reflog-only commits that command
+deletes and the branch it keeps; gw never runs it.
+
+Every command appends what it ran to an audit log,
+`~/.local/state/worktrees/audit-YYYY-MM.jsonl`: each `git`, `gh` and
+`glab` process with its exit code and duration, and each removal with
+what restores it, as fields and as commands to paste.
+`WORKTREES_AUDIT=off` turns it off, `WORKTREES_AUDIT=reads=off` leaves out
+read-only git commands, and `WORKTREES_AUDIT_DIR` moves it.
+
+`gw fast-forward` now moves a pull request left on a merged parent's
+branch to the head branch, pushes the levelled branch under a lease, and
+opens a separate request for commits the parent gained after its merge.
+`gw merge` refuses a base left on a merged branch.
+
+An assessment saves each worktree's completion proof in
+`git-worktrees-proofs.json` in the Git common directory, so the next
+`gw prune`, `gw remove` or `gw branch status` against the same head
+commit reads it instead of asking git again. What a checkout holds is
+still read on every run.
+
 ## 0.11.2 - 2026-11-15
 
 ### Removed
