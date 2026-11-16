@@ -1,0 +1,30 @@
+name: App token check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Mint a token for the marketplace
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: agent-plugins
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Read the marketplace with it
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY_OWNER/agent-plugins" --jq '"\(.full_name) default=\(.default_branch)"'
+          gh api "repos/$GITHUB_REPOSITORY_OWNER/agent-plugins/pulls?state=open" --jq 'length | "open pull requests readable: \(.)"'
+          gh api "repos/$GITHUB_REPOSITORY_OWNER/agent-plugins/git/ref/heads/main" --jq '"main at \(.object.sha)"'
