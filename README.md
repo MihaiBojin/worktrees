@@ -351,6 +351,10 @@ Below the list, `git -C PATH ls-files --others --ignored --exclude-standard`
 lists every ignored file, for you to read before answering.
 Quiet, JSON and `--yes` keep this disclosure on stderr.
 It repeats the assessment after confirmation and refuses changed targets.
+`gw prune` repeats it for every target together, before the first removal,
+so a repository with a slow `git status` waits for it once and not once a
+worktree; each removal then checks the head branch and the worktree's
+record again, and `git worktree remove` refuses a checkout changed since.
 Ignored directory entries can cover a whole directory; the recheck compares
 Git's ignored path listing, not a fingerprint of every file's contents.
 

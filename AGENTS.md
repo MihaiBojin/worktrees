@@ -545,6 +545,18 @@ git process whose work is the CPU's, so more threads than cores only queue
 behind each other and the interpreter lock; `sync` keeps eight, since its
 threads wait on the network. Mutations remain serial.
 
+The recheck after confirmation is an assessment too, so `gw prune` runs one
+for the whole batch, `worktree.recheck`, on the same threads, and then
+removes one target at a time. Rechecking before each removal read every
+checkout one after another, which a repository whose `git status` takes
+half a minute pays once a target. Just before it deletes, `worktree.remove`
+still checks the head and the worktree's record, branch, sha and flags, so
+a ref an earlier removal moved refuses the later one, and
+`git worktree remove` refuses a checkout dirtied since. What the wider gap
+leaves open is an ignored path written between the batch recheck and that
+target's removal. A single target, as `gw remove` has, is rechecked as it
+is removed.
+
 An assessment asks every worktree the same questions about the head, so
 `merged.reuse()` keeps the answers that name objects by full SHA for the
 length of one `assess`: a commit's tree, a merge base, the patch-ids of the

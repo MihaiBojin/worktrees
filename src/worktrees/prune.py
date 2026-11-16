@@ -705,11 +705,25 @@ def never_synced(go: Sequence[Verdict | branches.Verdict]) -> bool:
     )
 
 
-def sweep(go: list[Verdict], say: Callable[[str], None], repo=None) -> list[Outcome]:
-    """Remove independently approved targets and retain each step's outcome."""
-    from . import worktree
+def sweep(
+    go: list[Verdict],
+    say: Callable[[str], None],
+    repo=None,
+    *,
+    spin: bool = False,
+) -> list[Outcome]:
+    """Remove independently approved targets and retain each step's outcome.
 
-    outcomes = [worktree.remove(v, say, repo=repo) for v in go]
+    The targets are rechecked together first, each checkout on its own
+    thread, then removed one at a time. `spin` draws the spinner meanwhile.
+    """
+    from . import progress, worktree
+
+    with progress.running(spin):
+        rechecked = worktree.recheck(go, repo)
+    outcomes = [
+        worktree.remove(v, say, repo=repo, rechecked=rechecked.get(v.path)) for v in go
+    ]
     worktree_prune(repo=repo)
     return outcomes
 
