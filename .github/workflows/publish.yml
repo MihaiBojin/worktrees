@@ -5,7 +5,7 @@ run-name: Release ${{ inputs.version && format('v{0}', inputs.version) || github
 # request against the repository, this workflow's FILENAME and the environment,
 # so a rename means re-registering the publisher on PyPI first.
 #
-#   build -> tag -> publish -> release
+#   build -> tag -> publish -> release -> list
 #                           \-> verify
 #
 # A release is a version bump merged into main, then published one of two
@@ -22,8 +22,9 @@ run-name: Release ${{ inputs.version && format('v{0}', inputs.version) || github
 # is left to prove before the upload PyPI cannot take back is that the wheel
 # runs, and build installs it and does that.
 #
-# No API token is stored anywhere. See docs/DEVELOPMENT.md, "Publishing a
-# version".
+# No PyPI token is stored anywhere. The one stored credential is the
+# automation App's key, which list uses to reach the marketplace. See
+# docs/DEVELOPMENT.md, "Publishing a version" and "Listing the plugin".
 
 on:
   push:
@@ -313,3 +314,146 @@ jobs:
           tag_name: ${{ env.TAG }}
           body_path: RELEASE_NOTES.md
           make_latest: true
+
+  # MihaiBojin/agent-plugins lists the agent plugin at a release tag, and a
+  # client installs the tag that listing names. This job opens the pull
+  # request that moves it to this one. GITHUB_TOKEN reaches no other
+  # repository, so the job runs as the automation App; without the App's
+  # GH_APP_CLIENT_ID it warns and changes nothing.
+  list:
+    name: List the plugin in the marketplace
+    runs-on: ubuntu-24.04
+    needs: release
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    permissions:
+      contents: read
+    env:
+      MARKETPLACE: ${{ github.repository_owner }}/agent-plugins
+    steps:
+      - name: Warn that the App is not configured
+        if: vars.GH_APP_CLIENT_ID == ''
+        run: >-
+          echo "::warning::GH_APP_CLIENT_ID is not set, so $MARKETPLACE still
+          lists the previous tag. See docs/DEVELOPMENT.md, \"Listing the plugin\"."
+
+      - name: Mint a token for the marketplace
+        id: app-token
+        if: vars.GH_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: agent-plugins
+          permission-contents: write
+          permission-pull-requests: write
+
+      # The release commit, for the description the plugin ships with.
+      - name: Checkout code
+        if: vars.GH_APP_CLIENT_ID != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: source
+          persist-credentials: false
+
+      - name: Checkout the marketplace
+        if: vars.GH_APP_CLIENT_ID != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ env.MARKETPLACE }}
+          token: ${{ steps.app-token.outputs.token }}
+          path: marketplace
+          persist-credentials: false
+
+      # The listing's ref and description, then both catalogs from them with
+      # the marketplace's own sync script. The README's row is shorter
+      # hand-written prose and stays as it is.
+      - name: Point the listing at this tag
+        id: bump
+        if: vars.GH_APP_CLIENT_ID != ''
+        working-directory: marketplace
+        run: |
+          set -euo pipefail
+          description="$(jq -er .description ../source/plugin/.claude-plugin/plugin.json)"
+          node -e '
+            const fs = require("node:fs");
+            const [tag, description] = process.argv.slice(1);
+            const plugins = JSON.parse(fs.readFileSync("remote-plugins.json", "utf8"));
+            const entry = plugins.find((plugin) => plugin.name === "worktrees");
+            if (!entry) throw new Error("remote-plugins.json lists no worktrees");
+            entry.ref = tag;
+            entry.description = description;
+            fs.writeFileSync("remote-plugins.json", JSON.stringify(plugins, null, 2) + "\n");
+          ' "$TAG" "$description"
+          node scripts/sync-catalogs.mjs
+          if git diff --quiet; then
+            echo "$MARKETPLACE already lists $TAG." >&2
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --stat
+          staged="$RUNNER_TEMP/listing"
+          git diff --name-only | while read -r file; do
+            mkdir -p "$staged/$(dirname "$file")"
+            cp "$file" "$staged/$file"
+          done
+          echo "staged=$staged" >>"$GITHUB_OUTPUT"
+          echo "changed=true" >>"$GITHUB_OUTPUT"
+
+      # signed-push commits onto a branch that exists, so the branch starts at
+      # the marketplace's main. A rerun finds it: with its pull request open
+      # there is nothing left to do, and without one a person decides.
+      - name: Create the branch
+        id: branch
+        if: steps.bump.outputs.changed == 'true'
+        working-directory: marketplace
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          branch="worktrees-$TAG"
+          echo "name=$branch" >>"$GITHUB_OUTPUT"
+          if gh api "repos/$MARKETPLACE/git/ref/heads/$branch" >/dev/null 2>&1; then
+            open="$(gh pr list --repo "$MARKETPLACE" --head "$branch" --state open --json url --jq '.[].url')"
+            if [ -n "$open" ]; then
+              echo "$branch already has a pull request: $open" >&2
+              echo "action=none" >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::$MARKETPLACE has a branch $branch with no open pull request. Open one for it or delete it, then re-run this job."
+            exit 1
+          fi
+          gh api --method POST "repos/$MARKETPLACE/git/refs" \
+            -f ref="refs/heads/$branch" -f sha="$(git rev-parse HEAD)" >/dev/null
+          echo "action=commit" >>"$GITHUB_OUTPUT"
+
+      # The marketplace's main requires verified signatures, which a commit
+      # made with git on the runner lacks. signed-push commits through the
+      # API, which GitHub signs for the App.
+      - name: Commit the listing, signed
+        if: steps.branch.outputs.action == 'commit'
+        uses: releasetools/actions/signed-push@9828828b39bb2261f95b6f45749fb96ce22c9d2d # v0.12.1
+        with:
+          source-dir: ${{ steps.bump.outputs.staged }}
+          target-repo: ${{ env.MARKETPLACE }}
+          target-branch: ${{ steps.branch.outputs.name }}
+          headline: "chore(worktrees): List ${{ env.TAG }}"
+          body: |
+            Source-Tag: <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ env.TAG }}>
+          prune: "false"
+          token: ${{ steps.app-token.outputs.token }}
+
+      # Opened as the App, so the marketplace's own checks run on it. Merging
+      # is left to a person.
+      - name: Open the pull request
+        if: steps.branch.outputs.action == 'commit'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body="$(printf '%s\n\n%s\n' \
+            "The \`worktrees\` listing installs the plugin from its $TAG tag." \
+            "Opened by [$GITHUB_REPOSITORY's publish run]($RUN).")"
+          gh pr create --repo "$MARKETPLACE" --base main --head "$BRANCH" \
+            --title "chore(worktrees): List $TAG" --body "$body"

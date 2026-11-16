@@ -274,7 +274,7 @@ it with the version and the release commit, and its `tag` job creates the tag
 on that commit.
 
 ```
-build ──> tag ──> publish ──> release
+build ──> tag ──> publish ──> release ──> list
                           └─> verify
 ```
 
@@ -312,6 +312,39 @@ does not start `publish.yml` again. A dispatch that fails after `tag` is
 finished by re-running its failed jobs, since a fresh dispatch refuses the tag
 that run made.
 
+## Listing the plugin
+
+`MihaiBojin/agent-plugins` lists the agent plugin as `worktrees@mihaibojin`,
+from an entry in its `remote-plugins.json` pinned to a release tag. A client
+installs the tag that entry names, so until it moves every client keeps the
+previous plugin.
+
+`list` runs after `release` and opens the pull request that moves it. It sets
+the entry's `ref` to the tag and its `description` to the one in
+`plugin/.claude-plugin/plugin.json` at the release commit, runs the
+marketplace's `scripts/sync-catalogs.mjs` to write both catalogs, commits the
+result to `worktrees-v<version>` through `signed-push` and opens
+`chore(worktrees): List v<version>`. The marketplace's checks run on it, and
+merging it is left to a person. The README row there is shorter prose of its
+own and is not touched. A rerun finds the branch and stops: done when its pull
+request is open, an error naming the branch when it is not.
+
+`GITHUB_TOKEN` cannot write to another repository, so the job runs as a
+GitHub App, the same setup `releasetools/cli` uses to reach its Homebrew tap.
+The App needs Contents and Pull requests write, and an installation covering
+`worktrees` and `agent-plugins`. A personal account has no account-level
+Actions secrets, so both values live on this repository:
+
+```console
+gh variable set GH_APP_CLIENT_ID -R MihaiBojin/worktrees --body <client-id>
+gh secret set GH_APP_PRIVATE_KEY -R MihaiBojin/worktrees < <app>.private-key.pem
+```
+
+`scripts/create-github-app.sh` in `releasetools/terraform-modules` creates
+such an App from a manifest and prints these two commands. Without
+`GH_APP_CLIENT_ID` the job warns and changes nothing, and the listing is
+moved by hand: the same edit, `npm run sync`, and a pull request.
+
 ## Snapshots on TestPyPI
 
 `testpypi.yml` runs on every commit to `main`. It numbers the tree
@@ -343,7 +376,7 @@ enforces.
 The suite is not run again there. `tests.yml` runs it on the same commit, and
 a snapshot a test would have caught costs one number on a test index.
 
-No API token is stored anywhere. Every upload uses Trusted Publishing over
+No PyPI token is stored anywhere. Every upload uses Trusted Publishing over
 OIDC, which matches a request against the repository, the workflow filename
 and the environment, so each row below is its own registration:
 
