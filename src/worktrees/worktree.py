@@ -114,8 +114,57 @@ def _first_absent(dest_parent: Path, main: str) -> Path | None:
     return made
 
 
-def remove(chosen: Verdict, say, repo=None) -> prune.Outcome:
-    """Recheck the approved worktree before removing its checkout and ref."""
+def recheck(go: list[Verdict], repo=None) -> dict[str, Verdict]:
+    """Assess every approved worktree again, together, by path.
+
+    One assessment for the batch reads each checkout on its own thread, where
+    a recheck before each removal reads them one after another: a repository
+    whose `git status` takes half a minute pays that once, not once a
+    target. `remove` still checks the head and the worktree's record just
+    before it deletes, and `git worktree remove` refuses a checkout dirtied
+    since. Empty for a single target, for targets approved under different
+    terms, or when the assessment fails; `remove` then rechecks its own.
+    """
+    snapshots = [v.snapshot for v in go]
+    if len(go) < 2 or any(s is None for s in snapshots):
+        return {}
+    first = go[0]
+    head = snapshots[0].head  # type: ignore[union-attr]
+    if any(
+        (v.permissions, v.keep_branch, s.head)  # type: ignore[union-attr]
+        != (first.permissions, first.keep_branch, head)
+        for v, s in zip(go, snapshots, strict=True)
+    ):
+        return {}
+    wanted = {v.path for v in go}
+    try:
+        prune.check_head(head, repo)
+        fresh = assess(
+            [w for w in R.worktrees(repo) if w.path in wanted],
+            "",
+            head.ref,
+            head.branch,
+            repo=repo,
+            here="",
+            ask_forge=True,
+            include_main=True,
+            permissions=first.permissions,
+            keep_branch=first.keep_branch,
+            state=head,
+        )
+    except (GitError, Refused):
+        return {}
+    return {v.path: v for v in fresh}
+
+
+def remove(
+    chosen: Verdict, say, repo=None, rechecked: Verdict | None = None
+) -> prune.Outcome:
+    """Recheck the approved worktree before removing its checkout and ref.
+
+    `rechecked` is this worktree's row from `recheck`, read with the rest of
+    its batch; without one the worktree is assessed here.
+    """
     outcome = prune.Outcome(
         path=chosen.path, branch=chosen.branch, retained=list(chosen.stashes)
     )
@@ -133,19 +182,22 @@ def remove(chosen: Verdict, say, repo=None) -> prune.Outcome:
             records[0].flags,
         ) != (snapshot.branch, snapshot.sha, snapshot.flags):
             raise Refused(f"{chosen.path}: worktree changed after assessment")
-        fresh = assess(
-            records,
-            "",
-            snapshot.head.ref,
-            snapshot.head.branch,
-            repo=repo,
-            here="",
-            ask_forge=True,
-            include_main=True,
-            permissions=chosen.permissions,
-            keep_branch=chosen.keep_branch,
-            state=snapshot.head,
-        )[0]
+        fresh = (
+            rechecked
+            or assess(
+                records,
+                "",
+                snapshot.head.ref,
+                snapshot.head.branch,
+                repo=repo,
+                here="",
+                ask_forge=True,
+                include_main=True,
+                permissions=chosen.permissions,
+                keep_branch=chosen.keep_branch,
+                state=snapshot.head,
+            )[0]
+        )
         if fresh.snapshot != snapshot or not fresh.eligible:
             raise Refused(f"{chosen.path}: state changed after assessment; {fresh.why}")
         prune.check_head(snapshot.head, repo)

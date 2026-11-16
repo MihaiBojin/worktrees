@@ -611,7 +611,7 @@ def run_prune(args: argparse.Namespace) -> int:
         _err(render.note("nothing removed"))
         return 0
 
-    outcomes = prune.sweep(go, _err)
+    outcomes = prune.sweep(go, _err, spin=not args.quiet and not args.verbose)
     failed = sum(bool(o.failed) for o in outcomes)
     removed = [v.label for v, o in zip(go, outcomes, strict=True) if o.worktree_removed]
     if args.json:

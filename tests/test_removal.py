@@ -1111,3 +1111,28 @@ def test_remove_takes_no_only(world):
     p = run(world, "gw remove", "topic", "--only", "remove")
     assert p.returncode == 2
     assert "--only" in p.stderr
+
+
+def test_a_batch_is_rechecked_together_before_the_first_removal(world):
+    """Every approved checkout is read again before anything goes, on the
+    assessment's threads, not one before each removal: with a slow
+    `git status`, a batch waits for it once."""
+    paths = [world.merged_worktree(name) for name in ("one", "two", "three")]
+    p = run(world, "gw prune", "--yes", "-v")
+    assert p.returncode == 0, p.stderr
+    assert not any(path.exists() for path in paths)
+    log = p.stderr
+    removals = [m.start() for m in re.finditer(r"git .*worktree remove -- ", log)]
+    statuses = [m.start() for m in re.finditer(r"status --porcelain", log)]
+    assert len(removals) == 3
+    # Once each to assess and once each to recheck, all ahead of a removal.
+    assert len(statuses) == 6
+    assert statuses[-1] < removals[0]
+
+
+def test_a_single_target_is_rechecked_as_it_is_removed(world):
+    path = world.merged_worktree("only")
+    p = run(world, "gw prune", "--yes", "-v")
+    assert p.returncode == 0, p.stderr
+    assert not path.exists()
+    assert p.stderr.count("status --porcelain") == 2
