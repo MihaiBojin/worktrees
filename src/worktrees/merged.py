@@ -13,14 +13,18 @@ between them.
 
 from __future__ import annotations
 
+import contextlib
 import functools
+import json
 import os
 import re
+import tempfile
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, ParamSpec, TypeVar
 
+from . import repo as R
 from .errors import MissingObjects
 from .git import Run, git
 
@@ -45,6 +49,131 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 
+# The proofs an assessment found, kept in the Git common directory from one
+# run to the next. Each is a fact about two commits named by full SHA, the
+# branch's and the head's, so it never goes stale; the file holds one head's
+# proofs and starts again when the head moves, which is what bounds it.
+_PROOFS = "git-worktrees-proofs.json"
+
+
+class _Proofs:
+    """One repository's proofs for one head commit, read once and saved once."""
+
+    def __init__(self, repo: str | os.PathLike[str] | None) -> None:
+        common = R.shared_dir(repo)
+        self.path = os.path.join(common, _PROOFS) if common else ""
+        # A partial clone answers no for an object it lacks, and a fetch can
+        # bring that object without moving the head, so a no is kept only in
+        # a full clone.
+        self.partial = R.partial(repo)
+        self.head = ""
+        self.kinds: dict[str, dict[str, object]] = {}
+        self.changed = False
+        try:
+            with open(self.path) as stream:
+                found = json.load(stream)
+        except (OSError, ValueError):
+            return
+        if not isinstance(found, dict) or not isinstance(found.get("head"), str):
+            return
+        self.head = found["head"]
+        # Malformed data has no authority: an entry that is not the shape
+        # this module wrote is asked again.
+        valid: dict[str, Callable[[object], bool]] = {
+            "proof": lambda v: v is None or _proof(v) is not None,
+            "change": lambda v: isinstance(v, bool),
+        }
+        for kind, check in valid.items():
+            entries = found.get(kind)
+            if isinstance(entries, dict):
+                self.kinds[kind] = {k: v for k, v in entries.items() if check(v)}
+
+    def get(self, kind: str, head: str, sha: str) -> tuple[bool, object]:
+        with _kept_lock:
+            entries = self.kinds.get(kind, {}) if head == self.head else {}
+            return sha in entries, entries.get(sha)
+
+    def put(self, kind: str, head: str, sha: str, answer: object) -> None:
+        if not answer and self.partial:
+            return
+        with _kept_lock:
+            if head != self.head:
+                self.head, self.kinds = head, {}
+            self.kinds.setdefault(kind, {})[sha] = answer
+            self.changed = True
+
+    def save(self) -> None:
+        """Replace the file in one step. A failure loses a cache and no more."""
+        if not self.changed or not self.path:
+            return
+        temporary = ""
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                dir=os.path.dirname(self.path),
+                prefix=_PROOFS + ".",
+                delete=False,
+            ) as stream:
+                temporary = stream.name
+                json.dump({"head": self.head, **self.kinds}, stream, sort_keys=True)
+                stream.write("\n")
+            os.replace(temporary, self.path)
+            temporary = ""
+        except OSError:
+            pass
+        finally:
+            if temporary:
+                with contextlib.suppress(OSError):
+                    os.unlink(temporary)
+
+
+def _proof(value: object) -> tuple[str, str] | None:
+    """A saved proof and why, or None for anything that is not one. A list
+    once it has been through the file."""
+    if (
+        isinstance(value, list | tuple)
+        and len(value) == 2
+        and value[0] in ("ancestry", "squash", "content")
+        and isinstance(value[1], str)
+    ):
+        return value[0], value[1]
+    return None
+
+
+def _proofs(repo: str | os.PathLike[str] | None) -> _Proofs | None:
+    """This repository's saved proofs, inside an assessment; None outside one."""
+    if _kept is None:
+        return None
+    where = None if repo is None else os.fspath(repo)
+    found = _recall(("proofs", where), lambda: _Proofs(repo))
+    assert isinstance(found, _Proofs)
+    return found
+
+
+def _saved(
+    kind: str,
+    sha: str,
+    head: str,
+    repo: str | os.PathLike[str] | None,
+    ask: Callable[[], object],
+) -> object:
+    """A saved answer about `sha` against `head`, or the one `ask` gives now.
+
+    Only for full SHAs and only inside an assessment. `gw fast-forward` asks
+    outside one: it fetches, and an object missing a moment ago can appear.
+    """
+    store = None
+    if _FULL_SHA.fullmatch(sha) and _FULL_SHA.fullmatch(head):
+        store = _proofs(repo)
+    if store is None:
+        return ask()
+    found, answer = store.get(kind, head, sha)
+    if not found:
+        answer = ask()
+        store.put(kind, head, sha, answer)
+    return answer
+
+
 @contextmanager
 def reuse() -> Iterator[None]:
     """Keep answers about immutable objects until the block ends."""
@@ -54,6 +183,10 @@ def reuse() -> Iterator[None]:
     try:
         yield
     finally:
+        if outer is None:
+            for kept in list(_kept.values()):
+                if isinstance(kept, _Proofs):
+                    kept.save()
         _kept = outer
 
 
@@ -79,7 +212,7 @@ def _recall(key: tuple[object, ...], ask: Callable[[], object]) -> object:
     if not isinstance(answer, Run) or answer.code in (0, 1):
         # Not a failure: 128 can mean an object this clone lacks.
         with _kept_lock:
-            kept.setdefault(key, answer)
+            return kept.setdefault(key, answer)
     return answer
 
 
@@ -347,6 +480,23 @@ def change_in(
     upstream: dict[str, set[str]] | None = None,
 ) -> bool:
     """The commit's own change is in the head, by patch-id since it forked."""
+    return bool(
+        _saved(
+            "change",
+            commit,
+            head,
+            repo,
+            lambda: _change_in(commit, head, repo, upstream),
+        )
+    )
+
+
+def _change_in(
+    commit: str,
+    head: str,
+    repo: str | os.PathLike[str] | None,
+    upstream: dict[str, set[str]] | None,
+) -> bool:
     base = merge_base(head, commit, repo=repo).value
     parent = first_parent(commit, repo=repo).value
     if not base or not parent:
@@ -460,6 +610,16 @@ def _local_proof(
     upstream: dict[str, set[str]] | None = None,
 ) -> tuple[str, str] | None:
     """The first local proof that the tip's change is in the head, if any."""
+    found = _saved("proof", sha, head, repo, lambda: _prove(sha, head, repo, upstream))
+    return _proof(found)
+
+
+def _prove(
+    sha: str,
+    head: str,
+    repo: str | os.PathLike[str] | None,
+    upstream: dict[str, set[str]] | None,
+) -> tuple[str, str] | None:
     if is_ancestor(sha, head, repo=repo):
         return "ancestry", "its tip is an ancestor of the head branch"
     if squash_matches(sha, head, repo=repo, upstream=upstream):

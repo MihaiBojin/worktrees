@@ -424,6 +424,20 @@ Padding runs on the text and painting after it. The other order counts an
 escape sequence as width, and every column under a coloured cell sits crooked
 by exactly the length of the code.
 
+An assessment prints `render.records`, not `render.table`: a box with one
+record a worktree or branch, a line of short cells and then its reasons
+across the box, so a reason has the terminal's width and not a last column's.
+A reason that is a string is prose and wraps to `render.columns`; one that is
+a `Cell` is a command or a path and is never broken, widening the box when it
+must, so it pastes back. `prune.details` builds them from the row's `Fact`s:
+the evidence, each protection, each of a fact's commands on its own line,
+and `needs:` once, last. The JSON `protections` keep the one-line wording
+with `; pass --delete ...`, which the prune skill reads. The worktree's path
+is in `--json` and the removal disclosure, not in the box. `render.ruled`
+picks box characters for a UTF-8 terminal and `+`, `-` and `|` otherwise;
+`--table` sets `render.plain`, which turns both wrapping and box characters
+off, since a script reads it.
+
 stdout carries the path `cd $(gw add x)` reads and the JSON `jq` parses, so a
 redirect, a pipe, a non-empty `NO_COLOR`, or `TERM=dumb` mean the bytes go out
 as they would have without the module. `NO_COLOR=` is not a request to turn it
@@ -538,6 +552,18 @@ head's commits after a fork point. Those are facts about the objects. Nothing
 outside an assessment keeps them, since `gw fast-forward` fetches and an
 object missing a moment ago can appear, and a failed answer is never kept.
 
+Two of those answers outlive the run: `_local_proof` for a tip and
+`change_in` for a reflog commit, each against the head's full SHA, saved in
+`git-worktrees-proofs.json` in the Git common directory and replaced
+atomically when the assessment ends. They have no TTL, since neither commit
+changes; the file holds one head's answers and starts again when the head
+moves, which bounds it. A partial clone saves only a yes, because a fetch
+can bring the object a no lacked without moving the head, and an entry that
+is not the shape `merged.py` wrote is asked again. Nothing a checkout holds
+is saved: `git status`, submodules, an operation in progress, reflogs and
+stashes are read on every run, since they are what stops a worktree with
+work in it being offered.
+
 `git submodule status` is the costliest check, so the store decides alone
 when it exists, and without one the check runs only where `.gitmodules`
 exists. The store outlives a deleted `.gitmodules`, which is also when
@@ -558,6 +584,67 @@ trailers. A pipeline for another SHA is stale unless it is the merged-result
 pipeline whose parents
 are the current head and the target's tip. `ci.wait` takes its clock and
 sleep as arguments, so its tests run in-process without waiting.
+
+## The audit log is appended, never edited
+
+`audit.py` writes one JSON line per event to `audit-YYYY-MM.jsonl` under
+`$XDG_STATE_HOME/worktrees`, or `WORKTREES_AUDIT_DIR`. Each line is one
+`os.write` on an `O_APPEND` descriptor, and nothing here seeks, truncates,
+renames or deletes a file. A monthly name is what makes that hold: rotation
+by size would need a rename.
+
+Recording runs between `audit.begin` and `audit.end`. `_dispatch` begins
+once argparse has the words, so `--help`, which leaves inside `parse_args`,
+and a parsed `--explain` or `--complete` on any subcommand record nothing
+and answer under a `WORKTREES_AUDIT` it does not take; no scan of the raw
+words would know an abbreviated `--hel` or a value after `--`. A usage
+error begins in `main`, as it leaves. Every path from `main` to `_command`
+is inside the `try` whose `finally` ends the run, so no start lacks its end. Outside the pair every
+function returns at once, so a test or a caller that imports the package
+and runs a spec writes nothing.
+
+A line is one `os.write` and is never resumed: after a short write
+`_append` closes the fragment with a newline if one fits and raises. Each
+append takes `flock`, reads the last byte and writes under it, and a file
+that does not end in a newline gets one before the line, which carries
+`torn`. What the file ended in at open is never kept: another process can
+tear a line after that, and a look outside the lock races the write. The
+lock is tried for a tenth of a second; without it the line brings its own
+newline whatever the file ends in.
+
+Two places see every process: the `@git` wrapper and `forge._run`. Each
+times the run and calls `audit.ran`, filed as `reads`, `mutating` or
+`forge`; `WORKTREES_AUDIT` turns each off by name and `off` turns off the
+log. A spec holding `fetch` is filed as mutating though it is not declared
+`mutates`. What a process printed is kept only when it changes something or
+failed. `audit.clean` walks the whole event as `record` serializes it and
+scrubs every string, so no caller scrubs its own fields and none can forget.
+
+`prune.audit_proposed` runs in `prune.plan` and `prune.audit_outcome` after
+`worktree.remove` and `branches.delete`, the second also when the recheck
+refuses. `prune.restores` builds one action per thing taken, with its kind,
+full sha, branch or subject and an unquoted `argv`; `command` and `undo` are
+`shlex.join` of that, so the line a person pastes cannot disagree with the
+fields a program reads. A proposal passes only what would go and an outcome
+only what went, so a kept or retained branch, and its stashes, have none. They ask git for the remote
+only while the log is on. `Moved` carries short shas, so `_audit_moved`
+resolves both ends before it writes one.
+
+`tests/audit_schema.py` lists every event's fields, types and values, and
+`events()` in `tests/test_audit.py` holds each event a test reads to it: an
+unlisted field, a missing one or another type fails. The reference is held
+to the same names. `audit.clean` raises on a type it does not know, so a
+new field of an odd type drops its event with a warning; nothing is ever
+written as a Python repr. A failure's kind and a removal's stage are fields
+of their own, `failure` and `failedStage`. A handler in `cli.py` that prints
+a refusal and returns goes through `_refuse`, which hands the kind to the
+log; one that only printed would end its run as `result`. A cut output
+carries its count in `outDropped`, never a mark inside the text.
+
+A write that fails turns recording off for the rest of the run and warns
+once through `progress.line`. `conftest.ENV` and an autouse fixture set
+`WORKTREES_AUDIT=off`; `tests/test_audit.py` turns it on at a directory of
+its own. [Audit log](docs/REFERENCE.md#audit-log) lists the events.
 
 ## Every git command is one spec
 
@@ -626,7 +713,9 @@ both ways was 18 of an assessment's 35 calls over nine worktrees.
 no call site can assemble its way past it. `reset --hard`, a forced `checkout`
 or `switch`, `clean -f`, a bare `push --force`, `worktree remove --force`,
 `branch -D` and an `update-ref` delete that names no full sha are refused
-absolutely. There is no flag, and `--yes` least of all.
+absolutely. There is no flag, and `--yes` least of all. `gw remove` prints
+`git worktree remove --force PATH` beside a dirty target's refusal, for a
+person who has looked to run; nothing here runs it.
 
 Those seven are `RULES`, a tuple, each row carrying the name `--explain`
 prints, the clause the refusal ends with, and the test. The footer `--explain`

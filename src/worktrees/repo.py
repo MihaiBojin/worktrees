@@ -27,20 +27,24 @@ def git_version() -> None:
     """The installed Git release, without reading repository objects."""
 
 
-def require_offline_git() -> None:
-    """Refuse implicit object retrieval on unpatched partial clones."""
+def partial(repo: str | os.PathLike[str] | None = None) -> bool:
+    """Whether this clone leaves objects on a promisor remote."""
     values = {}
-    for record in partial_clone_config().out.split("\0"):
+    for record in partial_clone_config(repo=repo).out.split("\0"):
         if record:
             key, separator, value = record.partition("\n")
             values[key] = value if separator else None
-    partial = any(
+    return any(
         not key.endswith(".promisor")
         or value is None
         or value.lower() not in ("", "false", "no", "off", "0")
         for key, value in values.items()
     )
-    if not partial:
+
+
+def require_offline_git() -> None:
+    """Refuse implicit object retrieval on unpatched partial clones."""
+    if not partial():
         return
     import re
 
@@ -488,35 +492,43 @@ def head(repo: str | os.PathLike[str] | None = None) -> Head:
 class Status:
     """What one `git status` says about a worktree.
 
-    Both answers from one call. `dirty` is what makes `git worktree remove`
-    refuse; `ignored` is what it deletes at exit 0 without --force and without
-    a word, which nothing in git brings back because no ref ever pointed at
-    them.
+    Both answers from one call. `changed` and `untracked` count what makes
+    `git worktree remove` refuse; `ignored` is what it deletes at exit 0
+    without --force and without a word, which nothing in git brings back
+    because no ref ever pointed at them.
     """
 
-    __slots__ = ("dirty", "ignored")
+    __slots__ = ("changed", "ignored", "untracked")
 
-    dirty: bool
+    changed: int
+    untracked: int
     ignored: list[str]
 
-    def __init__(self, dirty: bool, ignored: list[str]) -> None:
-        self.dirty = dirty
+    def __init__(self, changed: int, untracked: int, ignored: list[str]) -> None:
+        self.changed = changed
+        self.untracked = untracked
         self.ignored = ignored
+
+    @property
+    def dirty(self) -> bool:
+        return bool(self.changed or self.untracked)
 
 
 def status_of(path: str) -> Status:
     """Read a worktree once and answer both questions about it."""
     entries = iter(status_entries(repo=path).out.split("\0")[:-1])
-    dirty, ignored = False, []
+    changed, untracked, ignored = 0, 0, []
     for entry in entries:
         if entry.startswith("!! "):
             ignored.append(entry[3:])
-            continue
-        dirty = True
-        if "R" in entry[:2] or "C" in entry[:2]:
-            # A rename or copy names its source in a field of its own.
-            next(entries, None)
-    return Status(dirty=dirty, ignored=ignored)
+        elif entry.startswith("?? "):
+            untracked += 1
+        else:
+            changed += 1
+            if "R" in entry[:2] or "C" in entry[:2]:
+                # A rename or copy names its source in a field of its own.
+                next(entries, None)
+    return Status(changed, untracked, ignored)
 
 
 def ignored_paths(path: str) -> list[str]:

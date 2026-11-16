@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, NamedTuple
 if TYPE_CHECKING:
     from . import branches
 
-from . import render
+from . import audit, render
 from . import repo as R
-from .git import Refused, git
+from .git import GitError, Refused, git
 from .verdicts import REMOVE as REMOVE
 from .verdicts import Verdict, restore_command
 
@@ -244,6 +244,168 @@ def report(outcome: Outcome, say: Callable[[str], None]) -> None:
         say(render.fail(failure))
 
 
+_RECOVERY = (
+    "a branch, stash or reflog commit comes back with its command until "
+    "git gc prunes the commit; ignored and untracked files do not come back"
+)
+
+
+def _repository(repo: str | os.PathLike[str] | None) -> dict:
+    """Which repository an audit event is about, its remote URL scrubbed."""
+    try:
+        name = R.remote(repo)
+        url = R.config_get(f"remote.{name}.url", repo=repo).value if name else ""
+        return {
+            "commonDir": R.shared_dir(repo),
+            "remote": name,
+            "url": url,
+        }
+    except GitError:
+        return {"commonDir": "", "remote": "", "url": ""}
+
+
+def _target(v: Verdict | branches.Verdict, snapshot: Snapshot | None, repo) -> dict:
+    """What an audit event says of one target, as it was assessed."""
+    fields: dict = {
+        "branch": v.branch,
+        "sha": snapshot.sha if snapshot else v.sha,
+        "path": snapshot.path if snapshot else "",
+        "reason": v.reason,
+        "proof": v.proof,
+        "evidence": v.evidence,
+        "request": v.request,
+        "permissions": sorted(v.permissions),
+        "repository": _repository(repo),
+        # Null when the target was refused before it had been assessed.
+        "head": {"branch": snapshot.head.branch, "sha": snapshot.head.sha}
+        if snapshot
+        else None,
+        "notices": list(snapshot.head.notices) if snapshot else [],
+    }
+    return fields
+
+
+def restores(snapshot: Snapshot, branch: bool, stashes: Iterable[str]) -> list[dict]:
+    """What puts back each thing a removal takes, as fields and as a command.
+
+    `argv` is the command with nothing quoted, for a program to run or read;
+    `command` is the same words shell-quoted, for a person to paste. Each
+    carries the full sha and whichever of the branch and subject it restores,
+    so nothing has to be parsed back out of a shell line.
+    """
+    subjects = dict(snapshot.stashes)
+    rows: list[dict] = [
+        {
+            "kind": "reflog-commit",
+            "sha": sha,
+            "subject": subject,
+            "branch": f"rescue-{sha[:7]}",
+            "argv": ["git", "branch", f"rescue-{sha[:7]}", sha],
+        }
+        for sha, subject in snapshot.reflog
+    ]
+    if branch and snapshot.branch:
+        rows.append(
+            {
+                "kind": "branch",
+                "sha": snapshot.sha,
+                "branch": snapshot.branch,
+                "argv": ["git", "branch", snapshot.branch, snapshot.sha],
+            }
+        )
+    rows += [
+        {
+            "kind": "stash",
+            "sha": sha,
+            "subject": subjects[sha],
+            "argv": ["git", "stash", "store", "-m", subjects[sha], sha],
+        }
+        for sha in stashes
+        if sha in subjects
+    ]
+    for row in rows:
+        row["command"] = shlex.join(row["argv"])
+    return rows
+
+
+def _recovery(rows: list[dict]) -> dict:
+    """The fields an event carries for `rows`: each action, and its line."""
+    return {
+        "restore": rows,
+        "undo": [row["command"] for row in rows],
+        "recovery": _RECOVERY,
+    }
+
+
+def audit_proposed(v: Verdict | branches.Verdict, keep_branch: bool, repo=None) -> None:
+    """Record a removal as disclosed, before anyone has agreed to it."""
+    snapshot = v.snapshot
+    if not audit.active() or snapshot is None:
+        return
+    drops = bool(v.branch) and not keep_branch
+    audit.record(
+        "removal.proposed",
+        **_target(v, snapshot, repo),
+        keepBranch=keep_branch,
+        deletes={
+            "worktree": snapshot.path,
+            "branch": v.branch if drops else "",
+            "stashes": [sha for sha, _ in snapshot.stashes] if drops else [],
+            "reflog": [sha for sha, _ in snapshot.reflog],
+            "ignored": list(snapshot.ignored_groups),
+        },
+        # Only what would go: a kept branch keeps its stashes.
+        **_recovery(
+            restores(
+                snapshot, drops, [sha for sha, _ in snapshot.stashes] if drops else []
+            )
+        ),
+    )
+
+
+# Where a removal stopped, in the order it works.
+STAGES = ("recheck", "worktree", "branch", "stashes")
+
+
+def audit_outcome(
+    v: Verdict | branches.Verdict, outcome: Outcome, repo=None, *, stage: str = ""
+) -> None:
+    """Record what a removal did, each step on its own: a removed worktree
+    beside a retained branch is `partial`, and neither is `refused`.
+
+    `stage` is the step the caller had reached when it failed. The ref goes
+    before the stashes, so a failure with the branch gone is the stashes'.
+    """
+    if not audit.active():
+        return
+    if outcome.failed and outcome.branch_removed:
+        stage = "stashes"
+    snapshot = v.snapshot
+    took = outcome.worktree_removed or outcome.branch_removed or bool(outcome.dropped)
+    result = "completed" if not outcome.failed else "partial" if took else "refused"
+    audit.record(
+        "removal.outcome",
+        **_target(v, snapshot, repo),
+        result=result,
+        keepBranch=bool(getattr(v, "keep_branch", False)),
+        worktreeRemoved=outcome.worktree_removed,
+        branchRemoved=outcome.branch_removed,
+        stashesDropped=list(outcome.dropped),
+        stashesRetained=list(outcome.retained),
+        stashesAbsent=list(outcome.skipped),
+        ignoredDeleted=list(snapshot.ignored_groups)
+        if snapshot and outcome.worktree_removed
+        else [],
+        failed=list(outcome.failed),
+        failedStage=stage if outcome.failed else None,
+        **_recovery(
+            restores(snapshot, outcome.branch_removed, outcome.dropped)
+            if snapshot and took
+            else []
+        ),
+    )
+
+
 def removable(verdicts: list[Verdict]) -> list[Verdict]:
     """Only rows whose proof and protections permit deletion."""
     return [v for v in verdicts if v.eligible]
@@ -306,6 +468,10 @@ class Fact(NamedTuple):
     code: str
     value: str
     text: str
+    # How a table says it when `text` holds commands: the words, then each
+    # command on a line of its own.
+    brief: str = ""
+    commands: tuple[str, ...] = ()
 
 
 PROTECTED_WHY = "it is a protected branch"
@@ -342,12 +508,15 @@ def branch_protections(
 
 def reflog_fact(lost: Sequence[tuple[str, str]]) -> Fact:
     """Commits only a deleted reflog reaches, each with the line that shows it."""
-    shown = " and ".join(f"git show {sha[:12]}" for sha, _ in lost)
+    commands = tuple(f"git show {sha[:12]}" for sha, _ in lost)
+    counted = "1 commit" if len(lost) == 1 else f"{len(lost)} commits"
     return Fact(
         "reflog",
         "reflog",
         f"its reflog alone holds {len(lost)} commit(s) the head branch lacks; "
-        f"see each with {shown}",
+        f"see each with {' and '.join(commands)}",
+        f"its reflog alone holds {counted} the head branch lacks; see each with:",
+        commands,
     )
 
 
@@ -374,6 +543,27 @@ def hinted(protections: list[Fact], needs: Sequence[str]) -> list[str]:
     return [f.text + hint if f.value in needs else f.text for f in protections]
 
 
+def details(
+    evidence: str, facts: Sequence[Fact], needs: Sequence[str]
+) -> list[str | render.Cell]:
+    """A row's reasons as a table shows them under it: the evidence, each
+    protection that stands, a command on a line of its own, and once, last,
+    the flags that would make the row eligible."""
+    lines: list[str | render.Cell] = [evidence]
+    for fact in facts:
+        text = fact.brief or fact.text
+        if text != evidence:
+            lines.append(text)
+        lines += [
+            render.Cell(f"    {command}", render.BOLD) for command in fact.commands
+        ]
+    if needs:
+        lines.append(
+            render.Cell.of(("needs: ", render.DIM), (delete_flags(needs), render.BOLD))
+        )
+    return lines
+
+
 def plan(
     go: Sequence[Verdict | branches.Verdict],
     say: Callable[[str], None],
@@ -383,10 +573,13 @@ def plan(
 ) -> None:
     """Disclose the immutable assessed state before confirmation: one line
     for each thing that goes or stays, led by what happens to it."""
-    for v in go:
+    for i, v in enumerate(go):
         snapshot = v.snapshot
         if snapshot is None:
             raise Refused("no assessed deletion snapshot")
+        audit_proposed(v, keep_branch, repo)
+        if i:
+            say("")
         for notice in snapshot.head.notices:
             say(render.note(notice))
         say(render.branch(v.branch or "(detached)"))
@@ -412,10 +605,12 @@ def plan(
                     "--exclude-standard",
                 ]
             )
-            say(_line("", f"list every ignored file: {render.command(listing)}"))
+            say(_line("", "list every ignored file:"))
+            say(_command(render.command(listing)))
         for sha, subject in snapshot.reflog:
             restore = f"git branch rescue-{sha[:7]} {sha}"
-            say(_line("delete reflog", f"{sha[:7]} {subject}, recover with: {restore}"))
+            say(_line("delete reflog", f"{sha[:7]} {subject}, recover with:"))
+            say(_command(render.command(restore)))
         if not v.branch:
             continue
         short = render.err(snapshot.sha[:7], render.YELLOW)
@@ -424,20 +619,23 @@ def plan(
             kept = ", and its stashes" if snapshot.stashes else ""
             say(_line("keep branch", f"{at}{kept}"))
             continue
-        say(
-            _line(
-                "delete branch",
-                f"{at}, restore with: {render.restore(v.branch, snapshot.sha)}",
-            )
-        )
+        say(_line("delete branch", f"{at}, restore with:"))
+        say(_command(render.restore(v.branch, snapshot.sha)))
         for sha, subject in snapshot.stashes:
             restore = f"git stash store -m {shlex.quote(subject)} {sha}"
-            say(_line("delete stash", f"{sha[:7]}, restore with: {restore}"))
+            say(_line("delete stash", f"{sha[:7]}, restore with:"))
+            say(_command(render.command(restore)))
 
 
 def _line(label: str, value: str) -> str:
     """A disclosure line, its values in one column under the longest label."""
     return f"  {label:<15}  {value}"
+
+
+def _command(text: str) -> str:
+    """A command under the disclosure line that introduces it, on a line of
+    its own so it is never the tail of a long one."""
+    return f"  {'':<15}    {text}"
 
 
 def deletions(

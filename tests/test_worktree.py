@@ -463,7 +463,7 @@ def test_keep_branch_removes_the_checkout_and_keeps_the_branch(world) -> None:
 def test_remove_prints_the_restore_line_once(world) -> None:
     world.merged_worktree("done")
     p = run(world, "gw remove", "done", "--yes")
-    assert p.stderr.count("restore with: git branch done ") == 1
+    assert len(re.findall(r"restore with:\n +git branch done ", p.stderr)) == 1
 
 
 def test_a_loose_match_ignores_the_path(world) -> None:

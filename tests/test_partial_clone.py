@@ -53,7 +53,8 @@ def git_snapshot(repo: Path) -> dict:
             path.stat().st_mode,
         )
         for path in (repo / ".git").rglob("*")
-        if path.is_file()
+        # The proofs file is a cache an assessment may save, not git's state.
+        if path.is_file() and path.name != "git-worktrees-proofs.json"
     }
 
 

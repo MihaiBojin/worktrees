@@ -11,8 +11,10 @@ from .cli import (
     _assessment_head,
     _err,
     _explain,
+    _failed,
     _json,
     _only,
+    _records,
     _Stop,
     add_status_flags,
 )
@@ -106,30 +108,36 @@ def _prepare(
 
 
 def _table(rows: list[branches.Verdict]) -> str:
-    return table(
+    """Each branch's short answers on one line, its reasons and the worktrees
+    it is checked out in under them."""
+    return _records(
+        (
+            Cell("VERDICT", BOLD),
+            Cell("REASON", BOLD),
+            Cell("ELIGIBLE", BOLD),
+            Cell("BRANCH", BOLD),
+            Cell("SHA", BOLD),
+        ),
         [
             (
-                Cell("VERDICT", BOLD),
-                Cell("REASON", BOLD),
-                Cell("ELIGIBLE", BOLD),
-                Cell("BRANCH", BOLD),
-                Cell("SHA", BOLD),
-                Cell("WHY", BOLD),
-                Cell("WORKTREE", BOLD),
-            ),
-            *[
                 (
                     _verdict(v),
                     Cell(v.reason),
                     Cell("yes" if v.eligible else "no"),
                     Cell(v.branch, render.BRANCH),
                     Cell(v.sha[:12], YELLOW),
-                    Cell("\n".join(v.reasons)),
-                    Cell(", ".join(v.paths), DIM),
-                )
-                for v in rows
-            ],
-        ]
+                ),
+                [
+                    *(
+                        [v.evidence]
+                        if v.error
+                        else prune.details(v.evidence, v.facts, v.needs)
+                    ),
+                    *(Cell(f"worktree: {path}", DIM) for path in v.paths),
+                ],
+            )
+            for v in rows
+        ],
     )
 
 
@@ -371,4 +379,6 @@ def delete(args: argparse.Namespace) -> int:
         _err(render.fail(f"{render.branch(v.branch)} kept: {v.why}"))
     if failures or any(v.error for v in rows):
         return 1
+    if held:
+        _failed("\n".join(f"{v.branch} kept: {v.why}" for v in held), "refused")
     return 3 if held else 0

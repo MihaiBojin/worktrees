@@ -120,7 +120,13 @@ def test_a_checkout_fact_decides_a_finished_worktree(world, protection, detached
     assert row["verdict"] == "keep"
     assert row["reason"] == ("uncommitted" if dirty else protection)
     if dirty:
-        assert row["why"] == "it has uncommitted changes or untracked files"
+        assert (
+            row["why"]
+            == {
+                "tracked": "it has uncommitted changes to 1 file",
+                "untracked": "it has 1 untracked path",
+            }[protection]
+        )
     assert row["proof"]
     assert not row["eligible"]
     assert row["protections"]
@@ -315,8 +321,12 @@ def test_prefix_sharing_branches_have_distinct_stashes(world, message):
 
 
 def snapshot(path: Path) -> dict[str, bytes]:
+    """Every file under `path`, but the proofs an assessment saves for the
+    next one: a cache of facts about commits, and no part of the repository."""
     return {
-        str(p.relative_to(path)): p.read_bytes() for p in path.rglob("*") if p.is_file()
+        str(p.relative_to(path)): p.read_bytes()
+        for p in path.rglob("*")
+        if p.is_file() and p.name != "git-worktrees-proofs.json"
     }
 
 
@@ -829,7 +839,7 @@ def test_prune_metadata_preserves_eligible_rows_and_stale_registration(
         assert "head" in data and "lastSync" in data
     else:
         assert "VERDICT" in result.stdout and "ELIGIBLE" in result.stdout
-        assert str(eligible) in result.stdout and str(blocked) in result.stdout
+        assert " eligible " in result.stdout and " blocked " in result.stdout
 
 
 @pytest.mark.parametrize("mode", [(), ("--json",), ("--table",)])
@@ -889,7 +899,7 @@ def test_untracked_files_protect_under_show_untracked_files_no(world):
     world.git("config", "status.showUntrackedFiles", "no")
     row = next(r for r in rows(world) if r["branch"] == "done")
     assert not row["eligible"]
-    assert "it has uncommitted changes or untracked files" in row["protections"]
+    assert "it has 1 untracked path" in row["protections"]
     result = run(world, "gw prune", "--yes")
     assert result.returncode == 0, result.stderr
     assert (wt / "notes.txt").exists()
@@ -940,7 +950,8 @@ def test_prune_holds_back_a_row_whose_reflog_alone_holds_a_commit(world):
     assert not wt.exists()
     recover = f"git branch rescue-{lost[:7]} {lost}"
     assert (
-        f"  delete reflog    {lost[:7]} dropped.txt, recover with: {recover}\n"
+        f"  delete reflog    {lost[:7]} dropped.txt, recover with:\n"
+        f"                     {recover}\n"
     ) in p.stderr
     world.git(*shlex.split(recover)[1:])
     assert world.git("rev-parse", f"rescue-{lost[:7]}") == lost
@@ -1039,3 +1050,104 @@ def test_an_operation_in_progress_keeps_a_finished_worktree(world):
     assert (row["verdict"], row["reason"]) == ("keep", "in-progress")
     assert "a bisect is in progress in it" in row["protections"]
     assert not row["eligible"]
+
+
+PROOFS = "git-worktrees-proofs.json"
+
+
+def _squashed_and_unfinished(world) -> tuple[str, str]:
+    """A worktree whose change went in by squash and one still unmerged."""
+    squashed = world.worktree("squashed")
+    world.commit("squashed.txt", at=squashed)
+    world.git("merge", "--quiet", "--squash", "squashed")
+    world.git("commit", "--quiet", "-m", "squash")
+    world.commit("unfinished.txt", at=world.worktree("unfinished"))
+    return (
+        world.git("rev-parse", "squashed"),
+        world.git("rev-parse", "unfinished"),
+    )
+
+
+def _verdicts(world) -> tuple[dict, str]:
+    p = run(world, "gw prune", "--json", "-v")
+    assert p.returncode == 0, p.stderr
+    found = {v["branch"]: v for v in json.loads(p.stdout)["verdicts"]}
+    return found, p.stderr
+
+
+def test_a_proof_is_asked_once_and_kept_while_the_head_stands(world):
+    """A proof is a fact about two commits, so the second assessment reads
+    it from the Git common directory and runs none of its git commands, a
+    yes or a no alike. The checkout's own state is read every time."""
+    squashed, unfinished = _squashed_and_unfinished(world)
+    first, log = _verdicts(world)
+    assert "patch-id" in log and "status --porcelain" in log
+    saved = json.loads((world.repo / ".git" / PROOFS).read_text())
+    assert saved["head"] == world.git("rev-parse", "main")
+    assert saved["proof"][squashed][0] == "squash"
+    assert saved["proof"][unfinished] is None
+
+    second, log = _verdicts(world)
+    assert second == first
+    assert second["squashed"]["proof"] == "squash" and second["squashed"]["eligible"]
+    assert second["unfinished"]["reason"] == "unpushed"
+    for asked in ("patch-id", "diff-tree", "merge-base --is-ancestor"):
+        assert asked not in log, log
+    assert log.count("status --porcelain") == 2
+
+
+def test_a_kept_proof_never_hides_what_a_checkout_holds_now(world):
+    """Only the proof is kept. A file written after the first assessment
+    holds its worktree back in the next."""
+    _squashed_and_unfinished(world)
+    first, _ = _verdicts(world)
+    assert first["squashed"]["eligible"]
+    (world.parent / ".worktrees" / "squashed" / world.repo.name / "new").write_text("x")
+    second, _ = _verdicts(world)
+    assert second["squashed"]["reason"] == "uncommitted"
+    assert not second["squashed"]["eligible"]
+
+
+def test_proofs_start_again_when_the_head_moves(world):
+    """The file holds one head's proofs: a no against the old head says
+    nothing of the new one, which may have merged the branch."""
+    _, unfinished = _squashed_and_unfinished(world)
+    first, _ = _verdicts(world)
+    assert first["unfinished"]["verdict"] == "keep"
+    world.git("merge", "--quiet", "--squash", "unfinished")
+    world.git("commit", "--quiet", "-m", "squash unfinished")
+    second, log = _verdicts(world)
+    assert "patch-id" in log
+    assert (second["unfinished"]["verdict"], second["unfinished"]["proof"]) == (
+        "remove",
+        "squash",
+    )
+    saved = json.loads((world.repo / ".git" / PROOFS).read_text())
+    assert saved["head"] == world.git("rev-parse", "main")
+    assert saved["proof"][unfinished][0] == "squash"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "not json",
+        "[]",
+        '{"head": 7}',
+        '{"head": "HEAD", "proof": {"SHA": ["squash"]}}',
+        '{"head": "HEAD", "proof": {"SHA": ["forge", "said so"]}}',
+        '{"head": "HEAD", "proof": {"SHA": "merged"}}',
+        '{"head": "HEAD", "proof": []}',
+    ],
+)
+def test_a_malformed_proof_is_never_evidence(world, payload):
+    """A hand-written or damaged entry claiming an unmerged branch merged
+    is asked again, not believed."""
+    _, unfinished = _squashed_and_unfinished(world)
+    head = world.git("rev-parse", "main")
+    (world.repo / ".git" / PROOFS).write_text(
+        payload.replace("HEAD", head).replace("SHA", unfinished)
+    )
+    found, log = _verdicts(world)
+    assert found["unfinished"]["verdict"] == "keep"
+    assert found["unfinished"]["proof"] == ""
+    assert "patch-id" in log

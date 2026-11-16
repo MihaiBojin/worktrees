@@ -29,6 +29,8 @@ class Verdict:
     eligible: bool = False
     stashes: list[str] = field(default_factory=list)
     protections: list[str] = field(default_factory=list)
+    # The same protections as facts, for a table to lay out.
+    facts: list[prune.Fact] = field(default_factory=list)
     snapshot: prune.Snapshot | None = None
     permissions: frozenset[str] = frozenset()
     # The fact that decides the row: a ref fact, else its evidence.
@@ -59,7 +61,7 @@ class Verdict:
                 f.name: getattr(self, f.name)
                 for f in fields(self)
                 if f.name
-                not in ("evidence", "snapshot", "permissions", "found", "lost")
+                not in ("evidence", "snapshot", "permissions", "found", "lost", "facts")
             },
             "why": self.why,
             "undo": self.undo,
@@ -194,9 +196,8 @@ def _settle(
 
     row.eligible = eligible(granted)
     row.needs = () if row.eligible else prune.needed(eligible, PERMISSIONS) or ()
-    row.protections = prune.hinted(
-        _standing(row, hard, head_branch, granted), row.needs
-    )
+    row.facts = _standing(row, hard, head_branch, granted)
+    row.protections = prune.hinted(row.facts, row.needs)
 
 
 def delete(
@@ -209,6 +210,29 @@ def delete(
     first_parents: set[str] | None = None,
 ) -> prune.Outcome:
     """Recheck the approved ref and stashes, then return every cleanup outcome."""
+    try:
+        outcome = _delete(
+            row, head_ref, head_sha, head_branch, remote, ask_forge, first_parents
+        )
+    except (GitError, Refused, ValueError) as exc:
+        # Kept before anything was tried: the audit log hears of it too.
+        refused = prune.Outcome(branch=row.branch, retained=list(row.stashes))
+        refused.failed.append(str(exc))
+        prune.audit_outcome(row, refused, stage="recheck")
+        raise
+    prune.audit_outcome(row, outcome, stage="branch")
+    return outcome
+
+
+def _delete(
+    row: Verdict,
+    head_ref: str,
+    head_sha: str,
+    head_branch: str,
+    remote: str,
+    ask_forge: bool,
+    first_parents: set[str] | None,
+) -> prune.Outcome:
     snapshot = row.snapshot
     if snapshot is None:
         raise Refused("no assessed deletion snapshot")
