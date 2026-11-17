@@ -522,6 +522,46 @@ def _codex_rules() -> list[dict]:
     return rules
 
 
+def _codex_allows(command: str) -> bool:
+    words = shlex.split(command)
+    return any(
+        rule["decision"] == "allow"
+        and len(words) >= len(rule["pattern"])
+        and all(
+            word in part if isinstance(part, list) else word == part
+            for word, part in zip(words, rule["pattern"], strict=False)
+        )
+        for rule in _codex_rules()
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gw sync",
+        "gw fast-forward --autostash --json",
+        "gw branch create fix-parser --json",
+        "git switch --create fix-parser",
+        "git switch --no-guess fix-parser",
+        "git commit -m subject",
+        "git push --set-upstream origin fix-parser",
+        "gw merge 41 --subject s --body-file f --match-head-commit x --json",
+    ],
+)
+def test_codex_rules_cover_what_ship_it_writes_or_fetches(command: str) -> None:
+    """Codex has no per-skill pre-approval, and its sandbox keeps `.git`
+    read-only and offline, so each command that writes a ref or reaches the
+    remote needs a rule."""
+    assert _codex_allows(command), command
+
+
+@pytest.mark.parametrize(
+    "command", ["git switch main", "git switch -", "gw prune --yes"]
+)
+def test_codex_rules_refuse_what_ship_it_never_runs(command: str) -> None:
+    assert not _codex_allows(command), command
+
+
 def test_codex_merge_rule_allows_only_the_merge_command() -> None:
     rules = _codex_rules()
     merge = [rule for rule in rules if rule["pattern"] == ["gw", "merge"]]
