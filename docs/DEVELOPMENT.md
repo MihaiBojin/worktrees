@@ -71,19 +71,30 @@ interpreter comes from uv. [docs/BENCHMARK.md](BENCHMARK.md) is the last run.
 ## Working on a checkout
 
 ```console
-make install-local    # this checkout's CLI and shell plugin
-make install          # this version as published: the CLI and the shell plugin
+make install           # same as install-latest
+make install-latest    # the newest CLI and the shell plugin from the default branch
+make install-pinned    # this version as published: the CLI and the shell plugin
+make install-local     # this checkout's CLI and shell plugin
 ```
+
+Each target first uninstalls the CLI and removes every copy of the shell
+plugin, published or local, then installs its own.
+
+`make install-latest` installs the newest `git-worktrees` from PyPI and the
+shell plugin from GitHub's default branch, neither pinned, so
+`uv tool upgrade git-worktrees`, `fisher update` and `antidote update` move
+them forward. The default branch can hold plugin changes that no release
+has yet, and `gw version` does not see them: both report the last release.
+
+`make install-pinned` installs the release `pyproject.toml` names, from
+PyPI, and the shell plugin from GitHub at that release's tag, so the CLI and
+the plugin match. An update leaves all three where they are; run the target
+again from a newer checkout to move them.
 
 `make install-local` installs the working copy in place of anything
 published. `gw` on your `$PATH` is the code in front of you, and Fisher and
 Antidote load the shell plugin from this checkout. Run it again after a
 change, since uv and Fisher copy the files at install.
-
-`make install` undoes it: the release `pyproject.toml` names, from PyPI,
-and the shell plugin from GitHub at that release's tag, so the CLI and the
-plugin match. A command only the working copy has, such as one renamed since that
-release, leaves `~/.local/bin` with it.
 
 The fish half is skipped where fish or Fisher is missing, and the zsh half
 where Antidote's list is: `$ZDOTDIR/.zsh_plugins.txt`, else
