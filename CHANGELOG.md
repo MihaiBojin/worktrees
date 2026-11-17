@@ -17,6 +17,20 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.12.2 - 2026-11-17
+
+### Changed
+
+A session keeps one worktree per repository and starts each branch in
+it. It creates a worktree only in a repository where it has none, or
+when another session is working in its own.
+
+### Fixed
+
+Codex sessions that ship a change no longer stop for approval at
+`gw sync` or `git switch --create` once the rules in ship-it's
+`rights.md` are installed.
+
 ## 0.12.1 - 2026-11-16
 
 ### Changed
