@@ -684,8 +684,8 @@ The skills handle branches, pull requests and merges in the checkout the
 session runs in, and never create a worktree. A person creates and
 chooses worktrees through `gw add` and `gw list`, and the agent's client
 through `claude --worktree` and `codex --worktree`. A Claude Code session
-also runs `gw add` itself when a change cannot go on its worktree's
-branch, or belongs to another repository.
+keeps one worktree per repository and runs `gw add` itself only where it
+has none yet, or when another session is working in the one it has.
 
 ## Contributing
 

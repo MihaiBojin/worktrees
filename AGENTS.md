@@ -275,8 +275,9 @@ Both clients hand each session `plugin/session.md` when it starts: a
 `SessionStart` hook in `plugin/hooks/hooks.json` for Claude Code and
 `plugin/hooks/codex.json`, which the Codex manifest names, wraps the file
 in the `additionalContext` JSON with `jq`. The rules say how a session uses
-its worktree, when it creates another so that two changes never share a
-branch, and the check it makes before editing: changes it did not make, or
+its worktree: one per repository, one branch at a time, another only where
+it has none or another session works in it, and the check it makes before
+editing and whenever changes appear: changes it did not make, or
 another process's lock, mean another session works there. Nothing locks a
 worktree for a session.
 
