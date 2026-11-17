@@ -275,9 +275,10 @@ Both clients hand each session `plugin/session.md` when it starts: a
 `SessionStart` hook in `plugin/hooks/hooks.json` for Claude Code and
 `plugin/hooks/codex.json`, which the Codex manifest names, wraps the file
 in the `additionalContext` JSON with `jq`. The rules say how a session uses
-its worktree, including the check it makes before editing: changes it did
-not make, or another process's lock, mean another session works there.
-Nothing locks a worktree for a session.
+its worktree, when it creates another so that two changes never share a
+branch, and the check it makes before editing: changes it did not make, or
+another process's lock, mean another session works there. Nothing locks a
+worktree for a session.
 
 The plugin carries the release version in three manifests, and
 `scripts/bump_version.py` stamps all three. `plugin/plugin.json` is the
