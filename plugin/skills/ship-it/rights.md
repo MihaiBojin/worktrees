@@ -47,9 +47,14 @@ prefix_rule(
     justification="ship-it starts a branch",
 )
 prefix_rule(
-    pattern=["gw", ["fast-forward", "ci-checks"]],
+    pattern=["gw", ["sync", "fast-forward", "ci-checks"]],
     decision="allow",
     justification="ship-it fetches, rebases and reads CI",
+)
+prefix_rule(
+    pattern=["git", "switch", ["--create", "--no-guess"]],
+    decision="allow",
+    justification="ship-it starts a branch or moves to a named one",
 )
 prefix_rule(
     pattern=["git", ["add", "commit"]],
