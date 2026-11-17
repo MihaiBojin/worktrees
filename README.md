@@ -681,9 +681,11 @@ asking, and add the permission rules shipping needs to Claude Code's
 settings.
 
 The skills handle branches, pull requests and merges in the checkout the
-session runs in, and never create a worktree. Creating and choosing
-worktrees is for a person, through `gw add` and `gw list`, or for the
-agent's client, as `claude --worktree` and `codex --worktree` do.
+session runs in, and never create a worktree. A person creates and
+chooses worktrees through `gw add` and `gw list`, and the agent's client
+through `claude --worktree` and `codex --worktree`. A Claude Code session
+keeps one worktree per repository and runs `gw add` itself only where it
+has none yet, or when another session is working in the one it has.
 
 ## Contributing
 

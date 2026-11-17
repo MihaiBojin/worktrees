@@ -25,9 +25,14 @@ the next with `gw branch create` or `git switch --create`, and ship several at o
 `ship-it BRANCH ...`, which switches the worktree to each in turn.
 
 A hook in each client hands every session [these rules](session.md) when it
-starts. Before editing, the session checks whether another one is working
-in its worktree, from uncommitted changes it did not make or another
-process's lock, and moves to a new worktree when one is. The hook needs
+starts. A session keeps one worktree per repository and works on one
+branch at a time in it, starting the next branch there even while the last
+one's pull request waits. It creates a worktree only in a repository where
+it has none before its first change there, or when another session is
+working in its own: uncommitted changes it did not make, or another
+process's lock. In Claude Code it makes one with `EnterWorktree` or
+`gw add`; in Codex it asks for a session started with `codex --worktree`.
+The hook needs
 `jq`, and Codex asks you to review and trust it before it runs.
 
 ## Install
