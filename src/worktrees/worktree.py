@@ -8,6 +8,8 @@ line and does the move.
 from __future__ import annotations
 
 import os
+import shlex
+from collections.abc import Callable
 from pathlib import Path
 
 from . import layout, prune, render
@@ -27,6 +29,12 @@ def worktree_add(name: str, dest: str, base: str) -> None:
 @git("worktree add -- $dest $name", mutates=True)
 def worktree_add_existing(dest: str, name: str) -> None:
     """A branch that already exists needs no -b, and -b would refuse."""
+
+
+@git("worktree add --track -b $name -- $dest $copy", mutates=True)
+def worktree_add_tracking(name: str, dest: str, copy: str) -> None:
+    """A branch only the remote has starts from its copy and pushes back to it,
+    so it tracks the copy: the upstream is the same branch, not the head."""
 
 
 class Landed:
@@ -49,8 +57,15 @@ def add(
     base: str = "",
     warn: object = None,
     repo: str | os.PathLike[str] | None = None,
+    approve: Callable[[str], bool] | None = None,
 ) -> Landed:
-    """Create a worktree for `name` and say where it is."""
+    """Create a worktree for `name` and say where it is.
+
+    A branch only the default remote has is started from its copy, after
+    `approve` says yes to the copy's name; without `approve` that is a
+    refusal. A new branch of the same name from the head ref would hide the
+    remote's work behind a branch that pushes over it.
+    """
     if not check_ref_format(name, repo=repo):
         raise Refusal(f"{render.branch(name)} is not a valid branch name")
 
@@ -74,6 +89,24 @@ def add(
     if not resolved.ref:
         raise Refusal(resolved.unresolved)
     existing = bool(R.ref_exists(f"refs/heads/{name}", repo=repo))
+    copy = "" if existing else _remote_copy(name, repo)
+    if existing and base:
+        _same_commit_or_refuse(name, f"refs/heads/{name}", base, repo)
+    elif copy and base:
+        _same_commit_or_refuse(name, copy, base, repo)
+    elif copy:
+        short = R.ref_name(copy)
+        if approve is None:
+            raise Refusal(
+                f"{render.branch(name)} exists only on the remote, as "
+                f"{render.ref(short)}; "
+                f"gw add {shlex.quote(name)} --yes starts it from there"
+            )
+        if not approve(short):
+            raise Refusal(
+                f"{render.branch(name)} not created: a new one from the head ref "
+                f"would hide {render.ref(short)}"
+            )
     made = _first_absent(dest.parent, main)
     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -81,6 +114,9 @@ def add(
         if existing:
             worktree_add_existing(str(dest), name, repo=repo)
             return Landed(str(dest), name, created=False)
+        if copy:
+            worktree_add_tracking(name, str(dest), copy, repo=repo)
+            return Landed(str(dest), name, created=True)
 
         start = base or resolved.ref
         worktree_add(name, str(dest), start, repo=repo)
@@ -94,6 +130,35 @@ def add(
         raise
 
     return Landed(str(dest), name, created=True)
+
+
+def _remote_copy(name: str, repo: str | os.PathLike[str] | None) -> str:
+    """The default remote's `refs/remotes/REMOTE/NAME`, or nothing."""
+    remote = R.remote(repo)
+    if not remote:
+        return ""
+    copy = f"refs/remotes/{remote}/{name}"
+    return copy if R.ref_exists(copy, repo=repo) else ""
+
+
+def _same_commit_or_refuse(
+    name: str, ref: str, base: str, repo: str | os.PathLike[str] | None
+) -> None:
+    """BASE starts a new branch. For a branch that already has a commit, here
+    or on the remote, a BASE naming that commit says the same thing, and any
+    other would move or hide the branch, which this command does not do."""
+    at = R.local_sha(ref, repo=repo).value
+    wanted = R.local_sha(base, repo=repo).value
+    if not wanted:
+        raise Refusal(f"{base} names no commit")
+    if wanted != at:
+        where = "a branch" if ref.startswith("refs/heads/") else "on the remote"
+        short = R.ref_name(ref)
+        raise Refusal(
+            f"{render.branch(name)} is already {where} at {at[:12]}, not at "
+            f"{render.ref(base)}; BASE starts a new branch only. "
+            f"gw add {shlex.quote(name)} checks out {render.ref(short)} as it is"
+        )
 
 
 def _first_absent(dest_parent: Path, main: str) -> Path | None:
