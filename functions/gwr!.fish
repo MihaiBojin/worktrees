@@ -1,3 +1,3 @@
-function gwr! --wraps 'gw remove --keep-branch --yes' --description 'gw remove --keep-branch --yes'
-    gw remove --keep-branch --yes $argv
+function gwr! --wraps 'gw remove --yes' --description 'gw remove --yes'
+    gw remove --yes $argv
 end

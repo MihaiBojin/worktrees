@@ -392,12 +392,13 @@ JSON carries it in `path` and `outcome.destination`.
 | `gwp!` | `gw prune --yes` |
 | `gwpa` | `gw prune --delete all` |
 | `gwpa!` | `gw prune --delete all --yes` |
-| `gwr!` | `gw remove --keep-branch --yes` |
+| `gwr!` | `gw remove --yes` |
+| `gwrk!` | `gw remove --keep-branch --yes` |
 
 `gwpa` permits deleting empty branches and branch stashes, and still asks
-at a terminal. `gwpa!` and `gwr!` skip that question, as `gwp!` does.
-`gwr!` keeps the branch and its stashes, so the branch needs no proof
-that it is finished. It grants no deletion category.
+at a terminal. `gwpa!`, `gwr!` and `gwrk!` skip that question, as `gwp!`
+does. `gwr!` grants no deletion category. `gwrk!` keeps the branch and its
+stashes, so the branch needs no proof that it is finished.
 
 ## Head and synchronization
 

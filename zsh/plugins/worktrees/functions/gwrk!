@@ -1,0 +1,1 @@
+gw remove --keep-branch --yes "$@"
