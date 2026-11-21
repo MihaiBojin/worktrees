@@ -397,7 +397,7 @@ def fail(text: str) -> str:
 
 def warn(text: str) -> str:
     """Something done differently from how it was asked, or might be stale."""
-    return _message("!", YELLOW, text)
+    return _message("⚠", YELLOW, text)
 
 
 def note(text: str) -> str:
