@@ -173,11 +173,12 @@ checked out: `--set-upstream` when the remote lacks it, otherwise
 `--force-with-lease=refs/heads/BRANCH:SHA` on the sha the fetch read.
 Two checks come first. `push.only_there` lists the remote copy's commits
 that neither the branch nor the head ref holds by sha or patch-id, outside
-the copy's own `merged.merged_part`; any that `push.made_here` does not
-find, by a reflog entry of the branch's that a commit, an amend or a
-rebase wrote, is a refusal that `--replace` lifts. `merged.merged_part` of the branch itself, the commits the head ref
-already has by the proofs `gw prune` reads, is a refusal nothing lifts,
-and names `gw fast-forward`. `--force-if-includes` is not passed: git
+the copy's own `merged.merged_part`. A merge or an empty commit has no
+patch-id in this comparison and stays in that list without another proof.
+Any that `push.made_here` does not find through the branch's reflog is a
+refusal that `--replace` lifts. `merged.merged_part` of the branch itself,
+the commits the head ref already has by the proofs `gw prune` reads, is a
+refusal nothing lifts, and names `gw fast-forward`. `--force-if-includes` is not passed: git
 ignores it beside an explicit lease, and the first check asks what it
 would. [Push](docs/commands/push.md) has the outputs.
 
@@ -271,10 +272,13 @@ which `preflight` merges into the settings file the user names. It runs only
 when called by name, in both clients, and pre-approves no write, so the copy
 over the settings file reaches the client's own prompt. Its allow patterns match prefixes, so a test holds the
 skill's commands to never writing `--force`, `--admin`, `--auto`,
-`--delete-branch` or `--replace`. Its deny rules refuse a raw
-`git push --force-with-lease`, every `git rebase`, `gh pr merge`,
-`gh stack merge` and a `gh api` call that names a merge; a Claude Code
-deny rule matches past a leading assignment, so the conflict loop
+`--delete-branch` or `--replace`. Both clients deny direct `git rebase`,
+`gh pr merge` and `gh stack merge` commands. Claude Code denies the forced
+push forms in `preflight/rules.json` and `gh api` calls that name a merge;
+Codex denies every direct `git push` and `gh api` command, regardless of
+trailing arguments.
+`rights.md` names the limits of prefix rules. A Claude Code deny rule
+matches past a leading assignment, so the conflict loop
 continues a rebase with `gw fast-forward --continue`.
 `tests/test_preflight.py` holds `project.json` and `config.toml` to the
 setup `preflight.py` checks for.

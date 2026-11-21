@@ -33,6 +33,12 @@ run refuses and lists them:
   gw fast-forward takes a copy GitHub rewrote, or says what differs; gw push --replace pushes over them once each one is checked
 ```
 
+Merge commits, including GitHub's "Update branch", and empty commits have
+no patch-id in this comparison. They still count as remote work unless
+the branch or the head already holds them, the merged-part proof covers
+them, or the branch's reflog proves this clone made them. A merge can hold
+conflict resolutions that none of its parents contains.
+
 `git push --force-with-lease --force-if-includes` lets that push through
 when the remote tip is in the branch's reflog: a branch that pulled the
 commit and then dropped it in a rebase deletes it from the remote.

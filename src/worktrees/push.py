@@ -152,7 +152,9 @@ def only_there(
     holds, by sha or by patch-id, oldest first.
 
     A commit of the copy's own merged part counts as held: the head has its
-    change, though as a squash no single patch-id matches.
+    change, though as a squash no single patch-id matches. A commit without
+    a patch-id, including a merge or an empty commit, stays in the result
+    unless one of those proofs accounts for it.
     """
     beyond = fast_forward.commits_beyond(copy, [tip, head], repo=repo).lines
     if not beyond:
@@ -169,7 +171,7 @@ def only_there(
     return [
         sha
         for sha in beyond
-        if sha in theirs and sha not in done and theirs[sha] not in known
+        if sha not in done and (sha not in theirs or theirs[sha] not in known)
     ]
 
 
