@@ -1,4 +1,5 @@
-"""Choosing one worktree out of those this repository has.
+"""Choosing at a terminal, a key at a time: one worktree out of those this
+repository has, or the answer to a yes-or-no question.
 
 No fzf. Typing filters the list with the matching `gw list QUERY` uses, and
 the arrow keys move through what is left, so a repository with forty
@@ -14,6 +15,7 @@ import sys
 import termios
 import tty
 from collections.abc import Iterator, Sequence
+from contextlib import contextmanager, nullcontext
 
 from . import layout, render
 from .git import Refused
@@ -154,14 +156,46 @@ def choose(
             f"{count} {noun} to choose from and this is not a terminal; "
             "narrow the query, or use --table or --json"
         )
+    with _cbreak() as pressed:
+        return _select(candidates, pressed, shown, at, here, query)
+
+
+def yes(question: str, keys: Iterator[str] | None = None) -> bool:
+    """Ask on stderr and take the next key as the answer, with no enter.
+
+    `y` is yes and every other key is no: enter, which takes the capital of
+    `[y/N]`, esc and ctrl-d among them. Cbreak mode echoes nothing, so the
+    answer is written after the question as `y` or `n`. `keys` is the
+    presses by name, as for `choose`. The caller makes sure stdin is a
+    terminal.
+
+    The question is written in cbreak mode, so a key pressed the moment it
+    appears is not echoed either.
+    """
+    with _cbreak() if keys is None else nullcontext(keys) as pressed:
+        sys.stderr.write(question)
+        sys.stderr.flush()
+        key = next(pressed, CANCEL)
+    answer = key in ("y", "Y")
+    sys.stderr.write("y\n" if answer else "n\n")
+    sys.stderr.flush()
+    return answer
+
+
+@contextmanager
+def _cbreak() -> Iterator[Iterator[str]]:
+    """Key presses from stdin, in cbreak mode until the block ends.
+
+    Cbreak rather than raw: keys arrive one at a time and unechoed, and
+    ctrl-c still raises KeyboardInterrupt. TCSANOW both ways, because
+    TCSAFLUSH throws away whatever was typed before the list or the question
+    appeared.
+    """
     fd = sys.stdin.fileno()
     saved = termios.tcgetattr(fd)
-    # cbreak rather than raw: keys arrive one at a time and unechoed, and
-    # ctrl-c still raises KeyboardInterrupt. TCSANOW, because the default
-    # TCSAFLUSH throws away whatever was typed before the list appeared.
     tty.setcbreak(fd, termios.TCSANOW)
     try:
-        return _select(candidates, _keys(fd), shown, at, here, query)
+        yield _keys(fd)
     finally:
         termios.tcsetattr(fd, termios.TCSANOW, saved)
 

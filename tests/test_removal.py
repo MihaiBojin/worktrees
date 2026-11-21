@@ -18,7 +18,7 @@ from conftest import argv, env_for
 from test_branches import cli as subprocess_cli
 from test_cli import run, run_on_a_terminal_at
 
-from worktrees import cli, prune
+from worktrees import cli, pick, prune
 from worktrees.git import Refused
 
 
@@ -345,10 +345,10 @@ def test_equal_sha_symbolic_head_retarget_refuses(world, monkeypatch, capsys, en
         world.git(
             "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"
         )
-        return "y"
+        return True
 
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(prune, "_prompt", change)
+    monkeypatch.setattr(pick, "yes", change)
     assert cli.gw([*entry.split()[1:], "topic"]) != 0
     assert world.git("rev-parse", "topic")
     assert "head branch changed" in capsys.readouterr().err
@@ -370,10 +370,10 @@ def test_loose_branch_rechecks_approved_state(world, monkeypatch, change):
             if change == "stash":
                 stash(world, path)
                 world.git("worktree", "remove", str(path))
-        return "y"
+        return True
 
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(prune, "_prompt", mutate)
+    monkeypatch.setattr(pick, "yes", mutate)
     assert cli.gw(["branch", "prune", "topic", "--delete", "all"]) != 0
     assert world.git("rev-parse", "topic")
 
@@ -418,7 +418,7 @@ def test_current_partial_failure_reports_destination_and_nonzero(
     path = world.merged_worktree("topic")
     monkeypatch.chdir(path)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(prune, "_prompt", lambda _: "y")
+    monkeypatch.setattr(pick, "yes", lambda _: True)
 
     def refuse(*args, **kwargs):
         assert os.getcwd() == str(world.repo)

@@ -342,6 +342,8 @@ happens to it: `delete worktree` with its path, `delete ignored` for each
 ignored path, sorted by name, `delete branch` and `delete stash` with their
 restore commands, or `keep branch` under `--keep-branch`. The question
 counts each kind: `delete 1 worktree, 1 ignored path and 1 branch? [y/N]`.
+One key answers it, with no enter: `y` deletes, and any other key, enter
+and esc among them, deletes nothing.
 Each ignored path reads as the pattern that ignores it names it, from the
 top level, with a trailing `/` on a directory: `__pycache__` lists
 `src/pkg/__pycache__/`, never the tracked
