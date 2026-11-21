@@ -17,6 +17,25 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.13.1 - 2026-11-21
+
+### Fixed
+
+`gw push` checks remote merge and empty commits before replacing a
+remote branch. A commit that the local branch and head do not account
+for causes a `remote-only` refusal. Review the listed commits before
+using `--replace`.
+
+The supplied Codex rules deny direct `git push` and `gh api` commands
+with any trailing arguments, including tag pushes and API reads.
+Install the updated rules from `ship-it/rights.md` and restart Codex.
+
+In Codex, `/worktrees:preflight user` installs Worktrees permission rules
+in the user's Codex rules directory, and `/worktrees:preflight project`
+uses the project's `.codex/rules/worktrees.rules`. Existing rules remain
+in place. The skill validates and shows the additions before asking to
+install them. Restart Codex after installation.
+
 ## 0.13.0 - 2026-11-21
 
 ### Added
