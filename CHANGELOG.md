@@ -17,6 +17,14 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.12.3 - 2026-11-21
+
+### Fixed
+
+`gw merge` merges a pull request that has no checks at all, as in a
+repository without CI, once it is open, ready and mergeable. Failed,
+pending and blocked checks still refuse the merge.
+
 ## 0.12.2 - 2026-11-17
 
 ### Changed
