@@ -15,9 +15,10 @@ match that skip those checks: a raw `git push --force-with-lease`, any
 `git rebase`, and a merge through `gh pr merge`, `gh stack merge` or a
 `gh api` call.
 
-`gw merge` is the GitHub merge command in both clients. Its parser requires
-a full head SHA, always requests squash, and accepts no rule bypass or
-arbitrary API payload. The rule admits only this command; it grants no
+`gw merge` is the GitHub merge command in both clients. It merges the pull
+requests it names, a stack bottom first, each only once its head and CI are
+checked; with one number its parser requires the full head SHA. It always
+requests squash, and accepts no rule bypass or arbitrary API payload. The rule admits only this command; it grants no
 general `gh api` permission. `gw stack-link` is the command that links a
 stacked pull request; it takes pull request numbers and nothing else.
 Install the CLI version that provides `gw merge` and `gw stack-link` along
