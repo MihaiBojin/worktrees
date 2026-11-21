@@ -661,17 +661,6 @@ def deletions(
     return f"{', '.join(parts[:-1])} and {parts[-1]}"
 
 
-def _prompt(text: str) -> str:
-    """The question on stderr, the answer from stdin.
-
-    Not `input`, which puts its prompt on stdout: stdout carries the result
-    and nothing else, so `--json` stays parseable in every mode.
-    """
-    sys.stderr.write(text)
-    sys.stderr.flush()
-    return sys.stdin.readline()
-
-
 def confirm(
     what: str, ask: Callable[[str], bool] | None = None, *, never: bool = False
 ) -> bool:

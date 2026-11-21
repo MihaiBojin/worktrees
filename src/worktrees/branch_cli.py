@@ -265,12 +265,15 @@ def _select(rows: list[branches.Verdict]) -> list[branches.Verdict]:
             ink=render.err,
         )
     )
-    answer = prune._prompt(
+    from . import pick
+
+    answer = pick.line(
         render.ask(
             "which?",
-            f"[1-{len(candidates)}, space-separated numbers, or blank to cancel]",
+            f"[1-{len(candidates)}, space-separated numbers, blank or esc to cancel]",
         )
-    ).strip()
+    )
+    answer = (answer or "").strip()
     if not answer:
         return []
     parts = answer.split()
