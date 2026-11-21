@@ -48,7 +48,7 @@ what to run.
 | `src/worktrees/new_branch.py` | starting a branch off the head branch |
 | `src/worktrees/fast_forward.py` | the current branch, level with the head ref |
 | `src/worktrees/layout.py` | where a worktree lives, derived from the main checkout |
-| `src/worktrees/pick.py` | matching a query, and the arrow-key picker |
+| `src/worktrees/pick.py` | matching a query, the arrow-key picker and the one-key `[y/N]` answer |
 | `src/worktrees/worktree.py` | adding, moving and removing a checkout |
 | `src/worktrees/cli.py` | argument parsing and output |
 

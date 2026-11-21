@@ -684,7 +684,7 @@ def _stack_question(args: argparse.Namespace) -> str:
 
 def run_new_branch(args: argparse.Namespace) -> int:
 
-    from . import new_branch
+    from . import new_branch, pick
     from . import repo as R
     from .git import options
 
@@ -702,13 +702,7 @@ def run_new_branch(args: argparse.Namespace) -> int:
             base = new_branch.here()
         else:
             question = _stack_question(args)
-
-            def ask() -> bool:
-                sys.stderr.write(question)
-                sys.stderr.flush()
-                return sys.stdin.readline().strip().lower() in ("y", "yes")
-
-            stack = _refresh(args, ask if question else None)
+            stack = _refresh(args, (lambda: pick.yes(question)) if question else None)
             _notices(args)
             base = new_branch.here() if stack else ""
         started = new_branch.create(args.name, base=base)
@@ -1649,9 +1643,7 @@ def run_remove(args: argparse.Namespace) -> int:
                 f"not a terminal; removing current worktree {chosen.path} "
                 "requires a second confirmation"
             )
-        if prune._prompt(
-            render.ask(f"remove current worktree {chosen.path}?", "[y/N]")
-        ).strip().lower() not in ("y", "yes"):
+        if not pick.yes(render.ask(f"remove current worktree {chosen.path}?", "[y/N]")):
             _err(render.note("nothing removed"))
             return 0
     outcome = wt_mod.remove(chosen, _err)

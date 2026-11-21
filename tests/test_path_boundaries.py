@@ -12,7 +12,7 @@ import pytest
 from test_cli import run
 from test_sync import origin
 
-from worktrees import cli, layout, prune, sync
+from worktrees import cli, layout, pick, prune, sync
 from worktrees import repo as R
 
 
@@ -68,9 +68,9 @@ def test_approved_whitespace_root_leaves_before_removal(
 
     def approve(question):
         prompts.append(question)
-        return "yes"
+        return True
 
-    monkeypatch.setattr(prune, "_prompt", approve)
+    monkeypatch.setattr(pick, "yes", approve)
     original_remove = prune.worktree_remove
 
     def remove_from_main(*args, **kwargs):
@@ -113,7 +113,7 @@ def test_main_whitespace_root_is_the_exact_departure_destination(
     linked = world.merged_worktree("topic")
     monkeypatch.chdir(linked)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(prune, "_prompt", lambda _: "yes")
+    monkeypatch.setattr(pick, "yes", lambda _: True)
     assert cli.gw(["remove", str(linked), "--yes"]) == 0
     assert capsys.readouterr().out == str(target) + "\n"
     assert os.getcwd() == str(target)

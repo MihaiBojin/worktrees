@@ -324,6 +324,14 @@ Both switches use `TCSANOW`: `TCSAFLUSH` discards keys typed before the list
 appears, and `TCSADRAIN` blocks on an echo queue nothing reads, which is how
 the pty tests hang.
 
+A `[y/N]` question goes through the same switch and `_keys` in `pick.yes`,
+and the next key answers it with no enter: `y` is yes, and every other key
+is no, enter and esc among them, so the capital stays the default. Cbreak
+echoes nothing, so `yes` writes `y` or `n` after the question, and it
+switches before writing the question, so a key pressed the moment the
+question appears is not echoed either. `gw branch prune`'s numbered
+`which?` reads a line, since one answer there can take several keys.
+
 The list is redrawn in place when stderr is a terminal that can move its
 cursor: the cursor climbs over the frame drawn last and erases everything
 under it, since the filter makes the list longer or shorter. The climb counts

@@ -673,10 +673,10 @@ def _prompt(text: str) -> str:
 
 
 def confirm(
-    what: str, ask: Callable[[str], str] | None = None, *, never: bool = False
+    what: str, ask: Callable[[str], bool] | None = None, *, never: bool = False
 ) -> bool:
-    """Ask before deleting `what`, as `deletions` counts it. Anything but yes
-    is no.
+    """Ask before deleting `what`, as `deletions` counts it. One key answers,
+    and anything but `y` is no.
 
     A run whose stdin is not a terminal cannot answer, so it is refused
     rather than left to block: an agent or a pipe reaches this and would
@@ -688,12 +688,14 @@ def confirm(
                 f"not a terminal, so nothing can answer for the {what} above; "
                 "pass --yes to delete them"
             )
-        ask = _prompt
+        from . import pick
+
+        ask = pick.yes
     question = render.ask(
         f"Never synced. Delete {what} anyway?" if never else f"delete {what}?",
         "[y/N]",
     )
-    return ask(question).strip().lower() in ("y", "yes")
+    return ask(question)
 
 
 def never_synced(go: Sequence[Verdict | branches.Verdict]) -> bool:

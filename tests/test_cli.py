@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from conftest import argv, env_for
 
-from worktrees import cli, prune
+from worktrees import cli, pick, prune
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 
@@ -90,9 +90,15 @@ def _on_a_terminal(
     )
     os.close(child)
     os.write(parent, answer.encode())
-    out = proc.stdout.read() if proc.stdout else ""
-    proc.wait()
-    os.close(parent)
+    # A deadline, so a question still waiting for more keys fails the test
+    # rather than stalling the run.
+    try:
+        out, _ = proc.communicate(timeout=60)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        os.close(parent)
     return proc.returncode, out
 
 
@@ -361,11 +367,79 @@ def test_no_terminal_is_one_exit_code(world) -> None:
 
 
 @pytest.mark.parametrize(
-    ("answer", "expected"),
-    [("y", True), ("Y", True), ("yes", True), ("n", False), ("", False), ("q", False)],
+    ("key", "expected"),
+    [
+        ("y", True),
+        ("Y", True),
+        ("n", False),
+        (pick.PICK, False),
+        (pick.ESC, False),
+        (pick.CANCEL, False),
+        ("q", False),
+    ],
 )
-def test_confirm_takes_yes_and_nothing_else(answer: str, expected: bool) -> None:
-    assert prune.confirm("1 worktree", ask=lambda _: answer) is expected
+def test_confirm_takes_y_and_nothing_else(key: str, expected: bool, capsys) -> None:
+    answered = prune.confirm("1 worktree", ask=lambda q: pick.yes(q, iter([key])))
+    assert answered is expected
+    assert capsys.readouterr().err.endswith(f"[y/N] {'y' if expected else 'n'}\n")
+
+
+def test_one_key_answers_without_enter(world) -> None:
+    wt = world.merged_worktree("done")
+    code, out = run_on_a_terminal(world, "gw prune", answer="y")
+    assert code == 0, out
+    assert "delete 1 worktree and 1 branch? [y/N] y\n" in out
+    assert not wt.exists()
+
+
+def test_esc_answers_no_and_is_not_echoed(world) -> None:
+    """The key arrives once the question is up, as a person's does: a key
+    typed earlier meets a terminal that still echoes."""
+    wt = world.merged_worktree("done")
+    parent, child = pty.openpty()
+    proc = subprocess.Popen(
+        argv("gw prune"),
+        cwd=world.repo,
+        env=env_for(world),
+        stdin=child,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    os.close(child)
+    assert proc.stderr is not None
+    seen = b""
+    try:
+        deadline = time.monotonic() + 30
+        while b"[y/N] " not in seen:
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, seen.decode()
+            ready, _, _ = select.select([proc.stderr], [], [], remaining)
+            assert ready, seen.decode()
+            chunk = os.read(proc.stderr.fileno(), 65536)
+            assert chunk, seen.decode()
+            seen += chunk
+        os.write(parent, b"\x1b")
+        _, err = proc.communicate(timeout=30)
+        echoed = b""
+        while select.select([parent], [], [], 0.2)[0]:
+            try:
+                chunk = os.read(parent, 1024)
+            except OSError:  # the slave side is closed
+                break
+            if not chunk:
+                break
+            echoed += chunk
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        os.close(parent)
+    stderr = (seen + err).decode()
+    assert proc.returncode == 0, stderr
+    assert echoed == b"", echoed
+    assert "delete 1 worktree and 1 branch? [y/N] n\n" in stderr
+    assert "nothing removed" in stderr
+    assert wt.exists()
 
 
 def test_prune_deletes_the_branch_and_the_empty_parents(world) -> None:

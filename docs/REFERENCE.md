@@ -535,7 +535,8 @@ and `link`. `pipeline` is GitLab's head pipeline with its `association`:
 `head`, `merge-result` or `stale`. It is null on GitHub.
 
 Stdout carries results and destinations; stderr carries diagnostics, prompts
-and disclosures. JSON and list output never contain colour. Colour is decided
+and disclosures. A `[y/N]` question takes one key and no enter: `y` is yes,
+and any other key, enter and esc among them, is no. JSON and list output never contain colour. Colour is decided
 per stream. Nonempty `NO_COLOR` or `TERM=dumb` disables it. Quiet preserves
 results, including `gw branch create`'s branch/base/SHA line and `gw
 fast-forward`'s result table. Verbose traces subprocesses to stderr; quiet plus
