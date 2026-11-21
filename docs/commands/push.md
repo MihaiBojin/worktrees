@@ -21,10 +21,11 @@ git. A branch the remote already holds at the same commit pushes nothing.
 
 The remote copy may hold commits the branch lacks. Each commit the copy has
 and neither the branch nor the head ref holds is compared by patch-id with
-the branch's commits and the head ref's. One that matches neither, and is
-not part of a change the head ref already merged, is work the push would
-delete: another clone's commit, or GitHub's rewrite of a stacked branch
-holding something the branch never had. The run refuses and lists them:
+the branch's commits and the head ref's. One that matches neither, is not
+part of a change the head ref already merged, and was not made in this
+clone is work the push would delete: another clone's commit, or GitHub's
+rewrite of a stacked branch holding something the branch never had. The
+run refuses and lists them:
 
 ```console
 ✗ origin/fix-parser holds 1 commit fix-parser lacks, so pushing it would delete them:
@@ -36,9 +37,16 @@ holding something the branch never had. The run refuses and lists them:
 when the remote tip is in the branch's reflog: a branch that pulled the
 commit and then dropped it in a rebase deletes it from the remote.
 
-`--replace` lifts this check, for a person who has read each commit listed.
-A rebase here that edits a pushed commit's content changes its patch-id, so
-the remote's copy of that commit reads as one the branch lacks.
+A commit was made in this clone when an entry in the branch's reflog that
+a commit, an amend, a cherry-pick, a revert, `git am` or a rebase wrote
+brought it, and the entry before did not. An amend, or a conflict resolved
+during a rebase, changes a commit's patch-id; when the commit was made here,
+the rewrite is this clone's own and the push goes ahead. A commit that came
+by a pull or a merge was made elsewhere.
+
+`--replace` lifts this check, for a person who has read each commit listed:
+a commit another clone made, pulled here and then edited, reads as one the
+branch lacks.
 
 The branch may still carry commits the head branch already merged, by the
 proofs [branch status](branch-status.md) uses: ancestry, a squash's tree or

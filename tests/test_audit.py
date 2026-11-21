@@ -748,13 +748,16 @@ def test_a_push_records_what_it_sent_and_what_it_refused(world):
     world.git("switch", "--quiet", "--create", "fix-parser")
     tip = world.commit("fix.txt", "w\n")
     assert gw(world, "push", WORKTREES_OFFLINE="").returncode == 0
-    (world.repo / "fix.txt").write_text("other\n")
-    world.git("commit", "--quiet", "--all", "--amend", "--no-edit")
+    there = world.root / "other"
+    world.git("clone", "--quiet", "--branch", "fix-parser", str(bare), str(there))
+    theirs = world.commit("theirs.txt", "t\n", at=there)
+    world.git("push", "--quiet", "origin", "fix-parser", at=there)
+    world.commit("mine.txt", "m\n")
     assert gw(world, "push", WORKTREES_OFFLINE="").returncode == 3
 
     sent, refused = named(events(world), "push.outcome")
     assert (sent["pushed"], sent["previous"], sent["refused"]) == (tip, "", "")
-    assert (refused["pushed"], refused["previous"]) == ("", tip)
+    assert (refused["pushed"], refused["previous"]) == ("", theirs)
     assert (refused["refused"], refused["replace"]) == ("remote-only", False)
 
 

@@ -3,15 +3,17 @@
 A branch the remote lacks is pushed with `--set-upstream`. One it has is
 pushed over its remote copy under a lease that names the commit the fetch
 just read, and only when two checks pass. The copy may hold commits the
-branch lacks by patch-id: another clone's work, or GitHub's rewrite of a
-stacked branch. The branch may still carry commits the head branch already
-merged, as a stacked branch does after a naive rebase once its parent was
-squashed. `--force-if-includes` is not passed: with an explicit lease git
-ignores it, and the first check asks the question it would have asked.
+branch lacks by patch-id that this clone never made: another clone's work,
+or GitHub's rewrite of a stacked branch. The branch may still carry commits
+the head branch already merged, as a stacked branch does after a naive
+rebase once its parent was squashed. `--force-if-includes` is not passed:
+with an explicit lease git ignores it, and the first check asks the
+question it would have asked.
 """
 
 from __future__ import annotations
 
+import itertools
 import os
 from dataclasses import asdict, dataclass
 
@@ -114,7 +116,8 @@ def push(replace: bool = False, repo: str | os.PathLike[str] | None = None) -> P
     if not copy:
         sent = push_upstream(remote, f"{local}:{local}", repo=repo)
     else:
-        lost = only_there(copy, tip, head, repo)
+        made = made_here(local, head, repo)
+        lost = [sha for sha in only_there(copy, tip, head, repo) if sha not in made]
         if lost and not replace:
             result.refused = "remote-only"
             raise Withheld(
@@ -168,6 +171,29 @@ def only_there(
         for sha in beyond
         if sha in theirs and sha not in done and theirs[sha] not in known
     ]
+
+
+def made_here(
+    ref: str, head: str, repo: str | os.PathLike[str] | None = None
+) -> set[str]:
+    """The commits this clone made on the branch `ref`, by its reflog, the
+    head's aside.
+
+    Each entry a commit, an amend, a cherry-pick, a revert, `git am` or a
+    rebase wrote brings the commits its tip reaches and the entry before it
+    does not, outside the head. A pull, a merge, a reset or the branch's
+    creation brings commits made elsewhere, and none of those count. A
+    commit of its own that a rebase or an amend here rewrote is the clone's
+    to replace.
+    """
+    entries = [line.partition("\0") for line in merged.reflog(ref, repo=repo).lines]
+    made: set[str] = set()
+    for (sha, _, subject), (before, _, _) in itertools.pairwise(entries):
+        if subject.startswith((*merged.MADE, "rebase")):
+            made |= set(
+                fast_forward.commits_beyond(sha, [before, head], repo=repo).lines
+            )
+    return made
 
 
 def _listed(commits: list[str], repo: str | os.PathLike[str] | None) -> str:

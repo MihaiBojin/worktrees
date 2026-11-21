@@ -173,8 +173,9 @@ checked out: `--set-upstream` when the remote lacks it, otherwise
 `--force-with-lease=refs/heads/BRANCH:SHA` on the sha the fetch read.
 Two checks come first. `push.only_there` lists the remote copy's commits
 that neither the branch nor the head ref holds by sha or patch-id, outside
-the copy's own `merged.merged_part`; any is a refusal that `--replace`
-lifts. `merged.merged_part` of the branch itself, the commits the head ref
+the copy's own `merged.merged_part`; any that `push.made_here` does not
+find, by a reflog entry of the branch's that a commit, an amend or a
+rebase wrote, is a refusal that `--replace` lifts. `merged.merged_part` of the branch itself, the commits the head ref
 already has by the proofs `gw prune` reads, is a refusal nothing lifts,
 and names `gw fast-forward`. `--force-if-includes` is not passed: git
 ignores it beside an explicit lease, and the first check asks what it

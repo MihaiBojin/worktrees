@@ -513,7 +513,7 @@ checks, the JSON and the conflict loop.
 `gw push` fetches the default remote and pushes the branch you stand on,
 with `--set-upstream` when the remote lacks it and under a lease on the
 commit it just read otherwise. It refuses when the remote copy holds a
-commit the branch lacks by patch-id, which `--replace` pushes over, and
+commit the branch lacks by patch-id and this clone never made, which `--replace` pushes over, and
 when the branch still carries commits the head branch merged, which
 `gw fast-forward` drops. A plain `git push --force-with-lease
 --force-if-includes` lets both through when the remote tip is in the

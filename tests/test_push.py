@@ -168,9 +168,9 @@ def test_a_commit_only_the_remote_holds_is_refused(world) -> None:
     assert on_remote(bare, "fix-parser") == before
 
 
-def test_replace_pushes_over_a_commit_whose_content_changed_here(world) -> None:
-    """Amending a pushed commit changes its patch-id, so the remote's copy
-    reads as a commit the branch lacks until a person says it is replaced."""
+def test_a_commit_of_its_own_rewritten_here_is_pushed_over(world) -> None:
+    """An amend, or a conflict resolved in a rebase, changes a pushed
+    commit's patch-id; the reflog says this clone made the commit."""
     bare = upstream(world)
     world.git("switch", "--quiet", "--create", "fix-parser")
     world.commit("fix.txt", "w\n")
@@ -179,7 +179,31 @@ def test_replace_pushes_over_a_commit_whose_content_changed_here(world) -> None:
     world.git("commit", "--quiet", "--all", "--amend", "--no-edit")
     tip = world.git("rev-parse", "HEAD")
 
-    assert gw_push(world).returncode == 3
+    p = gw_push(world, "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["pushed"] == tip
+    assert on_remote(bare, "fix-parser") == tip
+
+
+def test_replace_pushes_over_another_clones_commit_edited_here(world) -> None:
+    """A pulled commit amended here reads as one the branch lacks until a
+    person says it is replaced."""
+    bare = upstream(world)
+    world.git("switch", "--quiet", "--create", "fix-parser")
+    world.commit("fix.txt", "w\n")
+    pushed(world)
+    there = other_clone(world, bare)
+    world.git("switch", "--quiet", "fix-parser", at=there)
+    theirs = world.commit("theirs.txt", "t\n", at=there)
+    world.git("push", "--quiet", "origin", "fix-parser", at=there)
+    world.git("pull", "--quiet", "--ff-only")
+    (world.repo / "theirs.txt").write_text("edited\n")
+    world.git("commit", "--quiet", "--all", "--amend", "--no-edit")
+    tip = world.git("rev-parse", "HEAD")
+
+    refused = gw_push(world)
+    assert refused.returncode == 3
+    assert theirs[:7] in refused.stderr
     p = gw_push(world, "--replace", "--json")
     assert p.returncode == 0, p.stderr
     assert json.loads(p.stdout)["pushed"] == tip
