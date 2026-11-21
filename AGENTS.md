@@ -468,7 +468,7 @@ through `progress.line`, which clears the spinner first.
 
 Every message on stderr goes through `render.fail`, `render.warn` or
 `render.note`, a usage error and a cancelled picker included. On a terminal
-each leads with its symbol, `✗`, `!` or `→`, and its first line makes flags
+each leads with its symbol, `✗`, `⚠` or `→`, and its first line makes flags
 and quoted commands bold, paths dim and shas yellow. A path is a word that
 starts with `/`, `~/`, `./` or `../`, taken whole, so a directory named `-x`
 is not a flag and a uuid inside one is not a sha. A failure prints every line

@@ -126,6 +126,12 @@ def test_a_failure_leads_with_a_symbol_and_reddens_its_detail(stderr_colour) -> 
     assert second == f"  {render.RED}why{render.RESET}"
 
 
+def test_a_warning_leads_with_a_warning_sign(stderr_colour) -> None:
+    assert render.warn("stale").startswith(
+        f"{render.BOLD}{render.YELLOW}⚠{render.RESET} "
+    )
+
+
 def test_a_warning_dims_its_detail(stderr_colour) -> None:
     assert (
         render.warn("stale\nwhy").split("\n")[1] == f"  {render.DIM}why{render.RESET}"
