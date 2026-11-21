@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -573,26 +574,95 @@ def test_no_skill_runs_a_command_the_rules_deny(path: Path) -> None:
         assert not _denied(line.strip()), line
 
 
-def _codex_rules() -> list[dict]:
+def _codex_source() -> str:
     rights = (SHIP_IT.parent / "rights.md").read_text()
-    rules: list[dict] = []
     code = re.search(r"```python\n(.*?)\n```", rights, re.S)
     assert code
-    exec(code[1], {"prefix_rule": lambda **rule: rules.append(rule)})
+    return code[1]
+
+
+def _codex_rules() -> list[dict]:
+    rules: list[dict] = []
+    exec(_codex_source(), {"prefix_rule": lambda **rule: rules.append(rule)})
     return rules
 
 
-def _codex_allows(command: str) -> bool:
+def _codex_decision(command: str) -> str | None:
     words = shlex.split(command)
-    return any(
-        rule["decision"] == "allow"
-        and len(words) >= len(rule["pattern"])
+    decisions = {
+        rule["decision"]
+        for rule in _codex_rules()
+        if len(words) >= len(rule["pattern"])
         and all(
             word in part if isinstance(part, list) else word == part
             for word, part in zip(words, rule["pattern"], strict=False)
         )
-        for rule in _codex_rules()
+    }
+    return next((d for d in ("forbidden", "prompt", "allow") if d in decisions), None)
+
+
+CODEX_FORBIDDEN = [
+    "git push",
+    "git push --force-with-lease --force-if-includes origin fix-parser",
+    "git push --force-with-lease=refs/heads/x:abc origin x",
+    "git push origin x --force-with-lease=refs/heads/x:abc",
+    "git push origin x --force-with-lease",
+    "git push origin x --force",
+    "git push -f origin x",
+    "git push origin +HEAD:x",
+    "git push --set-upstream origin fix-parser",
+    "git push origin v1.0.0",
+    "git rebase --continue",
+    "gh pr merge 41 --squash",
+    "gh stack merge 41",
+    "gh api --method PUT repos/o/r/pulls/41/merge",
+    "gh api repos/o/r/pulls/41/merge -X PUT",
+    "gh api graphql -f "
+    "'query=mutation { mergePullRequest(input: {}) { clientMutationId } }'",
+    "gh api repos/o/r/pulls/41",
+]
+
+
+@pytest.mark.parametrize("command", CODEX_FORBIDDEN)
+def test_codex_rules_forbid_raw_publishing_commands(command: str) -> None:
+    assert _codex_decision(command) == "forbidden", command
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(shutil.which("codex") is None, reason="codex is not installed")
+@pytest.mark.parametrize(
+    ("command", "decision"),
+    [
+        *((command, "forbidden") for command in CODEX_FORBIDDEN),
+        ("gw push --json", "allow"),
+        ("gw fast-forward --continue --json", "allow"),
+        ("gw merge 41 --match-head-commit abc --json", "allow"),
+    ],
+)
+def test_codex_evaluates_publishing_rules(
+    tmp_path: Path, command: str, decision: str
+) -> None:
+    rules = tmp_path / "worktrees.rules"
+    rules.write_text(_codex_source())
+    other = tmp_path / "other.rules"
+    other.write_text('prefix_rule(pattern=[["git", "gh"]], decision="allow")\n')
+    p = subprocess.run(
+        [
+            "codex",
+            "execpolicy",
+            "check",
+            "--rules",
+            str(rules),
+            "--rules",
+            str(other),
+            "--",
+            *shlex.split(command),
+        ],
+        capture_output=True,
+        text=True,
     )
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout).get("decision") == decision, p.stdout
 
 
 @pytest.mark.parametrize(
@@ -613,7 +683,7 @@ def test_codex_rules_cover_what_ship_it_writes_or_fetches(command: str) -> None:
     """Codex has no per-skill pre-approval, and its sandbox keeps `.git`
     read-only and offline, so each command that writes a ref or reaches the
     remote needs a rule."""
-    assert _codex_allows(command), command
+    assert _codex_decision(command) == "allow", command
 
 
 @pytest.mark.parametrize(
@@ -628,7 +698,7 @@ def test_codex_rules_cover_what_ship_it_writes_or_fetches(command: str) -> None:
     ],
 )
 def test_codex_rules_refuse_what_ship_it_never_runs(command: str) -> None:
-    assert not _codex_allows(command), command
+    assert _codex_decision(command) != "allow", command
 
 
 def test_codex_merge_rule_allows_only_the_merge_command() -> None:
@@ -637,7 +707,8 @@ def test_codex_merge_rule_allows_only_the_merge_command() -> None:
     assert len(merge) == 1
     assert merge[0]["decision"] == "allow"
     for rule in rules:
-        assert rule["pattern"][:2] != ["gh", "api"]
+        if rule["decision"] == "allow":
+            assert rule["pattern"][:2] != ["gh", "api"]
 
 
 def test_preflight_runs_only_when_called_by_name() -> None:

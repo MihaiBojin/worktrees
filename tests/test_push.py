@@ -6,6 +6,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from conftest import argv, env_for, online
 
 
@@ -166,6 +167,103 @@ def test_a_commit_only_the_remote_holds_is_refused(world) -> None:
     assert "gw fast-forward" in p.stderr
     assert "--replace" in p.stderr
     assert on_remote(bare, "fix-parser") == before
+
+
+def remote_merge(world, bare: Path, conflict: bool = False) -> str:
+    """Another clone merges main into the remote branch."""
+    world.git("switch", "--quiet", "--create", "fix-parser")
+    world.commit("README" if conflict else "fix.txt", "branch\n")
+    pushed(world)
+    there = other_clone(world, bare)
+    world.commit("README" if conflict else "main.txt", "main\n", at=there)
+    world.git("push", "--quiet", "origin", "main", at=there)
+    world.git("switch", "--quiet", "fix-parser", at=there)
+    merge = subprocess.run(
+        ["git", "merge", "--no-ff", "--no-commit", "main"],
+        cwd=there,
+        capture_output=True,
+        text=True,
+    )
+    assert merge.returncode == (1 if conflict else 0), merge.stderr
+    if conflict:
+        (there / "README").write_text("remote resolution\n")
+        world.git("add", "--", "README", at=there)
+    world.git("commit", "--quiet", "-m", "Update branch", at=there)
+    merged = world.git("rev-parse", "HEAD", at=there)
+    world.git("push", "--quiet", "origin", "fix-parser", at=there)
+    return merged
+
+
+def test_a_raw_leased_push_deletes_a_remote_merge(world) -> None:
+    bare = upstream(world)
+    merged = remote_merge(world, bare)
+    world.git("pull", "--quiet", "--ff-only")
+    world.git("rebase", "--quiet", "origin/main")
+    tip = world.commit("more.txt", "m\n")
+
+    p = raw_push(world)
+    assert p.returncode == 0, p.stderr
+    assert on_remote(bare, "fix-parser") == tip
+    assert merged not in world.git("rev-list", tip).splitlines()
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_a_merge_only_the_remote_holds_is_refused(world, conflict: bool) -> None:
+    bare = upstream(world)
+    merged = remote_merge(world, bare, conflict)
+    world.commit("more.txt", "m\n")
+
+    p = gw_push(world, "--json")
+    assert p.returncode == 3, p.stderr
+    payload = json.loads(p.stdout)
+    assert payload["refused"] == "remote-only"
+    assert (payload["pushed"], payload["previous"]) == ("", merged)
+    assert merged[:7] in p.stderr
+    assert "Update branch" in p.stderr
+    assert on_remote(bare, "fix-parser") == merged
+
+
+def test_a_remote_merge_kept_in_the_branch_is_pushed(world) -> None:
+    bare = upstream(world)
+    remote_merge(world, bare, conflict=True)
+    world.git("pull", "--quiet", "--ff-only")
+    tip = world.commit("more.txt", "m\n")
+
+    p = gw_push(world, "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["pushed"] == tip
+    assert on_remote(bare, "fix-parser") == tip
+
+
+def test_replace_pushes_over_a_remote_merge(world) -> None:
+    bare = upstream(world)
+    merged = remote_merge(world, bare, conflict=True)
+    tip = world.commit("more.txt", "m\n")
+
+    p = gw_push(world, "--replace", "--json")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["pushed"], payload["previous"]) == (tip, merged)
+    assert on_remote(bare, "fix-parser") == tip
+
+
+def test_an_empty_commit_only_the_remote_holds_is_refused(world) -> None:
+    bare = upstream(world)
+    world.git("switch", "--quiet", "--create", "fix-parser")
+    world.commit("fix.txt", "w\n")
+    pushed(world)
+    there = other_clone(world, bare)
+    world.git("switch", "--quiet", "fix-parser", at=there)
+    world.git("commit", "--quiet", "--allow-empty", "-m", "Trigger CI", at=there)
+    empty = world.git("rev-parse", "HEAD", at=there)
+    world.git("push", "--quiet", "origin", "fix-parser", at=there)
+    world.commit("more.txt", "m\n")
+
+    p = gw_push(world, "--json")
+    assert p.returncode == 3, p.stderr
+    assert json.loads(p.stdout)["refused"] == "remote-only"
+    assert empty[:7] in p.stderr
+    assert on_remote(bare, "fix-parser") == empty
 
 
 def test_a_commit_of_its_own_rewritten_here_is_pushed_over(world) -> None:
