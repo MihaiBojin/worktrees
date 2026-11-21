@@ -182,6 +182,33 @@ def yes(question: str, keys: Iterator[str] | None = None) -> bool:
     return answer
 
 
+def line(question: str, keys: Iterator[str] | None = None) -> str | None:
+    """Ask on stderr and read a line of answer a key at a time.
+
+    Enter takes what was typed, backspace takes a character back, and esc or
+    ctrl-d cancels, which is None. Each typed character is echoed by hand,
+    since cbreak mode echoes nothing. Not `input`, which puts its prompt on
+    stdout: stdout carries the result and nothing else. `keys` is the
+    presses by name, as for `choose`. The caller makes sure stdin is a
+    terminal.
+    """
+    typed = ""
+    with _cbreak() if keys is None else nullcontext(keys) as pressed:
+        sys.stderr.write(question)
+        sys.stderr.flush()
+        while (key := next(pressed, CANCEL)) not in (PICK, ESC, CANCEL):
+            if key == ERASE and typed:
+                typed = typed[:-1]
+                sys.stderr.write("\b \b")
+            elif len(key) == 1:
+                typed += key
+                sys.stderr.write(key)
+            sys.stderr.flush()
+    sys.stderr.write("\n")
+    sys.stderr.flush()
+    return typed if key == PICK else None
+
+
 @contextmanager
 def _cbreak() -> Iterator[Iterator[str]]:
     """Key presses from stdin, in cbreak mode until the block ends.

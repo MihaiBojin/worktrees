@@ -9,6 +9,8 @@ import subprocess
 import pytest
 from conftest import argv, env_for
 
+from worktrees import pick
+
 
 def cli(world, *args: str, entry: str = "gw", env=None):
     return subprocess.run(
@@ -206,7 +208,24 @@ def test_content_proof_accepts_matching_deletions_and_unusual_paths(world):
     assert status(world, "feature")["verdicts"][0]["proof"] == "content"
 
 
-@pytest.mark.parametrize("answer", ["1\ny\n", "1 2\ny\n", "\n", "1\nn\n", "9\n"])
+@pytest.mark.parametrize(
+    ("keys", "typed"),
+    [
+        (["1", " ", "2", pick.PICK], "1 2"),
+        (["1", "3", pick.ERASE, pick.ERASE, pick.ERASE, "2", pick.PICK], "2"),
+        ([pick.UP, "1", pick.PICK], "1"),
+        (["1", pick.ESC], None),
+        (["1", pick.CANCEL], None),
+    ],
+)
+def test_a_typed_answer_takes_enter_and_esc_cancels(keys, typed, capsys):
+    assert pick.line("which? ", iter(keys)) == typed
+    assert capsys.readouterr().err.endswith("\n")
+
+
+@pytest.mark.parametrize(
+    "answer", ["1\ny\n", "1 2\ny\n", "\n", "\x1b", "1\x1b", "1\nn\n", "9\n"]
+)
 def test_selector_requires_a_selection_then_confirmation(world, answer):
     from test_cli import run_on_a_terminal
 

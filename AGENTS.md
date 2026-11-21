@@ -329,8 +329,12 @@ and the next key answers it with no enter: `y` is yes, and every other key
 is no, enter and esc among them, so the capital stays the default. Cbreak
 echoes nothing, so `yes` writes `y` or `n` after the question, and it
 switches before writing the question, so a key pressed the moment the
-question appears is not echoed either. `gw branch prune`'s numbered
-`which?` reads a line, since one answer there can take several keys.
+question appears is not echoed either.
+
+`gw branch prune`'s numbered `which?` takes several keys, so `pick.line`
+reads them through the same switch until enter, echoing each by hand and
+taking one back on backspace. Esc or ctrl-d cancels it, as a blank answer
+does: the command exits 0 and deletes nothing.
 
 The list is redrawn in place when stderr is a terminal that can move its
 cursor: the cursor climbs over the frame drawn last and erases everything
