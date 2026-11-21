@@ -50,6 +50,8 @@ movement.
 
 An unchanged head needs fresh checks with `checksState: passed`, an open
 review that is ready, and merge state `CLEAN`, `HAS_HOOKS` or `UNSTABLE`.
+A review with no checks at all merges on those last two: a repository
+without CI has nothing to wait for.
 The command reads membership and containment again immediately before
 submission and refuses changes between those reads. This containment check
 blocks submission during GitHub's retarget-before-rewrite interval. The API
