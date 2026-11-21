@@ -368,7 +368,7 @@ def _squash_settings(repository: str, lower: tuple[tuple[int, str], ...]) -> lis
     return [
         f"the squash commits of {names} will use GitHub's default message, "
         f"not their title and body: {found}.\n"
-        "Run: gw preflight, which checks and fixes them"
+        "Run: gw preflight, which prints the command that sets them"
     ]
 
 

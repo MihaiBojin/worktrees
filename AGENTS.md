@@ -232,7 +232,7 @@ assumes a plugin root or a checkout at a known path.
 | `describe-pr` | checks a review's title and body against its diff, and edits them |
 | `prune` | `gw prune --json` and `gw branch status --json`, then the removals approved |
 | `ship-it` | commits, `fast-forward`, a leased or plain push, `gh pr create`, `gw stack-link` for a stacked branch on GitHub, `describe-pr`, `ci-checks`, fixes on the branch, `gw merge` on GitHub or `glab mr merge` on GitLab, then `fast-forward` in the head branch's checkout, unassisted, for this checkout or each branch it is named; given numbers, those open reviews from `ci-checks` on |
-| `preflight` | `jq` merges `preflight/rules.json` into the user's or the project's `.claude/settings.json`, after asking |
+| `preflight` | `gw preflight --json`, then, after asking, `jq` merges `preflight/rules.json` into the user's or the project's `.claude/settings.json`, `preflight/project.json` into the project's, and copies `preflight/config.toml` to a project without `.codex/config.toml` |
 
 `describe-pr` and `ship-it` share `describe-pr/format.md`: the
 review's title and body are the squash commit's subject and body, so one set
@@ -254,7 +254,8 @@ which `preflight` merges into the settings file the user names. It runs only
 when called by name, in both clients, and pre-approves no write, so the copy
 over the settings file reaches the client's own prompt. Its allow patterns match prefixes, so a test holds the
 skill's commands to never writing `--force`, `--admin`, `--auto` or
-`--delete-branch`.
+`--delete-branch`. `tests/test_preflight.py` holds `project.json` and
+`config.toml` to the setup `preflight.py` checks for.
 
 The prune skill reads `gw prune --json` and
 `gw branch status --json`, preserving head/sync state and full rows for eligible, empty
@@ -497,7 +498,7 @@ when eight threads are asking at once.
 default first, updates the default remote's HEAD and queries the forge for
 every local branch tip on eight threads. Every other command but
 `gw version`, `gw list`, `gw ci-checks`, `gw merge`, `gw stack-link`,
-`gw fast-forward`, help and completion runs the same `sync.run` first when
+`gw preflight`, `gw fast-forward`, help and completion runs the same `sync.run` first when
 `sync.due` says so: the default remote's refs time is null or at least
 `WORKTREES_SYNC_TTL` seconds old, 300 by default. The forge time is not read,
 since a forge that keeps failing would sync before every command. Without a

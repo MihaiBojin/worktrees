@@ -97,8 +97,9 @@ GitHub builds each lower member's squash message from the repository's
 from the subject and body the command sends, which reach the named pull
 request only. When a merge carries lower members and those settings are not
 `PR_TITLE` and `PR_BODY`, the command warns that their squash commits will
-use GitHub's default message. `gw preflight` checks and fixes those
-settings.
+use GitHub's default message. `gw preflight` checks those settings, as
+its `squash-defaults` check, and prints the `gh api` command that sets
+them.
 
 Several numbers merge in the order given, bottom first, one call each, and
 the command reads the next pull request again after each merge. Numbers in

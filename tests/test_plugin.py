@@ -654,6 +654,77 @@ def test_preflight_writes_every_rule_into_a_missing_file(tmp_path: Path) -> None
     assert _preflight_jq(_preflight(" > TEMP"), None, tmp_path) == wanted
 
 
+def test_preflight_reads_its_checks_alone() -> None:
+    tools = _tools(PREFLIGHT / "SKILL.md")
+    assert _covers(tools, "gw preflight --json")
+    for refused in ("gw preflight --json; gw sync", "gh api -X PATCH repos/o/r"):
+        assert not _covers(tools, refused), refused
+
+
+def _project_jq(settings: dict | None, tmp_path: Path) -> dict:
+    """The skill's merge of project.json into a project's settings."""
+    found = re.findall(
+        r"^jq --slurpfile project PROJECT '(.+)' SETTINGS > TEMP$",
+        (PREFLIGHT / "SKILL.md").read_text(),
+        re.M,
+    )
+    assert len(found) == 1
+    program, flags, files = found[0], [], []
+    project = PREFLIGHT / "project.json"
+    if settings is None:
+        flags, program = ["-n"], "{} | " + program
+    else:
+        target = tmp_path / "in.json"
+        target.write_text(json.dumps(settings))
+        files = [str(target)]
+    proc = subprocess.run(
+        ["jq", *flags, "--slurpfile", "project", str(project), program, *files],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(proc.stdout)
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        None,
+        {"permissions": {"allow": ["Bash(ls)"]}, "enabledPlugins": {"a@b": True}},
+        {
+            "extraKnownMarketplaces": {
+                "mihaibojin": {
+                    "source": {"source": "git", "url": "https://x"},
+                    "autoUpdate": True,
+                },
+                "other": {"source": {"source": "github", "repo": "o/r"}},
+            },
+            "enabledPlugins": {"worktrees@mihaibojin": False},
+        },
+    ],
+)
+def test_preflight_merges_the_project_setup_gw_preflight_checks(
+    settings: dict | None, tmp_path: Path
+) -> None:
+    from worktrees import preflight
+
+    merged = _project_jq(settings, tmp_path)
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(merged))
+    assert preflight._claude(path)["status"] == "ok"
+    for key, value in (settings or {}).items():
+        if key not in preflight.CLAUDE_SETTINGS:
+            assert merged[key] == value
+    known = merged["extraKnownMarketplaces"]
+    assert known["mihaibojin"]["source"] == preflight.CLAUDE_SOURCE
+    if settings and "extraKnownMarketplaces" in settings:
+        assert known["mihaibojin"]["autoUpdate"] is True
+        assert known["other"] == settings["extraKnownMarketplaces"]["other"]
+    if settings and "a@b" in settings.get("enabledPlugins", {}):
+        assert merged["enabledPlugins"]["a@b"] is True
+    assert _project_jq(merged, tmp_path) == merged
+
+
 def _skill_filter(skill: str, command: str, nth: int = 0) -> tuple[list[str], str]:
     """The flags and program the skill's `nth` pipe of `command`'s JSON uses."""
     found = re.findall(

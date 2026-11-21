@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "mihaibojin": {
+      "source": {
+        "source": "github",
+        "repo": "MihaiBojin/agent-plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "worktrees@mihaibojin": true
+  }
+}

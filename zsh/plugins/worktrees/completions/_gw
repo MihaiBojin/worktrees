@@ -120,6 +120,13 @@ __worktrees_stack-link() {
         '(-h --help)'{-h,--help}'[show the help and exit]'
 }
 
+__worktrees_preflight() {
+    _arguments -s \
+        '--json[every check as data]' \
+        '(-v --verbose)'{-v,--verbose}'[print every forge command]' \
+        '(-h --help)'{-h,--help}'[show the help and exit]'
+}
+
 __worktrees_branch_create() {
     _arguments -s \
         '--here[start from the commit this checkout is on, without syncing]' \
@@ -201,6 +208,7 @@ _gw() {
                 ci-checks|ci) __worktrees_ci-checks ;;
                 merge) __worktrees_merge ;;
                 stack-link) __worktrees_stack-link ;;
+                preflight) __worktrees_preflight ;;
                 branch)
                     _arguments -C \
                         '(-h --help)'{-h,--help}'[show the help and exit]' \
