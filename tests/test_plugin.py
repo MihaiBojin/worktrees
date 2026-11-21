@@ -10,6 +10,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -575,10 +576,7 @@ def test_no_skill_runs_a_command_the_rules_deny(path: Path) -> None:
 
 
 def _codex_source() -> str:
-    rights = (SHIP_IT.parent / "rights.md").read_text()
-    code = re.search(r"```python\n(.*?)\n```", rights, re.S)
-    assert code
-    return code[1]
+    return (PREFLIGHT / "worktrees.rules").read_text()
 
 
 def _codex_rules() -> list[dict]:
@@ -791,6 +789,81 @@ def test_preflight_appends_each_missing_rule_once_and_keeps_the_rest(
 def test_preflight_writes_every_rule_into_a_missing_file(tmp_path: Path) -> None:
     wanted = json.loads(RULES.read_text())
     assert _preflight_jq(_preflight(" > TEMP"), None, tmp_path) == wanted
+
+
+def _merge_codex(target: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(PREFLIGHT / "merge_codex_rules.py"), str(target)],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_codex_preflight_prepares_a_missing_file_without_writing_it(tmp_path) -> None:
+    target = tmp_path / "codex home" / "rules" / "worktrees.rules"
+    proc = _merge_codex(target)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout == (PREFLIGHT / "worktrees.rules").read_text()
+    assert not target.parent.exists()
+
+
+def test_codex_preflight_keeps_existing_rules_and_appends_missing_ones_once(
+    tmp_path,
+) -> None:
+    target = tmp_path / "worktrees.rules"
+    held = (
+        "# Keep my policy.\n"
+        'prefix_rule(pattern=["make", "ci"], decision="allow")\n'
+        'prefix_rule(pattern=["gw", "push"], decision="prompt")\n'
+        "prefix_rule(decision='allow', pattern=['gw', 'merge'])"
+    )
+    target.write_text(held)
+    target.chmod(0o600)
+    proc = _merge_codex(target)
+    assert proc.returncode == 0, proc.stderr
+    assert target.read_text() == held
+    assert target.stat().st_mode & 0o777 == 0o600
+    assert proc.stdout.startswith(held + "\n")
+    rules: list[dict] = []
+    exec(proc.stdout, {"prefix_rule": lambda **rule: rules.append(rule)})
+    assert rules[:3] == [
+        {"pattern": ["make", "ci"], "decision": "allow"},
+        {"pattern": ["gw", "push"], "decision": "prompt"},
+        {"pattern": ["gw", "merge"], "decision": "allow"},
+    ]
+    assert sum(rule["pattern"] == ["gw", "merge"] for rule in rules) == 1
+    assert any(
+        rule["pattern"] == ["git", "rebase"] and rule["decision"] == "forbidden"
+        for rule in rules
+    )
+    target.write_text(proc.stdout)
+    repeated = _merge_codex(target)
+    assert repeated.returncode == 0, repeated.stderr
+    assert repeated.stdout == proc.stdout
+
+
+@pytest.mark.parametrize("contents", [b"prefix_rule(\n", b"\xff"])
+def test_codex_preflight_refuses_a_broken_file_without_output(
+    tmp_path, contents
+) -> None:
+    target = tmp_path / "worktrees.rules"
+    target.write_bytes(contents)
+    proc = _merge_codex(target)
+    assert proc.returncode == 1
+    assert str(target) in proc.stderr
+    assert not proc.stdout
+    assert target.read_bytes() == contents
+
+
+def test_codex_preflight_reads_rules_without_executing_them(tmp_path) -> None:
+    target = tmp_path / "worktrees.rules"
+    marker = tmp_path / "executed"
+    held = f"open({str(marker)!r}, 'w').write('executed')\n"
+    target.write_text(held)
+    proc = _merge_codex(target)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.startswith(held)
+    assert not marker.exists()
 
 
 def test_preflight_reads_its_checks_alone() -> None:

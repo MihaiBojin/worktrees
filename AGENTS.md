@@ -247,7 +247,7 @@ assumes a plugin root or a checkout at a known path.
 | `describe-pr` | checks a review's title and body against its diff, and edits them |
 | `prune` | `gw prune --json` and `gw branch status --json`, then the removals approved |
 | `ship-it` | commits, `fast-forward`, `gw push`, `gh pr create`, `gw stack-link` for a stacked branch on GitHub, `describe-pr`, `ci-checks`, fixes on the branch, `gw merge` on GitHub or `glab mr merge` on GitLab, then `fast-forward` in the head branch's checkout, unassisted, for this checkout or each branch it is named; given numbers, those open reviews from `ci-checks` on |
-| `preflight` | `gw preflight --json`, then, after asking, `jq` merges `preflight/rules.json` into the user's or the project's `.claude/settings.json`, `preflight/project.json` into the project's, and copies `preflight/config.toml` to a project without `.codex/config.toml` |
+| `preflight` | `gw preflight --json`, then, after asking, installs the current client's permission rules at user or project scope; project scope also writes the plugin setup in `.claude/settings.json` and `.codex/config.toml` |
 
 `describe-pr` and `ship-it` share `describe-pr/format.md`: the
 review's title and body are the squash commit's subject and body, so one set
@@ -267,8 +267,14 @@ reruns CI and merges, as its own test lists. None pre-approves a removal.
 A plugin cannot grant a skill more than the turn that invoked it in Claude
 Code, and nothing at all in Codex, so `ship-it/rights.md` lists the rules a
 user adds to their own client configuration, and the skill checks for them
-before it starts. The Claude Code ones live once, in `preflight/rules.json`,
-which `preflight` merges into the settings file the user names. It runs only
+before it starts. Claude Code's rules live in `preflight/rules.json`;
+Codex's live in `preflight/worktrees.rules`. The preflight skill merges
+rules into the selected client's user or project file. For Codex,
+`merge_codex_rules.py` prints a candidate with missing literal rules
+appended, and `codex execpolicy check` validates it before approval and
+copying. Existing rules remain; another run appends nothing. The CLI's
+`codex` check covers plugin configuration, so the skill checks permission
+rules even when that check passes. It runs only
 when called by name, in both clients, and pre-approves no write, so the copy
 over the settings file reaches the client's own prompt. Its allow patterns match prefixes, so a test holds the
 skill's commands to never writing `--force`, `--admin`, `--auto`,

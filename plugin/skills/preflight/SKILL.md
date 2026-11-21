@@ -1,12 +1,9 @@
 ---
 name: preflight
 description: >
-  Report whether gw and this plugin are set up in this repository with
-  `gw preflight --json`, then, after showing every missing line and asking,
-  add the Claude Code permission rules the plugin's skills need to the
-  user's or the project's settings.json, and the project's plugin setup to
-  its .claude/settings.json and .codex/config.toml. Runs only when the user
-  calls it by name.
+  Use when the user calls preflight by name to check or configure Worktrees
+  permissions and plugin setup in Claude Code or Codex, for one project or
+  the user account.
 disable-model-invocation: true
 argument-hint: "[user | project]"
 allowed-tools:
@@ -26,19 +23,19 @@ defaults, the project's Claude Code and Codex plugin setup, and the shell
 plugin's release. This skill reports what it finds and writes what a file
 can hold, after asking.
 
-[rules.json](rules.json) holds the permission rules a skill's own
-pre-approval cannot cover: the allow rules [ship-it](../ship-it/rights.md)
-publishes with, and the deny rules that refuse a forced push or an admin
-merge whatever else allows them. [project.json](project.json) and
+[rules.json](rules.json) holds Claude Code's permission rules;
+[worktrees.rules](worktrees.rules) holds Codex's. They contain the allow
+rules [ship-it](../ship-it/rights.md) publishes with and the deny rules
+each client can match. [project.json](project.json) and
 [config.toml](config.toml) hold the project's plugin setup for Claude Code
 and Codex. A plugin can write none of them itself.
 
-An allow rule lets every Claude Code session the file covers run that
+An allow rule lets every session the file covers run that
 command without asking, not just ship-it. Write only the lines the user
 approves in this run, and only after they approve them.
 
-In Codex, skip steps 3 to 6, which write Claude Code's permission rules,
-and point at the Codex section of [the rules ship-it needs](../ship-it/rights.md).
+Use the current client's permission files. After step 2, Codex uses step 7;
+Claude Code uses steps 3 to 6. Both continue with step 8.
 
 Below, `RULES`, `PROJECT` and `CONFIG` are the absolute paths of
 `rules.json`, `project.json` and `config.toml` beside this file, and `TOP`
@@ -53,7 +50,10 @@ gw preflight --json
 
 Report every check in `checks`: its `name`, `status` and `detail`, and its
 `fix` when there is one. The status is `ok`, `missing`, `wrong` or
-`skipped`. When gw refuses, report what it said and stop.
+`skipped`. Exit 1 reports setup gaps: continue with those checks. When gw
+refuses at exit 3, report what it said and stop. The `codex` check covers
+plugin configuration; permission rules are checked separately in step 7,
+even when every CLI check is `ok`.
 
 Two fixes are the user's to run, never this skill's:
 
@@ -73,12 +73,15 @@ shell.
 
 ## 2. Which file
 
-The argument is the scope. With none, ask which one, with this table:
+The argument is the scope. With none, ask which one, using the current
+client's rows from this table:
 
-| scope | file | reaches |
-| --- | --- | --- |
-| `user` | `~/.claude/settings.json` | every project on this machine |
-| `project` | `.claude/settings.json` under `TOP` | every machine that clones the repository once the file is committed, after each person trusts the workspace |
+| client | scope | permission file | reaches |
+| --- | --- | --- | --- |
+| Claude Code | `user` | `~/.claude/settings.json` | every project on this machine |
+| Claude Code | `project` | `TOP/.claude/settings.json` | each trusted clone once committed |
+| Codex | `user` | `${CODEX_HOME:-$HOME/.codex}/rules/worktrees.rules` | every project using that Codex home |
+| Codex | `project` | `TOP/.codex/rules/worktrees.rules` | each trusted clone once committed |
 
 Any other argument: say that it takes `user` or `project`, and stop.
 
@@ -94,7 +97,7 @@ jq --slurpfile want RULES '$want[0].permissions as $w | {allow: ($w.allow - (.pe
 
 When jq cannot read the file, stop: name the file and what jq said, and
 change nothing. When both lists are empty, say the file already carries
-every rule, and go to step 7.
+every rule, and go to step 8.
 
 ## 4. Ask about the rules
 
@@ -125,13 +128,67 @@ permissions, which matters for a `~/.claude/settings.json` that holds
 secrets in `env`.
 
 Nothing here pre-approves the copy, so the client asks before it. Where it
-refuses, print the `cp` command for the user to run with `!`, and go on.
+refuses, print the `cp` command for the user to run with `!`, report the
+rules as uninstalled, and continue with step 8.
 
 ## 6. Check the rules
 
-Run step 3 again: both lists are empty.
+Run step 3 again: both lists are empty. Continue with step 8.
 
-## 7. The project's plugin setup
+## 7. Codex permission rules
+
+`MERGER` is the absolute path of [merge_codex_rules.py](merge_codex_rules.py)
+beside this file. `TARGET` is the Codex permission file selected in step 2.
+Prepare a candidate without changing `TARGET`:
+
+```sh
+mktemp
+python3 MERGER TARGET > TEMP
+codex execpolicy check --rules TEMP -- gw push --json
+diff -u TARGET TEMP
+```
+
+`TEMP` is the path `mktemp` printed. Quote every path. If `TARGET` does not
+exist, compare `/dev/null` with `TEMP`. A diff exits 1 when files differ;
+that is the candidate to review. Stop this permission write if the merger
+or Codex validation fails; show the error and leave `TARGET` unchanged.
+If `codex` is unavailable, report that validation needs the Codex CLI and
+leave the candidate for the user to validate and install.
+
+The merger reads the bundled rules and appends missing literal patterns
+and decisions. It preserves existing text, including comments and other
+rules, and ignores formatting and justification differences when matching.
+It never executes the target as Python. Codex validates the candidate's
+rule syntax. An existing `prompt` or `forbidden` rule remains in effect:
+the strictest matching decision wins. Do not remove such a rule to make an
+allow rule effective.
+
+If the diff is empty, report that the file already carries the rules and
+continue with step 8. Otherwise show the target's absolute path and every
+added rule, with `allow` and `forbidden` apart, then ask to install or skip
+this candidate. Explain that allow rules permit matching commands outside
+the sandbox without a prompt, subject to other policy restrictions. They
+cover commits, pushes, pull request creation and merging, and CI reruns
+for every session within the selected scope.
+
+After approval, create the target's parent directory if needed and copy
+the reviewed candidate:
+
+```sh
+cp TEMP TARGET
+```
+
+The copy preserves an existing file's permissions. Nothing here
+pre-approves the copy. If the client refuses it, report the refusal and
+give the exact command for the user to run. Never report an uncompleted
+copy as installed.
+
+After a successful copy, run the merger and comparison again: the diff
+must be empty. Validate `TARGET` with the same `codex execpolicy check`
+command and report its decision. Tell the user to restart Codex to load
+the rules. Rules in a project apply only after the user trusts it.
+
+## 8. The project's plugin setup
 
 With the `user` scope, skip this step and say that
 `/worktrees:preflight project` writes these files. With `project`, it
@@ -171,7 +228,7 @@ reads the file only in a trusted project, and that
 `codex plugin marketplace upgrade mihaibojin` clones the marketplace and
 installs the plugin.
 
-## 8. Report
+## 9. Report
 
 Run `gw preflight --json` again and report each check that changed. Name
 each file this run wrote and the lines it gained. A file under `TOP` is not

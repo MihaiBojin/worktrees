@@ -85,6 +85,21 @@ does not clone a marketplace declared there:
 `codex plugin marketplace upgrade mihaibojin` clones it and installs the
 plugins the project enables.
 
+The `codex` check covers plugin configuration. The preflight skill checks
+permissions separately, even when the CLI reports every check as `ok`.
+In Codex, `/worktrees:preflight user` installs the bundled
+[permission rules](../../plugin/skills/preflight/worktrees.rules) into
+`${CODEX_HOME:-$HOME/.codex}/rules/worktrees.rules`.
+`/worktrees:preflight project` uses `.codex/rules/worktrees.rules` under the
+repository root. Claude Code uses its own settings files for those scopes.
+
+The skill prepares a candidate with missing rules appended, preserves
+existing rules and comments, and validates it with `codex execpolicy check`.
+It shows the target and additions before asking to install them. Existing
+`prompt` or `forbidden` decisions remain in effect where they match; an
+allow rule cannot override them. Restart Codex after installation. Project
+rules apply only in a trusted project.
+
 ## Shell plugin
 
 The fish and zsh plugins export `WORKTREES_PLUGIN_VERSION`. The check

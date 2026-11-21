@@ -702,8 +702,11 @@ Run `gw preflight` once in each repository. It says whether `gh` or `glab`
 is signed in, whether GitHub squashes with each pull request's title and
 body, whether the project's Claude Code and Codex settings enable the
 plugin, and whether the shell plugin is this release.
-`/worktrees:preflight project` writes the project files it reports
-missing; [preflight](docs/commands/preflight.md) lists every check.
+`/worktrees:preflight user` installs permission rules for the current
+client. `/worktrees:preflight project` installs those rules and the plugin
+setup in the repository. Both show the additions and ask before writing.
+Codex uses `.rules` files and needs a restart to load them;
+[preflight](docs/commands/preflight.md) lists every check and target path.
 
 ## Contributing
 
