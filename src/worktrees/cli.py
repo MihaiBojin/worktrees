@@ -1055,20 +1055,25 @@ def _head_sha(text: str) -> str:
 
 
 def _add_merge_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument("number", type=_review_number, metavar="NUMBER")
+    p.add_argument(
+        "number",
+        nargs="+",
+        type=_review_number,
+        metavar="NUMBER",
+        help="the pull requests to merge, bottom first",
+    )
     p.add_argument(
         "--match-head-commit",
-        required=True,
         type=_head_sha,
         metavar="SHA",
-        help="the head commit whose CI passed",
+        help="the head commit whose CI passed; required with one NUMBER",
     )
-    p.add_argument("--subject", help="the merge commit subject")
+    p.add_argument("--subject", help="the merge commit subject, with one NUMBER")
     p.add_argument(
         "--body-file",
         type=Path,
         metavar="FILE",
-        help="read the merge commit body from FILE",
+        help="read the merge commit body from FILE, with one NUMBER",
     )
     p.add_argument("--json", action="store_true", help="the merge outcome as data")
     p.add_argument(
@@ -1076,10 +1081,25 @@ def _add_merge_flags(p: argparse.ArgumentParser) -> None:
     )
 
 
+_MERGE_EXIT = {"merged": 0, "enqueued": 0, "head-moved": 4, "refused": 3}
+
+
 def run_merge(args: argparse.Namespace) -> int:
-    from . import pr_merge, sync
+    from . import audit, pr_merge, sync
     from .git import options
 
+    numbers = args.number
+    if len(set(numbers)) != len(numbers):
+        raise _Stop("name each pull request once", 2)
+    single = (args.match_head_commit, args.subject, args.body_file)
+    if len(numbers) > 1 and any(value is not None for value in single):
+        raise _Stop(
+            "--match-head-commit, --subject and --body-file take one NUMBER; "
+            "with several, gw reads each head and builds each message",
+            2,
+        )
+    if len(numbers) == 1 and args.match_head_commit is None:
+        raise _Stop("--match-head-commit is required with one NUMBER", 2)
     body = None
     if args.body_file is not None:
         try:
@@ -1089,28 +1109,109 @@ def run_merge(args: argparse.Namespace) -> int:
     if sync.offline():
         raise Refused(f"gw merge uses the forge, and {sync.OFFLINE} is set")
     options.verbose = args.verbose
-    result = pr_merge.merge(args.number, args.match_head_commit, args.subject, body)
-    from . import audit
-
-    audit.record(
-        "merge.outcome", number=args.number, head=args.match_head_commit, **result
-    )
-    if args.json:
-        print(_json(result))
+    if len(numbers) == 1:
+        result = pr_merge.merge(numbers[0], args.match_head_commit, args.subject, body)
+        results = [{"number": numbers[0], "head": args.match_head_commit, **result}]
     else:
+        results = pr_merge.ship(numbers)
+    for each in results:
+        audit.record("merge.outcome", **each)
+    last = results[-1]
+    if args.json and len(numbers) == 1:
+        print(_json(result))
+    elif args.json:
+        merged = [m for each in results for m in each["merged"]]
         print(
-            f"#{args.number}: {result['status']}"
-            + (f" {result['sha']}" if result["sha"] else "")
+            _json(
+                {
+                    "status": last["status"],
+                    "results": results,
+                    "merged": merged,
+                    "remaining": last["remaining"],
+                }
+            )
         )
-    if result["message"]:
-        _err(
-            render.fail(result["message"])
-            if result["status"] == "failed"
-            else render.note(result["message"])
+    else:
+        _print_merges(results)
+    for each in results:
+        for warning in each["warnings"]:
+            _warn(warning)
+        for row in each["branches"]:
+            _err(_branch_note(row))
+        if each["message"]:
+            _err(
+                render.fail(each["message"])
+                if each["status"] in ("failed", "refused")
+                else render.note(each["message"])
+            )
+    return _MERGE_EXIT.get(last["status"], 1)
+
+
+_CHECKS_INK = {"passed": GREEN, "failed": RED, "pending": YELLOW, "blocked": YELLOW}
+
+
+def _print_merges(results: list[dict]) -> None:
+    """A line for each merge call, then, when the calls carried more pull
+    requests than they name or left any open, a row for each."""
+    for each in results:
+        print(
+            f"#{each['number']}: {each['status']}"
+            + (f" {each['sha']}" if each["sha"] else "")
         )
-    if result["status"] == "head-moved":
-        return 4
-    return 0 if result["status"] in ("merged", "enqueued") else 1
+    merged = [m for each in results for m in each["merged"]]
+    remaining = results[-1]["remaining"]
+    if len(merged) <= len(results) and not remaining:
+        return
+    heading = ("PR", "STATE", "SHA", "BASE", "MERGE STATE", "CHECKS")
+    rows: list[Row] = [tuple(Cell(word, BOLD) for word in heading)]
+    rows += [
+        (
+            Cell(f"#{m['number']}"),
+            Cell("merged", GREEN),
+            Cell((m["sha"] or "")[:7], YELLOW),
+            Cell(""),
+            Cell(""),
+            Cell(""),
+        )
+        for m in merged
+    ]
+    rows += [
+        (
+            Cell(f"#{r['number']}"),
+            Cell("open", DIM),
+            Cell(r["headSha"][:7], YELLOW),
+            Cell(r["baseRef"], render.BRANCH),
+            Cell(r["mergeStateStatus"]),
+            Cell(r["checksState"], _CHECKS_INK.get(r["checksState"], "")),
+        )
+        for r in remaining
+    ]
+    print(table(rows))
+
+
+def _branch_note(row: dict) -> str:
+    """What happened to one local branch of the stack above a merge."""
+    branch = render.branch(row["branch"])
+    number = row["number"]
+    if row["result"] == "moved":
+        return render.note(
+            f"{branch} moved from {row['from'][:7]} to {row['to'][:7]}, "
+            f"the copy GitHub rewrote for #{number}"
+        )
+    if row["result"] == "checked-out":
+        return render.warn(
+            f"{branch} is checked out in {row['path']}, so it stays where it "
+            f"was.\nRun: gw fast-forward, in {row['path']}"
+        )
+    if row["result"] == "not-rewritten":
+        return render.warn(
+            f"GitHub has not rewritten {branch} for #{number} yet, so it stays "
+            "where it was"
+        )
+    return render.warn(
+        f"{branch} stands at {row['from'][:7]}, not at the head #{number} had "
+        "before the merge, so it stays where it is"
+    )
 
 
 def _add_stack_link_flags(p: argparse.ArgumentParser) -> None:
@@ -2133,12 +2234,12 @@ _COMMANDS: dict[str, _Command] = {
     "merge": _Command(
         run_merge,
         _add_merge_flags,
-        "squash one GitHub PR at its checked head",
-        "Squash one GitHub PR, respecting its queue and waiting up to ten "
-        "minutes for the stack; head-moved exits 4 without submitting when "
-        "the head changes. The command submits with or without --json, which "
-        "prints the outcome as data.",
-        usage="NUMBER",
+        "squash checked GitHub PRs, a stack in one call",
+        "Squash each GitHub PR named, in order, a native stack in one call with "
+        "every open PR below it, once gw has checked each head and its CI; "
+        "head-moved exits 4 without submitting when the head changes. The "
+        "command submits with or without --json, which prints the outcome as data.",
+        usage="NUMBER...",
     ),
     "stack-link": _Command(
         run_stack_link,

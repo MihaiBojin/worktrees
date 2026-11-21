@@ -519,12 +519,19 @@ first, and `gw sync` and `gw ci-checks` refuse at exit 3. Every notice that woul
 `Run: gw sync` goes through `sync.hint`, which leaves that off offline,
 since it names a command that refuses there.
 
-`gw merge` squashes one GitHub PR at a supplied head SHA. It waits up to ten
-minutes, polling every five seconds, for lower stack members to merge, the
-base to match the stack base and the head to contain the latest parent merge.
-A rewritten head returns `head-moved` at exit 4 without submitting. It reads
-fresh CI and verifies membership and containment again before calling the
-asynchronous merge API, then polls a pending operation for one minute. `enqueued` is queued, not merged. Both clients call
+`gw merge` squashes one GitHub PR at a supplied head SHA, or several in the
+order given at the heads it reads, building each message from the title,
+body and `pr.trailers`. A PR in a native stack merges with every open PR
+below it in one asynchronous call, after each of those passes the same CI
+and merge-state checks at the head the stack reported. It waits up to ten
+minutes, polling every five seconds, for the lowest open member to settle
+from a merge below it: its base the stack base and its head containing the
+latest merge. A rewritten head returns `head-moved` at exit 4 without
+submitting. It reads fresh CI and verifies membership and containment again
+before calling the asynchronous merge API, then polls a pending operation
+for one minute. After a merge that leaves stack members open, it fetches and
+moves each of their local branches that stands at the head GitHub had to
+the rewritten copy, with a compare-and-swap `git update-ref`. `enqueued` is queued, not merged. Both clients call
 the same command; their rules admit `gw merge` without general `gh api`
 writes. [Merge](docs/commands/merge.md) describes the result and refusals.
 

@@ -398,6 +398,10 @@ def test_a_writer_already_open_survives_a_line_another_run_tears(logging):
             sha=None,
             uuid=None,
             message="",
+            merged=[],
+            remaining=[],
+            branches=[],
+            warnings=[],
         )
     finally:
         audit.end(0)

@@ -293,10 +293,15 @@ class Network:
             "        print(json.dumps(page))\n"
             "    sys.exit(0)\n"
             # A review read: `$view` is one answer, or a list of answers
-            # given in turn, the last one repeated.
+            # given in turn, the last one repeated. `$views` holds the same
+            # for the review a number names, counted on its own.
             "if args[1:2] == ['view']:\n"
-            "    answers = json.loads(responses.read_text()).get('$view')\n"
-            "    counter = responses.with_name('view-count')\n"
+            "    data = json.loads(responses.read_text())\n"
+            "    selector = args[2] if len(args) > 2 else ''\n"
+            "    answers = data.get('$views', {}).get(selector, data.get('$view'))\n"
+            "    counter = responses.with_name(\n"
+            "        'view-count-' + selector\n"
+            "        if selector in data.get('$views', {}) else 'view-count')\n"
             "    seen = int(counter.read_text()) if counter.exists() else 0\n"
             "    counter.write_text(str(seen + 1))\n"
             "    if isinstance(answers, list):\n"

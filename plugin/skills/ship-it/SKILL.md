@@ -119,24 +119,31 @@ Named branches that build on each other ship as a stack. A branch builds
 on another named branch when its history holds that branch's tip and that
 branch is not merged. Take the stack bottom first through steps 2 to 6,
 each branch above opening its review on the one below as step 5 says, then
-bottom first through steps 7 to 10. Once a branch's review is open on the
+bottom first through steps 7 and 8, one `gw merge` call for them all in
+step 9, as with numbers below, and step 10. Once a branch's review is open on the
 one below, `gw fast-forward` levels it with that branch rather than the
 head branch.
 
-With numbers, each review goes through steps 7 to 10 on its own, one at a
-time in the order given, and a stack bottom first. One whose `pr.baseRef`
-is the branch of a review this run did not merge, whatever the reason, is
-not merged: it would land on that branch rather than the head branch.
-Report it as waiting on that one. After each merge, read the next review
-and its CI again. A queued or pending merge does not unblock the next review.
+With numbers, each review goes through steps 7 and 8 on its own, in the
+order given, a stack bottom first. Step 9 then merges every one that is
+ready with one `gw merge` call naming them all, in that order. `gw merge`
+merges them one after another, a native stack in one call on its highest
+member, reads the next review again after each merge, and stops at the
+first that does not merge. Never call `gw merge` once per review in a loop
+of your own, and never wrap it in a script. One whose `pr.baseRef` is the
+branch of a review this run did not merge, whatever the reason, is not
+merged: it would land on that branch rather than the head branch. Leave it
+out of the call and report it as waiting on that one. A queued or pending
+merge does not unblock the next review.
 
 One whose `pr.baseRef` is still the branch of a review this run merged
 would land on that finished branch: the forge moves the base itself only
 when the merged branch is deleted, and GitHub only for a native stack
-otherwise. Switch to its branch as a [named branch](#which-change) does and
-run step 3 there. `gw fast-forward` moves the base to the head branch,
-drops the merged commits and pushes the branch; then read the review again
-and take it from step 7.
+otherwise. `gw merge` refuses it and stops there. Switch to its branch as a
+[named branch](#which-change) does and run step 3 there. `gw fast-forward`
+moves the base to the head branch, drops the merged commits and pushes the
+branch; then read the review again, take it from step 7, and make one
+`gw merge` call for it and the reviews after it.
 
 ## 1. A branch of its own
 
@@ -362,20 +369,37 @@ block. Append the strings from that snapshot's `pr.trailers` in order,
 once each, copying their full values rather than retyping them. Preserve
 trailers already in the review body without duplicating them.
 
-Write the subject and body in your reply, under the review's URL, then
-write the message file with the Write tool. For GitHub, FILE contains the
-body. For GitLab, FILE contains the subject, a blank line and the body. Merge:
+For one review, write the subject and body in your reply, under the
+review's URL, then write the message file with the Write tool. For GitHub,
+FILE contains the body. For GitLab, FILE contains the subject, a blank line
+and the body. Merge:
 
 ```sh
 gw merge NUMBER --subject 'SUBJECT' --body-file FILE --match-head-commit HEAD_SHA --json
 glab mr merge NUMBER --squash --squash-message "$(cat FILE)" --sha HEAD_SHA --auto-merge=false
 ```
 
+For several GitHub reviews, or the reviews of a native stack, make one call
+that names every ready review in order, bottom first:
+
+```sh
+gw merge NUMBER_1 NUMBER_2 NUMBER_3 --json
+```
+
+It takes no `--subject`, `--body-file` or `--match-head-commit`: `gw merge`
+reads each head and its CI, and builds each message by the rules above from
+the title, the body and `pr.trailers`. A native stack takes one merge call
+on its highest member named, which merges every open member below it; GitHub
+builds those members' messages from the repository's squash settings, and
+`gw merge` warns when those are not the title and body. One call on the top
+of a native stack, with one number, does the same for the stack below it.
+
 Run `gw merge` in the background where the host can, as for
 `gw ci-checks --wait`, and collect its stdout, stderr and exit status when
-it finishes. Otherwise set the host tool's timeout above 11 minutes, for
-example 15 minutes: the command can wait ten minutes for the stack and one
-minute for the merge operation, with forge reads extending those windows.
+it finishes. Otherwise set the host tool's timeout above 11 minutes for
+each merge call it makes, for example 15 minutes for one: each call can wait
+ten minutes for the stack and one minute for the merge operation, with forge
+reads extending those windows.
 A host timeout leaves the merge outcome uncertain; read the PR before any
 further attempt, as below.
 
@@ -384,17 +408,23 @@ and a rebuilt message before another merge attempt. Never add
 `--admin`, `--auto` or `--delete-branch`. glab sets auto-merge by default
 while a pipeline runs, which `--auto-merge=false` turns off.
 
-For GitHub, both Codex and Claude call `gw merge`. It checks the supplied
-head SHA and fresh CI. It waits up to ten minutes for every lower stack
-member to merge, the base to match the stack base and the head to contain
-the most recent parent merge. It checks containment again before submitting.
-It uses GitHub's asynchronous merge API for ordinary and native stacked
-reviews, with the repository's default
-queue behavior. The prepared subject and body reach direct merges; a merge
-queue controls its own commit message and strategy.
+For GitHub, both Codex and Claude call `gw merge`. It checks each head SHA
+and fresh CI, the open stack members below a review included, and waits up
+to ten minutes for a stack to settle from a merge below it. It uses
+GitHub's asynchronous merge API with the repository's default queue
+behavior. The subject and body reach direct merges; a merge queue controls
+its own commit message and strategy. After a stack merge it moves each
+local branch above the merge to GitHub's rewritten copy where nothing would
+be lost, and names the worktree where `gw fast-forward` must run for one
+checked out.
 
-Read stdout, stderr and the exit status. JSON carries `status`, `pr`, `sha`,
-`uuid` and `message`, along with `head` and `lastSync`.
+Read stdout, stderr and the exit status. With one number, JSON carries
+`status`, `pr`, `sha`, `uuid`, `message`, `merged`, `remaining`, `branches`
+and `warnings`, along with `head` and `lastSync`. With several, it carries
+the last call's `status`, one such object a call in `results`, and
+`merged` and `remaining` for the whole run. `merged` lists every review that
+merged, with its merge commit; `remaining` lists every review still open,
+with its head, base, merge state and checks. Report both.
 
 | status | action |
 | --- | --- |
@@ -403,14 +433,17 @@ Read stdout, stderr and the exit status. JSON carries `status`, `pr`, `sha`,
 | `pending` | Report the request UUID and that the merge may still complete. Leave dependent reviews waiting. |
 | `failed` | Report `message` and leave dependent reviews waiting. |
 | `head-moved` | Repeat CI for `sha` and rebuild the message from its trailers as below; retry once for this PR. |
+| `refused` | Several numbers only: report `message`, and leave this review and the ones after it waiting. |
 
 Exit 0 covers `merged` and `enqueued`; it alone does not prove a merge.
 Exit 1 covers `pending` and `failed`. Exit 4 is `head-moved`: nothing was
-submitted. A refusal exits 3 with stderr and no JSON. An unknown command or
+submitted. A refusal exits 3 with stderr, and with JSON only when several
+numbers were named. With several, the exit status is the last call's. An unknown command or
 invalid arguments exits 2. Report refusals as written. Do not retry through `gh pr merge` or `gh api`.
 The one refusal with a remedy names a base left on a merged branch: run
 step 3 in the branch's worktree, as [which change](#which-change) says,
-then return to step 7 for this PR.
+then return to step 7 for this PR and make one `gw merge` call for it and
+the reviews after it.
 
 On the first `head-moved` for this PR, record that its one retry is in use.
 `NEW_SHA` is the result's `sha`. Return to step 7 for this PR and run:
@@ -424,8 +457,10 @@ Require `pr.headSha` to equal `NEW_SHA`, `checksState` to be `passed` or
 another movement: stop and report it. Repeat steps 8 and 9 using that
 completed wait as step 9's fresh snapshot, including its merge-state check.
 Rebuild the message with that snapshot's `pr.trailers`, then call `gw merge`
-with `NEW_SHA`. A second `head-moved` for this PR is a stop: report its new
-SHA and leave dependent reviews waiting.
+with `NEW_SHA`; with several numbers, make one call naming this review and
+the ones after it, and `gw merge` reads the new head itself. A second
+`head-moved` for this PR is a stop: report its new SHA and leave dependent
+reviews waiting.
 
 After a pending result or an uncertain network failure, read the PR before
 any further merge attempt:
@@ -441,7 +476,9 @@ commit message cannot be verified is also a refusal, with the same readback.
 With `--hold-merge`, do not merge. Make a file that outlives this session
 with `mktemp -t ship-it.XXXXXX` and write its platform-specific contents as
 above with the Write tool. Print the subject, the body and the one command
-that merges with them.
+that merges with them. With several GitHub reviews, print the one
+`gw merge NUMBER_1 NUMBER_2 --json` command that merges them all instead,
+with no file.
 Print the command with every value written out, the file's path included.
 A changed head requires fresh CI and a rebuilt message. In Claude Code,
 `!` before the command runs it in the session. The user may run it, change

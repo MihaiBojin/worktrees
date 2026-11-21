@@ -355,10 +355,16 @@ objects; and `retargeted` and `rescued`, objects. It adds
 `previous_full_sha` and `full_sha`, strings that are empty when the short
 one no longer resolves, and `restore` and `undo`.
 
-`merge.outcome`, when `gw merge` returned, carries `number`, a number,
-`head`, the SHA it was asked to merge at, and the fields of
-[its `--json` result](commands/merge.md): `status` and `message`, strings,
-`sha` and `uuid`, strings or null, and `pr`, an object.
+`merge.outcome`, one for each merge call `gw merge` made or refused, carries
+`number`, a number, `head`, the SHA it was asked to merge at, and the fields
+of [its `--json` result](commands/merge.md): `status` and `message`,
+strings, `sha` and `uuid`, strings or null, `pr`, an object, and
+`warnings`, a list of strings. `merged` lists each pull request the call
+merged, as `number` and `sha`, its merge commit or null. `remaining` lists
+each one still open, as `number`, `headSha`, `baseRef`, `mergeStateStatus`
+and `checksState`. `branches` lists each local branch of the stack above
+the merge that gw looked at, as `number`, `branch`, `from`, `to`, `path`
+and `result`: `moved`, `checked-out`, `kept` or `not-rewritten`.
 
 ### Recovery actions
 
