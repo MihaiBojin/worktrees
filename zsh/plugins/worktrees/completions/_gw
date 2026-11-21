@@ -1,4 +1,4 @@
-#compdef gw worktrees gwa gwbc gwbp gwbs gwff gwl gwm gwp gwp! gwpa gwpa! gwr gwr! gws
+#compdef gw worktrees gwa gwbc gwbp gwbs gwff gwl gwm gwp gwp! gwpa gwpa! gwr gwr! gwrk! gws
 
 # Flags as `gw <command> --help` lists them, and candidates from the CLI.
 # A shortcut completes as the gw command it runs: gwa as `gw add`.
@@ -165,6 +165,7 @@ _gw() {
         'gwpa!') fixed=(prune --delete all --yes) ;;
         gwr) fixed=(remove) ;;
         'gwr!') fixed=(remove --yes) ;;
+        'gwrk!') fixed=(remove --keep-branch --yes) ;;
         gws) fixed=(sync) ;;
     esac
     if (( $#fixed )); then

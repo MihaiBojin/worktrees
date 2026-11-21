@@ -72,7 +72,8 @@ failed.
 
 A shortcut is one call to the `gw` function with fixed words, by its plain
 name so a shortcut to a command that lands still lands: `gwa` calls `gw add`,
-`gwl` calls `gw list`, `gwr!` calls `gw remove --yes`, and
+`gwl` calls `gw list`, `gwr!` calls `gw remove --yes`, `gwrk!` calls
+`gw remove --keep-branch --yes`, and
 `gwpa!` calls `gw prune --delete all --yes`. No shortcut has a console script.
 The `shortcuts` field of a row in `cli.py` lists that command's; `gw --help`
 prints them under it, and `tests/test_shims.py` holds every function file in

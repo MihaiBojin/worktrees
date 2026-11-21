@@ -511,6 +511,7 @@ CANDIDATES = [
     ("gw remove ", {"one"}),
     ("gwr ", {"one"}),
     ("gwr! ", {"one"}),
+    ("gwrk! ", {"one"}),
     ("gw branch ", {"create", "prune", "status"}),
     ("gw branch status ", {"done", "main", "one"}),
     ("gwbs ", {"done", "main", "one"}),

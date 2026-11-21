@@ -2071,7 +2071,7 @@ _COMMANDS: dict[str, _Command] = {
         "which needs a second answer at a terminal.",
         usage="[QUERY]",
         aliases=("rm",),
-        shortcuts={"gwr": "", "gwr!": "--yes"},
+        shortcuts={"gwr": "", "gwr!": "--yes", "gwrk!": "--keep-branch --yes"},
         lands=True,
     ),
     "fast-forward": _Command(
