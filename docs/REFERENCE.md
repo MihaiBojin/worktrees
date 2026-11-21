@@ -1,13 +1,40 @@
-# Runtime contracts
+# Reference
 
-Bare `gw` and `gw --help` print the command guide, outside a repository too.
-`gw list` selects a destination on terminal input; nonterminal input prints
-matching worktree metadata. `--json` and `--table` always print metadata.
-`gw select-main` prints the worktree with the head branch checked out, with or
-without a terminal, and takes it even from inside it.
-`gw WORD` with a word that is not a command exits 2 and suggests
-`gw list WORD`. `gw prune` assesses worktrees and asks before removal on a
-terminal. Nonterminal input, `--json` and `--table` assess without mutation;
+Where each command is described, then the rules the commands share: the
+head ref, protections, deletion, the audit log, the sync cache and the
+output streams. [The README](../README.md) covers installation and a tour.
+
+## Commands
+
+| command | shortcuts | described in |
+| --- | --- | --- |
+| `gw`, `gw --help` | | [below](#commands) |
+| `gw sync` | `gws` | [README](../README.md#head-and-synchronization), [sync cache](#sync-cache) |
+| `gw prune`, `gw p` | `gwp`, `gwp!`, `gwpa`, `gwpa!` | [README](../README.md#assess-and-remove), [protections](#protections-and-permissions), [deletion](#deletion-and-recovery) |
+| `gw add`, `gw a` | `gwa` | [add](commands/add.md) |
+| `gw list`, `gw l` | `gwl` | [list](commands/list.md) |
+| `gw select-main`, `gw main`, `gw m` | `gwm` | [select-main](commands/list.md#select-main) |
+| `gw remove`, `gw rm` | `gwr`, `gwr!` | [README](../README.md#assess-and-remove), [protections](#protections-and-permissions), [deletion](#deletion-and-recovery) |
+| `gw fast-forward`, `gw ff` | `gwff` | [fast-forward](commands/fast-forward.md) |
+| `gw ci-checks`, `gw ci` | | [ci-checks](commands/ci-checks.md) |
+| `gw merge` | | [merge](commands/merge.md) |
+| `gw version`, `gw v` | | [below](#commands) |
+| `gw branch create` | `gwbc` | [branch create](commands/branch-create.md) |
+| `gw branch status` | `gwbs` | [branch status](commands/branch-status.md) |
+| `gw branch prune` | `gwbp` | [branch prune](commands/branch-prune.md) |
+
+Bare `gw` and `gw --help` print every command with its shorthands and the
+shell plugin's shortcuts under it, then the plugin's release, outside a
+repository too. `gw WORD`, with a word that is not a command, exits 2 and
+suggests `gw list WORD`, so a worktree name never competes with a
+shorthand. Each shortcut runs one command with fixed words.
+
+`gw version` prints the installed release on stdout, alone, for a script to
+read. On stderr it says whether the shell plugin here is the same release,
+and inside a repository it prints the head line.
+
+`gw prune` assesses worktrees and asks before removal on a terminal.
+Nonterminal input, `--json` and `--table` assess without mutation;
 `--yes` approves removal in any mode. `--table` prints an uncoloured table.
 `--only` filters assessment rows and rejects `--yes`. `gw remove` selects one
 and follows the same rules for it: nonterminal input, `--json` and `--table`
@@ -16,17 +43,6 @@ nothing; `--yes` approves removal in any mode. It takes no `--only`, since a
 single target has a single verdict. A target that is not eligible still fails
 under `--yes`, and removing the worktree you stand in still needs a second
 answer at a terminal.
-`gw branch status` assesses loose local branches and `gw branch prune`
-deletes selected eligible refs. A checked-out branch appears only as a
-worktree. `gw ci-checks` reads one pull request's checks from the forge and writes
-nothing. [`gw merge`](commands/merge.md) squashes one checked GitHub PR. It waits
-for lower stack members and the head rewrite, reports `head-moved` at exit 4
-when that rewrite changes the head, and reports queue submission separately
-from a completed merge. Each shell plugin shortcut, such as `gwp!`, runs one of these with
-fixed words, and `gw --help` lists them under the command they run.
-`gw fast-forward` brings the current branch level with the head ref, and
-[its page](commands/fast-forward.md) gives the order of its checks and its
-JSON. [The README](../README.md) covers invocation, permissions and migration.
 
 ## Head and evidence
 
@@ -447,7 +463,7 @@ hold whatever `WORKTREES_SYNC_TTL` says, so a longer TTL lets the age
 warning print before the next sync is due.
 
 Every command except `gw sync`, `gw version`, `gw list`, `gw fast-forward`,
-help and completion runs sync first when one is due: the default remote's
+`gw ci-checks`, `gw merge`, help and completion runs sync first when one is due: the default remote's
 refs time is null, or at least `WORKTREES_SYNC_TTL` seconds old. The TTL is 300 when the variable is unset or
 empty, takes whole seconds with `0` meaning every command, and anything else
 is a usage error at exit 2. The forge time is not read. Without a default
