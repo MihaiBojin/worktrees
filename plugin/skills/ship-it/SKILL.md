@@ -252,7 +252,9 @@ glab mr view 'BRANCH' --output json
 A review that is open is the one to ship. A merged one with nothing new is
 step 3's merged change. Otherwise open one against the head branch, with a
 title and body that follow [the format](../describe-pr/format.md), the body
-written to a file with the Write tool:
+written to a file with the Write tool. When the agent has the
+technical-writing plugin's `pr-description` skill, write the title and the
+body with it:
 
 ```sh
 gh pr create --base 'HEAD_BRANCH' --head 'BRANCH' --title 'TITLE' --body-file FILE
@@ -366,7 +368,8 @@ report it. An empty array means the commits have no trailers.
 Use the review's title as the subject, followed by ` (#NUMBER)`, as GitHub
 would have written it. The body is the review body, without lines that only
 make sense on a review page, such as a `Generated with` footer, the
-auto-resolution block, screenshots or task lists. Keep any `release-note`
+auto-resolution block, a `## Review guide` section, screenshots or task
+lists. Keep any `release-note`
 block. Append the strings from that snapshot's `pr.trailers` in order,
 once each, copying their full values rather than retyping them. Preserve
 trailers already in the review body without duplicating them.

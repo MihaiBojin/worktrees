@@ -27,6 +27,9 @@ names the pull request; without one it is the current branch's.
 
 The title and body are the commit message the merge will write, so they
 follow [the format](format.md). Read it before judging or writing either.
+When the agent has the technical-writing plugin's `pr-description` skill,
+read that skill too: its format replaces the Title and Body sections, as the
+format says.
 
 ## Read the change
 
@@ -59,7 +62,8 @@ line. Then one of two outcomes:
 
 Change only what is wrong or missing. A line that is accurate stays as its
 author wrote it. Rewrite the whole body only when it is empty, a template
-left unfilled, or a commit list.
+left unfilled, or a commit list, and write it with the `pr-description`
+skill when the agent has it.
 
 Write the body to a file with the Write tool, never as a shell argument,
 then:
