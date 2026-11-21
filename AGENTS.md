@@ -230,7 +230,7 @@ assumes a plugin root or a checkout at a known path.
 | `ci-checks` | `gw ci-checks --json`, `--wait` to wait without polling |
 | `describe-pr` | checks a review's title and body against its diff, and edits them |
 | `prune` | `gw prune --json` and `gw branch status --json`, then the removals approved |
-| `ship-it` | commits, `fast-forward`, a leased or plain push, `gh pr create`, `describe-pr`, `ci-checks`, fixes on the branch, `gw merge` on GitHub or `glab mr merge` on GitLab, then `fast-forward` in the head branch's checkout, unassisted, for this checkout or each branch it is named; given numbers, those open reviews from `ci-checks` on |
+| `ship-it` | commits, `fast-forward`, a leased or plain push, `gh pr create`, `gw stack-link` for a stacked branch on GitHub, `describe-pr`, `ci-checks`, fixes on the branch, `gw merge` on GitHub or `glab mr merge` on GitLab, then `fast-forward` in the head branch's checkout, unassisted, for this checkout or each branch it is named; given numbers, those open reviews from `ci-checks` on |
 | `preflight` | `jq` merges `preflight/rules.json` into the user's or the project's `.claude/settings.json`, after asking |
 
 `describe-pr` and `ship-it` share `describe-pr/format.md`: the
@@ -242,8 +242,8 @@ exceptions are each skill's job: `describe-pr` may edit a review,
 `fast-forward` runs `gw fast-forward`, which moves a base left on a merged
 branch and pushes the branch it levelled, and the conflict loop its own
 test lists, and `ship-it`, invoked to publish one change or the reviews it
-names, commits, pushes, opens and edits the review, reruns CI and merges,
-as its own test lists. None pre-approves a removal.
+names, commits, pushes, opens, links into a stack and edits the review,
+reruns CI and merges, as its own test lists. None pre-approves a removal.
 
 A plugin cannot grant a skill more than the turn that invoked it in Claude
 Code, and nothing at all in Codex, so `ship-it/rights.md` lists the rules a
@@ -483,8 +483,8 @@ when eight threads are asking at once.
 `gw sync` fetches every remote with `--prune --tags --no-prune-tags`, the
 default first, updates the default remote's HEAD and queries the forge for
 every local branch tip on eight threads. Every other command but
-`gw version`, `gw list`, `gw ci-checks`, `gw merge`, `gw fast-forward`, help and
-completion runs the same `sync.run` first when
+`gw version`, `gw list`, `gw ci-checks`, `gw merge`, `gw stack-link`,
+`gw fast-forward`, help and completion runs the same `sync.run` first when
 `sync.due` says so: the default remote's refs time is null or at least
 `WORKTREES_SYNC_TTL` seconds old, 300 by default. The forge time is not read,
 since a forge that keeps failing would sync before every command. Without a

@@ -1119,6 +1119,46 @@ def run_merge(args: argparse.Namespace) -> int:
     return 0 if result["status"] in ("merged", "enqueued") else 1
 
 
+def _add_stack_link_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "numbers",
+        nargs="+",
+        type=_review_number,
+        metavar="NUMBER",
+        help="the pull requests, bottom first",
+    )
+    p.add_argument("--json", action="store_true", help="the stack as data")
+    p.add_argument(
+        "-v", "--verbose", action="store_true", help="print every forge command"
+    )
+
+
+def run_stack_link(args: argparse.Namespace) -> int:
+    from . import stack_link, sync
+    from .git import options
+
+    if len(args.numbers) < 2:
+        raise _Stop("gw stack-link needs two pull requests or more", 2)
+    if len(set(args.numbers)) != len(args.numbers):
+        raise _Stop("gw stack-link names each pull request once", 2)
+    if sync.offline():
+        raise Refused(f"gw stack-link uses the forge, and {sync.OFFLINE} is set")
+    options.verbose = args.verbose
+    result = stack_link.link(args.numbers)
+    if args.json:
+        print(_json(result))
+    else:
+        if result["created"]:
+            done = "created"
+        elif result["added"]:
+            done = "added " + " ".join(f"#{n}" for n in result["added"])
+        else:
+            done = "already linked"
+        members = " ".join(f"#{n}" for n in result["pull_requests"])
+        print(f"stack {result['stack']}: {members} ({done})")
+    return 0
+
+
 # Failures first, so the row worth reading is the one at the top.
 _BUCKETS = ("fail", "cancel", "blocked", "pending", "unknown", "skipping", "pass")
 _BUCKET_INK = {
@@ -2080,6 +2120,16 @@ _COMMANDS: dict[str, _Command] = {
         "prints the outcome as data.",
         usage="NUMBER",
     ),
+    "stack-link": _Command(
+        run_stack_link,
+        _add_stack_link_flags,
+        "link open GitHub PRs into a native stack",
+        "Link open GitHub pull requests into a native stack, bottom first: "
+        "create the stack, or add the ones above the top of the stack the "
+        "first ones are in. Pull requests already linked in that order exit 0 "
+        "and change nothing.",
+        usage="NUMBER NUMBER ...",
+    ),
     "version": _Command(
         run_version,
         None,
@@ -2292,7 +2342,7 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             raise _Stop("--only cannot be combined with --yes", 2)
         # Forge commands read live evidence and do not sync local refs first.
         if (
-            run not in (run_version, run_sync, run_ci, run_merge)
+            run not in (run_version, run_sync, run_ci, run_merge, run_stack_link)
             and not getattr(args, "explain", False)
             and not getattr(args, "complete", False)
             and not (hasattr(args, "name") and not args.name)

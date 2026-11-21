@@ -35,7 +35,7 @@ allowed-tools:
   - Bash(gh pr diff:*)
   - Bash(gh pr create:*)
   - Bash(gh pr edit:*)
-  - Bash(gh stack link:*)
+  - Bash(gw stack-link:*)
   - Bash(gw merge:*)
   - Bash(gh run view:*)
   - Bash(gh run rerun:*)
@@ -68,8 +68,9 @@ steps. Where a skill this one follows would ask the user, take the safe
 default below or stop and report.
 
 `gw` comes from `uv tool install git-worktrees`; if it is missing, report
-that and stop. Run `gw merge --help` before shipping a GitHub review. If the
-installed CLI has no merge command, report that it needs updating and stop.
+that and stop. Run `gw merge --help` before shipping a GitHub review, and
+`gw stack-link --help` before shipping a GitHub stack. If the installed CLI
+has no such command, report that it needs updating and stop.
 
 Keep a record as you go, one row per problem: the review, what was wrong,
 what fixed it and the commit that carries it. It is the report at the end,
@@ -250,19 +251,24 @@ glab mr create --target-branch 'HEAD_BRANCH' --source-branch 'BRANCH' --title 'T
 ```
 
 A branch that builds on the named branch below it opens its review on that
-one instead. On GitHub, `gh stack link` pushes it, opens the pull request
-on the one below and links the two into a native stack; on GitLab the merge
-request targets the branch below:
+one instead. On GitHub, open the pull request on the one below, then link
+the two into a native stack by their numbers, the one below first; on
+GitLab the merge request targets the branch below:
 
 ```sh
-gh stack link 'BELOW' 'BRANCH' --open
+gh pr create --base 'BELOW' --head 'BRANCH' --title 'TITLE' --body-file FILE
+gh pr view 'BELOW' --json number
+gw stack-link BELOW_NUMBER NUMBER --json
 glab mr create --target-branch 'BELOW' --source-branch 'BRANCH' --title 'TITLE' --description "$(cat FILE)" --yes
 ```
 
-Then run step 3 again, which now levels the branch with the one below, and
-push it as step 4 does. `gh stack link` comes from the `gh-stack`
-extension, `gh extension install github/gh-stack`; without it, a stacked
-branch is a blocker.
+Run `gw stack-link` for a GitHub pull request open on the one below
+whether this run opened it or an earlier one did. It creates the stack, or
+adds this pull request on top of the one below's, and exits 0 when the two
+are linked already. A refusal, at
+exit 3, is a blocker for this branch: report its message. Then run step 3
+again, which now levels the branch with the one below, and push it as
+step 4 does.
 
 Then run [the describe-pr skill](../describe-pr/SKILL.md) on it.
 

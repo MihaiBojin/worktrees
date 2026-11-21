@@ -14,7 +14,7 @@ gw remove fix-parser    # remove one worktree and its finished branch
 
 `gw sync` fetches every remote and asks the forge about each local branch.
 Every other command but `gw version`, `gw list`, `gw fast-forward`,
-`gw ci-checks`, `gw merge`, help and completion runs it first once the last
+`gw ci-checks`, `gw merge`, `gw stack-link`, help and completion runs it first once the last
 sync is 5 minutes old, then works from local refs and that sync's evidence.
 `gw fast-forward` fetches the default remote instead. `gw ci-checks` reads a pull request's checks from
 the forge each time it runs. With `WORKTREES_OFFLINE` set, nothing touches
@@ -35,6 +35,7 @@ repositories under the same worktree root are outside their scope.
 | `gw branch create NAME` | `gwbc` | start a branch from the head ref, or stack it on this branch |
 | `gw fast-forward [NAME]` | `gwff` | rebase this branch onto the head ref, or move a merged one, and what came after its merge, to a new branch |
 | `gw merge NUMBER --match-head-commit SHA` | | squash one checked GitHub PR, respecting native stacks and merge queues |
+| `gw stack-link NUMBER NUMBER ...` | | link open GitHub PRs into a native stack, bottom first |
 | `gw ci-checks [NUMBER]` | | read a pull request's checks from GitHub or GitLab; `gw ci` for short |
 | `gw version` | | print the installed version |
 
@@ -441,7 +442,7 @@ name or URL invalidates it. Malformed or mismatched evidence proves nothing.
 A moved branch needs another sync for forge evidence; local proof still works.
 
 Every command except `gw sync`, `gw version`, `gw list`, `gw fast-forward`,
-`gw ci-checks`, `gw merge`, help and completion syncs first when the default remote's refs have never
+`gw ci-checks`, `gw merge`, `gw stack-link`, help and completion syncs first when the default remote's refs have never
 synced or last synced 5 minutes ago or more. `WORKTREES_SYNC_TTL` sets that window in whole seconds, and `0`
 syncs before every command. The forge time does not count, so a forge that
 keeps failing does not make every command sync. A failed sync warns, `-q` and
@@ -509,6 +510,11 @@ report `merged`, `enqueued`, `pending` or `failed`. The ship-it skill in
 Codex and Claude uses this command; both the CLI and plugin must be updated
 to provide it.
 
+[`gw stack-link`](docs/commands/stack-link.md) links open GitHub PRs into a
+native stack, bottom first: it creates the stack, or adds pull requests on
+top of the one the first ones are in. The ship-it skill opens a stacked PR
+with `gh pr create` and links it with this command.
+
 `gw ci-checks`, or `gw ci` for short, reads one pull request, or GitLab merge
 request, and its checks: the current branch's, or the one `NUMBER` names. It
 writes nothing, not even the sync cache, and never syncs first.
@@ -569,6 +575,7 @@ parseable. Passing both is a usage error.
 | `gw list`, `gw select-main` | no | no |
 | `gw ci-checks` | no | yes |
 | `gw merge` | no | yes |
+| `gw stack-link` | no | yes |
 
 Other commands retain their own flags; use `--help`. Help, version and
 completion work without an assessment. `--only` filters assessment verdicts,
