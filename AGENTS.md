@@ -163,9 +163,22 @@ and one that does not re-apply leaves an `autostash` entry that the result
 names by sha as `stash-conflict`. The first conflict stops the rebase and
 leaves it in progress, at exit 1 with the stopped commit and files in
 `--json`, for a person or the agent plugin to finish with
-`git rebase --continue`. A branch already level exits 0. The head branch
+`gw fast-forward --continue`, which runs `git rebase --continue` with
+`GIT_EDITOR=true`. A branch already level exits 0. The head branch
 only fast-forwards.
 [fast-forward](docs/commands/fast-forward.md) gives the order of the checks.
+
+`gw push` fetches the default remote on every run and pushes the branch
+checked out: `--set-upstream` when the remote lacks it, otherwise
+`--force-with-lease=refs/heads/BRANCH:SHA` on the sha the fetch read.
+Two checks come first. `push.only_there` lists the remote copy's commits
+that neither the branch nor the head ref holds by sha or patch-id, outside
+the copy's own `merged.merged_part`; any is a refusal that `--replace`
+lifts. `merged.merged_part` of the branch itself, the commits the head ref
+already has by the proofs `gw prune` reads, is a refusal nothing lifts,
+and names `gw fast-forward`. `--force-if-includes` is not passed: git
+ignores it beside an explicit lease, and the first check asks what it
+would. [Push](docs/commands/push.md) has the outputs.
 
 ## Where shell code goes
 
@@ -231,7 +244,7 @@ assumes a plugin root or a checkout at a known path.
 | `ci-checks` | `gw ci-checks --json`, `--wait` to wait without polling |
 | `describe-pr` | checks a review's title and body against its diff, and edits them |
 | `prune` | `gw prune --json` and `gw branch status --json`, then the removals approved |
-| `ship-it` | commits, `fast-forward`, a leased or plain push, `gh pr create`, `gw stack-link` for a stacked branch on GitHub, `describe-pr`, `ci-checks`, fixes on the branch, `gw merge` on GitHub or `glab mr merge` on GitLab, then `fast-forward` in the head branch's checkout, unassisted, for this checkout or each branch it is named; given numbers, those open reviews from `ci-checks` on |
+| `ship-it` | commits, `fast-forward`, `gw push`, `gh pr create`, `gw stack-link` for a stacked branch on GitHub, `describe-pr`, `ci-checks`, fixes on the branch, `gw merge` on GitHub or `glab mr merge` on GitLab, then `fast-forward` in the head branch's checkout, unassisted, for this checkout or each branch it is named; given numbers, those open reviews from `ci-checks` on |
 | `preflight` | `gw preflight --json`, then, after asking, `jq` merges `preflight/rules.json` into the user's or the project's `.claude/settings.json`, `preflight/project.json` into the project's, and copies `preflight/config.toml` to a project without `.codex/config.toml` |
 
 `describe-pr` and `ship-it` share `describe-pr/format.md`: the
@@ -253,9 +266,14 @@ before it starts. The Claude Code ones live once, in `preflight/rules.json`,
 which `preflight` merges into the settings file the user names. It runs only
 when called by name, in both clients, and pre-approves no write, so the copy
 over the settings file reaches the client's own prompt. Its allow patterns match prefixes, so a test holds the
-skill's commands to never writing `--force`, `--admin`, `--auto` or
-`--delete-branch`. `tests/test_preflight.py` holds `project.json` and
-`config.toml` to the setup `preflight.py` checks for.
+skill's commands to never writing `--force`, `--admin`, `--auto`,
+`--delete-branch` or `--replace`. Its deny rules refuse a raw
+`git push --force-with-lease`, every `git rebase`, `gh pr merge`,
+`gh stack merge` and a `gh api` call that names a merge; a Claude Code
+deny rule matches past a leading assignment, so the conflict loop
+continues a rebase with `gw fast-forward --continue`.
+`tests/test_preflight.py` holds `project.json` and `config.toml` to the
+setup `preflight.py` checks for.
 
 The prune skill reads `gw prune --json` and
 `gw branch status --json`, preserving head/sync state and full rows for eligible, empty
@@ -498,7 +516,8 @@ when eight threads are asking at once.
 default first, updates the default remote's HEAD and queries the forge for
 every local branch tip on eight threads. Every other command but
 `gw version`, `gw list`, `gw ci-checks`, `gw merge`, `gw stack-link`,
-`gw preflight`, `gw fast-forward`, help and completion runs the same `sync.run` first when
+`gw preflight`, `gw fast-forward`, `gw push`, help and completion runs the
+same `sync.run` first when
 `sync.due` says so: the default remote's refs time is null or at least
 `WORKTREES_SYNC_TTL` seconds old, 300 by default. The forge time is not read,
 since a forge that keeps failing would sync before every command. Without a
@@ -516,7 +535,7 @@ reaches stdout, so `cd $(gw add x)` and `jq` never see it. A TTL that is not
 whole seconds is a usage error at exit 2.
 
 `WORKTREES_OFFLINE`, when non-empty, turns sync off everywhere: nothing syncs
-first, and `gw sync` and `gw ci-checks` refuse at exit 3. Every notice that would end
+first, and `gw sync`, `gw push` and `gw ci-checks` refuse at exit 3. Every notice that would end
 `Run: gw sync` goes through `sync.hint`, which leaves that off offline,
 since it names a command that refuses there.
 

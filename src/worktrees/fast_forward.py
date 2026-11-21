@@ -93,6 +93,13 @@ def rebase_onto(autostash: str, onto: str, upstream: str, branch: str) -> None:
     """Check out `branch` and replay `upstream..branch` onto `onto`."""
 
 
+# An editor that keeps the message git offers, so a continue never waits
+# on one nobody can type into.
+@git("rebase --continue", ok=(0, 1, 128), mutates=True, env={"GIT_EDITOR": "true"})
+def rebase_continue() -> None:
+    """Commit the resolved commit and replay the rest; 1 is another stop."""
+
+
 @git("branch --no-track $name $start", mutates=True)
 def branch_at(name: str, start: str) -> None:
     """A new branch at `start`, leaving the checkout where it is."""
@@ -765,7 +772,7 @@ def _rescue(
     if not pushed:
         delete_ref(f"refs/heads/{chosen}", at, repo=repo)
         rescued["kept"] = f"{render.branch(chosen)} could not be pushed: " + (
-            _refused(pushed)
+            rejected(pushed)
         )
         return rescued
     rescued["branch"] = chosen
@@ -803,11 +810,11 @@ def _publish(moved: Moved, remote: str, repo: str | os.PathLike[str] | None) -> 
     if pushed:
         moved.pushed = _short(local, repo=repo)
     else:
-        moved.unpushed = _refused(pushed)
+        moved.unpushed = rejected(pushed)
     return moved
 
 
-def _refused(pushed) -> str:
+def rejected(pushed) -> str:
     """Why a push failed: the ref git rejected, or the last thing it said."""
     for line in pushed.out.splitlines():
         if line.startswith("!"):
@@ -1367,8 +1374,8 @@ def _rewritten(
     revisions = "".join(f"{line}\n" for line in [copy_tip, *(f"^{s}" for s in held)])
     if not first_unreached(input=revisions, repo=repo).out.strip():
         return None
-    theirs = [pid for pid, _ in _patch_order(head, copy_tip, repo)]
-    ours = _patch_order(start, tip, repo)
+    theirs = [pid for pid, _ in patch_order(head, copy_tip, repo)]
+    ours = patch_order(start, tip, repo)
     if not theirs or [pid for pid, _ in ours[: len(theirs)]] != theirs:
         return None
     return copy, ours[len(theirs) - 1][1]
@@ -1435,7 +1442,7 @@ def _held(
     return False
 
 
-def _patch_order(
+def patch_order(
     base: str, tip: str, repo: str | os.PathLike[str] | None
 ) -> list[tuple[str, str]]:
     """Each commit in `base..tip`, oldest first, as its patch-id and sha."""
@@ -1449,7 +1456,7 @@ def _by_patch_id(
 ) -> dict[str, str]:
     """Each commit in `base..tip` by its patch-id, or '' where two share one."""
     found: dict[str, str] = {}
-    for pid, sha in _patch_order(base, tip, repo):
+    for pid, sha in patch_order(base, tip, repo):
         found[pid] = "" if pid in found else sha
     return found
 

@@ -73,7 +73,11 @@ edits a pull request's title and body, `fast-forward` runs
 `gw fast-forward` and its conflict loop, and `ship-it` commits, pushes,
 opens and edits the pull request, reruns CI and merges. No skill
 pre-approves a removal, and outside `ship-it` nothing pre-approves a merge,
-a push or a CI rerun: those reach the client's own permission prompt.
+a push or a CI rerun: those reach the client's own permission prompt. Every push
+goes through `gw push`, which refuses one that would delete a commit only
+the remote holds or bring back commits the head branch merged; the rules
+deny a raw `git push --force-with-lease`, `git rebase`, `gh pr merge`,
+`gh stack merge` and a `gh api` call that names a merge.
 
 A skill's own pre-approval does not reach far enough for `ship-it`. In
 Claude Code it lasts only the turn that invoked the skill, and auto mode
@@ -112,7 +116,7 @@ harness footers as they were, and says in its reply what it changed.
 `/worktrees:ship-it` takes the change in the checkout from uncommitted work
 to a merged pull request, and asking for it approves every step for that
 change: a branch off the head branch when you stand on it, commits by path,
-`gw fast-forward --autostash`, a leased or plain push, the pull request and
+`gw fast-forward --autostash`, `gw push`, the pull request and
 its description, a release note through `release:write` when the release
 plugin is installed, the CI fixes, and the merge.
 
@@ -191,16 +195,16 @@ checkout holding the head branch once its pull requests land.
 The CLI decides what happens: fast-forward, rebase, or a new branch when
 this one is already merged. When the rebase stops, the skill reads each
 conflicted file and what each side changed, edits the file to carry both,
-`git add`s it, runs `GIT_EDITOR=true git rebase --continue` and runs the
-command again, until the branch is level. It asks you when the two sides
+`git add`s it and runs `gw fast-forward --continue`, until the branch is
+level. It asks you when the two sides
 cannot both be kept, and before touching a rebase that was already stopped
 when it started, such as one paused in `git rebase -i`. It stages only the
 conflicted files. It reports each commit the rebase stopped at and how each
 file was resolved.
 
 Those commands, `git status`, `git diff`, `git log` and `git show` run
-without a permission prompt. `git rebase --abort` runs only when you ask, and
-the skill never runs `git rebase --skip`, which drops a commit. A refusal
+without a permission prompt. The skill runs no `git rebase` itself:
+`git rebase --abort` is yours to run, and it never skips a commit. A refusal
 from the CLI, such as uncommitted changes, is reported and not worked
 around.
 

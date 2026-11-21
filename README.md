@@ -14,9 +14,9 @@ gw remove fix-parser    # remove one worktree and its finished branch
 
 `gw sync` fetches every remote and asks the forge about each local branch.
 Every other command but `gw version`, `gw list`, `gw fast-forward`,
-`gw ci-checks`, `gw merge`, `gw stack-link`, `gw preflight`, help and completion runs it first once the last
+`gw push`, `gw ci-checks`, `gw merge`, `gw stack-link`, `gw preflight`, help and completion runs it first once the last
 sync is 5 minutes old, then works from local refs and that sync's evidence.
-`gw fast-forward` fetches the default remote instead. `gw ci-checks` reads a pull request's checks from
+`gw fast-forward` and `gw push` fetch the default remote instead. `gw ci-checks` reads a pull request's checks from
 the forge each time it runs. With `WORKTREES_OFFLINE` set, nothing touches
 the network. Run commands inside the repository you want assessed; other
 repositories under the same worktree root are outside their scope.
@@ -34,6 +34,7 @@ repositories under the same worktree root are outside their scope.
 | `gw add NAME [BASE]` | `gwa` | create a worktree for a branch and change into it |
 | `gw branch create NAME` | `gwbc` | start a branch from the head ref, or stack it on this branch |
 | `gw fast-forward [NAME]` | `gwff` | rebase this branch onto the head ref, or move a merged one, and what came after its merge, to a new branch |
+| `gw push` | `gwpu` | push this branch, refusing when that would delete a commit or bring a merged one back |
 | `gw merge NUMBER... [--match-head-commit SHA]` | | squash checked GitHub PRs, a native stack in one call, respecting merge queues |
 | `gw stack-link NUMBER NUMBER ...` | | link open GitHub PRs into a native stack, bottom first |
 | `gw ci-checks [NUMBER]` | | read a pull request's checks from GitHub or GitLab; `gw ci` for short |
@@ -447,7 +448,7 @@ name or URL invalidates it. Malformed or mismatched evidence proves nothing.
 A moved branch needs another sync for forge evidence; local proof still works.
 
 Every command except `gw sync`, `gw version`, `gw list`, `gw fast-forward`,
-`gw ci-checks`, `gw merge`, `gw stack-link`, `gw preflight`, help and completion syncs first when the default remote's refs have never
+`gw push`, `gw ci-checks`, `gw merge`, `gw stack-link`, `gw preflight`, help and completion syncs first when the default remote's refs have never
 synced or last synced 5 minutes ago or more. `WORKTREES_SYNC_TTL` sets that window in whole seconds, and `0`
 syncs before every command. The forge time does not count, so a forge that
 keeps failing does not make every command sync. A failed sync warns, `-q` and
@@ -455,10 +456,12 @@ keeps failing does not make every command sync. A failed sync warns, `-q` and
 Without a default remote nothing syncs first. An unreachable remote costs
 every command its fetch timeout, which `WORKTREES_OFFLINE` skips.
 `gw fast-forward` fetches the default remote and asks the forge on every
-run, and refuses when either fails.
+run, and refuses when either fails. `gw push` fetches the default remote on
+every run and refuses when that fails.
 
 `WORKTREES_OFFLINE`, set to anything but the empty string, keeps every
-command off the network: nothing syncs first, and `gw sync` refuses at exit 3.
+command off the network: nothing syncs first, and `gw sync` and `gw push`
+refuse at exit 3.
 
 Commands that read objects in a partial clone need Git 2.45.1 or newer, or a
 patched maintenance release:
@@ -502,8 +505,19 @@ request still targets the merged parent, which a forge leaves there unless
 the parent's branch is deleted, the run moves its base to the head branch
 and pushes the branch under a lease; commits the parent gained after its
 merge get a branch and a request of their own first. `--autostash` carries uncommitted changes across. A branch
-already level exits 0 and changes nothing. [Fast-forward](docs/commands/fast-forward.md) gives the
-order of the checks, the JSON and the conflict loop.
+already level exits 0 and changes nothing. `gw fast-forward --continue`
+finishes a rebase it stopped once the conflicts are staged.
+[Fast-forward](docs/commands/fast-forward.md) gives the order of the
+checks, the JSON and the conflict loop.
+
+`gw push` fetches the default remote and pushes the branch you stand on,
+with `--set-upstream` when the remote lacks it and under a lease on the
+commit it just read otherwise. It refuses when the remote copy holds a
+commit the branch lacks by patch-id, which `--replace` pushes over, and
+when the branch still carries commits the head branch merged, which
+`gw fast-forward` drops. A plain `git push --force-with-lease
+--force-if-includes` lets both through when the remote tip is in the
+branch's reflog. [Push](docs/commands/push.md) has an example of each.
 
 ## Pull request checks and merges
 
@@ -578,7 +592,7 @@ parseable. Passing both is a usage error.
 
 | Commands | `-q` | `-v` |
 | --- | --- | --- |
-| `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw fast-forward` | yes | yes |
+| `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw fast-forward`, `gw push` | yes | yes |
 | `gw branch status` | yes | no |
 | `gw list`, `gw select-main` | no | no |
 | `gw ci-checks` | no | yes |

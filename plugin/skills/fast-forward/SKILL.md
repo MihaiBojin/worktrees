@@ -13,7 +13,6 @@ allowed-tools:
   - Bash(git log:*)
   - Bash(git show:*)
   - Bash(git add:*)
-  - Bash(GIT_EDITOR=true git rebase --continue)
   - Read
   - Edit
   - AskUserQuestion
@@ -119,23 +118,24 @@ For each path:
    `git add .` or `git add -u`: untracked files can sit in the checkout
    during a rebase, and those would sweep them into a rewritten commit.
 
-When every path is staged, continue with the editor pinned, so git does not
-wait on a commit message nobody can type:
+When every path is staged, continue the rebase:
 
 ```sh
-GIT_EDITOR=true git rebase --continue
+gw fast-forward --continue --json
 ```
 
-Then run `gw fast-forward --json` again. A new `conflict` is the next commit
-stopping: repeat. `paths: []` means everything is staged and the rebase
-still needs continuing. `current` means it finished.
+It runs `git rebase --continue` with an editor that keeps each commit's
+message, then reports as a plain run does. A new `conflict` is the next
+commit stopping: repeat. `current` means it finished.
 
-If `git rebase --continue` fails without leaving conflicts, report its
-stderr and stop with the rebase in progress. `git rebase --abort` puts the
-branch back at `previous_sha`; run it only when the user asks. Never run
-`git rebase --skip`, which drops the branch's commit, and never take one
-side of a file wholesale, as `git checkout --ours` or `--theirs` does,
-without telling the user that is what you did.
+A `conflict` with `paths: []` after `--continue` means git stopped without
+leaving conflicts, as a failing hook does: report the `git rebase
+--continue exited` lines from stderr and stop with the rebase in progress.
+`git rebase --abort` puts the branch back at `previous_sha`; it is the
+user's to run, since the user's rules may deny `git rebase` to the agent.
+Never run `git rebase` yourself, and never take one side of a file
+wholesale, as `git checkout --ours` or `--theirs` does, without telling the
+user that is what you did.
 
 ## Report what happened
 
@@ -160,17 +160,19 @@ what each side changed and how the two were combined.
 
 ## Push
 
-A rebased branch the remote already has, `refs/remotes/REMOTE/BRANCH`
-existing, goes with a lease; a branch the remote lacks goes plainly:
+A branch that needs pushing goes with `gw push`, which decides between a
+new branch and a leased push over the remote copy:
 
 ```sh
-git push --force-with-lease --force-if-includes REMOTE BRANCH
-git push --set-upstream REMOTE BRANCH
+gw push --json
 ```
 
-After a `rebased` result on a branch the remote has, push it with the lease,
-so its open request shows the rebased commits. After a rotation, give the
-plain push and run it when the user asked for the branch to be pushed. The
-client asks before either runs unless the user's own rules allow it.
-A push the lease rejects means the remote has commits this clone never had:
-report it, and never retry with `--force`.
+After a `rebased` result on a branch the remote already has, push it so its
+open request shows the rebased commits. After a rotation, run it when the
+user asked for the new branch to be pushed. The client asks before it runs
+unless the user's own rules allow it. A refusal exits 3 with `refused` set
+and the commits it found on stderr: report them. `remote-only` means the
+remote copy holds commits this branch lacks; `merged` means the branch
+still carries commits the head branch merged, and running this skill again
+drops them. Never push with `git push` instead, and never pass `--replace`:
+it is for a person who has read the commits listed.

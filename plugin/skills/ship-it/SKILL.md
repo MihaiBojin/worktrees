@@ -28,9 +28,8 @@ allowed-tools:
   - Bash(git switch --no-guess:*)
   - Bash(git add --:*)
   - Bash(git commit:*)
-  - Bash(GIT_EDITOR=true git rebase --continue)
-  - Bash(git push --set-upstream:*)
-  - Bash(git push --force-with-lease --force-if-includes:*)
+  - Bash(gw push)
+  - Bash(gw push:*)
   - Bash(gh pr view:*)
   - Bash(gh pr diff:*)
   - Bash(gh pr create:*)
@@ -109,8 +108,8 @@ If only the remote has the branch, `gw sync` and then
 `git branch 'BRANCH' refs/remotes/REMOTE/BRANCH` first. A branch neither
 this clone nor the remote has is a blocker. git refuses a branch checked out
 in another worktree: it is being worked on there, so report it and go on to
-the next. Only committing, levelling and fixing need the branch checked out;
-pushing, the review, CI and the merge do not. In the main checkout, switch
+the next. Committing, levelling, pushing and fixing need the branch checked
+out; the review, CI and the merge do not. In the main checkout, switch
 back to the head branch after each push, `git switch --no-guess
 'HEAD_BRANCH'`, so it is never left on another branch. Naming the head branch is the same as no argument in the checkout that
 holds it.
@@ -229,16 +228,19 @@ a blocker for this review. An `unpushed` is step 4's rejected push.
 ## 4. Push
 
 ```sh
-git rev-parse --verify --quiet 'refs/remotes/REMOTE/BRANCH'
-git push --force-with-lease --force-if-includes 'REMOTE' 'BRANCH'
-git push --set-upstream 'REMOTE' 'BRANCH'
+gw push --json
 ```
 
-The first when the remote has the branch, the second when it has not.
-`REMOTE` is the default remote: the remote in `gw list --json`'s
-`head.ref`, such as `origin` in `refs/remotes/origin/main`. A push the
-lease rejects means the remote has commits this clone never had: stop and
-report it, and never retry with `--force`.
+It fetches the default remote and pushes the branch checked out, with
+`--set-upstream` when the remote lacks it and under a lease otherwise.
+`REMOTE`, in the other steps, is that remote: the remote in `gw list --json`'s
+`head.ref`, such as `origin` in `refs/remotes/origin/main`. Exit 3 with
+`refused` set is a blocker: `remote-only` means the remote copy holds
+commits the branch lacks, `merged` that the branch still carries commits
+the head branch merged. Run step 3 once for `merged`, then push again; a
+second refusal, and any `remote-only`, is reported with the commits stderr
+lists. Exit 1 is a push git rejected: report it. Never pass `--replace`,
+and never push with `git push`.
 
 ## 5. Open the review
 

@@ -8,6 +8,7 @@ gw fast-forward
 gw fast-forward next-parser
 gw fast-forward next-parser --from release-1.2
 gw fast-forward --autostash
+gw fast-forward --continue
 gwff --json
 ```
 
@@ -141,7 +142,7 @@ drops a parent's merged commits from a branch with an open request, since
 the request reads the remote copy. git refuses when the copy holds commits
 this clone never had; the branch stays level here, `unpushed` says why, and
 the exit status is still 0. A rebase that stopped pushes nothing: push it
-with the same flags once it is finished. Offline, nothing is moved and
+with [`gw push`](push.md) once it is finished. Offline, nothing is moved and
 nothing is pushed.
 
 The merged branch may have gained commits after its request merged, read
@@ -175,8 +176,7 @@ A replayed commit that conflicts stops the rebase on the new branch.
 `git rebase --abort` leaves the new branch at the old tip, and the source
 branch never moves. A branch rebased in place has a remote copy to update.
 One with an open request that dropped a parent's merged commits is pushed by
-the run, as above; push any other with `--force-with-lease
---force-if-includes`. After it takes its remote copy, that push sends only
+the run, as above; push any other with [`gw push`](push.md). After it takes its remote copy, that push sends only
 the commits made after the copy, or nothing.
 
 ## Why not `gh stack rebase`
@@ -270,9 +270,15 @@ commit; when the rebase stopped; or on a git before 2.40, which lacks
 ## Conflicts
 
 A conflict exits 1 and leaves the rebase in progress. Resolve each file,
-`git add` it and run `git rebase --continue`, which may stop at the next
-commit. `git rebase --abort` puts the branch back where it was. Running the
-command again reports the stopped rebase until it finishes, then `current`.
+`git add` it and run `gw fast-forward --continue`, which may stop at the
+next commit. It runs `git rebase --continue` with `GIT_EDITOR=true`, so
+each commit keeps the message git offers and nothing waits on an editor,
+then reports as a plain run does. When git stops without leaving
+conflicts, as a failing hook makes it, the run says what git printed and
+reports the stopped rebase. `--continue` with no rebase stopped is a
+refusal, and with `NAME` or `--from` a usage error. `git rebase --abort`
+puts the branch back where it was. Running the command again reports the
+stopped rebase until it finishes, then `current`.
 
 ## JSON
 

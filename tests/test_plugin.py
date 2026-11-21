@@ -89,6 +89,8 @@ MUTATIONS = (
     "gh pr update-branch 1",
     "gh run rerun 1",
     "glab mr merge 1",
+    "gw push",
+    "gw push --json",
     "git push",
     "git commit",
     "git merge --ff-only x",
@@ -335,11 +337,13 @@ def test_fast_forward_preapproves_the_conflict_loop_alone() -> None:
     tools = _tools(FAST_FORWARD)
     for wanted in (
         "gw fast-forward --json",
+        "gw fast-forward --continue --json",
         "git add README",
-        "GIT_EDITOR=true git rebase --continue",
     ):
         assert _covers(tools, wanted), wanted
     for refused in (
+        "GIT_EDITOR=true git rebase --continue",
+        "gw push --json",
         "git rebase --skip",
         "git rebase --abort",
         "git rebase main",
@@ -405,9 +409,9 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "gw ci-checks 41 --wait --json",
         "git add -- README",
         "git commit -m subject",
-        "GIT_EDITOR=true git rebase --continue",
-        "git push --set-upstream origin fix-parser",
-        "git push --force-with-lease --force-if-includes origin fix-parser",
+        "gw fast-forward --continue --json",
+        "gw push",
+        "gw push --json",
         "gh pr create --base main --head fix-parser --title t --body-file f",
         "gh pr edit 41 --body-file f",
         "gw stack-link 41 42 --json",
@@ -427,6 +431,9 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "git push",
         "git push --force origin x",
         "git push origin --delete x",
+        "git push --set-upstream origin fix-parser",
+        "git push --force-with-lease --force-if-includes origin fix-parser",
+        "GIT_EDITOR=true git rebase --continue",
         "git add -A",
         "git add .",
         "git reset --hard",
@@ -447,11 +454,12 @@ def test_ship_it_preapproves_publishing_alone() -> None:
 def test_ship_it_never_writes_a_flag_that_bypasses_or_forces() -> None:
     """Its allow patterns match prefixes, so a trailing --force or --admin
     would run unasked; the skill's own commands never carry one."""
-    commands = re.findall(r"^(?:gh|glab|git) .+$", SHIP_IT.read_text(), re.M)
+    commands = re.findall(r"^(?:gh|glab|git|gw push) .+$", SHIP_IT.read_text(), re.M)
     assert commands
+    flags = ("--force", "-f", "--admin", "--auto", "--delete-branch", "-A")
     for command in commands:
         words = shlex.split(command.replace('"$(cat FILE)"', "FILE"))
-        for flag in ("--force", "-f", "--admin", "--auto", "--delete-branch", "-A"):
+        for flag in (*flags, "--replace"):
             assert flag not in words, command
 
 
@@ -488,18 +496,17 @@ def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
     """The rules a user adds are for the commands the skill runs, and every
     command it runs that publishes has a rule."""
     wanted = json.loads(RULES.read_text())["permissions"]
-    allow = re.findall(r"^Bash\((.+?) \*\)$", "\n".join(wanted["allow"]), re.M)
+    allow = re.findall(r"^Bash\((.+?)(?: \*)?\)$", "\n".join(wanted["allow"]), re.M)
     assert len(allow) == len(wanted["allow"])
     tools = {
         found.group(1)
         for tool in _tools(SHIP_IT)
-        if (found := re.fullmatch(r"Bash\((.+?):\*\)", tool))
+        if (found := re.fullmatch(r"Bash\((.+?)(?::\*)?\)", tool))
     }
     assert set(allow) <= tools, set(allow) - tools
     for publishing in (
         "git commit",
-        "git push --set-upstream",
-        "git push --force-with-lease --force-if-includes",
+        "gw push",
         "gh pr create",
         "gh pr edit",
         "gw merge",
@@ -512,6 +519,58 @@ def test_every_rule_ship_it_needs_is_one_it_preapproves() -> None:
         "gw branch create",
     ):
         assert publishing in allow, publishing
+
+
+def _denied(command: str) -> bool:
+    """Would a deny rule refuse `command`? `*` matches any text, as Claude
+    Code's does, and a deny rule matches past a leading assignment."""
+    words = command.split()
+    while words and re.fullmatch(r"[A-Z_]+=\S*", words[0]):
+        words.pop(0)
+    bare = " ".join(words)
+    return any(
+        re.fullmatch(".*".join(map(re.escape, rule[5:-1].split("*"))), bare)
+        for rule in json.loads(RULES.read_text())["permissions"]["deny"]
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git push --force-with-lease --force-if-includes origin fix-parser",
+        "git push --force-with-lease=refs/heads/x:abc origin x",
+        "git push origin x --force-with-lease",
+        "git push --force origin x",
+        "git rebase main",
+        "GIT_EDITOR=true git rebase --continue",
+        "gh pr merge 41 --squash",
+        "gh stack merge 41",
+        "gh api --method PUT repos/o/r/pulls/41/merge",
+    ],
+)
+def test_the_rules_deny_raw_pushes_rebases_and_merges(command: str) -> None:
+    """gw push, gw fast-forward and gw merge check what these skip."""
+    assert _denied(command), command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gw push --json",
+        "gw fast-forward --continue --json",
+        "gw merge 41 --match-head-commit x --json",
+        "git push origin v1.0.0",
+    ],
+)
+def test_the_rules_leave_the_checked_commands_alone(command: str) -> None:
+    assert not _denied(command), command
+
+
+@pytest.mark.parametrize("path", SKILLS, ids=lambda p: p.parent.name)
+def test_no_skill_runs_a_command_the_rules_deny(path: Path) -> None:
+    lines = re.findall(r"^\S.*$", path.read_text().split("---", 2)[-1], re.M)
+    for line in lines:
+        assert not _denied(line.strip()), line
 
 
 def _codex_rules() -> list[dict]:
@@ -545,7 +604,8 @@ def _codex_allows(command: str) -> bool:
         "git switch --create fix-parser",
         "git switch --no-guess fix-parser",
         "git commit -m subject",
-        "git push --set-upstream origin fix-parser",
+        "gw push --json",
+        "gw fast-forward --continue --json",
         "gw merge 41 --subject s --body-file f --match-head-commit x --json",
     ],
 )
@@ -557,7 +617,15 @@ def test_codex_rules_cover_what_ship_it_writes_or_fetches(command: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "command", ["git switch main", "git switch -", "gw prune --yes"]
+    "command",
+    [
+        "git switch main",
+        "git switch -",
+        "gw prune --yes",
+        "git rebase --continue",
+        "git push --set-upstream origin fix-parser",
+        "git push --force-with-lease --force-if-includes origin fix-parser",
+    ],
 )
 def test_codex_rules_refuse_what_ship_it_never_runs(command: str) -> None:
     assert not _codex_allows(command), command
