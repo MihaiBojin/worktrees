@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from conftest import argv
 from test_branches import cli
-from test_ci import BASE, HEAD, MERGE, _pr
+from test_ci import BASE, HEAD, MERGE, _check, _pr
 from test_sync import origin
 
 PR = "repos/owner/repo/pulls/7"
@@ -209,7 +209,8 @@ def test_changed_pr_refuses_before_submission(world, github, changed) -> None:
         _pr(state="CLOSED"),
         _pr(isDraft=True),
         _pr(mergeStateStatus="UNKNOWN"),
-        _pr(statusCheckRollup=[]),
+        _pr(statusCheckRollup=[_check(conclusion="FAILURE")]),
+        _pr(statusCheckRollup=[_check(status="IN_PROGRESS", conclusion="")]),
     ],
 )
 def test_requires_ready_ci_at_the_supplied_head(world, github, snapshot) -> None:
@@ -217,6 +218,16 @@ def test_requires_ready_ci_at_the_supplied_head(world, github, snapshot) -> None
     proc = run(world, github)
     assert proc.returncode == 3
     assert not writes(github)
+
+
+def test_a_review_without_checks_merges(world, github) -> None:
+    github.answer(
+        {"$view": _pr(statusCheckRollup=[]), "$api": {PR: pull(), ASYNC: merged()}}
+    )
+    proc = run(world, github)
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout)["status"] == "merged"
+    assert writes(github)
 
 
 @pytest.mark.parametrize(

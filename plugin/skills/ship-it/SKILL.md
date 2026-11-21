@@ -291,9 +291,10 @@ Then wait for CI:
 gw ci-checks NUMBER --wait --json
 ```
 
-`passed` goes to step 8. `blocked`, or an `unknown` that stays, is a
-blocker: a manual job or missing CI is for a person to decide. `failed` is
-fixed, below.
+`passed` goes to step 8, and so does an empty `checks` list once the wait
+returns: a review with no CI ships on the request to ship it. `blocked`, or
+an `unknown` with checks in it, is a blocker: a manual job is for a person
+to decide. `failed` is fixed, below.
 
 ### Fixing a failure
 
@@ -342,7 +343,8 @@ it out yet, which is usual just after a push: read again a minute later,
 never merge on it, and report it only when it stays.
 
 Always squash on GitHub and GitLab. Require `stale: false`,
-`checksState: passed` and a non-null `pr.trailers` in that fresh snapshot.
+`checksState: passed` or an empty `checks` list, and a non-null
+`pr.trailers` in that fresh snapshot.
 Null trailers mean the complete commit list was unavailable: stop and
 report it. An empty array means the commits have no trailers.
 
@@ -411,8 +413,8 @@ On the first `head-moved` for this PR, record that its one retry is in use.
 gw ci-checks NUMBER --wait --json
 ```
 
-Require `pr.headSha` to equal `NEW_SHA`, `checksState` to be `passed`,
-`stale` to be false and `pr.trailers` to be non-null. A different head is
+Require `pr.headSha` to equal `NEW_SHA`, `checksState` to be `passed` or
+`checks` to be empty, `stale` to be false and `pr.trailers` to be non-null. A different head is
 another movement: stop and report it. Repeat steps 8 and 9 using that
 completed wait as step 9's fresh snapshot, including its merge-state check.
 Rebuild the message with that snapshot's `pr.trailers`, then call `gw merge`

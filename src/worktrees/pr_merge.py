@@ -249,7 +249,11 @@ def _ready(snapshot: dict, sha: str) -> None:
         raise Refused(f"#{pr['number']} head changed from {sha}; read its CI again")
     if pr["state"] != "OPEN" or pr["draft"]:
         raise Refused(f"#{pr['number']} is not an open, ready pull request")
-    if snapshot["stale"] or snapshot["checksState"] != "passed":
+    # A review with no checks at all has no CI to wait for: the caller's
+    # request to merge is the decision.
+    if snapshot["stale"] or (
+        snapshot["checks"] and snapshot["checksState"] != "passed"
+    ):
         raise Refused(
             f"#{pr['number']} checks are {snapshot['checksState']}; merge not submitted"
         )
