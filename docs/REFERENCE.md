@@ -19,6 +19,7 @@ output streams. [The README](../README.md) covers installation and a tour.
 | `gw ci-checks`, `gw ci` | | [ci-checks](commands/ci-checks.md) |
 | `gw merge` | | [merge](commands/merge.md) |
 | `gw stack-link` | | [stack-link](commands/stack-link.md) |
+| `gw preflight` | | [preflight](commands/preflight.md) |
 | `gw version`, `gw v` | | [below](#commands) |
 | `gw branch create` | `gwbc` | [branch create](commands/branch-create.md) |
 | `gw branch status` | `gwbs` | [branch status](commands/branch-status.md) |
@@ -470,7 +471,7 @@ hold whatever `WORKTREES_SYNC_TTL` says, so a longer TTL lets the age
 warning print before the next sync is due.
 
 Every command except `gw sync`, `gw version`, `gw list`, `gw fast-forward`,
-`gw ci-checks`, `gw merge`, `gw stack-link`, help and completion runs sync first when one is due: the default remote's
+`gw ci-checks`, `gw merge`, `gw stack-link`, `gw preflight`, help and completion runs sync first when one is due: the default remote's
 refs time is null, or at least `WORKTREES_SYNC_TTL` seconds old. The TTL is 300 when the variable is unset or
 empty, takes whole seconds with `0` meaning every command, and anything else
 is a usage error at exit 2. The forge time is not read. Without a default

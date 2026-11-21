@@ -1322,6 +1322,39 @@ def run_ci(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_preflight_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--json", action="store_true", help="every check as data")
+    p.add_argument(
+        "-v", "--verbose", action="store_true", help="print every forge command"
+    )
+
+
+def run_preflight(args: argparse.Namespace) -> int:
+    from . import preflight
+    from . import repo as R
+    from .git import options
+
+    options.verbose = args.verbose
+    top = R.toplevel().value
+    if not top:
+        raise Refused("gw preflight checks a repository; run it inside one")
+    checks = preflight.run(Path(top), plugin_state())
+    if args.json:
+        print(_json({"checks": checks}))
+    else:
+        for check in checks:
+            text = f"{check['name']}: {check['detail']}"
+            if check["fix"]:
+                text += f"\n{check['fix']}"
+            if check["status"] == preflight.OK:
+                _err(render.note(text))
+            elif check["status"] == preflight.SKIPPED:
+                _err(render.warn(text))
+            else:
+                _err(render.fail(text))
+    return 0 if preflight.passed(checks) else 1
+
+
 # --------------------------------------------------------------------------
 # the four that land you somewhere
 # --------------------------------------------------------------------------
@@ -2251,6 +2284,16 @@ _COMMANDS: dict[str, _Command] = {
         "and change nothing.",
         usage="NUMBER NUMBER ...",
     ),
+    "preflight": _Command(
+        run_preflight,
+        _add_preflight_flags,
+        "check gw and its agent plugin are set up here",
+        "Check that the forge's CLI is signed in, that GitHub squashes with "
+        "each pull request's title and body, that the project's Claude Code "
+        "and Codex settings enable the agent plugin, and that the shell "
+        "plugin is this release. It changes nothing, never syncs first, and "
+        "exits 1 when a check that ran is not ok.",
+    ),
     "version": _Command(
         run_version,
         None,
@@ -2462,8 +2505,9 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
         if run is run_prune and args.only and args.yes:
             raise _Stop("--only cannot be combined with --yes", 2)
         # Forge commands read live evidence and do not sync local refs first.
+        live = (run_ci, run_merge, run_stack_link, run_preflight)
         if (
-            run not in (run_version, run_sync, run_ci, run_merge, run_stack_link)
+            run not in (run_version, run_sync, *live)
             and not getattr(args, "explain", False)
             and not getattr(args, "complete", False)
             and not (hasattr(args, "name") and not args.name)

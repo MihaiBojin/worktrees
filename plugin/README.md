@@ -12,7 +12,7 @@ reaches for one on its own when a task matches its description, except
 | `describe-pr` | checks a pull request's title and body against its diff, and fixes them |
 | `ship-it` | commits, pushes, opens the pull request, fixes CI and merges, unassisted, for this checkout or the branches it is given; or ships the open pull requests it is given |
 | `prune` | removes the worktrees and branches the CLI proves finished, after asking |
-| `preflight` | adds the permission rules `ship-it` needs to your Claude Code settings, after asking |
+| `preflight` | reports what `gw preflight` finds, and adds the permission rules `ship-it` needs and the project's plugin setup, after asking |
 
 ## A session and its worktree
 
@@ -85,7 +85,10 @@ for them before it starts and names any that are missing.
 `/worktrees:preflight user` adds the Claude Code ones to
 `~/.claude/settings.json`, and `/worktrees:preflight project` to the
 repository's `.claude/settings.json`, which reaches every machine that clones
-it once committed.
+it once committed. Both run `gw preflight --json` first and report every
+check; `project` also writes the marketplace and `enabledPlugins` keys into
+`.claude/settings.json` and, where the project has none,
+`.codex/config.toml`, after asking.
 
 ## CI
 

@@ -1,0 +1,6 @@
+[marketplaces.mihaibojin]
+source_type = "git"
+source = "https://github.com/MihaiBojin/agent-plugins.git"
+
+[plugins."worktrees@mihaibojin"]
+enabled = true

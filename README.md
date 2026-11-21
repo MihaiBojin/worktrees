@@ -14,7 +14,7 @@ gw remove fix-parser    # remove one worktree and its finished branch
 
 `gw sync` fetches every remote and asks the forge about each local branch.
 Every other command but `gw version`, `gw list`, `gw fast-forward`,
-`gw ci-checks`, `gw merge`, `gw stack-link`, help and completion runs it first once the last
+`gw ci-checks`, `gw merge`, `gw stack-link`, `gw preflight`, help and completion runs it first once the last
 sync is 5 minutes old, then works from local refs and that sync's evidence.
 `gw fast-forward` fetches the default remote instead. `gw ci-checks` reads a pull request's checks from
 the forge each time it runs. With `WORKTREES_OFFLINE` set, nothing touches
@@ -37,6 +37,7 @@ repositories under the same worktree root are outside their scope.
 | `gw merge NUMBER... [--match-head-commit SHA]` | | squash checked GitHub PRs, a native stack in one call, respecting merge queues |
 | `gw stack-link NUMBER NUMBER ...` | | link open GitHub PRs into a native stack, bottom first |
 | `gw ci-checks [NUMBER]` | | read a pull request's checks from GitHub or GitLab; `gw ci` for short |
+| `gw preflight` | | check that the forge's CLI, GitHub's squash defaults, the agent plugin and the shell plugin are set up here |
 | `gw version` | | print the installed version |
 
 `gw` is the one command installed on `$PATH`, and `worktrees` is its long
@@ -446,7 +447,7 @@ name or URL invalidates it. Malformed or mismatched evidence proves nothing.
 A moved branch needs another sync for forge evidence; local proof still works.
 
 Every command except `gw sync`, `gw version`, `gw list`, `gw fast-forward`,
-`gw ci-checks`, `gw merge`, `gw stack-link`, help and completion syncs first when the default remote's refs have never
+`gw ci-checks`, `gw merge`, `gw stack-link`, `gw preflight`, help and completion syncs first when the default remote's refs have never
 synced or last synced 5 minutes ago or more. `WORKTREES_SYNC_TTL` sets that window in whole seconds, and `0`
 syncs before every command. The forge time does not count, so a forge that
 keeps failing does not make every command sync. A failed sync warns, `-q` and
@@ -583,6 +584,7 @@ parseable. Passing both is a usage error.
 | `gw ci-checks` | no | yes |
 | `gw merge` | no | yes |
 | `gw stack-link` | no | yes |
+| `gw preflight` | no | yes |
 
 Other commands retain their own flags; use `--help`. Help, version and
 completion work without an assessment. `--only` filters assessment verdicts,
@@ -681,6 +683,13 @@ chooses worktrees through `gw add` and `gw list`, and the agent's client
 through `claude --worktree` and `codex --worktree`. A Claude Code session
 keeps one worktree per repository and runs `gw add` itself only where it
 has none yet, or when another session is working in the one it has.
+
+Run `gw preflight` once in each repository. It says whether `gh` or `glab`
+is signed in, whether GitHub squashes with each pull request's title and
+body, whether the project's Claude Code and Codex settings enable the
+plugin, and whether the shell plugin is this release.
+`/worktrees:preflight project` writes the project files it reports
+missing; [preflight](docs/commands/preflight.md) lists every check.
 
 ## Contributing
 
