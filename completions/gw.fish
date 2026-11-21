@@ -84,6 +84,10 @@ complete -c gw -n '__worktrees_on merge' -l json -d 'the merge outcome as data'
 complete -c gw -n '__worktrees_on merge' -s v -l verbose -d 'print every forge command'
 complete -c gw -n '__worktrees_on merge' -s h -l help -d 'show the help and exit'
 
+complete -c gw -n '__worktrees_on stack-link' -l json -d 'the stack as data'
+complete -c gw -n '__worktrees_on stack-link' -s v -l verbose -d 'print every forge command'
+complete -c gw -n '__worktrees_on stack-link' -s h -l help -d 'show the help and exit'
+
 complete -c gw -n '__worktrees_on branch; and test (count (commandline -opc)) -eq 2' -a '(command gw branch --complete)'
 complete -c gw -n '__worktrees_on branch; and test (count (commandline -opc)) -eq 2' -s h -l help -d 'show the help and exit'
 

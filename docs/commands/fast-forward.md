@@ -186,8 +186,8 @@ replace this command:
 
 - It only knows stacks it set up in this worktree. It keeps them in a file
   inside the worktree's own git directory, so a stack made with
-  `gh stack link`, on another machine or in another worktree is unknown
-  here. This command reads the stack from git and the forge.
+  `gw stack-link`, on GitHub, on another machine or in another worktree is
+  unknown to it. This command reads the stack from git and the forge.
 - It refuses to run while another worktree has one of the stack's branches
   checked out.
 - When GitHub rewrites a branch after its parent merges, it keeps the local

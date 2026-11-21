@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -45,17 +46,7 @@ def _request(
     proc = forge._run(argv)
     if proc is None:
         raise Refused(f"could not read GitHub's answer for {path}")
-    headers, separator, body = proc.stdout.partition("\n\n")
-    status = re.match(r"HTTP/\S+ (\d{3})\b", headers)
-    try:
-        row = json.loads(body) if separator else None
-    except ValueError:
-        row = None
-    if status is None or not isinstance(row, dict):
-        raise Refused(
-            proc.stderr.strip() or f"GitHub returned no valid answer for {path}"
-        )
-    code = int(status[1])
+    code, row = answer(proc, path)
     failed = code == 400 and row.get("status") == "failed" and "/merge-async" in path
     if not failed and (
         code not in (200, 202, 409) or (proc.returncode and code != 409)
@@ -66,6 +57,21 @@ def _request(
     if payload is None and code != 200 and not failed:
         raise Refused(f"GitHub HTTP {code} while reading {path}")
     return code, row
+
+
+def answer(proc: subprocess.CompletedProcess[str], path: str) -> tuple[int, dict]:
+    """The HTTP status and JSON object a `gh api --include` call printed."""
+    headers, separator, body = proc.stdout.partition("\n\n")
+    status = re.match(r"HTTP/\S+ (\d{3})\b", headers)
+    try:
+        row = json.loads(body) if separator else None
+    except ValueError:
+        row = None
+    if status is None or not isinstance(row, dict):
+        raise Refused(
+            proc.stderr.strip() or f"GitHub returned no valid answer for {path}"
+        )
+    return int(status[1]), row
 
 
 def _pull(repository: str, number: int, *, version: str | None = "2026-03-10") -> dict:

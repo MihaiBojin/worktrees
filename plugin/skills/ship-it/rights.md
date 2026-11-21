@@ -13,8 +13,10 @@ checks its commands. The deny rules refuse the forms a client can match.
 `gw merge` is the GitHub merge command in both clients. Its parser requires
 a full head SHA, always requests squash, and accepts no rule bypass or
 arbitrary API payload. The rule admits only this command; it grants no
-general `gh api` permission. Install the CLI version that provides
-`gw merge` along with the updated plugin. A plugin update alone does not update the CLI.
+general `gh api` permission. `gw stack-link` is the command that links a
+stacked pull request; it takes pull request numbers and nothing else.
+Install the CLI version that provides `gw merge` and `gw stack-link` along
+with the updated plugin. A plugin update alone does not update the CLI.
 
 ## Claude Code
 
@@ -82,9 +84,9 @@ prefix_rule(
     justification="ship-it opens and describes the pull request",
 )
 prefix_rule(
-    pattern=["gh", "stack", "link"],
+    pattern=["gw", "stack-link"],
     decision="allow",
-    justification="ship-it opens a stacked pull request",
+    justification="ship-it links a stacked pull request into a native stack",
 )
 prefix_rule(
     pattern=["gw", "merge"],

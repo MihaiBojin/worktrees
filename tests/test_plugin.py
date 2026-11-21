@@ -410,7 +410,7 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "git push --force-with-lease --force-if-includes origin fix-parser",
         "gh pr create --base main --head fix-parser --title t --body-file f",
         "gh pr edit 41 --body-file f",
-        "gh stack link parent child --open",
+        "gw stack-link 41 42 --json",
         "gw merge 41 --subject s --body-file f --match-head-commit x --json",
         "gh run rerun 7 --failed",
         "glab mr create --target-branch main --source-branch x --title t --yes",
@@ -439,6 +439,7 @@ def test_ship_it_preapproves_publishing_alone() -> None:
         "gh pr update-branch 1",
         "gh api --method PUT repos/o/r/pulls/41/merge-async",
         "gh pr merge 41 --admin",
+        "gh stack link parent child --open",
     ):
         assert not _covers(tools, refused), refused
 
