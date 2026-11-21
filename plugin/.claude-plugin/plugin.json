@@ -1,6 +1,6 @@
 {
   "name": "worktrees",
-  "version": "0.12.3",
+  "version": "0.13.0",
   "description": "Read CI, rebase onto the head branch, describe, ship and merge pull requests, and prune finished worktrees through the worktrees CLI",
   "author": {
     "name": "Mihai Bojin",

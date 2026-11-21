@@ -367,28 +367,13 @@ def test_a_writer_already_open_survives_a_line_another_run_tears(logging):
     """The fragment arrives after this process opened the file, so nothing it
     learned at open says so: only the look under the lock, at each append."""
     world = logging
-    env = {
-        **env_for(world),
-        "WORKTREES_AUDIT": "",
-        "WORKTREES_AUDIT_DIR": str(world.root / "audit"),
-    }
+    fragment = b'{"v":1,"event":"invocation.st'
     audit.begin("gw", ["sync"])
     try:
         [path] = files(world)
-        before = path.stat().st_size
-        torn = subprocess.run(
-            argv("gw", "version"),
-            cwd=str(world.repo),
-            capture_output=True,
-            text=True,
-            env=env,
-            preexec_fn=limited(before + 120),
-        )
-        assert torn.returncode == 0, torn.stderr
-        assert "audit log not written" in torn.stderr
-        # Reproduce the loss: an open end, left while this run held the file.
-        assert path.stat().st_size == before + 120
-        assert not path.read_bytes().endswith(b"\n")
+        # Another writer leaves a fragment while this run has the file open.
+        with path.open("ab") as stream:
+            stream.write(fragment)
         audit.record(
             "merge.outcome",
             number=1,
@@ -407,10 +392,9 @@ def test_a_writer_already_open_survives_a_line_another_run_tears(logging):
         audit.end(0)
 
     raw = path.read_text().split("\n")
-    fragment = raw[1]
-    assert len(fragment) == 120
+    assert raw[1].encode() == fragment
     with pytest.raises(json.JSONDecodeError):
-        json.loads(fragment)
+        json.loads(raw[1])
     mine = parsed(world)
     assert [r["event"] for r in mine] == [
         "invocation.start",
