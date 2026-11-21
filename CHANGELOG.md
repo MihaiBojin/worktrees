@@ -17,6 +17,73 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.13.0 - 2026-11-21
+
+### Added
+
+`gwrk!` runs `gw remove --keep-branch --yes`. It removes the worktree and
+keeps its branch and stashes, so the branch needs no proof that it is
+finished.
+
+`gw stack-link 41 42 43` links open GitHub pull requests into a native stack,
+bottom first: it creates the stack, or adds the pull requests above the top of
+the stack the first ones are in, and exits 0 without changing anything when
+they are linked already. It refuses at exit 3 a closed pull request, a base
+that is not the branch below, or a pull request in another stack, and `--json`
+prints the stack's number and members.
+
+The ship-it skill opens a stacked pull request with `gh pr create` and links
+it with `gw stack-link`, using the CLI's native stack support. Install this
+CLI release with the plugin, and replace the `Bash(gh stack link *)`
+permission with `Bash(gw stack-link *)`, which `/worktrees:preflight` adds; in
+Codex, replace the `gh stack link` `prefix_rule` with the `gw stack-link` one
+in the plugin's `rights.md`.
+
+A `[y/N]` question takes one key and no enter: `y` is yes, and any other key,
+enter and esc among them, is no. Esc at the question prints no escape
+sequence.
+
+Warnings on a terminal lead with `⚠`.
+
+Esc at `gw branch prune`'s `which?` question cancels it: the command exits 0
+and deletes nothing.
+
+`gw merge` merges a native stack in one call: on a PR in a stack it merges
+every open PR below it, once each passes its CI and merge-state checks, and
+moves local branches above it to GitHub's rewritten copy where nothing would
+be lost. `gw merge N1 N2 ...` merges several PRs in order, builds each message
+from the PR's title, body and trailers, and stops at the first that does not
+merge. JSON reports `merged`, `remaining`, `branches` and `warnings`.
+
+`gw preflight` checks whether gw and its agent plugin are set up in the
+repository it runs in: `gh` or `glab` signed in for the default remote, GitHub
+squashing with each pull request's title and body, the project's
+`.claude/settings.json` and `.codex/config.toml` enabling
+`worktrees@mihaibojin`, and the shell plugin matching the CLI's release. Each
+check that is not ok prints its fix, and `--json` prints every check.
+`/worktrees:preflight project` runs it first and, after asking, writes the
+project's plugin setup for Claude Code and, where the project has no
+`.codex/config.toml`, for Codex.
+
+`gw push` pushes the branch you stand on to the default remote after fetching
+it, and the `gwpu` shortcut runs it. It refuses when the remote copy holds
+commits the branch lacks, which `--replace` pushes over, and when the branch
+still carries commits the head branch already merged. `gw fast-forward
+--continue` finishes a stopped rebase without opening an editor. The agent
+plugin pushes with `gw push`, and the rules `/worktrees:preflight` writes deny
+`git push --force-with-lease`, `git rebase`, `gh pr merge`, `gh stack merge`
+and `gh api` merge calls.
+
+With the technical-writing plugin installed, describe-pr and ship-it write a
+pull request's title and body in the format of its pr-description skill.
+
+### Fixed
+
+`gw add NAME` asks before starting a branch that only the remote has, and
+starts it from the remote's copy, tracking it; `--yes` approves without
+asking, and without a terminal it refuses. `gw add NAME BASE` refuses a `BASE`
+that differs from the commit `NAME` already has.
+
 ## 0.12.3 - 2026-11-21
 
 ### Fixed
