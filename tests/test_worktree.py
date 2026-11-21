@@ -657,3 +657,105 @@ def test_the_spinner_stays_off_where_it_cannot_clear_a_line(monkeypatch) -> None
         progress.say("x")
         time.sleep(0.25)
     assert err.getvalue() == ""
+
+
+# --------------------------------------------------------------------------
+# gw add and the remote's copy of a branch
+# --------------------------------------------------------------------------
+
+
+def _remote_only(world, name: str) -> str:
+    """A bare `origin` holding `name`, which this clone has fetched and never
+    checked out: the commit on it is one the head ref lacks."""
+    origin = world.root / "origin.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(origin)], check=True)
+    world.git("remote", "add", "origin", str(origin))
+    world.git("push", "--quiet", "origin", "main")
+    world.git("switch", "--quiet", "-c", name)
+    sha = world.commit("remote-work")
+    world.git("push", "--quiet", "origin", name)
+    world.git("switch", "--quiet", "main")
+    world.git("branch", "--quiet", "-D", name)
+    world.git("fetch", "--quiet", "origin")
+    return sha
+
+
+def test_git_starts_a_remote_only_branch_from_the_head_when_told_b(world) -> None:
+    """The raw behaviour: `-b NAME` from the head ignores `origin/NAME`, so
+    the new branch lacks the remote's work and pushes over it."""
+    sha = _remote_only(world, "shared")
+    dest = world.root / "raw"
+    world.git(
+        "worktree", "add", "--quiet", "--no-track", "-b", "shared", str(dest), "main"
+    )
+    assert world.git("rev-parse", "shared") != sha
+
+
+def test_add_refuses_a_remote_only_branch_without_an_answer(world) -> None:
+    sha = _remote_only(world, "shared")
+    p = run(world, "gw add", "shared")
+    assert p.returncode == 1
+    assert "exists only on the remote, as origin/shared" in p.stderr
+    assert "gw add shared --yes" in p.stderr
+    assert p.stdout == ""
+    assert not world.git("branch", "--list", "shared")
+    assert world.git("rev-parse", "origin/shared") == sha
+
+
+def test_add_yes_starts_a_remote_only_branch_from_its_copy(world) -> None:
+    sha = _remote_only(world, "shared")
+    p = run(world, "gw add", "shared", "--yes", "--json")
+    assert p.returncode == 0, p.stderr
+    assert json.loads(p.stdout)["created"] is True
+    assert world.git("rev-parse", "shared") == sha
+    assert (
+        world.git("rev-parse", "--abbrev-ref", "shared@{upstream}") == "origin/shared"
+    )
+
+
+def test_add_asks_at_a_terminal_and_a_no_creates_nothing(world) -> None:
+    _remote_only(world, "shared")
+    code, out = run_on_a_terminal(world, "gw add", "shared", answer="n\n")
+    assert code == 1
+    assert "Start it from origin/shared?" in out
+    assert "not created" in out
+    assert not world.git("branch", "--list", "shared")
+
+
+def test_add_asks_at_a_terminal_and_a_yes_takes_the_copy(world) -> None:
+    sha = _remote_only(world, "shared")
+    code, out = run_on_a_terminal(world, "gw add", "shared", answer="y\n")
+    assert code == 0, out
+    assert world.git("rev-parse", "shared") == sha
+
+
+def test_add_takes_the_remote_copy_named_as_base_without_asking(world) -> None:
+    sha = _remote_only(world, "shared")
+    p = run(world, "gw add", "shared", "origin/shared")
+    assert p.returncode == 0, p.stderr
+    assert world.git("rev-parse", "shared") == sha
+
+
+def test_add_refuses_another_base_for_a_remote_only_branch(world) -> None:
+    _remote_only(world, "shared")
+    p = run(world, "gw add", "shared", "main", "--yes")
+    assert p.returncode == 1
+    assert "already on the remote" in p.stderr
+    assert not world.git("branch", "--list", "shared")
+
+
+def test_add_refuses_a_base_that_would_move_an_existing_branch(world) -> None:
+    world.git("branch", "older", "main")
+    world.commit("newer")
+    p = run(world, "gw add", "older", "main")
+    assert p.returncode == 1
+    assert "BASE starts a new branch only" in p.stderr
+    assert "gw add older checks out older as it is" in p.stderr
+    assert not (world.parent / ".worktrees" / "older").exists()
+
+
+def test_add_takes_a_base_naming_the_existing_branchs_own_commit(world) -> None:
+    world.git("branch", "level", "main")
+    p = run(world, "gw add", "level", "main")
+    assert p.returncode == 0, p.stderr
+    assert world.git("rev-parse", "level") == world.git("rev-parse", "main")

@@ -1213,6 +1213,12 @@ def _add_add_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "base", nargs="?", default="", metavar="BASE", help="what to branch from"
     )
+    p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="start a branch only the remote has from its copy without asking",
+    )
     _add_cd_flags(p)
     _add_cd_output_flags(p)
 
@@ -1274,6 +1280,26 @@ def _landed(args: argparse.Namespace, landed: wt_mod.Landed) -> int:
     return 0
 
 
+def _approve_copy(args: argparse.Namespace) -> Callable[[str], bool] | None:
+    """Who says yes to starting NAME from the remote's copy: --yes, a person
+    at a terminal, or nobody, which `gw add` takes as a refusal."""
+    if args.yes:
+        return lambda copy: True
+    if args.json or not sys.stdin.isatty():
+        return None
+
+    def ask(copy: str) -> bool:
+        sys.stderr.write(
+            render.ask(
+                f"{args.name} exists only on the remote. Start it from {copy}?", "[y/N]"
+            )
+        )
+        sys.stderr.flush()
+        return sys.stdin.readline().strip().lower() in ("y", "yes")
+
+    return ask
+
+
 def run_add(args: argparse.Namespace) -> int:
     from . import new_branch
     from . import worktree as wt_mod
@@ -1287,7 +1313,9 @@ def run_add(args: argparse.Namespace) -> int:
 
     warn = None if args.quiet else _warn
     try:
-        landed = wt_mod.add(args.name, args.base, warn=warn)
+        landed = wt_mod.add(
+            args.name, args.base, warn=warn, approve=_approve_copy(args)
+        )
     except new_branch.Refusal as exc:
         _refuse(str(exc))
         return 1
@@ -2002,8 +2030,8 @@ _COMMANDS: dict[str, _Command] = {
         _add_add_flags,
         "create a worktree and land you in it",
         "Create a worktree for branch NAME and change into it, checking out the "
-        "branch if it exists. A new branch starts from BASE, or from the head "
-        "ref without one.",
+        "branch if it exists, or its remote copy after asking or with --yes. A "
+        "new branch starts from BASE, or from the head ref without one.",
         usage="NAME [BASE]",
         aliases=("a",),
         shortcuts={"gwa": ""},

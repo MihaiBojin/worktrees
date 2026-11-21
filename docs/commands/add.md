@@ -7,6 +7,7 @@ its shortcut.
 ```console
 gw add fix-parser
 gw add fix-parser release-1.2
+gw add shared --yes
 cd "$(command gw add fix-parser -q)"
 gw add fix-parser --json
 ```
@@ -24,16 +25,27 @@ collide with `feat`. Repositories that sit side by side share one
 
 | `NAME` is | the worktree gets |
 | --- | --- |
-| a local branch checked out nowhere | that branch, as it is; `BASE` is ignored and `created` is false |
-| no local branch | a new branch from `BASE`, or from the head ref without one; `created` is true |
+| a local branch checked out nowhere | that branch, as it is; `created` is false |
+| only on the default remote, as `origin/NAME` | a new `NAME` from `origin/NAME`, tracking it, once approved; `created` is true |
+| on neither | a new branch from `BASE`, or from the head ref without one, with no upstream; `created` is true |
 
-The new branch has no upstream: it is made with `--no-track`, so a branch
-started from `origin/main` never pushes to `main`. A branch that exists only
-on the remote counts as no local branch. `gw add NAME` starts a new `NAME`
-from the head ref, not from `origin/NAME`; `gw add NAME origin/NAME` starts
-it from the remote's commit, still with no upstream.
+`BASE` starts a new branch. For a branch that already has a commit, here or
+on the remote, a `BASE` that names that same commit is accepted, and any
+other is refused: it would move the local branch, or hide the remote's work
+behind a new branch that pushes over it.
 
-The head ref has to resolve even when `NAME` exists, as
+A branch only the remote has is started from its copy, never from the head
+ref. On a terminal `gw add` asks first, `NAME exists only on the remote.
+Start it from origin/NAME? [y/N]`, and any answer but yes creates nothing
+and exits 1. Without a terminal, or under `--json`, it refuses and names
+`gw add NAME --yes`, which approves the copy without asking. `BASE` set to
+the copy, `gw add NAME origin/NAME`, is the same approval. The branch
+tracks `origin/NAME`, since that is the branch it pushes to.
+
+A branch started from the head ref has no upstream: it is made with
+`--no-track`, so a branch started from `origin/main` never pushes to `main`.
+
+The head ref has to resolve in every case, as
 [the head rules](../REFERENCE.md#head-and-evidence) describe.
 
 ## Refusals
@@ -48,6 +60,10 @@ Each exits 1 with the reason on stderr and nothing on stdout:
   `gw list NAME` goes there.
 - The destination directory already exists. When another repository owns
   it, the refusal names that repository.
+- `BASE` names another commit than the branch already has, here or on the
+  remote, or names no commit.
+- `NAME` exists only on the remote and nobody approved starting it from
+  there.
 - The head ref does not resolve.
 
 `gw add` creates the parent directories before it asks git. When git

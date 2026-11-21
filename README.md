@@ -475,7 +475,8 @@ each exit code.
 
 `gw add NAME [BASE]` creates a worktree for branch `NAME` under
 `.worktrees/NAME/` beside the main checkout and changes into it, checking
-the branch out when it exists. [Add](docs/commands/add.md) lists where it
+the branch out when it exists. A branch only the remote has starts from the
+remote's copy, after asking or with `--yes`. [Add](docs/commands/add.md) lists where it
 goes and what it refuses. `gw branch create NAME` starts `NAME` in this
 checkout from the head ref, with no upstream, or stacks it on the branch you
 stand on when you answer yes; [branch create](docs/commands/branch-create.md)

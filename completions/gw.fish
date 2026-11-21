@@ -34,6 +34,7 @@ complete -c gw -n '__worktrees_on prune p' -s v -l verbose -d 'print every git c
 complete -c gw -n '__worktrees_on prune p' -l explain -d 'print every git command and exit'
 complete -c gw -n '__worktrees_on prune p' -s h -l help -d 'show the help and exit'
 
+complete -c gw -n '__worktrees_on add a' -s y -l yes -d 'start a branch only the remote has from its copy without asking'
 complete -c gw -n '__worktrees_on add a' -l json -d 'the result as data'
 complete -c gw -n '__worktrees_on add a' -s q -l quiet -d 'the path alone'
 complete -c gw -n '__worktrees_on add a' -s v -l verbose -d 'print every git command'
