@@ -5,14 +5,20 @@ client, so these rules go in the user's own configuration, once. ship-it
 checks for them before it starts and names any that are missing; it never
 writes them.
 
-Each rule matches a command's prefix. A rule for
-`git push --force-with-lease --force-if-includes` also admits a trailing
-`--force`. The skill never writes that flag, and `tests/test_plugin.py`
-checks its commands. The deny rules refuse the forms a client can match.
+Each rule matches a command's prefix, so a rule for `gw push` also admits a
+trailing `--replace`. The skill never writes that flag, or `--force`, and
+`tests/test_plugin.py` checks its commands. Every push goes through
+`gw push`, which refuses one that would delete a commit only the remote
+holds or bring back commits the head branch merged, and every rebase
+through `gw fast-forward`. The deny rules refuse the forms a client can
+match that skip those checks: a raw `git push --force-with-lease`, any
+`git rebase`, and a merge through `gh pr merge`, `gh stack merge` or a
+`gh api` call.
 
-`gw merge` is the GitHub merge command in both clients. Its parser requires
-a full head SHA, always requests squash, and accepts no rule bypass or
-arbitrary API payload. The rule admits only this command; it grants no
+`gw merge` is the GitHub merge command in both clients. It merges the pull
+requests it names, a stack bottom first, each only once its head and CI are
+checked; with one number its parser requires the full head SHA. It always
+requests squash, and accepts no rule bypass or arbitrary API payload. The rule admits only this command; it grants no
 general `gh api` permission. `gw stack-link` is the command that links a
 stacked pull request; it takes pull request numbers and nothing else.
 Install the CLI version that provides `gw merge` and `gw stack-link` along
@@ -29,9 +35,11 @@ through auto mode, whose classifier otherwise blocks merging a pull request
 no human approved; a skill's own `allowed-tools` lasts only the turn that
 invoked it.
 
-No allow rule or skill overrides a deny rule. A deny rule matches only the
-position its pattern names, so test one on the Claude Code version in use
-before relying on it.
+No allow rule or skill overrides a deny rule, and a deny rule matches past
+a leading assignment, so `Bash(git rebase *)` refuses
+`GIT_EDITOR=true git rebase --continue` too: `gw fast-forward --continue`
+runs it instead. A deny rule matches only the position its pattern names,
+so test one on the Claude Code version in use before relying on it.
 
 ## Codex
 
@@ -49,9 +57,9 @@ prefix_rule(
     justification="ship-it starts a branch",
 )
 prefix_rule(
-    pattern=["gw", ["sync", "fast-forward", "ci-checks"]],
+    pattern=["gw", ["sync", "fast-forward", "push", "ci-checks"]],
     decision="allow",
-    justification="ship-it fetches, rebases and reads CI",
+    justification="ship-it fetches, rebases, pushes and reads CI",
 )
 prefix_rule(
     pattern=["git", "switch", ["--create", "--no-guess"]],
@@ -62,21 +70,6 @@ prefix_rule(
     pattern=["git", ["add", "commit"]],
     decision="allow",
     justification="ship-it commits by path",
-)
-prefix_rule(
-    pattern=["git", "rebase", "--continue"],
-    decision="allow",
-    justification="ship-it finishes a resolved rebase",
-)
-prefix_rule(
-    pattern=["git", "push", "--set-upstream"],
-    decision="allow",
-    justification="ship-it pushes a new branch",
-)
-prefix_rule(
-    pattern=["git", "push", "--force-with-lease", "--force-if-includes"],
-    decision="allow",
-    justification="ship-it pushes a rebased branch with a lease",
 )
 prefix_rule(
     pattern=["gh", "pr", ["view", "diff", "create", "edit"]],
@@ -91,7 +84,7 @@ prefix_rule(
 prefix_rule(
     pattern=["gw", "merge"],
     decision="allow",
-    justification="ship-it merges one checked GitHub pull request",
+    justification="ship-it merges checked GitHub pull requests, a stack or several in one call",
 )
 prefix_rule(
     pattern=["gh", "run", ["view", "rerun"]],
@@ -109,8 +102,22 @@ prefix_rule(
     justification="ship-it reads and reruns CI",
 )
 prefix_rule(
-    pattern=["git", "push", "--force"],
+    pattern=["git", "push", ["--force", "--force-with-lease"]],
     decision="forbidden",
-    justification="Use --force-with-lease --force-if-includes.",
+    justification="Use gw push.",
+)
+prefix_rule(
+    pattern=["git", "rebase"],
+    decision="forbidden",
+    justification="Use gw fast-forward, and gw fast-forward --continue.",
+)
+prefix_rule(
+    pattern=["gh", ["pr", "stack"], "merge"],
+    decision="forbidden",
+    justification="Use gw merge.",
 )
 ```
+
+A Codex rule matches whole words from the start of the command, so it
+cannot refuse `--force-with-lease=REF:SHA`, a flag after the remote, or a
+`gh api` path that names a merge. Those reach Codex's own prompt.

@@ -591,8 +591,29 @@ def boundary(
     below the tip is proved, or when this partial clone lacks what a proof
     needs, which leaves the branch to an ordinary rebase.
     """
+    return _newest_proved(own_commits(head, tip, repo=repo).lines[1:], head, repo)
+
+
+def merged_part(
+    tip: str, head: str, repo: str | os.PathLike[str] | None = None
+) -> list[str]:
+    """The commits of `head..tip` whose change the head already has, newest
+    first: the newest one proved, the tip included, and every commit below it.
+
+    Empty when none is proved, or when this partial clone lacks what a proof
+    needs.
+    """
+    found = _newest_proved(own_commits(head, tip, repo=repo).lines, head, repo)
+    return own_commits(head, found[0], repo=repo).lines if found else []
+
+
+def _newest_proved(
+    commits: list[str], head: str, repo: str | os.PathLike[str] | None
+) -> tuple[str, str, str] | None:
+    """The first of `commits`, newest first, with a local proof, its proof and
+    why."""
     upstream: dict[str, set[str]] = {}
-    for commit in own_commits(head, tip, repo=repo).lines[1:]:
+    for commit in commits:
         try:
             found = _local_proof(commit, head, repo, upstream)
         except MissingObjects:

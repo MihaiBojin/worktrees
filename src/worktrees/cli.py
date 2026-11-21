@@ -319,6 +319,7 @@ def _explain() -> int:
         merged,
         new_branch,
         prune,
+        push,
         repo,
         verdicts,
         worktree,
@@ -754,6 +755,12 @@ def _add_fast_forward_flags(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="carry uncommitted changes across, through git's own autostash",
     )
+    p.add_argument(
+        "--continue",
+        dest="resume",
+        action="store_true",
+        help="continue the stopped rebase, keeping each commit's message",
+    )
     p.add_argument("--json", action="store_true", help="the result as data")
     p.add_argument(
         "-q", "--quiet", action="store_true", help="omit summaries and progress"
@@ -803,6 +810,16 @@ def run_fast_forward(args: argparse.Namespace) -> int:
     options.verbose = args.verbose
     if args.explain:
         return _explain()
+    if args.resume:
+        if args.new_name or args.start:
+            raise _Stop("--continue takes no NAME or --from", 2)
+        if not ff.stopped_rebase():
+            _refuse("no rebase is stopped in this checkout")
+            return 1
+        continued = ff.rebase_continue()
+        said = continued.err.strip() or continued.out.strip()
+        if not continued and said and not args.quiet:
+            _warn(f"git rebase --continue exited {continued.code}:\n{said}")
 
     try:
         moved = ff.fast_forward(
@@ -1013,6 +1030,61 @@ def _moved(moved: fast_forward.Moved) -> str:
 
 def _commits(n: int) -> str:
     return f"{n} commit" if n == 1 else f"{n} commits"
+
+
+# --------------------------------------------------------------------------
+# push
+# --------------------------------------------------------------------------
+
+
+def _add_push_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--replace",
+        action="store_true",
+        help="push over commits only the remote copy holds, once each is checked",
+    )
+    p.add_argument("--json", action="store_true", help="the result as data")
+    p.add_argument(
+        "-q", "--quiet", action="store_true", help="omit the summary and progress"
+    )
+    p.add_argument(
+        "-v", "--verbose", action="store_true", help="print every git command"
+    )
+    p.add_argument(
+        "--explain", action="store_true", help="print every git command and exit"
+    )
+
+
+def run_push(args: argparse.Namespace) -> int:
+    from . import audit
+    from . import push as P
+    from .git import options
+
+    options.verbose = args.verbose
+    if args.explain:
+        return _explain()
+    code, message = 0, ""
+    try:
+        with progress.running(not args.quiet and not args.verbose):
+            result = P.push(args.replace)
+    except P.Withheld as exc:
+        code, message, result = 3, str(exc), exc.result
+    except P.Rejected as exc:
+        code, result = 1, exc.result
+        message = (
+            f"{result.remote} refused {render.branch(result.branch)}: {result.refused}"
+        )
+    audit.record("push.outcome", replace=args.replace, **result.data())
+    if args.json:
+        print(_json(result.data()))
+    if code:
+        _refuse(message, "refused" if code == 3 else "git")
+        return code
+    if not args.json and not args.quiet:
+        sha = render.out(result.pushed[:7] or result.previous[:7], YELLOW)
+        where = f"{render.branch(result.branch)} to {result.remote}"
+        print(f"pushed {where} at {sha}" if result.pushed else f"{where} is at {sha}")
+    return 0
 
 
 # --------------------------------------------------------------------------
@@ -2254,6 +2326,17 @@ _COMMANDS: dict[str, _Command] = {
         aliases=("ff",),
         shortcuts={"gwff": ""},
     ),
+    "push": _Command(
+        run_push,
+        _add_push_flags,
+        "push this branch to the default remote",
+        "Fetch the default remote, then push the branch you stand on: as a "
+        "new branch the remote tracks, or over its remote copy under a lease. "
+        "It refuses when the copy holds commits the branch "
+        "lacks, which --replace pushes over, and when the branch still "
+        "carries commits the head branch merged.",
+        shortcuts={"gwpu": ""},
+    ),
     "ci-checks": _Command(
         run_ci,
         _add_ci_flags,
@@ -2522,9 +2605,13 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
             # it neither syncs first nor says how fresh the evidence is. branch
             # create syncs itself, since it asks its question during the sync.
             creates = run is run_branch and args.branch_command == "create"
-            if run is not run_list and not creates and R.toplevel().value:
+            # push fetches the default remote itself, whatever the TTL.
+            first = run not in (run_list, run_push) and not creates
+            if first and R.toplevel().value:
                 if run is run_fast_forward:
-                    _fetch_due(args)
+                    # A rebase stopped here continues whatever the network says.
+                    if not args.resume:
+                        _fetch_due(args)
                 else:
                     _refresh(args)
                 _notices(args)

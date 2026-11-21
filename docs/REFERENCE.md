@@ -16,6 +16,7 @@ output streams. [The README](../README.md) covers installation and a tour.
 | `gw select-main`, `gw main`, `gw m` | `gwm` | [select-main](commands/list.md#select-main) |
 | `gw remove`, `gw rm` | `gwr`, `gwr!` | [README](../README.md#assess-and-remove), [protections](#protections-and-permissions), [deletion](#deletion-and-recovery) |
 | `gw fast-forward`, `gw ff` | `gwff` | [fast-forward](commands/fast-forward.md) |
+| `gw push` | `gwpu` | [push](commands/push.md) |
 | `gw ci-checks`, `gw ci` | | [ci-checks](commands/ci-checks.md) |
 | `gw merge` | | [merge](commands/merge.md) |
 | `gw stack-link` | | [stack-link](commands/stack-link.md) |
@@ -260,7 +261,7 @@ Every event carries:
 | `ts` | string | UTC, `YYYY-MM-DDThh:mm:ss.mmmZ` |
 | `run` | string | 16 hex digits, shared by one invocation's events |
 | `seq` | number | counted from 1 within the run |
-| `event` | string | one of the seven below |
+| `event` | string | one of the eight below |
 | `user`, `host` | string | who ran it and where |
 | `pid` | number | the `gw` process |
 | `version` | string | the `gw` release |
@@ -356,6 +357,11 @@ objects; and `retargeted` and `rescued`, objects. It adds
 `previous_full_sha` and `full_sha`, strings that are empty when the short
 one no longer resolves, and `restore` and `undo`.
 
+`push.outcome`, when `gw push` returned after its fetch, carries the
+fields of [its `--json` result](commands/push.md): `branch`, `remote`,
+`pushed`, `previous` and `refused`, strings. It adds `replace`, true when
+`--replace` was given.
+
 `merge.outcome`, one for each merge call `gw merge` made or refused, carries
 `number`, a number, `head`, the SHA it was asked to merge at, and the fields
 of [its `--json` result](commands/merge.md): `status` and `message`,
@@ -416,9 +422,9 @@ otherwise recorded as typed, and so is a path.
 A log that cannot be written is one warning on stderr, under `--quiet` and
 `--json` too, and the command goes on unrecorded. Nothing reaches stdout.
 
-The agent plugin's skills run `git push`, `gh pr create` and
-`glab mr merge` themselves, so those are not in the log; every `gw` command
-a skill runs is.
+The agent plugin's skills run `gh pr create` and `glab mr merge`
+themselves, so those are not in the log; every `gw` command a skill runs
+is, `gw push` among them.
 
 ## Sync cache
 

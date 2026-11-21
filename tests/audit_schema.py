@@ -175,6 +175,14 @@ EVENTS: dict[str, dict] = {
         "restore": [ACTION],
         "undo": [str],
     },
+    "push.outcome": {
+        "branch": str,
+        "remote": str,
+        "replace": bool,
+        "pushed": str,
+        "previous": str,
+        "refused": str,
+    },
     "merge.outcome": {
         "number": NAT,
         "head": str,

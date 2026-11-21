@@ -181,6 +181,40 @@ def test_a_stopped_rebase_is_reported_until_it_finishes(world) -> None:
     assert done.ahead == 1
 
 
+def test_continue_finishes_a_resolved_rebase_and_reports(world) -> None:
+    """With no editor configured to accept, git would wait on a message."""
+    conflicting(world)
+    assert gw_ff(world).returncode == 1
+    (world.repo / "README").write_text("both\n")
+    world.git("add", "README")
+
+    p = gw_ff(world, "--continue", "--json", GIT_EDITOR="false")
+    assert p.returncode == 0, p.stderr
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["ahead"]) == ("current", 1)
+    assert not rebasing(world)
+    assert world.git("log", "-1", "--format=%s") == "README"
+
+
+def test_continue_with_conflicts_left_reports_the_stop(world) -> None:
+    conflicting(world)
+    assert gw_ff(world).returncode == 1
+
+    p = gw_ff(world, "--continue", "--json")
+    assert p.returncode == 1
+    assert json.loads(p.stdout)["result"] == "conflict"
+    assert "git rebase --continue exited" in p.stderr
+    assert rebasing(world)
+
+
+def test_continue_without_a_stopped_rebase_is_refused(world) -> None:
+    with_work(world)
+    p = gw_ff(world, "--continue")
+    assert p.returncode == 1
+    assert "no rebase is stopped" in p.stderr
+    assert gw_ff(world, "--continue", "next").returncode == 2
+
+
 def dirty_and_behind(world) -> None:
     """Uncommitted work on a file main has since changed, under autoStash."""
     with_work(world)

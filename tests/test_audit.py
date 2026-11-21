@@ -738,6 +738,29 @@ def test_a_branch_already_level_records_nothing_to_undo(world):
     assert (moved["result"], moved["undo"]) == ("current", [])
 
 
+def test_a_push_records_what_it_sent_and_what_it_refused(world):
+    bare = world.root / "upstream.git"
+    world.git("init", "--quiet", "--bare", str(bare))
+    world.git("remote", "add", "origin", str(bare))
+    world.git("push", "--quiet", "origin", "main")
+    world.git("fetch", "--quiet", "origin")
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    world.git("switch", "--quiet", "--create", "fix-parser")
+    tip = world.commit("fix.txt", "w\n")
+    assert gw(world, "push", WORKTREES_OFFLINE="").returncode == 0
+    there = world.root / "other"
+    world.git("clone", "--quiet", "--branch", "fix-parser", str(bare), str(there))
+    theirs = world.commit("theirs.txt", "t\n", at=there)
+    world.git("push", "--quiet", "origin", "fix-parser", at=there)
+    world.commit("mine.txt", "m\n")
+    assert gw(world, "push", WORKTREES_OFFLINE="").returncode == 3
+
+    sent, refused = named(events(world), "push.outcome")
+    assert (sent["pushed"], sent["previous"], sent["refused"]) == (tip, "", "")
+    assert (refused["pushed"], refused["previous"]) == ("", theirs)
+    assert (refused["refused"], refused["replace"]) == ("remote-only", False)
+
+
 def test_a_forge_call_is_recorded_and_a_write_is_marked(logging, monkeypatch):
     world = logging
     tools = world.root / "tools"
