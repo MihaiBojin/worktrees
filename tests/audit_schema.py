@@ -183,6 +183,27 @@ EVENTS: dict[str, dict] = {
         "sha": Nullable(str),
         "uuid": Nullable(str),
         "message": str,
+        "merged": [{"number": NAT, "sha": Nullable(str)}],
+        "remaining": [
+            {
+                "number": NAT,
+                "headSha": str,
+                "baseRef": str,
+                "mergeStateStatus": str,
+                "checksState": str,
+            }
+        ],
+        "branches": [
+            {
+                "number": NAT,
+                "branch": str,
+                "result": Enum("moved", "checked-out", "kept", "not-rewritten"),
+                "from": str,
+                "to": str,
+                "path": str,
+            }
+        ],
+        "warnings": [str],
     },
 }
 

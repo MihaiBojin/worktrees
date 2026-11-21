@@ -155,20 +155,6 @@ def test_native_bottom_pr_merges_without_merging_the_child(world, github) -> Non
     assert writes(github)[0][2] == ASYNC
 
 
-def test_open_parent_blocks_before_submission(world, github) -> None:
-    answer(
-        github,
-        **{
-            PR: pull(stack=stack_info(position=2)),
-            STACK: stack([member(6, BASE), member()]),
-        },
-    )
-    proc = run(world, github)
-    assert proc.returncode == 3
-    assert "#6" in proc.stderr
-    assert not writes(github)
-
-
 def test_merged_parent_allows_next_pr(world, github) -> None:
     answer(
         github,
@@ -334,6 +320,10 @@ def test_offline_refuses_without_network(world, github) -> None:
         ],
         ["7", "--admin"],
         ["7", "--delete-branch"],
+        ["7", "7", "--match-head-commit", HEAD],
+        ["7", "9", "--match-head-commit", HEAD],
+        ["7", "9", "--subject", "Fix (#7)"],
+        ["7", "9", "--body-file", "message.txt"],
     ],
 )
 def test_invalid_merge_arguments_do_not_reach_github(world, github, args) -> None:
@@ -547,12 +537,9 @@ def stack_answer(github, **routes) -> None:
     )
 
 
-@pytest.mark.parametrize("unsettled", ["parent", "base", "containment"])
+@pytest.mark.parametrize("unsettled", ["base", "containment"])
 def test_stack_waits_until_each_condition_settles(world, github, unsettled) -> None:
     routes = {
-        "parent": {
-            STACK: {"$sequence": [stack([member(6, BASE), member()]), settled_stack()]}
-        },
         "base": {
             PR: {
                 "$sequence": [
@@ -582,7 +569,6 @@ def test_stack_waits_until_each_condition_settles(world, github, unsettled) -> N
 @pytest.mark.parametrize(
     "unsettled,reason",
     [
-        ("parent", "#6"),
         ("base", "base branch"),
         ("containment", MERGE),
     ],
@@ -591,7 +577,6 @@ def test_stack_timeout_names_the_unmet_condition(
     world, github, unsettled, reason
 ) -> None:
     routes = {
-        "parent": {STACK: stack([member(6, BASE), member()])},
         "base": {
             PR: pull(
                 stack=stack_info(position=2),
@@ -797,3 +782,374 @@ def test_a_base_that_cannot_be_read_refuses(world, github) -> None:
     assert p.returncode == 3
     assert "could not read what merged from #7's base parent" in p.stderr
     assert writes(github) == []
+
+
+# --------------------------------------------------------------------------
+# a stack merged from the middle: #6, #7 and #8 open, #7 named
+# --------------------------------------------------------------------------
+
+SIX = "e" * 40
+EIGHT = "f" * 40
+SQUASH = "9" * 40
+REPO = "repos/owner/repo"
+SETTINGS = {
+    "squash_merge_commit_title": "PR_TITLE",
+    "squash_merge_commit_message": "PR_BODY",
+}
+
+
+def view(number: int, sha: str, **extra) -> dict:
+    return _pr(
+        number=number,
+        url=f"https://github.com/owner/repo/pull/{number}",
+        headRefOid=sha,
+        **extra,
+    )
+
+
+def six(merged: bool = False, sha: str = SIX) -> dict:
+    row = pull(number=6, head={"ref": "six", "sha": sha}, stack=stack_info(size=3))
+    if merged:
+        return {**row, "state": "closed", "merged": True, "merge_commit_sha": SQUASH}
+    return row
+
+
+def middle(github, reads: int = 2, eight: str = EIGHT, views=None, routes=None) -> None:
+    """#7 between #6 and #8, all three open. GitHub answers #6 open for
+    `reads` reads, then merged."""
+    own = {"headRepositoryOwner": {"login": "owner"}, "isCrossRepository": False}
+    github.answer(
+        {
+            "$views": {
+                "6": view(6, SIX, headRefName="six"),
+                "7": view(7, HEAD, baseRefName="six"),
+                "8": view(8, eight, headRefName="eight", baseRefName="feature", **own),
+                **(views or {}),
+            },
+            "$api": {
+                PR: pull(
+                    title="Seven",
+                    stack=stack_info(position=2, size=3),
+                    base={"ref": "six", "repo": {"full_name": "owner/repo"}},
+                ),
+                STACK: stack([member(6, SIX), member(), member(8, eight)]),
+                PARENT: {"$sequence": [six()] * reads + [six(merged=True)]},
+                REPO: SETTINGS,
+                ASYNC: merged(),
+                **(routes or {}),
+            },
+        }
+    )
+
+
+def test_a_pr_in_a_stack_merges_the_open_ones_below_it_in_one_call(
+    world, github
+) -> None:
+    middle(github)
+    proc = run(world, github)
+    assert proc.returncode == 0, proc.stderr
+    assert [c[2] for c in writes(github)] == [ASYNC]
+    result = json.loads(proc.stdout)
+    assert result["status"] == "merged"
+    assert result["merged"] == [
+        {"number": 6, "sha": SQUASH},
+        {"number": 7, "sha": MERGE},
+    ]
+    assert result["remaining"] == [
+        {
+            "number": 8,
+            "headSha": EIGHT,
+            "baseRef": "feature",
+            "mergeStateStatus": "CLEAN",
+            "checksState": "passed",
+        }
+    ]
+    assert result["warnings"] == []
+    assert result["branches"] == []
+
+
+def test_a_stack_merge_prints_each_pr_as_a_row(world, github) -> None:
+    middle(github)
+    proc = cli(world, "merge", "7", "--match-head-commit", HEAD, env=github.env())
+    assert proc.returncode == 0, proc.stderr
+    lines = proc.stdout.splitlines()
+    assert lines[0] == f"#7: merged {MERGE}"
+    assert lines[1].split() == [
+        "PR",
+        "STATE",
+        "SHA",
+        "BASE",
+        "MERGE",
+        "STATE",
+        "CHECKS",
+    ]
+    assert lines[2].split() == ["#6", "merged", SQUASH[:7]]
+    assert lines[3].split() == ["#7", "merged", MERGE[:7]]
+    assert lines[4].split() == ["#8", "open", EIGHT[:7], "feature", "CLEAN", "passed"]
+
+
+def test_a_pr_below_without_checks_merges_with_the_stack(world, github) -> None:
+    middle(github, views={"6": view(6, SIX, statusCheckRollup=[])})
+    proc = run(world, github)
+    assert proc.returncode == 0, proc.stderr
+    assert len(writes(github)) == 1
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        view(6, SIX, statusCheckRollup=[_check(conclusion="FAILURE")]),
+        view(6, SIX, statusCheckRollup=[_check(status="QUEUED", conclusion="")]),
+        view(6, SIX, isDraft=True),
+        view(6, SIX, mergeStateStatus="BLOCKED"),
+        view(6, BASE),
+    ],
+)
+def test_a_pr_below_that_is_not_ready_refuses_the_stack(
+    world, github, snapshot
+) -> None:
+    middle(github, views={"6": snapshot})
+    proc = run(world, github)
+    assert proc.returncode == 3
+    assert "#6" in proc.stderr
+    assert not writes(github)
+
+
+def test_a_closed_pr_below_refuses_the_stack(world, github) -> None:
+    closed = stack([member(6, SIX, state="closed"), member(), member(8, EIGHT)])
+    middle(github, routes={STACK: closed})
+    proc = run(world, github)
+    assert proc.returncode == 3
+    assert "#6 below #7 is not open" in proc.stderr
+    assert not writes(github)
+
+
+def test_a_pr_below_that_merged_at_another_head_is_a_warning(world, github) -> None:
+    middle(github, routes={PARENT: {"$sequence": [six(), six(), six(True, REWRITE)]}})
+    proc = run(world, github)
+    assert proc.returncode == 0, proc.stderr
+    assert f"#6 merged at {REWRITE}, not at {SIX}" in proc.stderr
+    assert json.loads(proc.stdout)["warnings"]
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {
+            "squash_merge_commit_title": "COMMIT_OR_PR_TITLE",
+            "squash_merge_commit_message": "COMMIT_MESSAGES",
+        },
+        {},
+    ],
+)
+def test_squash_settings_other_than_title_and_body_are_a_warning(
+    world, github, settings
+) -> None:
+    middle(github, routes={REPO: settings})
+    proc = run(world, github)
+    assert proc.returncode == 0, proc.stderr
+    assert "squash commits of #6 will use GitHub's default message" in proc.stderr
+    assert "gw preflight" in proc.stderr
+    assert len(json.loads(proc.stdout)["warnings"]) == 1
+
+
+def test_a_pr_with_nothing_open_below_reads_no_squash_settings(world, github) -> None:
+    answer(github, **{PR: pull(stack=stack_info()), STACK: stack()})
+    proc = run(world, github)
+    assert proc.returncode == 0, proc.stderr
+    assert not any(REPO in c for c in github.network_calls())
+
+
+def branch_above(world, how: str) -> tuple[str, str, Path | None]:
+    """`eight` where GitHub had it before the merge, with origin's copy
+    already rewritten: the fetch the network fakes moves nothing."""
+    before = world.git("rev-parse", "HEAD")
+    tree = world.git("rev-parse", "HEAD^{tree}")
+    after = world.git("commit-tree", tree, "-p", before, "-m", "rewritten")
+    world.git("update-ref", "refs/remotes/origin/eight", after)
+    path = None
+    if how == "checked-out":
+        path = world.worktree("eight", before)
+    elif how == "kept":
+        own = world.git("commit-tree", tree, "-p", before, "-m", "local")
+        world.git("branch", "eight", own)
+    else:
+        world.git("branch", "eight", before)
+    return before, after, path
+
+
+def test_a_local_branch_above_moves_to_the_rewritten_copy(world, github) -> None:
+    before, after, _ = branch_above(world, "moved")
+    middle(github, eight=before)
+    proc = run(world, github)
+    assert proc.returncode == 0, proc.stderr
+    assert world.git("rev-parse", "refs/heads/eight") == after
+    assert json.loads(proc.stdout)["branches"] == [
+        {
+            "number": 8,
+            "branch": "eight",
+            "result": "moved",
+            "from": before,
+            "to": after,
+            "path": "",
+        }
+    ]
+    assert any(
+        c[-4:] == ["update-ref", "refs/heads/eight", after, before]
+        for c in github.calls()
+    )
+    assert any("fetch" in c for c in github.network_calls())
+
+
+@pytest.mark.parametrize("how", ["checked-out", "kept"])
+def test_a_local_branch_above_that_could_lose_work_stays(world, github, how) -> None:
+    before, _, path = branch_above(world, how)
+    tip = world.git("rev-parse", "refs/heads/eight")
+    middle(github, eight=before)
+    proc = run(world, github)
+    assert proc.returncode == 0, proc.stderr
+    assert world.git("rev-parse", "refs/heads/eight") == tip
+    (row,) = json.loads(proc.stdout)["branches"]
+    assert row["result"] == how
+    assert not any("update-ref" in c for c in github.calls())
+    if path is not None:
+        assert row["path"] == str(path)
+        assert f"Run: gw fast-forward, in {path}" in proc.stderr
+
+
+# --------------------------------------------------------------------------
+# several numbers
+# --------------------------------------------------------------------------
+
+NINE = "1" * 40
+TEN = "2" * 40
+TRAILER = "Co-Authored-By: Claude <noreply@anthropic.com>"
+
+
+def several(github, nine_merge=None, views=None) -> None:
+    def pr_at(number: int, sha: str, title: str, body: str = "") -> dict:
+        return pull(
+            number=number,
+            head={"ref": f"b{number}", "sha": sha},
+            title=title,
+            body=body,
+        )
+
+    commits = [{"oid": HEAD, "messageHeadline": "Change", "messageBody": TRAILER}]
+    github.answer(
+        {
+            "$views": {
+                "7": view(7, HEAD, commits=commits),
+                "9": view(9, NINE),
+                "10": view(10, TEN),
+                **(views or {}),
+            },
+            "$api": {
+                PR: pr_at(7, HEAD, "Seven", "Body.\n\n🤖 Generated with [Claude Code]"),
+                ASYNC: merged(),
+                "repos/owner/repo/pulls/9": pr_at(9, NINE, "Nine"),
+                "repos/owner/repo/pulls/9/merge-async": nine_merge or merged(),
+                "repos/owner/repo/pulls/10": pr_at(10, TEN, "Ten"),
+                "repos/owner/repo/pulls/10/merge-async": merged(),
+            },
+        }
+    )
+
+
+def test_several_numbers_merge_in_order_with_messages_gw_builds(world, github) -> None:
+    several(github)
+    proc = cli(world, "merge", "7", "9", "10", "--json", env=github.env())
+    assert proc.returncode == 0, proc.stderr
+    calls = writes(github)
+    assert [c[2] for c in calls] == [
+        ASYNC,
+        "repos/owner/repo/pulls/9/merge-async",
+        "repos/owner/repo/pulls/10/merge-async",
+    ]
+    fields = [calls[0][i + 1] for i, w in enumerate(calls[0]) if w == "--raw-field"]
+    assert set(fields) == {
+        "sha=" + HEAD,
+        "merge_method=squash",
+        "merge_action=default",
+        "commit_title=Seven (#7)",
+        f"commit_message=Body.\n\n{TRAILER}\n",
+    }
+    assert "commit_title=Ten (#10)" in calls[2]
+    result = json.loads(proc.stdout)
+    assert result["status"] == "merged"
+    assert [r["number"] for r in result["results"]] == [7, 9, 10]
+    assert [m["number"] for m in result["merged"]] == [7, 9, 10]
+    assert result["remaining"] == []
+    assert set(result) >= {"head", "lastSync"}
+
+
+def test_several_numbers_stop_at_the_first_that_does_not_merge(world, github) -> None:
+    several(
+        github,
+        nine_merge={"status": "failed", "details": {"message": "Review missing"}},
+    )
+    proc = cli(world, "merge", "7", "9", "10", "--json", env=github.env())
+    assert proc.returncode == 1
+    assert [c[2] for c in writes(github)] == [
+        ASYNC,
+        "repos/owner/repo/pulls/9/merge-async",
+    ]
+    result = json.loads(proc.stdout)
+    assert result["status"] == "failed"
+    assert [r["status"] for r in result["results"]] == ["merged", "failed"]
+    assert result["merged"] == [{"number": 7, "sha": MERGE}]
+    assert [r["number"] for r in result["remaining"]] == [9, 10]
+    assert "Review missing" in proc.stderr
+
+
+def test_a_refusal_after_a_merge_still_reports_the_merge(world, github) -> None:
+    several(github, views={"9": view(9, NINE, mergeStateStatus="DIRTY")})
+    proc = cli(world, "merge", "7", "9", "10", "--json", env=github.env())
+    assert proc.returncode == 3
+    assert [c[2] for c in writes(github)] == [ASYNC]
+    result = json.loads(proc.stdout)
+    assert result["status"] == "refused"
+    assert result["merged"] == [{"number": 7, "sha": MERGE}]
+    assert result["results"][1]["message"] == "#9 merge state is DIRTY"
+    assert [r["number"] for r in result["remaining"]] == [9, 10]
+    assert "#9 merge state is DIRTY" in proc.stderr
+
+
+def test_numbers_in_one_stack_merge_in_one_call_on_the_highest(world, github) -> None:
+    middle(github, reads=3)
+    proc = cli(world, "merge", "6", "7", "--json", env=github.env())
+    assert proc.returncode == 0, proc.stderr
+    assert [c[2] for c in writes(github)] == [ASYNC]
+    result = json.loads(proc.stdout)
+    assert [r["number"] for r in result["results"]] == [7]
+    assert [m["number"] for m in result["merged"]] == [6, 7]
+    assert "commit_title=Seven (#7)" in writes(github)[0]
+
+
+def test_message_leaves_out_what_belongs_on_the_review_page() -> None:
+    from worktrees import pr_merge
+
+    body = (
+        "Fixes the parser.\r\n\r\n"
+        "<details>\n<summary>Auto-resolution</summary>\n\n| a |\n\n</details>\n\n"
+        "```release-note\nFixed.\n```\n\n"
+        "🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\n"
+        "https://claude.ai/code/session_01abc\n"
+    )
+    session = "Claude-Session: https://claude.ai/code/session_01abc"
+    subject, text = pr_merge.message(7, "Fix parser", body, [TRAILER, session])
+    assert subject == "Fix parser (#7)"
+    assert text == (
+        f"Fixes the parser.\n\n```release-note\nFixed.\n```\n\n{TRAILER}\n{session}\n"
+    )
+
+
+def test_message_keeps_trailers_already_in_the_body_once() -> None:
+    from worktrees import pr_merge
+
+    session = "Claude-Session: https://claude.ai/code/session_01abc"
+    subject, text = pr_merge.message(
+        7, "Fix parser (#7)", f"Body.\n\n{TRAILER}\n", [TRAILER, session]
+    )
+    assert subject == "Fix parser (#7)"
+    assert text == f"Body.\n\n{TRAILER}\n{session}\n"

@@ -34,7 +34,7 @@ repositories under the same worktree root are outside their scope.
 | `gw add NAME [BASE]` | `gwa` | create a worktree for a branch and change into it |
 | `gw branch create NAME` | `gwbc` | start a branch from the head ref, or stack it on this branch |
 | `gw fast-forward [NAME]` | `gwff` | rebase this branch onto the head ref, or move a merged one, and what came after its merge, to a new branch |
-| `gw merge NUMBER --match-head-commit SHA` | | squash one checked GitHub PR, respecting native stacks and merge queues |
+| `gw merge NUMBER... [--match-head-commit SHA]` | | squash checked GitHub PRs, a native stack in one call, respecting merge queues |
 | `gw stack-link NUMBER NUMBER ...` | | link open GitHub PRs into a native stack, bottom first |
 | `gw ci-checks [NUMBER]` | | read a pull request's checks from GitHub or GitLab; `gw ci` for short |
 | `gw version` | | print the installed version |
@@ -507,10 +507,12 @@ order of the checks, the JSON and the conflict loop.
 ## Pull request checks and merges
 
 [`gw merge`](docs/commands/merge.md) squashes one GitHub PR at its checked
-head SHA, including native stacked PRs. It waits up to ten minutes for lower
-stack members and the head rewrite, and respects the merge queue. A rewritten
-head returns `head-moved` at exit 4 without submitting. A base left on a
-branch whose own PR merged is refused, and `gw fast-forward` moves it. Submitted operations
+head SHA, or several in the order given at the heads whose CI it reads,
+building each message from the PR. A PR in a native stack merges with every
+open PR below it in one call, once each passes its checks. Every merge
+respects the merge queue. A rewritten head returns `head-moved` at exit 4 without
+submitting. A base left on a branch whose own PR merged is refused, and
+`gw fast-forward` moves it. Submitted operations
 report `merged`, `enqueued`, `pending` or `failed`. The ship-it skill in
 Codex and Claude uses this command; both the CLI and plugin must be updated
 to provide it.
