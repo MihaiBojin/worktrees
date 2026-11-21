@@ -52,8 +52,8 @@ Each exits 1 with the reason on stderr and nothing on stdout:
 
 `gw add` creates the parent directories before it asks git. When git
 refuses after that, the directories stay, empty, with a warning naming the
-topmost one. Nothing deletes them: this command removes nothing it did not
-name.
+topmost one unless `-q` is given. Nothing deletes them: this command removes
+nothing it did not name.
 
 A missing `NAME` is a usage error at exit 2.
 
@@ -61,8 +61,9 @@ A missing `NAME` is a usage error at exit 2.
 
 stdout carries the path alone, which is what the shell function and
 `cd "$(...)"` read. stderr carries a note saying whether the branch is new
-or was already here. `-q` drops the note and keeps the path. `--json`
-prints `path`, `branch` and `created` with `head` and `lastSync`.
+or was already here. `-q` drops the note and the warning and keeps the
+path. `--json` prints `path`, `branch` and `created` with `head` and
+`lastSync`.
 
 `gw add` syncs first when a sync is due, as
 [sync](../../README.md#head-and-synchronization) describes.

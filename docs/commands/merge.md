@@ -113,9 +113,9 @@ command makes the request itself, `PUT pulls/NUMBER/merge-async`, because
 - takes no commit subject or body, so each squash gets the message the
   repository's settings make, not the `(#NUMBER)` subject and trailers this
   command is given;
-- takes no expected head SHA, so a commit pushed after the last read is
-  merged with the rest, where this command sends `sha` and GitHub refuses a
-  head that differs from it;
+- takes no head SHA from its caller, so it merges the heads current when it
+  submits, not the ones whose CI and message the caller checked, where this
+  command sends `sha` and GitHub refuses a head that differs from it;
 - prints nothing a program can read back, where this command prints the
   outcome under `--json`.
 

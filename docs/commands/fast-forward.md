@@ -201,18 +201,20 @@ It also works only with GitHub, and moves no stashes.
 
 ## Why not `git pull`
 
-`git pull` fetches and then merges or rebases the branch onto its own
-upstream, the remote copy of the same branch. This command brings the
-branch level with something else: the head ref, or the branch below it in a
-stack. A pull never moves a branch onto `main`.
+A plain `git pull` brings in the branch's own upstream, the remote copy of
+the same branch, and `git pull --rebase origin main` rebases onto the head
+branch. After a stacked parent merges, `git pull --rebase` replays the
+branch onto GitHub's rewrite and skips commits whose change is already
+there. A pull does none of the rest of this command's work:
 
-The two differ most after a stacked parent merges. GitHub rewrites the
-child's remote copy: the same changes, committed again on the merge, under
-new SHAs. `git pull --rebase` would replay the local commits, which still
-include the parent's originals, on top of that rewrite, and the branch
-would carry both copies or stop on conflicts. This command takes the
-rewrite instead, under the checks in [What it does](#what-it-does), and
-replays only the commits made after it.
+- prove a branch finished and move the checkout to a new branch;
+- level a stacked branch with the branch below it rather than the head ref;
+- move a request's base off a merged branch, and push the branch under a
+  lease;
+- check by patch-id that a rewritten remote copy holds only the branch's
+  own commits before taking it, and wait for the rewrite when it has not
+  arrived;
+- move the stashes made on the replayed commits.
 
 A fetch with a remote's usual refspec writes `refs/remotes/` and tags,
 never a local branch. One that names a local branch, such as

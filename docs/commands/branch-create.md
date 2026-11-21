@@ -19,9 +19,9 @@ gw branch create fix-parser --json
 | the same question answered anything else | the head ref |
 | `--here` | the commit this checkout is on, branch or detached `HEAD`; nothing syncs |
 
-The question reads `stack NAME on BRANCH, not main? [y/N]`. It is asked only
-on a terminal and never under `--json`, and only off the head branch, since
-on it both answers start from the same place. The sync runs on a thread
+The question reads `stack NAME on BRANCH, not HEAD_BRANCH? [y/N]`. It is
+asked only on a terminal and never under `--json`, and only off the head
+branch, since on it both answers start from the same place. The sync runs on a thread
 while the question waits, and its spinner starts once the answer is in, so
 nothing draws over the prompt.
 
