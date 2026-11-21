@@ -163,7 +163,7 @@ _gw() {
         gwpa) fixed=(prune --delete all) ;;
         'gwpa!') fixed=(prune --delete all --yes) ;;
         gwr) fixed=(remove) ;;
-        'gwr!') fixed=(remove --yes) ;;
+        'gwr!') fixed=(remove --keep-branch --yes) ;;
         gws) fixed=(sync) ;;
     esac
     if (( $#fixed )); then
