@@ -44,85 +44,19 @@ so test one on the Claude Code version in use before relying on it.
 
 ## Codex
 
-Codex runs a command these rules allow outside its sandbox, without asking.
-That matters twice over: `workspace-write` has no network, and it keeps
-`.git` read-only, including the git directory a linked worktree's `.git` file
-points to, so a commit, a rebase and `gw`'s refs and sync cache all need it.
-Put them in `~/.codex/rules/worktrees.rules`, or in a trusted project's
-`.codex/rules/`, then restart Codex.
+Codex allow rules permit matching commands outside its sandbox without
+asking, subject to other policy restrictions. A sandbox that blocks network
+access or keeps `.git` read-only needs these rules for fetches and Git
+writes, including writes to a linked worktree's shared Git directory.
 
-```python
-prefix_rule(
-    pattern=["gw", "branch", "create"],
-    decision="allow",
-    justification="ship-it starts a branch",
-)
-prefix_rule(
-    pattern=["gw", ["sync", "fast-forward", "push", "ci-checks"]],
-    decision="allow",
-    justification="ship-it fetches, rebases, pushes and reads CI",
-)
-prefix_rule(
-    pattern=["git", "switch", ["--create", "--no-guess"]],
-    decision="allow",
-    justification="ship-it starts a branch or moves to a named one",
-)
-prefix_rule(
-    pattern=["git", ["add", "commit"]],
-    decision="allow",
-    justification="ship-it commits by path",
-)
-prefix_rule(
-    pattern=["gh", "pr", ["view", "diff", "create", "edit"]],
-    decision="allow",
-    justification="ship-it opens and describes the pull request",
-)
-prefix_rule(
-    pattern=["gw", "stack-link"],
-    decision="allow",
-    justification="ship-it links a stacked pull request into a native stack",
-)
-prefix_rule(
-    pattern=["gw", "merge"],
-    decision="allow",
-    justification="ship-it merges checked GitHub pull requests, a stack or several in one call",
-)
-prefix_rule(
-    pattern=["gh", "run", ["view", "rerun"]],
-    decision="allow",
-    justification="ship-it reads and reruns CI",
-)
-prefix_rule(
-    pattern=["glab", "mr", ["view", "diff", "create", "update", "merge"]],
-    decision="allow",
-    justification="ship-it opens and merges the merge request",
-)
-prefix_rule(
-    pattern=["glab", "ci", ["trace", "retry"]],
-    decision="allow",
-    justification="ship-it reads and reruns CI",
-)
-prefix_rule(
-    pattern=["git", "push"],
-    decision="forbidden",
-    justification="Use gw push.",
-)
-prefix_rule(
-    pattern=["git", "rebase"],
-    decision="forbidden",
-    justification="Use gw fast-forward, and gw fast-forward --continue.",
-)
-prefix_rule(
-    pattern=["gh", ["pr", "stack"], "merge"],
-    decision="forbidden",
-    justification="Use gw merge.",
-)
-prefix_rule(
-    pattern=["gh", "api"],
-    decision="forbidden",
-    justification="Use gw merge or gw stack-link for writes, and gh pr view or gw ci-checks for reads.",
-)
-```
+[`preflight/worktrees.rules`](../preflight/worktrees.rules) holds the Codex
+rules. In Codex, `/worktrees:preflight user` adds them under
+`${CODEX_HOME:-$HOME/.codex}/rules/worktrees.rules`;
+`/worktrees:preflight project` adds them to `.codex/rules/worktrees.rules`.
+The skill prepares a merged file, validates it with `codex execpolicy check`,
+and shows the additions before asking to copy it. Existing rules stay in
+place, and the strictest matching decision wins. Restart Codex after
+installation. Project rules load only in trusted projects.
 
 A Codex rule matches whole words from the start of the command. Denying
 `git push` covers every trailing argument, including
