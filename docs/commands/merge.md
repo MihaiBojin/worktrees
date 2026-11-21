@@ -103,3 +103,20 @@ Only `MERGED` confirms completion. An open PR may still have a merge in
 progress. GitHub retains operation results for 24 hours after their latest
 update. The [API reference](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request-asynchronously)
 describes the request and status fields.
+
+## Why not `gh stack merge`
+
+GitHub's `gh stack` extension also merges stacked pull requests. This
+command makes the request itself, `PUT pulls/NUMBER/merge-async`, because
+`gh stack merge`:
+
+- takes no commit subject or body, so each squash gets the message the
+  repository's settings make, not the `(#NUMBER)` subject and trailers this
+  command is given;
+- takes no head SHA from its caller, so it merges the heads current when it
+  submits, not the ones whose CI and message the caller checked, where this
+  command sends `sha` and GitHub refuses a head that differs from it;
+- prints nothing a program can read back, where this command prints the
+  outcome under `--json`.
+
+It also needs the extension installed, and this command needs only `gh`.

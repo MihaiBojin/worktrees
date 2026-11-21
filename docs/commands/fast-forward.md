@@ -199,6 +199,31 @@ replace this command:
 
 It also works only with GitHub, and moves no stashes.
 
+## Why not `git pull`
+
+A plain `git pull` brings in the branch's own upstream, the remote copy of
+the same branch, and `git pull --rebase origin main` rebases onto the head
+branch. After a stacked parent merges, `git pull --rebase` replays the
+branch onto GitHub's rewrite and skips commits whose change is already
+there. A pull does none of the rest of this command's work:
+
+- prove a branch finished and move the checkout to a new branch;
+- level a stacked branch with the branch below it rather than the head ref;
+- move a request's base off a merged branch, and push the branch under a
+  lease;
+- check by patch-id that a rewritten remote copy holds only the branch's
+  own commits before taking it, and wait for the rewrite when it has not
+  arrived;
+- move the stashes made on the replayed commits.
+
+A fetch with a remote's usual refspec writes `refs/remotes/` and tags,
+never a local branch. One that names a local branch, such as
+`git fetch origin main:old`, is refused while any worktree has that branch
+checked out (`refusing to fetch into branch ... checked out at ...`),
+because moving it would leave that checkout's files behind its HEAD. So the
+command moves only the branch this checkout has, where the files move with
+it.
+
 ## Uncommitted changes
 
 Without `--autostash`, the merge and the rebase run with `--no-autostash`, so

@@ -13,9 +13,10 @@ gw remove fix-parser    # remove one worktree and its finished branch
 ```
 
 `gw sync` fetches every remote and asks the forge about each local branch.
-Every other command but `gw version`, `gw ci-checks`, `gw merge`, help and completion
-runs it first once the last sync is a minute old, then works from local refs
-and that sync's evidence. `gw ci-checks` reads a pull request's checks from
+Every other command but `gw version`, `gw list`, `gw fast-forward`,
+`gw ci-checks`, `gw merge`, help and completion runs it first once the last
+sync is 5 minutes old, then works from local refs and that sync's evidence.
+`gw fast-forward` fetches the default remote instead. `gw ci-checks` reads a pull request's checks from
 the forge each time it runs. With `WORKTREES_OFFLINE` set, nothing touches
 the network. Run commands inside the repository you want assessed; other
 repositories under the same worktree root are outside their scope.
@@ -30,7 +31,7 @@ repositories under the same worktree root are outside their scope.
 | `gw remove [NAME\|PATH]` | `gwr` | remove one worktree and its finished branch |
 | `gw branch status [NAME ...]` | `gwbs` | assess local branches without worktrees |
 | `gw branch prune [NAME ...]` | `gwbp` | confirm and delete eligible loose branches |
-| `gw add NAME [BASE]` | `gwa` | create or enter a worktree |
+| `gw add NAME [BASE]` | `gwa` | create a worktree for a branch and change into it |
 | `gw branch create NAME` | `gwbc` | start a branch from the head ref, or stack it on this branch |
 | `gw fast-forward [NAME]` | `gwff` | rebase this branch onto the head ref, or move a merged one, and what came after its merge, to a new branch |
 | `gw merge NUMBER --match-head-commit SHA` | | squash one checked GitHub PR, respecting native stacks and merge queues |
@@ -440,7 +441,7 @@ name or URL invalidates it. Malformed or mismatched evidence proves nothing.
 A moved branch needs another sync for forge evidence; local proof still works.
 
 Every command except `gw sync`, `gw version`, `gw list`, `gw fast-forward`,
-help and completion syncs first when the default remote's refs have never
+`gw ci-checks`, `gw merge`, help and completion syncs first when the default remote's refs have never
 synced or last synced 5 minutes ago or more. `WORKTREES_SYNC_TTL` sets that window in whole seconds, and `0`
 syncs before every command. The forge time does not count, so a forge that
 keeps failing does not make every command sync. A failed sync warns, `-q` and
@@ -464,41 +465,21 @@ makes that branch `unknown`, with one warning that `git backfill` fetches it.
 ## Navigation and branches
 
 `gw list`, `gw l` and the `gwl` shortcut offer the main checkout and this
-repository's linked worktrees. A query matches a worktree's name, branch or
-path: substring matching comes first, then ordered-letter matching on the
-name and branch. An exact name, branch or path wins over a partial match. In
-a terminal, a query with one match selects it without a prompt; several open
-the picker filtered by the query, and no query asks.
+repository's linked worktrees. A query narrows them by name, branch or path,
+and one that leaves a single match changes into it without a prompt. No
+query opens the picker. Without a terminal, or with `--table` or `--json`,
+it prints the matches and changes nothing. `gw select-main`, `gw main`,
+`gw m` and the `gwm` shortcut change into the worktree on the head branch.
+[List](docs/commands/list.md) gives the matching, the picker's keys and
+each exit code.
 
-`gw select-main`, its shorthands `gw main` and `gw m`, and the `gwm` shortcut
-change into the worktree that has the head branch checked out, whichever
-branch the [head ref](#head-and-synchronization) names in this repository. It
-is taken from inside that worktree too, which brings you back to its top from
-a subdirectory. Without a terminal it prints the path, as `gw add` does, so
-`cd "$(gw select-main)"` works in a script, and `--json` puts the worktree's
-row in `worktrees`. When no worktree has the branch, `--json` prints an empty
-array; otherwise the command exits 1 and suggests `gw add BRANCH`. An
-unresolved head exits 3.
-
-In the picker, typing filters the rows, digits included, and Backspace
-removes a character. Arrow keys wrap and Enter selects. Escape clears the
-filter, and a second Escape, or one on an empty filter, cancels, as Ctrl-D
-does. Ctrl-C exits 130.
-
-Without a terminal, the command prints a table of every matching worktree.
-`--table` prints that table in a terminal too; `--json` prints metadata in the
-`worktrees` array. Neither format selects a destination or changes directory.
-
-A current linked worktree is shown with `*` and cannot be selected. The main
-checkout remains a destination from inside it, so you can return from a
-subdirectory. A worktree is selected through `gw list NAME`, so a worktree
-named `sync` or `p` never collides with a command. The fish and zsh `gw`
-function preserves stdout and status for metadata and changes directory for
-terminal selections.
-
-`gw add NAME [BASE]` creates or enters a worktree. `gw branch create NAME`
-creates a branch from the assessed head ref without setting that head as
-upstream.
+`gw add NAME [BASE]` creates a worktree for branch `NAME` under
+`.worktrees/NAME/` beside the main checkout and changes into it, checking
+the branch out when it exists. [Add](docs/commands/add.md) lists where it
+goes and what it refuses. `gw branch create NAME` starts `NAME` in this
+checkout from the head ref, with no upstream, or stacks it on the branch you
+stand on when you answer yes; [branch create](docs/commands/branch-create.md)
+has the cases.
 
 `gw fast-forward` brings the branch you stand on level with the head ref,
 after fetching and asking the forge in the same run. A branch with no
@@ -690,7 +671,8 @@ has none yet, or when another session is working in the one it has.
 ## Contributing
 
 See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for checks and release commands,
-and [REFERENCE.md](docs/REFERENCE.md) for runtime contracts.
+and [REFERENCE.md](docs/REFERENCE.md) for each command's page and the rules
+the commands share.
 
 ## Licence
 
