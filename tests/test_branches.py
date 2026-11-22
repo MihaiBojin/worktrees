@@ -90,14 +90,17 @@ def test_a_named_checked_out_branch_is_never_deleted(world, where):
 @pytest.mark.parametrize("entry", ["gw branch prune", "gw prune", "gw remove"])
 def test_delete_help_names_every_permission_value(world, entry):
     """Each value as typed, beside what it permits, in every command that
-    takes --delete."""
-    from worktrees.verdicts import PERMISSIONS
+    takes --delete. A loose branch has no lock, so only a worktree command
+    takes stale-lock."""
+    from worktrees.verdicts import PERMISSIONS, STALE_LOCK
 
     p = cli(world, "-h", entry=entry)
     assert p.returncode == 0, p.stderr
     text = " ".join((p.stdout + p.stderr).split())
-    for value in (*sorted(PERMISSIONS), "all"):
+    branch = entry == "gw branch prune"
+    for value in (*sorted(PERMISSIONS - ({STALE_LOCK} if branch else set())), "all"):
         assert f"({value})" in text, value
+    assert (f"({STALE_LOCK})" in text) is not branch
 
 
 def test_multiple_exact_names_do_not_select_a_prefix(world):

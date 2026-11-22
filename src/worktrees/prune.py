@@ -31,6 +31,11 @@ def worktree_remove(path: str) -> None:
     """Drop a checkout. Refuses on its own when the worktree is dirty."""
 
 
+@git("worktree unlock -- $path", mutates=True)
+def worktree_unlock(path: str) -> None:
+    """Lift a lock proved stale, which `git worktree remove` would refuse."""
+
+
 @git("update-ref --no-deref -d $ref $sha", mutates=True)
 def ref_delete(ref: str, sha: str) -> None:
     """Delete a branch ref, and only while it still holds $sha.
@@ -125,6 +130,8 @@ class Snapshot:
     ignored_groups: tuple[str, ...] = ()
     # Commits only the deleted reflogs reach, with their subjects.
     reflog: tuple[tuple[str, str], ...] = ()
+    # The lock's reason, so a lock taken after assessment refuses removal.
+    lock: str = ""
 
 
 def stash_subjects(shas: list[str], entries: list[str]) -> tuple[tuple[str, str], ...]:
@@ -364,7 +371,7 @@ def audit_proposed(v: Verdict | branches.Verdict, keep_branch: bool, repo=None) 
 
 
 # Where a removal stopped, in the order it works.
-STAGES = ("recheck", "worktree", "branch", "stashes")
+STAGES = ("recheck", "unlock", "worktree", "branch", "stashes")
 
 
 def audit_outcome(

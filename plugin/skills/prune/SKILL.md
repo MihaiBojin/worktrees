@@ -40,6 +40,7 @@ def grantable(value): .eligible == false and any(.needs[]; . == value);
   closed: [.verdicts[] | select(grantable("closed"))],
   stash_blocked: [.verdicts[] | select(grantable("stashes"))],
   reflog: [.verdicts[] | select(grantable("reflog"))],
+  stale_lock: [.verdicts[] | select(grantable("stale-lock"))],
   kept: [.verdicts[] | select(.eligible == false and (.needs | length) == 0 and .reason != "main-checkout")] | length,
   unknown: [.verdicts[] | select(.reason == "unknown")] | length
 }'
@@ -93,14 +94,17 @@ removal reply does not erase that sync choice or require asking again.
 Show eligible worktrees first, then eligible loose branches, with their
 proofs, reasons and worktree paths. List each worktree's `ignoredPaths`
 under it: removal deletes them, and they cannot be restored. The `empty`,
-`closed`, `stash_blocked` and `reflog` groups hold only rows whose `needs`
+`closed`, `stash_blocked`, `reflog` and `stale_lock` groups hold only rows whose `needs`
 names that deletion permission, so the main checkout, the current checkout,
 protected branches and unfinished rows never appear there. Show those groups
 separately, retaining all their protections; offer those categories only
 when the user asks. A row can have more than one blocker, so show every
 value in its `needs`. For a `reflog` row, show the `git show SHA` commands
 its protection names, and offer `--delete reflog` only once the user has
-read them.
+read them. A `stale_lock` row is locked by a process that has exited. A
+`locked` row names a lock nothing proves stale: show its reason and the
+`git worktree unlock` command its protection names for the user to run once
+they have checked the lock no longer holds, and never run it yourself.
 
 A checked-out branch is already represented by its worktree and is absent
 from `gw branch status`. Never target the current checkout, even if the user names it;
@@ -116,11 +120,12 @@ A prior explicit selection and category approval for this cleanup already
 answers the question; do not ask again just because assessment was refreshed.
 
 Deletion permission covers only the category and targets the user approved:
-`empty`, `closed`, `stashes` or `reflog`. `--yes` adds no permission. Explain
+`empty`, `closed`, `stashes`, `reflog` or `stale-lock`. `--yes` adds no permission. Explain
 that `empty` covers branches no commit was ever made on, that `closed`
 covers a closed, unmerged request whose head is the local tip, and that
 `reflog` drops commits nothing but the reflog holds, which git garbage
-collection then deletes. Keep other protections in place. If the user requests a blocked category, get the missing explicit
+collection then deletes, and that `stale-lock` unlocks a worktree whose
+locking process has exited. Keep other protections in place. If the user requests a blocked category, get the missing explicit
 permission before removing those rows. With no chosen targets, stop after
 the assessment.
 

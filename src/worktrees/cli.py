@@ -360,21 +360,30 @@ def _explain() -> int:
 # --------------------------------------------------------------------------
 
 
-def _add_delete_flags(p: argparse.ArgumentParser) -> None:
+def _add_delete_flags(p: argparse.ArgumentParser, checkout: bool = False) -> None:
+    """`checkout` adds the value only a worktree can need."""
     p.add_argument(
         "--delete",
         action="append",
-        choices=("empty", "stashes", "closed", "reflog", "all"),
+        choices=(
+            "empty",
+            "stashes",
+            "closed",
+            "reflog",
+            *(("stale-lock",) if checkout else ()),
+            "all",
+        ),
         default=[],
         metavar="VALUE",
         help="permit an empty branch (empty), the branch's stashes (stashes), a "
         "request closed unmerged (closed), commits only a reflog holds (reflog), "
-        "or every one (all); repeat to combine",
+        + ("a lock whose holder has exited (stale-lock), " if checkout else "")
+        + "or every one (all); repeat to combine",
     )
 
 
 def _add_assess_flags(p: argparse.ArgumentParser) -> None:
-    _add_delete_flags(p)
+    _add_delete_flags(p, checkout=True)
     p.add_argument(
         "--json", action="store_true", help="assess as JSON; --yes approves removal"
     )
@@ -2576,8 +2585,13 @@ def _dispatch(p: argparse.ArgumentParser, argv: list[str]) -> int:
         if getattr(args, "quiet", False) and getattr(args, "verbose", False):
             raise _Stop("--quiet and --verbose cannot be combined", 2)
         values = getattr(args, "delete", [])
-        if getattr(args, "keep_branch", False) and set(values) - {"reflog"}:
-            raise _Stop("--keep-branch takes only --delete reflog", 2)
+        if getattr(args, "keep_branch", False) and set(values) - {
+            "reflog",
+            "stale-lock",
+        }:
+            raise _Stop(
+                "--keep-branch takes only --delete reflog and --delete stale-lock", 2
+            )
         args.permissions = frozenset(values)
         if "all" in values:
             # Only here: verdicts pulls in the assessment, which costs every

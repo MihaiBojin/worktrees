@@ -835,7 +835,7 @@ Removing a worktree deletes its HEAD reflog and deleting a branch its
 reflog. `merged.reflog_only` lists the commits only those reach, by
 `rev-list --not --all`, and keeps each whose own patch-id the head lacks;
 they hold the row back until `--delete reflog`, which `--delete all`
-includes and which is the one value `--keep-branch` takes.
+includes and which `--keep-branch` takes, as it takes `--delete stale-lock`.
 
 Patch-ids come from `git patch-id --verbatim`, Git 2.39 onward, which
 counts whitespace: a change that differs from a head commit only in
@@ -856,7 +856,12 @@ unmerged requests are never proof.
 `prune.removable()` selects only eligible rows. `main`, `master` and the
 head branch are protected. Locked or dirty worktrees, untracked files,
 initialized submodules and a submodule store left by `deinit` block removal;
-`git worktree remove` refuses each. A locked worktree whose directory is away
+`git worktree remove` refuses each. A lock whose reason names a process
+that has exited, `claude agent ID (pid N)` as a crashed Claude Code session
+leaves it, is `stale-lock` instead, which `--delete stale-lock` lifts by
+running `git worktree unlock` before the removal; every other lock names
+the unlock for a person to run once they have checked it. The lock's reason
+is pinned with the record. A locked worktree whose directory is away
 is assessed from its record. Empty branches and matching stashes require
 their own permission; ignored paths go with the worktree, listed in the
 disclosure first. `--yes` grants neither. A protection a value lifts ends

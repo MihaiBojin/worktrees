@@ -230,7 +230,7 @@ The table shows verdicts without `--delete` or `--keep-branch`. A row's
 | --- | --- | --- |
 | `main-checkout` | `keep` | it is the main checkout |
 | `current` | `keep` | `gw prune` runs inside it |
-| `locked` | `keep` | the worktree is locked |
+| `locked` | `keep` | the worktree is locked, and nothing proves the lock stale |
 | `missing` | `keep` | its directory is gone and its record locked |
 | `submodule` | `keep` | it has an initialized submodule or a submodule store |
 | `in-progress` | `keep` | a rebase, merge, cherry-pick, revert or bisect waits in it |
@@ -290,8 +290,11 @@ or worktrees with an initialized submodule or a submodule store. For a
 submodule refusal, run `git submodule deinit --all` inside the target, delete
 the store the refusal names once nothing in it is needed, and retry. A locked
 worktree whose directory is away keeps its record and stays until you unlock
-it, as `git worktree remove` requires. `gw prune` also protects the current
-worktree. Detached worktrees get the same checks.
+it, as `git worktree remove` requires. A lock whose reason names a process
+that has exited, as a crashed Claude Code session leaves, is stale, and
+`--delete stale-lock` lifts it. Any other lock names the
+`git worktree unlock PATH` to run once you have checked it no longer holds.
+`gw prune` also protects the current worktree. Detached worktrees get the same checks.
 
 ### Permissions
 
@@ -304,6 +307,7 @@ Repeat `--delete` to combine categories:
 | `stashes` | permit the branch's stashes | same |
 | `closed` | permit a branch whose request closed unmerged at its tip | same |
 | `reflog` | permit dropping commits only the deleted reflogs hold | same |
+| `stale-lock` | permit unlocking a worktree whose lock names a process that has exited | not taken |
 | `all` | every value above | same |
 
 `gw branch status` rejects `--delete`. An unknown or unsupported value is a

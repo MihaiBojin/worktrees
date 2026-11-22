@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -29,6 +30,8 @@ SUBMODULE = "submodule"
 IN_PROGRESS = "in-progress"
 UNCOMMITTED = "uncommitted"
 PROTECTED = "protected"
+# A lock whose holder has exited, which --delete stale-lock lifts.
+STALE_LOCK = "stale-lock"
 
 # What the evidence leaves open; no --delete value settles it.
 UNFINISHED = frozenset((merged.OPEN, merged.PUSHED, merged.UNPUSHED, merged.UNKNOWN))
@@ -36,7 +39,12 @@ UNFINISHED = frozenset((merged.OPEN, merged.PUSHED, merged.UNPUSHED, merged.UNKN
 DONE = frozenset((merged.MERGED, merged.STALE, merged.UNUSED, merged.CLOSED))
 
 # Every --delete value, and what `--delete all` grants.
-PERMISSIONS = frozenset(("empty", "stashes", "closed", "reflog"))
+PERMISSIONS = frozenset(("empty", "stashes", "closed", "reflog", STALE_LOCK))
+
+# The reason Claude Code locks a worktree with, which names its process.
+_HOLDER = re.compile(
+    r"claude (?:agent|session) .{1,255} \(pid (\d{1,10})(?: start .{1,255})?\)"
+)
 
 # Files in a worktree's git directory while an operation waits for it.
 OPERATIONS = (
@@ -62,6 +70,46 @@ def dirty(status: R.Status) -> str:
     if status.untracked:
         parts.append(many(status.untracked, "untracked path"))
     return "it has " + " and ".join(parts)
+
+
+def lock_gone(reason: str) -> int | None:
+    """The pid a lock's reason names, when that process has exited.
+
+    None when the reason names no process, which a plain `git worktree lock`
+    never does, or when the process is alive. A pid reused since reads as
+    alive and keeps the lock, which is the side to err on.
+    """
+    # shortcut: the reason names no host, so a lock taken on another machine
+    # sharing this repository reads as stale here; match a host once one is
+    # written.
+    found = _HOLDER.fullmatch(reason)
+    pid = int(found[1]) if found else 0
+    if pid <= 0:
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return pid
+    except (OSError, OverflowError):
+        pass
+    return None
+
+
+def lock_fact(wt: R.Worktree) -> prune.Fact:
+    """A lock nothing proves stale, and the command that lifts it by hand."""
+    from . import prune
+
+    reason = " ".join(wt.lock.split())
+    locked = f"it is locked ({reason})" if reason else "it is locked"
+    command = f"git worktree unlock {shlex.quote(wt.path)}"
+    return prune.Fact(
+        LOCKED,
+        "",
+        f"{locked}; once you have checked that the lock no longer holds, run "
+        f"{command} and retry",
+        f"{locked}; once you have checked that the lock no longer holds, run:",
+        (command,),
+    )
 
 
 def restore_command(branch: str, sha: str) -> str:
@@ -290,13 +338,16 @@ def assess(
         if evidence == merged.UNUSED:
             evidence, why = merged.first_parent_reason(wt.branch, repo)
         # The checkout facts no --delete value lifts, in reason order.
-        hard: list[tuple[str, str]] = []
+        hard: list[prune.Fact] = []
         if wt.path == main:
-            hard.append((MAIN, "it is the main checkout, and never removable"))
+            hard.append(
+                prune.Fact(MAIN, "", "it is the main checkout, and never removable")
+            )
         if here and Path(wt.path).resolve() == Path(here).resolve() and wt.path != main:
-            hard.append((CURRENT, "you are standing in it"))
-        if "locked" in wt.flags:
-            hard.append((LOCKED, "it is locked"))
+            hard.append(prune.Fact(CURRENT, "", "you are standing in it"))
+        gone = lock_gone(wt.lock) if "locked" in wt.flags else None
+        if "locked" in wt.flags and gone is None:
+            hard.append(lock_fact(wt))
         ignored_paths: tuple[str, ...] = ()
         ignored_groups: tuple[str, ...] = ()
         reflogs: dict[bool, tuple[tuple[str, str], ...]] = {}
@@ -304,19 +355,21 @@ def assess(
             # A locked worktree keeps its record while its directory is away,
             # on a removable disk say. git refuses to remove it until it is
             # unlocked, so there is nothing here to read and nothing to delete.
-            hard.append((MISSING, "its directory is missing"))
+            hard.append(prune.Fact(MISSING, "", "its directory is missing"))
         elif wt.path != main:
             progress.say(f"{wt.label}: reading its status")
             status = R.status_of(wt.path)
             gitdir, store = git_dirs(wt.path)
             submodule = submodule_protection(wt.path, store)
             if submodule:
-                hard.append((SUBMODULE, submodule))
+                hard.append(prune.Fact(SUBMODULE, "", submodule))
             operation = in_progress(gitdir)
             if operation:
-                hard.append((IN_PROGRESS, f"{operation} is in progress in it"))
+                hard.append(
+                    prune.Fact(IN_PROGRESS, "", f"{operation} is in progress in it")
+                )
             if status.dirty:
-                hard.append((UNCOMMITTED, dirty(status)))
+                hard.append(prune.Fact(UNCOMMITTED, "", dirty(status)))
             ignored_paths = tuple(status.ignored)
             ignored_groups = tuple(R.ignored_groups(wt.path, status.ignored))
             own = merged.reflog_shas("HEAD", wt.path)
@@ -332,17 +385,27 @@ def assess(
             }
         stashes = prune.stashes_on(wt.branch, entries, wt.sha, repo)
         deciding = hard + (
-            [(PROTECTED, prune.PROTECTED_WHY)]
+            [prune.Fact(PROTECTED, "", prune.PROTECTED_WHY)]
             if prune.protected(wt.branch, head_branch)
             else []
         )
-        reason, decided = deciding[0] if deciding else (evidence, why)
+        reason, decided = (
+            (deciding[0].code, deciding[0].text) if deciding else (evidence, why)
+        )
 
         def standing(
             granted: frozenset[str], keep: bool = keep_branch
         ) -> list[prune.Fact]:
             """The protections left once these --delete values are granted."""
-            facts = [prune.Fact(code, "", text) for code, text in hard]
+            facts = list(hard)
+            if gone is not None and STALE_LOCK not in granted:
+                facts.append(
+                    prune.Fact(
+                        STALE_LOCK,
+                        STALE_LOCK,
+                        f"it is locked by pid {gone}, which has exited ({wt.lock})",
+                    )
+                )
             # With a checkout fact deciding the row, what its commits prove
             # is beside the point, and saying "empty" of a dirty one misleads.
             facts += [
@@ -405,6 +468,7 @@ def assess(
             prune.stash_subjects(stashes, entries),
             ignored_groups,
             reflogs.get(keep_branch and bool(wt.branch), ()),
+            wt.lock,
         )
         return row
 
