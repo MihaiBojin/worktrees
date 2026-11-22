@@ -6,6 +6,8 @@ import json
 import os
 import re
 import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -13,6 +15,7 @@ from . import progress, render
 from . import repo as R
 
 _CACHE = "git-worktrees-sync.json"
+_LOCK = "git-worktrees-sync.lock"
 _FRESH = 10 * 60
 OFFLINE = "WORKTREES_OFFLINE"
 TTL = "WORKTREES_SYNC_TTL"
@@ -113,7 +116,10 @@ def due(repo: str | os.PathLike[str] | None = None) -> bool:
     if not R.remote(repo):
         return False
     refs = read(repo)["lastSync"]["refs"]
-    return refs is None or time.time() - _seconds(refs) >= window
+    if refs is None:
+        return True
+    # A time after now is a clock that moved back, not a fresh sync.
+    return not 0 <= time.time() - _seconds(refs) < window
 
 
 def envelope(repo: str | os.PathLike[str] | None = None) -> dict:
@@ -135,7 +141,9 @@ def freshness(
     if quiet:
         return []
     oldest = min(_seconds(value) for value in times.values() if value)
-    age = max(0, time.time() - oldest)
+    age = time.time() - oldest
+    if age < 0:
+        return [hint("Last sync is dated after this machine's clock")]
     if age <= _FRESH:
         return []
     amount, unit = (
@@ -196,6 +204,72 @@ def _write(cached: dict, repo: str | os.PathLike[str] | None) -> None:
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+# Held only to read the cache again and replace it, never across a fetch or
+# a forge query, so a wait outlasts this only behind a stopped process.
+_LOCK_WAIT = 30.0
+_LOCK_PAUSE = 0.05
+
+
+def _holder(fd: int) -> str:
+    """Who holds the lock, from the pid its holder wrote into the file."""
+    try:
+        pid = os.pread(fd, 32, 0).decode("ascii", "replace").strip()
+    except OSError:
+        pid = ""
+    return f"pid {pid}" if pid.isdigit() else "another process"
+
+
+@contextmanager
+def _locked(cache_path: Path) -> Iterator[None]:
+    """Hold the cache's lock while the body re-reads and replaces the cache.
+
+    A filesystem without `flock` goes unlocked, as it always did. A lock
+    held past `_LOCK_WAIT` raises OSError naming its holder, so the sync
+    is reported as not saved rather than waiting without end.
+    """
+    import fcntl
+
+    fd = os.open(cache_path.with_name(_LOCK), os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        progress.say("locking the sync cache")
+        deadline = time.monotonic() + _LOCK_WAIT
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                holder = _holder(fd)
+                if time.monotonic() >= deadline:
+                    raise OSError(f"the sync cache is locked by {holder}") from None
+                progress.say(f"waiting for the sync cache lock, held by {holder}")
+                time.sleep(_LOCK_PAUSE)
+                continue
+            except OSError:
+                break
+            os.ftruncate(fd, 0)
+            os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
+            break
+        yield
+    finally:
+        # Closing the descriptor releases the lock.
+        os.close(fd)
+
+
+def _update(
+    change: Callable[[dict], dict], repo: str | os.PathLike[str] | None
+) -> None:
+    """Replace the cache with `change` of what it holds now.
+
+    Read under the lock rather than before the network calls: another
+    worktree's sync can replace the file while this one fetches, and writing
+    back the earlier read would restore a proof that sync dropped.
+    """
+    cache_path = path(repo)
+    if cache_path is None:
+        raise OSError("not inside a git repository")
+    with _locked(cache_path):
+        _write(change(read(repo)), repo)
 
 
 # Git refuses to move a tag that already exists here, exits 1, and has
@@ -276,7 +350,6 @@ def fetch(
     refusal = _refspec_refusal([remote], remote, repo)
     if refusal:
         return [refusal], []
-    previous = read(repo)
     progress.say(f"fetching {remote}")
     succeeded, tags = _fetch(remote, repo)
     warnings = [_moved_tags(remote, tags)] if tags else []
@@ -287,16 +360,20 @@ def fetch(
             f"{remote}/HEAD could not be updated. Run: git remote set-head "
             f"{remote} --auto"
         )
-    cached = {
-        "remote": {
-            "name": remote,
-            "url": R.config_get(f"remote.{remote}.url", repo=repo).value,
-        },
-        "lastSync": {**previous["lastSync"], "refs": _now()},
-        "branches": previous["branches"],
+    identity = {
+        "name": remote,
+        "url": R.config_get(f"remote.{remote}.url", repo=repo).value,
     }
+    now = _now()
     try:
-        _write(cached, repo)
+        _update(
+            lambda current: {
+                "remote": identity,
+                "lastSync": {**current["lastSync"], "refs": now},
+                "branches": current["branches"],
+            },
+            repo,
+        )
     except OSError as exc:
         return [f"cannot save sync evidence: {exc}"], warnings
     return [], warnings
@@ -323,7 +400,6 @@ def run(
     refusal = _refspec_refusal(fetched, remote, repo)
     if refusal:
         return 1, [refusal], []
-    previous = read(repo)
     failures: list[str] = []
     warnings: list[str] = []
     default_fetched = True
@@ -354,25 +430,24 @@ def run(
             f"{remote} --auto"
         )
     now = _now()
-    cached = {
-        "remote": {
-            "name": remote,
-            "url": R.config_get(f"remote.{remote}.url", repo=repo).value,
-        },
-        "lastSync": {**previous["lastSync"], "refs": now},
-        "branches": {},
+    identity = {
+        "name": remote,
+        "url": R.config_get(f"remote.{remote}.url", repo=repo).value,
     }
+    # What this run found, each None where the cache keeps what it holds.
+    branches: dict | None = {}
+    forge_time: dict = {}
     # Only a sync reads the forge, and `gw version` prints the head line from
     # this module without one.
     from . import branch_forge, forge
 
     provider = branch_forge.provider(remote, repo)
     if provider is None:
-        cached["lastSync"]["forge"] = None
+        forge_time = {"forge": None}
     elif not branch_forge.available(provider[0]) or not forge.authenticated(
         provider[0], provider[1].split("/", 1)[0], repo
     ):
-        cached["branches"] = previous["branches"]
+        branches = None
         failures.append(
             f"{provider[0]} is unavailable or unauthenticated; "
             "previous forge evidence retained"
@@ -392,9 +467,11 @@ def run(
         with ThreadPoolExecutor(max_workers=8) as pool:
             answers = list(pool.map(query, enumerate(tips, 1)))
         failed = []
+        found: dict = {}
+        branches = found
         for branch, sha, (succeeded, request) in answers:
             if succeeded:
-                cached["branches"][branch] = {
+                found[branch] = {
                     "sha": sha,
                     "request": request.data() if request else None,
                 }
@@ -406,9 +483,17 @@ def run(
                 "forge sync time unchanged"
             )
         else:
-            cached["lastSync"]["forge"] = now
+            forge_time = {"forge": now}
+
+    def change(current: dict) -> dict:
+        return {
+            "remote": identity,
+            "lastSync": {**current["lastSync"], "refs": now, **forge_time},
+            "branches": current["branches"] if branches is None else branches,
+        }
+
     try:
-        _write(cached, repo)
+        _update(change, repo)
     except OSError as exc:
         return 1, [*failures, f"cannot save sync evidence: {exc}"], warnings
     return (1 if failures else 0), failures, warnings

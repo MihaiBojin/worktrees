@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import threading
 from dataclasses import asdict, dataclass
 from urllib.parse import quote, urlsplit
 
@@ -96,6 +97,9 @@ def provider(
     return None
 
 
+_sync_read = threading.Lock()
+
+
 def available(tool: str) -> bool:
     return bool(shutil.which(tool))
 
@@ -104,11 +108,18 @@ def request_for(
     branch: str, remote: str, sha: str = "", repo: str | os.PathLike[str] | None = None
 ) -> Request | None:
     """Read source-tip evidence from the shared sync cache, without a query."""
-    from . import sync
+    from . import merged, sync
 
     if not sha:
         sha = R.local_sha(f"refs/heads/{branch}", repo=repo).out.strip()
-    entry = sync.read(repo)["branches"].get(branch)
+    # Once an assessment, not once a row: every row then reads one
+    # snapshot, though another worktree's sync replaces the file meanwhile.
+    # Keyed by the file, which every worktree's row shares, and under a lock,
+    # since the rows start together and would all miss the first read.
+    with _sync_read:
+        cache = merged._recall(("sync", str(sync.path(repo))), lambda: sync.read(repo))
+    assert isinstance(cache, dict)
+    entry = cache["branches"].get(branch)
     if not isinstance(entry, dict) or entry.get("sha") != sha:
         return None
     data = entry.get("request")

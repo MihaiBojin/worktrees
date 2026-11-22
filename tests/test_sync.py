@@ -405,6 +405,117 @@ def test_sync_is_due_once_the_refs_are_ttl_seconds_old(
     assert sync.due() is due
 
 
+@pytest.mark.parametrize("ahead", [1, 7200])
+def test_a_sync_dated_after_the_clock_is_due_and_stale(world, monkeypatch, ahead):
+    """A clock stepped back leaves the last sync in the future. That is not
+    a fresh sync, so the next command syncs first and says why."""
+    from worktrees import sync
+
+    origin(world)
+    _cache(world, "2026-01-01T00:00:00Z")
+    cached = json.loads(cache_path(world).read_text())
+    cached["lastSync"]["forge"] = "2026-01-01T00:00:00Z"
+    cache_path(world).write_text(json.dumps(cached))
+    monkeypatch.delenv("WORKTREES_OFFLINE")
+    stamp = datetime(2026, 1, 1, tzinfo=UTC).timestamp()
+    monkeypatch.setattr(sync.time, "time", lambda: stamp - ahead)
+    assert sync.due() is True
+    assert sync.freshness() == [
+        "Last sync is dated after this machine's clock. Run: gw sync"
+    ]
+
+
+def _evidence(world, branches: dict) -> None:
+    """A cache for origin, synced, holding `branches`."""
+    cache_path(world).write_text(
+        json.dumps(
+            {
+                "remote": {"name": "origin", "url": "git@github.com:owner/repo.git"},
+                "lastSync": {
+                    "refs": "2026-01-01T00:00:00Z",
+                    "forge": "2026-01-01T00:00:00Z",
+                },
+                "branches": branches,
+            }
+        )
+    )
+
+
+def test_a_fetch_keeps_what_another_sync_replaced_while_it_ran(world, monkeypatch):
+    """Two worktrees sync at once. One drops a branch's proof while the
+    other is still fetching; the fetch must not write the proof back."""
+    from worktrees import sync
+
+    origin(world)
+    _evidence(world, {"feat": {"sha": "a" * 40, "request": None}})
+
+    def meanwhile(remote, repo):
+        _evidence(world, {})
+        return True, []
+
+    monkeypatch.setattr(sync, "_fetch", meanwhile)
+    monkeypatch.setattr(sync.R, "set_head_auto", lambda *a, **k: True)
+    assert sync.fetch() == ([], [])
+    saved = json.loads(cache_path(world).read_text())
+    assert saved["branches"] == {}
+    assert saved["lastSync"]["refs"] != "2026-01-01T00:00:00Z"
+
+
+def test_a_held_cache_lock_is_waited_on_then_reported(world, monkeypatch):
+    """The wait names the holder on the spinner's line, and a holder that
+    never lets go leaves the cache unsaved rather than the command hung."""
+    import fcntl
+    import os
+
+    from worktrees import progress, sync
+
+    origin(world)
+    _evidence(world, {})
+    held = os.open(
+        world.repo / ".git" / "git-worktrees-sync.lock", os.O_RDWR | os.O_CREAT
+    )
+    os.write(held, b"4242\n")
+    fcntl.flock(held, fcntl.LOCK_EX)
+    said: list[str] = []
+    monkeypatch.setattr(progress, "say", said.append)
+    monkeypatch.setattr(sync, "_fetch", lambda remote, repo: (True, []))
+    monkeypatch.setattr(sync.R, "set_head_auto", lambda *a, **k: True)
+    monkeypatch.setattr(sync, "_LOCK_WAIT", 0.2)
+    try:
+        failures, _ = sync.fetch()
+    finally:
+        os.close(held)
+    assert failures == [
+        "cannot save sync evidence: the sync cache is locked by pid 4242"
+    ]
+    assert "locking the sync cache" in said
+    assert "waiting for the sync cache lock, held by pid 4242" in said
+    assert json.loads(cache_path(world).read_text())["lastSync"]["refs"] == (
+        "2026-01-01T00:00:00Z"
+    )
+
+
+def test_an_assessment_reads_the_sync_cache_once_whatever_its_rows(world, capsys):
+    """Each read runs `git config` for the remote's url and parses the file,
+    and a sync elsewhere can replace it between two rows."""
+    from worktrees import cli as C
+    from worktrees.git import options
+
+    origin(world)
+    world.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    _evidence(world, {})
+
+    def reads(rows: int) -> int:
+        for n in range(rows):
+            world.commit(f"{rows}-{n}.txt", at=world.worktree(f"w{rows}-{n}"))
+        options.log.clear()
+        assert C.gw(["prune", "--json"]) == 0
+        capsys.readouterr()
+        return len([a for a in options.log if "remote.origin.url" in a])
+
+    assert reads(1) == reads(4)
+
+
 @pytest.mark.parametrize("case", ["never", "offline", "no-remote", "no-default"])
 def test_sync_is_due_never_offline_or_without_a_default_remote(
     world, monkeypatch, case
