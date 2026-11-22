@@ -170,7 +170,6 @@ def _judge(
         else []
     )
     row.reason, row.evidence = deciding[0] if deciding else (evidence, why)
-    row.verdict = REMOVE if row.reason in (merged.MERGED, merged.STALE) else KEEP
 
 
 def _standing(
@@ -195,6 +194,9 @@ def _settle(
         return row.found[0] in DONE and not _standing(row, hard, head_branch, values)
 
     row.eligible = eligible(granted)
+    row.verdict = (
+        REMOVE if row.eligible or row.reason in (merged.MERGED, merged.STALE) else KEEP
+    )
     row.needs = () if row.eligible else prune.needed(eligible, PERMISSIONS) or ()
     row.facts = _standing(row, hard, head_branch, granted)
     row.protections = prune.hinted(row.facts, row.needs)

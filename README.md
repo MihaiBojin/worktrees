@@ -223,8 +223,8 @@ A checked-out branch appears only as its worktree, never as a loose branch.
 [Branch status](docs/commands/branch-status.md) describes the proofs;
 [branch prune](docs/commands/branch-prune.md) covers selection and recovery.
 
-A row's verdict is `remove` or `keep`, and its `reason` names the fact that
-decides it, the first in this table that applies:
+The table shows verdicts without `--delete` or `--keep-branch`. A row's
+`reason` names the first fact in the table that applies:
 
 | Reason | Verdict | When |
 | --- | --- | --- |
@@ -307,8 +307,10 @@ Repeat `--delete` to combine categories:
 | `all` | every value above | same |
 
 `gw branch status` rejects `--delete`. An unknown or unsupported value is a
-usage error before mutation. A `--delete` value changes eligibility, not the
-verdict. When only missing values hold worktrees back, `gw prune` says so
+usage error before mutation. When `--delete` or `--keep-branch` makes a row
+eligible, its verdict is `remove`; its reason stays unchanged.
+
+When only missing values hold worktrees back, `gw prune` says so
 and prints the command that grants them on a line of its own, keeping the
 values you passed, then the worktrees it frees. The command takes no names;
 `gw remove NAME` targets one worktree.

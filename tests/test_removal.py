@@ -38,7 +38,7 @@ def stash(world, path, subject="pending") -> str:
         ("empty", "empty", "stashes"),
     ],
 )
-def test_permissions_combine_without_changing_an_unused_verdict(world, entry, values):
+def test_permissions_make_an_unused_verdict_removable(world, entry, values):
     path = world.worktree("topic")
     sha = stash(world, path)
     if entry == "gw branch prune":
@@ -46,15 +46,37 @@ def test_permissions_combine_without_changing_an_unused_verdict(world, entry, va
     args = [] if entry == "gw prune" else ["topic"]
     for value in values:
         args += ["--delete", value]
+    preview = run(
+        world,
+        entry,
+        *args,
+        "--json",
+        *(["--dry-run"] if entry == "gw branch prune" else []),
+    )
+    assert preview.returncode == 0, preview.stderr
+    row = next(
+        r for r in json.loads(preview.stdout)["verdicts"] if r["branch"] == "topic"
+    )
+    assert (row["verdict"], row["reason"], row["eligible"]) == (
+        "remove",
+        "unused",
+        True,
+    )
     p = run(world, entry, *args, "--yes", "--json")
     assert p.returncode == 0, p.stderr
     assert not path.exists()
     assert "topic" not in world.git("branch", "--format=%(refname:short)").splitlines()
     assert not world.git("stash", "list")
     assert sha in p.stderr
-    if entry == "gw branch prune":
-        row = json.loads(p.stdout)["verdicts"][0]
-        assert (row["verdict"], row["reason"]) == ("keep", "unused")
+    if entry != "gw remove":
+        row = next(
+            r for r in json.loads(p.stdout)["verdicts"] if r["branch"] == "topic"
+        )
+        assert (row["verdict"], row["reason"], row["eligible"]) == (
+            "remove",
+            "unused",
+            True,
+        )
 
 
 @pytest.mark.parametrize(
@@ -84,6 +106,23 @@ def test_invalid_permission_is_usage_before_repository_preflight(world, args):
     assert world.git("rev-parse", "refs/heads/topic")
 
 
+@pytest.mark.parametrize("entry", ["gw prune", "gw remove", "gw branch prune"])
+@pytest.mark.parametrize("permission", ["empty", "stashes"])
+def test_partial_permissions_keep_an_unused_verdict(world, entry, permission):
+    path = world.worktree("topic")
+    stash(world, path)
+    args = [] if entry == "gw prune" else ["topic"]
+    if entry == "gw branch prune":
+        world.git("worktree", "remove", str(path))
+        args += ["--dry-run"]
+    result = run(world, entry, *args, "--delete", permission, "--json")
+    assert result.returncode == 0, result.stderr
+    row = next(
+        r for r in json.loads(result.stdout)["verdicts"] if r["branch"] == "topic"
+    )
+    assert (row["verdict"], row["reason"], row["eligible"]) == ("keep", "unused", False)
+
+
 @pytest.mark.parametrize("kind", ["empty", "unfinished", "finished", "main", "master"])
 def test_keep_branch_keeps_ref_and_stashes_even_when_protected(world, kind):
     path = (
@@ -100,6 +139,10 @@ def test_keep_branch_keeps_ref_and_stashes_even_when_protected(world, kind):
     branch = kind if kind in ("main", "master") else "topic"
     tip = world.git("rev-parse", "HEAD", at=path)
     sha = stash(world, path)
+    preview = run(world, "gw remove", str(path), "--keep-branch", "--json")
+    assert preview.returncode == 0, preview.stderr
+    row = json.loads(preview.stdout)["verdicts"][0]
+    assert row["verdict"] == "remove" and row["eligible"]
     p = run(world, "gw remove", str(path), "--keep-branch", "--yes", "--quiet")
     assert p.returncode == 0, p.stderr
     assert not path.exists()

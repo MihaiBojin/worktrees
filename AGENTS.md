@@ -805,8 +805,10 @@ state, then whether a remote-tracking ref holds the tip. It returns a reason:
 `gw fast-forward` reads it as it is; prune's assessments split `unused` by
 the branch's reflog into `merged`, `unused` and `stale`, and put the
 checkout facts first, `uncommitted` among them. A row's verdict is `remove`
-for `merged` and `stale` and `keep` for every other reason. First-parent
-history belongs to the assessed head, not a divergent local counterpart.
+for `merged` and `stale`, and for any row made eligible by `--delete` or
+`--keep-branch`; every other row reads `keep`. Its reason stays unchanged.
+Tables, JSON, counts and `--only` use this verdict. First-parent history
+belongs to the assessed head, not a divergent local counterpart.
 
 Removing a worktree deletes its HEAD reflog and deleting a branch its
 reflog. `merged.reflog_only` lists the commits only those reach, by

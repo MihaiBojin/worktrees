@@ -64,8 +64,9 @@ that applies. Checkout facts come first: `main-checkout`, `current`,
 `locked`, `missing`, `submodule`, `in-progress` (a rebase, merge,
 cherry-pick, revert or bisect waiting in the worktree's git directory) and
 `uncommitted`, then `protected` for `main`, `master` or the head branch.
-Each of these reads `keep`, and the branch's proof stays in `proof`. Without
-one, the completion checks run in this order:
+Each of these reads `keep` unless `--keep-branch` makes a protected branch's
+checkout eligible for removal. The branch's proof stays in `proof`. Without
+a checkout or protection fact, the completion checks run in this order:
 
 1. Matching cached forge proof gives `merged`.
 2. A tip on the assessed head's first-parent history reads its branch's
@@ -76,7 +77,9 @@ one, the completion checks run in this order:
 5. A cached request at the tip gives `closed` or `open`.
 6. Commits a remote-tracking ref holds give `pushed`, others `unpushed`.
 
-`merged` and `stale` read `remove`; every other reason reads `keep`.
+`merged` and `stale` read `remove`. Any row made eligible by `--delete` or
+`--keep-branch` also reads `remove`; its reason stays unchanged. Every other
+row reads `keep`. Tables, JSON, counts and `--only` use this verdict.
 
 Removal deletes the branch's reflog, and the worktree's own HEAD reflog.
 Assessment lists the commits those reach and no ref, worktree HEAD or kept
@@ -102,7 +105,7 @@ permits removal.
 
 ## Protections and permissions
 
-`eligible` combines the verdict, deletion permissions and protections.
+`eligible` combines completion evidence, deletion permissions and protections.
 `main`, `master` and the assessed head branch cannot be deleted. The main
 checkout, locked worktrees, tracked changes, untracked files and initialized
 submodules block worktree deletion. The submodule refusal names

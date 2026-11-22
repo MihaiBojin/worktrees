@@ -380,6 +380,39 @@ def test_keep_filter_preserves_ineligible_kept_rows(world):
     assert all(r["verdict"] == "keep" and not r["eligible"] for r in result)
 
 
+@pytest.mark.parametrize("detached", [False, True])
+@pytest.mark.parametrize("permission", [False, True])
+def test_empty_permission_sets_the_table_verdict_and_filter(
+    world, detached, permission
+):
+    path = world.worktree("empty")
+    if detached:
+        world.git("checkout", "--quiet", "--detach", at=path)
+    locked = world.worktree("locked")
+    world.git("worktree", "lock", str(locked))
+    flags = ["--delete", "empty", "--delete", "reflog"] if permission else []
+    result = run(world, "gw prune", *flags, "--table")
+    assert result.returncode == 0, result.stderr
+    label = "(detached)" if detached else "empty"
+    line = next(line for line in result.stdout.splitlines() if label in line)
+    cells = [cell.strip() for cell in line.split("|")[1:-1]]
+    assert cells == [
+        label,
+        "remove" if permission else "keep",
+        "unused",
+        "yes" if permission else "no",
+    ]
+    removable = rows(world, "gw prune", *flags, "--only", "remove")
+    assert [r["path"] for r in removable] == ([str(path)] if permission else [])
+    kept = rows(world, "gw prune", *flags, "--only", "keep")
+    assert {r["branch"] for r in kept} == (
+        {"main", "locked"}
+        if permission
+        else {"main", "locked", "" if detached else "empty"}
+    )
+    assert path.exists() and locked.exists()
+
+
 @pytest.mark.parametrize(
     "args",
     [
