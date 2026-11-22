@@ -7,7 +7,7 @@ the commit and nothing else. The repository's own rules come first: its
 `.github/pull_request_template.md`, and the convention its recent history
 on the head branch follows. What follows applies where they say nothing.
 
-When the agent has the technical-writing plugin's `pr-description` skill,
+When the agent has the technical-writer plugin's `pr-description` skill,
 that skill writes the title and the body, and its format replaces the Title
 and Body sections here. Three parts of this file apply either way: the list
 under "Keep, exactly as written", the auto-resolution block, and what makes a

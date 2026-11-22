@@ -27,7 +27,7 @@ names the pull request; without one it is the current branch's.
 
 The title and body are the commit message the merge will write, so they
 follow [the format](format.md). Read it before judging or writing either.
-When the agent has the technical-writing plugin's `pr-description` skill,
+When the agent has the technical-writer plugin's `pr-description` skill,
 read that skill too: its format replaces the Title and Body sections, as the
 format says.
 
