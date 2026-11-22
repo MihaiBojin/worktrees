@@ -375,8 +375,9 @@ does: the command exits 0 and deletes nothing.
 The list is redrawn in place when stderr is a terminal that can move its
 cursor: the cursor climbs over the frame drawn last and erases everything
 under it, since the filter makes the list longer or shorter. The climb counts
-lines, so the frame fits the screen: each row is cut to the terminal's width,
-and the rows shown are a window as tall as the screen that follows the
+lines, so the frame fits the screen: each row is cut to the terminal's width
+by `render.fit`, which counts a wide character as two columns and a
+combining mark as none, and the rows shown are a window as tall as the screen that follows the
 highlight. On `TERM=dumb`,
 or a stderr that is not a terminal, the list is printed once, each move
 prints the row it lands on, and each change to the filter prints the rows it
@@ -500,8 +501,9 @@ call site that formats a table, and neither path passes a code to one.
 `progress.py` draws a spinner on stderr and one line per running thread
 saying what it is checking, while `gw sync`, `gw prune`, `gw remove`,
 `gw branch status` and `gw branch prune` assess or mutate. A thread's line
-goes when the thread ends, and every line is cut to the terminal width so
-the redraw can count its rows. It runs only when stderr is a terminal that
+goes when the thread ends, and every line is cut to the terminal width by
+`render.fit` so the redraw can count its rows: a branch named in CJK takes
+two columns a character, and cutting it by `len` wraps the line. It runs only when stderr is a terminal that
 can clear a line, and never under `-q` or `-v`, since the verbose log writes
 to the lines it redraws. Anything else printed on stderr while it spins goes
 through `progress.line`, which clears the spinner first.

@@ -19,6 +19,7 @@ import shlex
 import shutil
 import sys
 import textwrap
+import unicodedata
 from collections.abc import Sequence
 from typing import IO
 
@@ -136,6 +137,30 @@ def table(rows: list[Row], ink: Ink | None = None) -> str:
 # Set by --table, which is what a script reads: no wrapping and no box
 # characters, on a terminal too.
 plain = False
+
+
+def _cell(ch: str) -> int:
+    """The terminal columns one character takes: two for a wide one, none
+    for a combining mark."""
+    if unicodedata.combining(ch):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+
+
+def width(text: str) -> int:
+    """The terminal columns `text` takes, which `len` counts wrong for CJK."""
+    return sum(_cell(ch) for ch in text)
+
+
+def fit(text: str, room: int) -> str:
+    """The longest start of `text` that takes at most `room` columns, so a
+    line cut to the terminal's width never wraps."""
+    used = 0
+    for i, ch in enumerate(text):
+        used += _cell(ch)
+        if used > room:
+            return text[:i]
+    return text
 
 
 def columns(stream: IO[str]) -> int | None:
