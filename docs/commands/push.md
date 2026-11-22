@@ -50,6 +50,16 @@ during a rebase, changes a commit's patch-id; when the commit was made here,
 the rewrite is this clone's own and the push goes ahead. A commit that came
 by a pull or a merge was made elsewhere.
 
+What an entry built on was made elsewhere too. A rebase entry,
+`rebase (finish): refs/heads/BRANCH onto SHA`, brings only the commits
+after `SHA`: `git rebase origin/BRANCH` puts another clone's commits under
+the branch's own, and they stay that clone's. A `commit (merge)` entry, a
+merge whose conflicts were resolved and committed here, brings the merge
+commit alone, not what its other parents reach. So a branch that took
+another clone's commit by either route and then dropped it, with
+`git reset --hard`, `git rebase --onto` or an interactive rebase, is
+refused, and `--replace` pushes over it once that commit is checked.
+
 `--replace` lifts this check, for a person who has read each commit listed:
 a commit another clone made, pulled here and then edited, reads as one the
 branch lacks.

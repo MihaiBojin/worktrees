@@ -52,7 +52,8 @@ Read stdout, stderr and the exit status.
   the entry that still holds the changes as they were. Report both, with
   `git stash apply STASH` as the way back. The changes are the user's own
   work: resolve the markers only when the user asks, and never drop the
-  entry.
+  entry. The commits are level, so report `pushed` or `unpushed` as for
+  exit 0.
 - Any other non-zero exit leaves stdout empty. That is a refusal, and the
   branch is unchanged. Report stderr as the CLI wrote it and stop. Do not
   work around it with `git rebase`, `git merge`, `git switch` or `git stash`.

@@ -382,9 +382,11 @@ def _level(
     moved.retargeted = done.get("retargeted") or {}
     moved.rescued = done.get("rescued") or {}
     # A request open on the forge reads the branch's remote copy, and the
-    # copy still holds what the rebase dropped.
+    # copy still holds what the rebase dropped. A stash that did not
+    # re-apply leaves the commits level all the same.
     if stack.request is not None and (
-        moved.retargeted or (moved.result == REBASED and moved.boundary)
+        moved.retargeted
+        or (moved.result in (REBASED, STASH_CONFLICT) and moved.boundary)
     ):
         return _publish(moved, remote, repo)
     return moved
@@ -796,10 +798,12 @@ def _publish(moved: Moved, remote: str, repo: str | os.PathLike[str] | None) -> 
     """Push the levelled branch over its remote copy, under a lease.
 
     Only a branch that is level and has a copy that differs: a stopped
-    rebase is pushed by whoever finishes it. git refuses when the copy holds
-    commits this clone never had, and the branch is then left unpushed.
+    rebase is pushed by whoever finishes it, and a stash conflict is not a
+    stop, since the commits moved and only the uncommitted work did not
+    re-apply. git refuses when the copy holds commits this clone never had,
+    and the branch is then left unpushed.
     """
-    if moved.result not in (CURRENT, REBASED) or not remote:
+    if moved.result not in (CURRENT, REBASED, STASH_CONFLICT) or not remote:
         return moved
     local = f"refs/heads/{moved.branch}"
     copy = R.local_sha(f"refs/remotes/{remote}/{moved.branch}", repo=repo).value

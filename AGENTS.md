@@ -146,7 +146,8 @@ leaves the open request on that finished branch, where a merge never
 reaches the head branch. `_retarget` moves its base to the head branch,
 the one forge write `gw fast-forward` makes on its own, and `_publish`
 pushes the branch under a lease once it is level; a branch with an open
-request that dropped a parent's merged commits is pushed the same way.
+request that dropped a parent's merged commits is pushed the same way,
+`stash-conflict` included, since only the uncommitted work failed there.
 Commits the finished branch gained after its merge that the head ref
 lacks, by `merged.change_in`, go first: `_rescue` copies them without a
 checkout onto a dated branch from the head ref, pushes it and opens its
@@ -176,7 +177,9 @@ that neither the branch nor the head ref holds by sha or patch-id, outside
 the copy's own `merged.merged_part`. A merge or an empty commit has no
 patch-id in this comparison and stays in that list without another proof.
 Any that `push.made_here` does not find through the branch's reflog is a
-refusal that `--replace` lifts. `merged.merged_part` of the branch itself,
+refusal that `--replace` lifts. An entry counts only the commits it made,
+never what it built on: a rebase's `onto` commit, which `git rebase
+origin/BRANCH` makes another clone's tip, and a committed merge's parents. `merged.merged_part` of the branch itself,
 the commits the head ref already has by the proofs `gw prune` reads, is a
 refusal nothing lifts, and names `gw fast-forward`. `--force-if-includes` is not passed: git
 ignores it beside an explicit lease, and the first check asks what it

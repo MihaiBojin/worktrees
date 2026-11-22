@@ -141,7 +141,10 @@ differs, the run pushes it with `git push --force-with-lease
 drops a parent's merged commits from a branch with an open request, since
 the request reads the remote copy. git refuses when the copy holds commits
 this clone never had; the branch stays level here, `unpushed` says why, and
-the exit status is still 0. A rebase that stopped pushes nothing: push it
+the exit status is still 0. A `stash-conflict` is pushed the same way: the
+commits moved and only the uncommitted changes failed to re-apply, so the
+run exits 1 for the stash with `pushed` or `unpushed` set as for a level
+branch. A rebase that stopped pushes nothing: push it
 with [`gw push`](push.md) once it is finished. Offline, nothing is moved and
 nothing is pushed.
 
