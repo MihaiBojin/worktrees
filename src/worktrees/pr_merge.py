@@ -530,6 +530,23 @@ def merge(number: int, sha: str, subject: str | None, body: str | None) -> dict:
     snapshot = _snapshot(number)
     pr = snapshot["pr"]
     _ready(snapshot, sha)
+    if subject is None or body is None:
+        trailers = pr["trailers"]
+        if body is None and trailers is None:
+            raise Refused(
+                f"#{number} commit list is incomplete, so its trailers "
+                "cannot be read; merge it alone with --subject and --body-file"
+            )
+        row = _pull(repository, number)
+        title = row.get("title")
+        text = row.get("body") or ""
+        if not isinstance(title, str) or not isinstance(text, str):
+            raise Refused(f"#{number} has no readable title and body")
+        default_subject, default_body = message(number, title, text, trailers or [])
+        if subject is None:
+            subject = default_subject
+        if body is None:
+            body = default_body
     for member, head in scope.lower:
         _ready(_snapshot(member), head)
     warnings = _squash_settings(repository, scope.lower) if scope.lower else []
@@ -573,9 +590,9 @@ def merge(number: int, sha: str, subject: str | None, body: str | None) -> dict:
             f"{exc}\nThe merge of #{number}{operation} may still complete. "
             "Read the pull request before submitting another merge."
         ) from None
-    message = str(details.get("message") or "")
+    notice = str(details.get("message") or "")
     if status == "pending":
-        message = (
+        notice = (
             "Merge still pending after the polling window; it may still complete. "
             "Read the PR before retrying."
         )
@@ -603,7 +620,7 @@ def merge(number: int, sha: str, subject: str | None, body: str | None) -> dict:
         "pr": pr,
         "sha": details.get("sha"),
         "uuid": uuid or None,
-        "message": message,
+        "message": notice,
         "merged": done,
         "remaining": remaining,
         "branches": branches,
@@ -694,19 +711,7 @@ def ship(numbers: list[int]) -> list[dict]:
             snapshot = _snapshot(number)
             pr = snapshot["pr"]
             head = pr["headSha"]
-            trailers = pr["trailers"]
-            if trailers is None:
-                raise Refused(
-                    f"#{number} commit list is incomplete, so its trailers "
-                    "cannot be read; merge it alone with --subject and --body-file"
-                )
-            row = _pull(repository, number)
-            title = row.get("title")
-            body = row.get("body") or ""
-            if not isinstance(title, str) or not isinstance(body, str):
-                raise Refused(f"#{number} has no readable title and body")
-            subject, text = message(number, title, body, trailers)
-            result = merge(number, head, subject, text)
+            result = merge(number, head, None, None)
         except Refused as exc:
             remaining, _ = _left([*covered, number], {})
             result = {
