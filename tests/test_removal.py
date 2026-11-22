@@ -594,6 +594,28 @@ def test_detached_removal_never_deletes_a_ref(world, monkeypatch):
     assert world.git("rev-parse", "topic")
 
 
+def test_a_commit_made_during_the_recheck_keeps_a_detached_worktree(world, monkeypatch):
+    """The recheck is a full assessment and can take seconds. A commit on a
+    detached HEAD in that time leaves the tree clean and is reachable from
+    nothing but that HEAD, which `git worktree remove` would delete."""
+    from worktrees import worktree
+
+    path = world.merged_worktree("topic")
+    world.git("checkout", "--quiet", "--detach", at=path)
+    real = worktree.assess
+
+    def committing(*args, **kwargs):
+        found = real(*args, **kwargs)
+        if "state" in kwargs:
+            world.git("commit", "--quiet", "--allow-empty", "-m", "late", at=path)
+        return found
+
+    monkeypatch.setattr(worktree, "assess", committing)
+    assert cli.gw(["remove", str(path), "--yes"]) == 1
+    assert path.exists()
+    assert world.git("log", "-1", "--format=%s", at=path) == "late"
+
+
 @pytest.mark.parametrize("entry", ["gw remove", "gw branch prune"])
 def test_partial_stash_failure_lists_all_retained_shas(
     world, monkeypatch, capsys, entry

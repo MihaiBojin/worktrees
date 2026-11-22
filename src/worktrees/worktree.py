@@ -240,17 +240,21 @@ def remove(
         if snapshot is None:
             raise Refused("no assessed deletion snapshot")
         prune.check_head(snapshot.head, repo)
-        records = [w for w in R.worktrees(repo) if w.path == snapshot.path]
-        if len(records) != 1 or (
-            records[0].branch,
-            records[0].sha,
-            records[0].flags,
-        ) != (snapshot.branch, snapshot.sha, snapshot.flags):
-            raise Refused(f"{chosen.path}: worktree changed after assessment")
+
+        def unchanged() -> list[R.Worktree]:
+            records = [w for w in R.worktrees(repo) if w.path == snapshot.path]
+            if len(records) != 1 or (
+                records[0].branch,
+                records[0].sha,
+                records[0].flags,
+            ) != (snapshot.branch, snapshot.sha, snapshot.flags):
+                raise Refused(f"{chosen.path}: worktree changed after assessment")
+            return records
+
         fresh = (
             rechecked
             or assess(
-                records,
+                unchanged(),
                 "",
                 snapshot.head.ref,
                 snapshot.head.branch,
@@ -266,6 +270,10 @@ def remove(
         if fresh.snapshot != snapshot or not fresh.eligible:
             raise Refused(f"{chosen.path}: state changed after assessment; {fresh.why}")
         prune.check_head(snapshot.head, repo)
+        # Again after the assessment, which can take seconds: a commit made
+        # meanwhile on a detached HEAD is reachable from nothing else, and
+        # `git worktree remove` does not look at HEAD.
+        unchanged()
         here = R.toplevel(repo=repo).value
         standing_in = bool(here) and Path(here).resolve() == Path(chosen.path).resolve()
         if standing_in:

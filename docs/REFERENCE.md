@@ -88,6 +88,18 @@ own patch-id the head lacks since its merge base. Under `--keep-branch` only
 the worktree's reflog goes. Those commits hold the row back with a
 protection naming `git show SHA` for each, and `--delete reflog` lifts it.
 
+Squash proof and the reflog check compare patch-ids from
+`git patch-id --verbatim`, which counts whitespace, and Git 2.39 or newer
+provides it. A branch whose combined change differs from a head commit only
+in indentation, or in trailing or inner spaces, has no squash proof: in
+Python, YAML or a Makefile the two are different programs. The same holds
+for a reflog-only commit, which then needs `--delete reflog`. Older Git
+exits 129 on `--verbatim`. An assessment that needs a patch-id then exits 1
+with Git's `unknown option` message and deletes nothing: `gw prune` and
+`gw remove` print no verdicts, and `gw branch status` and `gw branch prune`
+show the row as `keep` with that error. A branch that ancestry, an equal
+tree or content proof settles needs no patch-id and is assessed as usual.
+
 The first-parent set is computed once per assessment. A divergent local
 counterpart does not extend it. Local content proof compares every changed
 path from merge base to branch tip with the head tree, including modes and
@@ -166,7 +178,16 @@ anyway?`, unless `--yes` skips confirmation.
 After confirmation, the command assesses again and refuses changed targets,
 head identity, cleanliness, lock state, ignored paths or matching stashes.
 Git can collapse an ignored directory into one status entry; this comparison
-does not fingerprint contents below that entry.
+does not fingerprint contents below that entry. The worktree's record, its
+branch, HEAD sha and lock flags, is compared with the assessed one both
+before that assessment and after it, just before `git worktree remove`. A
+commit made in the worktree while the recheck runs leaves the tree clean, so
+the record is the only thing that shows it; on a detached HEAD that commit is
+reachable from nothing else. Such a target is refused as `worktree changed
+after assessment`, and its checkout stays. `gw prune` rechecks its whole
+batch first and then removes one target at a time, so an ignored path
+written in another target between that recheck and its removal goes with
+it.
 
 Removal uses `git worktree remove` without force. Only after that succeeds,
 `git update-ref --no-deref -d REF FULL_SHA` deletes the attached branch at
@@ -204,7 +225,9 @@ assessment saves the proofs it found in `git-worktrees-proofs.json` in the
 Git common directory, so the next one does not ask git for them again. Each
 is a fact about a branch's commit and the head's, both named by full SHA, so
 it has no age: the file holds one head commit's proofs and starts again when
-the head moves. A partial clone saves only a yes, since a fetch can bring the
+the head moves. The file names the proof rules it was written under as
+`"rules": 2`, and a file with another value or none is read as empty, so a
+proof found under an older rule is asked again. A partial clone saves only a yes, since a fetch can bring the
 object a no was missing. What a checkout holds, `git status` and the rest, is
 read on every run and never saved. The sync
 that runs before them when one is due writes remote-tracking refs, the

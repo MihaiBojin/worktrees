@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, NamedTuple
 if TYPE_CHECKING:
     from . import branches
 
-from . import audit, render
+from . import audit, layout, render
 from . import repo as R
 from .git import GitError, Refused, git
 from .verdicts import REMOVE as REMOVE
@@ -727,7 +727,7 @@ def _prune_empty_parents(start: Path, main: str) -> None:
     """
     if not main:
         return
-    root = Path(main).parent / ".worktrees"
+    root = layout.worktrees_root(main)
     d = start
     while d == root or root in d.parents:
         try:
