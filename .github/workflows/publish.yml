@@ -402,7 +402,7 @@ jobs:
 
       # signed-push commits onto a branch that exists, so the branch starts at
       # the marketplace's main. A rerun finds it: with its pull request open
-      # there is nothing left to do, and without one a person decides.
+      # it goes on to the merge, and without one a person decides.
       - name: Create the branch
         id: branch
         if: steps.bump.outputs.changed == 'true'
@@ -418,6 +418,7 @@ jobs:
             if [ -n "$open" ]; then
               echo "$branch already has a pull request: $open" >&2
               echo "action=none" >>"$GITHUB_OUTPUT"
+              echo "pr=$open" >>"$GITHUB_OUTPUT"
               exit 0
             fi
             echo "::error::$MARKETPLACE has a branch $branch with no open pull request. Open one for it or delete it, then re-run this job."
@@ -443,9 +444,9 @@ jobs:
           prune: "false"
           token: ${{ steps.app-token.outputs.token }}
 
-      # Opened as the App, so the marketplace's own checks run on it. Merging
-      # is left to a person.
+      # Opened as the App, so the marketplace's own checks run on it.
       - name: Open the pull request
+        id: open
         if: steps.branch.outputs.action == 'commit'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -455,5 +456,29 @@ jobs:
           body="$(printf '%s\n\n%s\n' \
             "The \`worktrees\` listing installs the plugin from its $TAG tag." \
             "Opened by [$GITHUB_REPOSITORY's publish run]($RUN).")"
-          gh pr create --repo "$MARKETPLACE" --base main --head "$BRANCH" \
-            --title "chore(worktrees): List $TAG" --body "$body"
+          url="$(gh pr create --repo "$MARKETPLACE" --base main --head "$BRANCH" \
+            --title "chore(worktrees): List $TAG" --body "$body")"
+          echo "$url"
+          echo "pr=$url" >>"$GITHUB_OUTPUT"
+
+      # The marketplace's main requires no checks, so the job waits for them
+      # itself. They register a few seconds after the pull request opens, and
+      # `gh pr checks` reports none until then. A failed check, or none after
+      # five minutes, fails the job and leaves the pull request to a person.
+      # The squash is pinned to the head the checks ran on.
+      - name: Merge the pull request once its checks pass
+        if: steps.open.outputs.pr != '' || steps.branch.outputs.pr != ''
+        timeout-minutes: 30
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ steps.open.outputs.pr || steps.branch.outputs.pr }}
+        run: |
+          set -euo pipefail
+          head="$(gh pr view "$PR" --json headRefOid --jq .headRefOid)"
+          for _ in $(seq 60); do
+            count="$(gh pr checks "$PR" --json name --jq length 2>/dev/null || true)"
+            if [ -n "$count" ] && [ "$count" != 0 ]; then break; fi
+            sleep 5
+          done
+          gh pr checks "$PR" --watch --fail-fast --interval 10
+          gh pr merge "$PR" --squash --match-head-commit "$head"

@@ -337,9 +337,13 @@ the entry's `ref` to the tag and its `description` to the one in
 marketplace's `scripts/sync-catalogs.mjs` to write both catalogs, commits the
 result to `worktrees-v<version>` through `signed-push` and opens
 `chore(worktrees): List v<version>`. The marketplace's checks run on it, and
-merging it is left to a person. The README row there is shorter prose of its
-own and is not touched. A rerun finds the branch and stops: done when its pull
-request is open, an error naming the branch when it is not.
+the job waits for them and squash-merges it at the head they ran on. The
+marketplace's `main` requires no checks, so the wait is the job's: a failed
+check, or no check registered within five minutes, fails the job and leaves
+the pull request open for a person. The README row there is shorter prose of
+its own and is not touched. A rerun finds the branch: with its pull request
+open it waits and merges, and without one it fails with an error naming the
+branch.
 
 `GITHUB_TOKEN` cannot write to another repository, so the job runs as a
 GitHub App, the same setup `releasetools/cli` uses to reach its Homebrew tap.
