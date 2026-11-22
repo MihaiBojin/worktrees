@@ -686,7 +686,16 @@ push --force
 worktree remove --force
 branch -D
 an update-ref delete that names no full sha
+a forced fetch into a local ref
 ```
+
+`push --force` covers `-f` and a `+` refspec such as `+main:main`, lease or
+none. `branch -D` covers `-d` with `-f` or `--force` in any order or bundle,
+such as `-df`. A forced fetch is a command-line refspec that `+`, `--force`
+or `-f` forces into anything outside `refs/remotes/`, a local branch or a
+tag; sync refuses a configured refspec that writes there before it fetches.
+`git branch -f`, `-M` and `-C`, which move or overwrite a branch, and
+`git push --delete` are outside the list: no command here issues them.
 
 ## Agent plugin
 
