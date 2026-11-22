@@ -323,6 +323,13 @@ The plugin carries the release version in three manifests, and
 portable manifest, the Claude one with only the fields Agent Plugins v1 names;
 the same test holds it to that.
 
+The repository root is a marketplace named `worktrees`, one catalog a
+client, whose one entry is `./plugin`: `worktrees@worktrees`. Neither
+catalog names a version or a tag, so a release stamps nothing there, and
+`tests/test_plugin.py` holds both to that. `MihaiBojin/agent-plugins` lists
+the same plugin as `worktrees@mihaibojin`, pinned to a release tag that the
+`list` job in `publish.yml` moves; preflight sets up that one.
+
 ## The picker is Python's, and there is no fzf
 
 Building the candidate list, matching a query against it, ranking, deciding

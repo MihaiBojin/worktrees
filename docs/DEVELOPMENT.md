@@ -361,6 +361,12 @@ such an App from a manifest and prints these two commands. Without
 `GH_APP_CLIENT_ID` the job warns and changes nothing, and the listing is
 moved by hand: the same edit, `npm run sync`, and a pull request.
 
+This repository lists the plugin too, as `worktrees@worktrees`:
+`.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json`
+both name `./plugin`, and neither names a tag or a version. No job moves
+them. A client sees an update when the version in the plugin's manifests
+moves, which the release bump does, and installs what `main` holds then.
+
 ## Snapshots on TestPyPI
 
 `testpypi.yml` runs on every commit to `main`. It numbers the tree

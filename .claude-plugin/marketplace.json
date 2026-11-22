@@ -1,0 +1,15 @@
+{
+  "name": "worktrees",
+  "owner": {
+    "name": "Mihai Bojin",
+    "url": "https://github.com/MihaiBojin"
+  },
+  "description": "The worktrees agent plugin, from the repository that holds its CLI",
+  "plugins": [
+    {
+      "name": "worktrees",
+      "source": "./plugin",
+      "description": "Read CI, rebase onto the head branch, describe, ship and merge pull requests, and prune finished worktrees through the worktrees CLI"
+    }
+  ]
+}
