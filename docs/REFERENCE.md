@@ -571,7 +571,7 @@ hold whatever `WORKTREES_SYNC_TTL` says, so a longer TTL lets the age
 warning print before the next sync is due.
 
 Every command except `gw sync`, `gw version`, `gw list`, `gw fast-forward`,
-`gw ci-checks`, `gw merge`, `gw stack-link`, `gw preflight`, help and completion runs sync first when one is due: the default remote's
+`gw push`, `gw ci-checks`, `gw merge`, `gw stack-link`, `gw preflight`, help and completion runs sync first when one is due: the default remote's
 refs time is null, or at least `WORKTREES_SYNC_TTL` seconds old. The TTL is 300 when the variable is unset or
 empty, takes whole seconds with `0` meaning every command, and anything else
 is a usage error at exit 2. The forge time is not read. Without a default
@@ -647,8 +647,39 @@ and any other key, enter and esc among them, is no. JSON and list output never c
 per stream. Nonempty `NO_COLOR` or `TERM=dumb` disables it. Quiet preserves
 results, including `gw branch create`'s branch/base/SHA line and `gw
 fast-forward`'s result table. Verbose traces subprocesses to stderr; quiet plus
-verbose fails before mutation. The [README's output
-matrix](../README.md#output-and-json) lists which commands accept each flag.
+verbose fails before mutation. The commands accept these output flags:
+
+| Commands | `-q` | `-v` |
+| --- | --- | --- |
+| `gw sync`, `gw prune`, `gw remove`, `gw branch prune`, `gw add`, `gw branch create`, `gw fast-forward`, `gw push` | yes | yes |
+| `gw branch status` | yes | no |
+| `gw list`, `gw select-main` | no | no |
+| `gw ci-checks` | no | yes |
+| `gw merge` | no | yes |
+| `gw stack-link` | no | yes |
+| `gw preflight` | no | yes |
+
+## Migration
+
+| Removed interface | Current interface |
+| --- | --- |
+| `gwa`, `gwp`, `gwr`, `gwbs`, `gwbd`, `gwbc`, `gwrot` binaries | `gw` subcommands, or the plugin's shortcuts |
+| `gws` as assessment, `gw status`, `gw s`, `gw st` | `gw prune --json`; `gws` now runs `gw sync` |
+| `gw rotate`, `gw rot`, `gwrot` | `gw fast-forward`, `gw ff`, `gwff` |
+| a rotated branch named `NAME-YYYY-MM-DD_NNN` | `YYYY-MM-DDThh-mm-ssZ/NAME` |
+| `gwp --dry-run` | `gw prune --json` or `gw prune --table` |
+| `gw list --list`, `gw list -l`, `gw prune --list` | `gw list --table`, `gw prune --table` |
+| `gwp --branch NAME` | `gw remove NAME` or a quoted exact path |
+| `--delete-ignored`, `--delete ignored-files` | none; removal deletes ignored files and lists them first |
+| `gwr --force`, `gwr -f` | `gw remove --keep-branch` |
+| `--no-fetch`, `--no-forge`, `--force-refresh`, refresh `-f` | `WORKTREES_OFFLINE=1` to stay offline; `gw sync` to refresh now |
+| `gw ls`, `gw NAME` | `gw list`, `gw list NAME` |
+| `gwh`, `gw help`, `gw h` | `gw --help` or `gw -h` |
+| a `--json` listing as an array, `.[]` | `gw list --json` object, `.worktrees[]` |
+
+Unused and closed rows require explicit permission. `main` and `master`
+always remain protected. Scripts must check `eligible` before deleting a
+row with a `remove` verdict.
 
 ## Implementation boundaries
 
