@@ -17,6 +17,20 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.14.0 - 2026-11-22
+
+### Added
+
+`gw prune` and `gw remove` take `--delete stale-lock`, which unlocks and
+removes a worktree whose lock names a process that has exited, as a
+crashed Claude Code session leaves. Any other lock still blocks removal,
+and its protection names the `git worktree unlock` to run by hand.
+
+This repository is a plugin marketplace named `worktrees`, so the agent
+plugin installs from it as `worktrees@worktrees`. That install follows
+`main`, which can be ahead of the released CLI; `worktrees@mihaibojin`
+from `MihaiBojin/agent-plugins` stays pinned to a release tag.
+
 ## 0.13.4 - 2026-11-22
 
 ### Fixed

@@ -35,7 +35,7 @@ can contain unreleased changes.
 With [Fisher](https://github.com/jorgebucaran/fisher) installed, run:
 
 ```fish
-fisher install MihaiBojin/worktrees@v0.13.4
+fisher install MihaiBojin/worktrees@v0.14.0
 ```
 
 To change release, edit the tag in `$__fish_config_dir/fish_plugins`, then
@@ -47,7 +47,7 @@ With [Antidote](https://antidote.sh/) installed, add this line to its plugin
 list, normally `~/.zsh_plugins.txt`, and open a new shell:
 
 ```text
-MihaiBojin/worktrees branch:v0.13.4 path:zsh/plugins/worktrees
+MihaiBojin/worktrees branch:v0.14.0 path:zsh/plugins/worktrees
 ```
 
 Completion needs `compinit`. If your shell configuration does not run it,
@@ -72,8 +72,8 @@ Run `gw --help`. With matching command and shell releases, its output
 includes:
 
 ```console
-worktrees 0.13.4: git worktree commands that refuse to lose work
-The shell plugin here is 0.13.4, the same release as these commands.
+worktrees 0.14.0: git worktree commands that refuse to lose work
+The shell plugin here is 0.14.0, the same release as these commands.
 ```
 
 Upgrade the commands and the shell plugin together. For development from a
