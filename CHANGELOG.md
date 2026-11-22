@@ -17,6 +17,14 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.13.3 - 2026-11-22
+
+### Fixed
+
+Rows made eligible by `--delete` or `--keep-branch` show `remove` in
+worktree and branch assessments. Tables, JSON, counts and `--only` filters
+use that verdict. The reason and deletion protections stay intact.
+
 ## 0.13.2 - 2026-11-22
 
 ### Fixed
