@@ -374,7 +374,9 @@ def assess(
                     lambda values: eligible(values, keep=True), PERMISSIONS
                 )
         row = Verdict(
-            REMOVE if reason in (merged.MERGED, merged.STALE) else KEEP,
+            REMOVE
+            if eligible(granted) or reason in (merged.MERGED, merged.STALE)
+            else KEEP,
             wt.branch,
             wt.path,
             decided,
