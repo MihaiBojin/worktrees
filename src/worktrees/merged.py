@@ -54,6 +54,10 @@ T = TypeVar("T")
 # branch's and the head's, so it never goes stale; the file holds one head's
 # proofs and starts again when the head moves, which is what bounds it.
 _PROOFS = "git-worktrees-proofs.json"
+# The proof rules a file was written under. A file with any other value,
+# none included, is asked again: under rule 1 a patch-id ignored whitespace,
+# so a branch differing from the head only in indentation read as merged.
+_RULES = 2
 
 
 class _Proofs:
@@ -74,7 +78,11 @@ class _Proofs:
                 found = json.load(stream)
         except (OSError, ValueError):
             return
-        if not isinstance(found, dict) or not isinstance(found.get("head"), str):
+        if (
+            not isinstance(found, dict)
+            or found.get("rules") != _RULES
+            or not isinstance(found.get("head"), str)
+        ):
             return
         self.head = found["head"]
         # Malformed data has no authority: an entry that is not the shape
@@ -115,7 +123,11 @@ class _Proofs:
                 delete=False,
             ) as stream:
                 temporary = stream.name
-                json.dump({"head": self.head, **self.kinds}, stream, sort_keys=True)
+                json.dump(
+                    {"head": self.head, "rules": _RULES, **self.kinds},
+                    stream,
+                    sort_keys=True,
+                )
                 stream.write("\n")
             os.replace(temporary, self.path)
             temporary = ""
@@ -286,7 +298,9 @@ def upstream_patches(base: str, head: str) -> None:
     """Individual upstream patches after the common ancestor."""
 
 
-@git("patch-id --stable")
+# Whitespace counts: two patches that differ only in indentation are two
+# programs in Python, YAML or a Makefile. `--verbatim` implies `--stable`.
+@git("patch-id --verbatim")
 def patch_ids() -> None:
     """Patch identities read from standard input."""
 

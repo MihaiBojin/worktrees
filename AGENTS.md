@@ -611,7 +611,9 @@ a ref an earlier removal moved refuses the later one, and
 `git worktree remove` refuses a checkout dirtied since. What the wider gap
 leaves open is an ignored path written between the batch recheck and that
 target's removal. A single target, as `gw remove` has, is rechecked as it
-is removed.
+is removed, and its record is compared both before that assessment and
+after it: the assessment takes seconds, and a commit made on a detached
+HEAD meanwhile leaves the tree clean and is reachable from nothing else.
 
 An assessment asks every worktree the same questions about the head, so
 `merged.reuse()` keeps the answers that name objects by full SHA for the
@@ -627,7 +629,10 @@ atomically when the assessment ends. They have no TTL, since neither commit
 changes; the file holds one head's answers and starts again when the head
 moves, which bounds it. A partial clone saves only a yes, because a fetch
 can bring the object a no lacked without moving the head, and an entry that
-is not the shape `merged.py` wrote is asked again. Nothing a checkout holds
+is not the shape `merged.py` wrote is asked again. The file carries
+`merged._RULES`, and a file under any other value is read as empty, so a
+change to how a proof is reached invalidates every answer the old rule
+gave. Nothing a checkout holds
 is saved: `git status`, submodules, an operation in progress, reflogs and
 stashes are read on every run, since they are what stops a worktree with
 work in it being offered.
@@ -815,6 +820,13 @@ reflog. `merged.reflog_only` lists the commits only those reach, by
 `rev-list --not --all`, and keeps each whose own patch-id the head lacks;
 they hold the row back until `--delete reflog`, which `--delete all`
 includes and which is the one value `--keep-branch` takes.
+
+Patch-ids come from `git patch-id --verbatim`, Git 2.39 onward, which
+counts whitespace: a change that differs from a head commit only in
+indentation is a different program in Python or YAML, so it is neither a
+squash proof nor a reflog commit the head already has. `fast_forward` and
+`push` read the same ids. On older Git the call exits 129, which the
+assessment reports and which deletes nothing.
 
 Content proof compares changed paths, modes and deletions against the head.
 It cannot settle a stacked branch whose intermediate content the head later

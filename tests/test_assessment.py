@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shlex
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -523,6 +524,97 @@ def test_squash_patch_identity_keeps_surrounding_context(world, monkeypatch, set
     else:
         world.git("config", setting, "0")
     assert not merged.squash_matches("refs/heads/feature", "refs/heads/main")
+
+
+def _patch_id(world, mode: str, base: str, tip: str) -> str:
+    patch = world.git("diff", base, tip) + "\n"
+    return subprocess.run(
+        ["git", "patch-id", mode],
+        input=patch,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()[0]
+
+
+@pytest.mark.parametrize("proof", ["squash", "reflog"])
+def test_patch_identity_counts_indentation(world, proof):
+    from worktrees import merged
+
+    world.commit("a.py", "for x in xs:\n    pass\n")
+    wt = world.worktree("feature")
+    world.commit("a.py", "for x in xs:\n    pass\n    return 1\n", at=wt)
+    world.git("merge", "--quiet", "--squash", "feature")
+    world.git("commit", "--quiet", "-m", "squash")
+    # Out of the loop: another program, whose patch differs from the head's
+    # only in the whitespace of the line it adds.
+    dedent = "for x in xs:\n    pass\nreturn 1\n"
+    if proof == "squash":
+        tip = world.commit("a.py", dedent, at=wt)
+        assert not merged.squash_matches("refs/heads/feature", "refs/heads/main")
+    else:
+        tip = world.commit("a.py", dedent, at=world.worktree("other", "main~1"))
+        assert not merged.change_in(tip, world.git("rev-parse", "main"))
+
+    # git's default strips whitespace and reads the two as one change.
+    stable = [_patch_id(world, "--stable", "main~1", r) for r in (tip, "main")]
+    verbatim = [_patch_id(world, "--verbatim", "main~1", r) for r in (tip, "main")]
+    assert stable[0] == stable[1]
+    assert verbatim[0] != verbatim[1]
+
+
+@pytest.mark.parametrize(
+    "entry", ["gw prune", "gw remove", "gw branch status", "gw branch prune"]
+)
+def test_git_without_verbatim_patch_ids_fails_and_deletes_nothing(world, entry):
+    """Git before 2.39 has no `patch-id --verbatim`. An assessment whose
+    proof needs a patch-id exits 1 naming the option: a proof that could not
+    be asked is not a proof."""
+    import os
+    import sys
+
+    from conftest import argv, env_for
+
+    stub = world.root / "old-git"
+    stub.mkdir()
+    stub.joinpath("git").write_text(
+        f"#!{sys.executable}\n"
+        "import os, sys\n"
+        f"real = {shutil.which('git')!r}\n"
+        "if '--verbatim' in sys.argv:\n"
+        '    sys.stderr.write("error: unknown option `verbatim\'\\n")\n'
+        "    raise SystemExit(129)\n"
+        "os.execv(real, [real, *sys.argv[1:]])\n"
+    )
+    stub.joinpath("git").chmod(0o755)
+    wt = world.worktree("squashed")
+    world.commit("squashed.txt", at=wt)
+    world.git("merge", "--quiet", "--squash", "squashed")
+    world.git("commit", "--quiet", "-m", "squash")
+    # The head edits the file afterwards, so only squash proof can say.
+    world.commit("squashed.txt", "later\n")
+    loose = entry.startswith("gw branch")
+    if loose:
+        world.git("worktree", "remove", str(wt))
+    target = ["squashed"] if entry in ("gw remove", "gw branch prune") else []
+    env = env_for(world)
+    result = subprocess.run(
+        argv(entry, *target, "--json"),
+        cwd=world.repo,
+        capture_output=True,
+        text=True,
+        env={**env, "PATH": f"{stub}{os.pathsep}{env['PATH']}"},
+    )
+    assert result.returncode == 1
+    assert "unknown option `verbatim'" in result.stdout + result.stderr
+    if loose:
+        row = json.loads(result.stdout)["verdicts"][0]
+        assert (row["branch"], row["verdict"], row["eligible"]) == (
+            "squashed",
+            "keep",
+            False,
+        )
+    assert world.git("rev-parse", "--verify", "refs/heads/squashed")
 
 
 @pytest.mark.parametrize(
@@ -1117,6 +1209,7 @@ def test_a_proof_is_asked_once_and_kept_while_the_head_stands(world):
     assert "patch-id" in log and "status --porcelain" in log
     saved = json.loads((world.repo / ".git" / PROOFS).read_text())
     assert saved["head"] == world.git("rev-parse", "main")
+    assert saved["rules"] == 2
     assert saved["proof"][squashed][0] == "squash"
     assert saved["proof"][unfinished] is None
 
@@ -1165,11 +1258,14 @@ def test_proofs_start_again_when_the_head_moves(world):
     [
         "not json",
         "[]",
-        '{"head": 7}',
-        '{"head": "HEAD", "proof": {"SHA": ["squash"]}}',
-        '{"head": "HEAD", "proof": {"SHA": ["forge", "said so"]}}',
-        '{"head": "HEAD", "proof": {"SHA": "merged"}}',
-        '{"head": "HEAD", "proof": []}',
+        '{"rules": 2, "head": 7}',
+        '{"rules": 2, "head": "HEAD", "proof": {"SHA": ["squash"]}}',
+        '{"rules": 2, "head": "HEAD", "proof": {"SHA": ["forge", "said so"]}}',
+        '{"rules": 2, "head": "HEAD", "proof": {"SHA": "merged"}}',
+        '{"rules": 2, "head": "HEAD", "proof": []}',
+        # Written under the rule whose patch-ids ignored whitespace.
+        '{"head": "HEAD", "proof": {"SHA": ["squash", "patch"]}}',
+        '{"rules": 1, "head": "HEAD", "proof": {"SHA": ["squash", "patch"]}}',
     ],
 )
 def test_a_malformed_proof_is_never_evidence(world, payload):

@@ -465,6 +465,11 @@ every run and refuses when that fails.
 command off the network: nothing syncs first, and `gw sync` and `gw push`
 refuse at exit 3.
 
+Squash proof needs Git 2.39 or newer, for `git patch-id --verbatim`, which
+counts whitespace: a branch that changed only indentation after its squash
+merge is not proved merged. On older Git, an assessment that needs a squash
+proof exits 1 and deletes nothing.
+
 Commands that read objects in a partial clone need Git 2.45.1 or newer, or a
 patched maintenance release:
 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4 or 2.44.1 and later patches in those
