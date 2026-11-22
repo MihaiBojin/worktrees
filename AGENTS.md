@@ -582,11 +582,19 @@ branches. Git refusing a moved tag is a warning; any other refused ref fails
 that remote. The fetch runs in the C locale so sync can read which it was. The
 shared `git-worktrees-sync.json` cache in the Git common directory records
 remote name/URL, successful sync times and source-tip forge evidence. Sync
-replaces it atomically. Remote identity changes invalidate it; malformed or
-mismatched evidence is never proof.
+replaces it atomically, through `sync._update`, which reads the file again
+under `git-worktrees-sync.lock` and builds the new one from that read: a
+read taken before the fetch would write back a proof another worktree's
+sync dropped meanwhile. The lock covers the read and the write and never a
+network call; its holder's pid is in the file, the spinner names it while
+another process waits, and a wait past `_LOCK_WAIT` leaves the cache
+unsaved. Remote identity changes invalidate it; malformed or mismatched
+evidence is never proof. `branch_forge.request_for` reads it once per
+assessment, under a lock, since its rows start together on eight threads.
 
 `sync._FRESH` is 10 minutes. Warnings compare the oldest non-null component
-time, with exactly 10 minutes still fresh. The never-synced line goes to
+time, with exactly 10 minutes still fresh. A time after now is a clock that
+moved back: `sync.due` says due and `sync.freshness` warns. The never-synced line goes to
 stderr under `-q` and `--json` as well, because a caller acting on the
 verdicts needs to hear that no sync stands behind them. Quiet and JSON
 suppress every other warning, the inferred-head notice included; a removal's

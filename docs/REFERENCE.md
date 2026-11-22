@@ -476,6 +476,20 @@ and replaced atomically. Remote name and URL identify it. A mismatch makes
 the cache unusable and the repository never synced. Forge entries are keyed
 by branch and source SHA; moved or new branches need sync for forge proof.
 
+Two worktrees can sync at once. Each sync reads the cache again just before
+it writes, holding `git-worktrees-sync.lock` in the Git common directory
+only for that read and the write, never across a fetch or a forge query. So
+a sync that finishes second keeps what the first one wrote: a branch whose
+forge query failed in one stays without proof, whatever the other read
+before its fetch. The holder writes its pid into the lock file. While
+another process holds it, the spinner reads `waiting for the sync cache
+lock, held by pid N`; after 30 seconds the sync gives up with
+`cannot save sync evidence: the sync cache is locked by pid N`, the cache
+stays as it was, and the next command that is due syncs again. On a
+filesystem without `flock` the cache is written unlocked. One assessment
+reads the cache once, for every row, so a sync in another worktree during
+it cannot judge some rows on old evidence and others on new.
+
 | Sync result | Refs time | Forge time | Status | Forge evidence |
 | --- | --- | --- | --- | --- |
 | Fetch and queries succeed | advances | advances | 0 | matching requests |
@@ -495,7 +509,9 @@ A remote repository with no refs sync time prints a never-synced warning on
 stderr, under `-q` and `--json` too, so a caller acting on the verdicts hears
 that no sync stands behind them. The older non-null sync time is stale after
 10 minutes, with exactly 10 minutes still fresh. Human output prints age and
-suggests `gw sync`. Quiet and JSON output suppress the stale warning and the
+suggests `gw sync`. A sync time later than the machine's clock, after the
+clock moved back, is stale too: the warning reads `Last sync is dated after
+this machine's clock`, and the next command syncs first. Quiet and JSON output suppress the stale warning and the
 inferred head notice; a removal's disclosure still repeats them. Repositories
 without remotes, the local case, have neither warning. `gw sync` and `gw version`
 print the head line, and a head that does not resolve is named in it. JSON provides the state instead. The 10 minutes
