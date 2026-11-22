@@ -17,6 +17,48 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.13.4 - 2026-11-22
+
+### Fixed
+
+A branch whose only change after its squash merge was whitespace, such as
+re-indenting a Python block, is no longer proved merged, so `gw prune` and
+`gw branch prune` keep it. The same holds for a commit only a reflog still
+reaches. Squash proof needs Git 2.39 or newer; on older Git an assessment
+that needs one exits 1 and deletes nothing. Proofs saved by earlier
+releases are checked again on the first run.
+
+`gw remove` keeps a detached worktree in which a commit was made while its
+recheck ran, and refuses with `worktree changed after assessment`.
+
+`gw push` refuses to replace another clone's commit that reached the
+branch through `git rebase origin/BRANCH` or a conflicted merge and was
+then dropped locally. Before, the push went ahead without `--replace`.
+
+`gw fast-forward --autostash` pushes a stacked branch whose request it
+retargeted when only the uncommitted changes failed to re-apply. The
+result is still `stash-conflict` at exit 1, with `pushed` or `unpushed`
+set.
+
+The guard refuses three more ways to lose work, whichever command would
+issue them: a `git push` with a `+` refspec, `git branch -d` combined with
+`-f` or `--force` in any spelling, and a `git fetch` whose refspec forces
+a local branch or tag. `gw --explain` lists the new rule.
+
+Two worktrees syncing at once no longer undo each other: a sync re-reads
+the shared cache under a lock just before it writes. While another process
+holds the lock, the spinner reads `waiting for the sync cache lock, held by
+pid N`; after 30 seconds the sync reports `cannot save sync evidence` and
+leaves the cache as it was.
+
+A last sync dated after the machine's clock counts as stale, so the next
+command syncs first and warns `Last sync is dated after this machine's
+clock`.
+
+The spinner and the `gw list` picker no longer leave stale lines on the
+screen when a branch or path holds wide characters, such as a branch
+named in Chinese or Japanese: each row is cut by the columns it takes.
+
 ## 0.13.3 - 2026-11-22
 
 ### Fixed
