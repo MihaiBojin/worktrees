@@ -394,17 +394,31 @@ def test_fish_dispatches_each_command_to_its_own_flags(world, prefix, entry):
     assert offered == wanted
 
 
+DELETE = {"empty", "stashes", "closed", "reflog", "all"}
+# A loose branch has no lock to lift.
+CHECKOUT_DELETE = DELETE | {"stale-lock"}
+
+
 @pytest.mark.parametrize(
     "prefix,values",
     [
-        ("gwp --delete", {"empty", "stashes", "closed", "reflog", "all"}),
-        ("gwr! --delete", {"empty", "stashes", "closed", "reflog", "all"}),
-        ("gwbp --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gwp --delete", CHECKOUT_DELETE),
+        (
+            "gwr! --delete",
+            CHECKOUT_DELETE,
+        ),
+        ("gwbp --delete", DELETE),
         ("gwp --only", {"remove", "keep"}),
         ("gwbs --only", {"remove", "keep"}),
-        ("gw prune --delete", {"empty", "stashes", "closed", "reflog", "all"}),
-        ("gw rm --delete", {"empty", "stashes", "closed", "reflog", "all"}),
-        ("gw branch prune --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        (
+            "gw prune --delete",
+            CHECKOUT_DELETE,
+        ),
+        (
+            "gw rm --delete",
+            CHECKOUT_DELETE,
+        ),
+        ("gw branch prune --delete", DELETE),
         ("gw branch status --only", {"remove", "keep"}),
     ],
 )
@@ -485,14 +499,23 @@ def test_zsh_dispatches_each_command_to_its_own_flags(world, prefix, entry):
 @pytest.mark.parametrize(
     "prefix,values",
     [
-        ("gwp --delete", {"empty", "stashes", "closed", "reflog", "all"}),
-        ("gwr! --delete", {"empty", "stashes", "closed", "reflog", "all"}),
-        ("gwbp --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        ("gwp --delete", CHECKOUT_DELETE),
+        (
+            "gwr! --delete",
+            CHECKOUT_DELETE,
+        ),
+        ("gwbp --delete", DELETE),
         ("gwp --only", {"remove", "keep"}),
         ("gwbs --only", {"remove", "keep"}),
-        ("gw prune --delete", {"empty", "stashes", "closed", "reflog", "all"}),
-        ("gw rm --delete", {"empty", "stashes", "closed", "reflog", "all"}),
-        ("gw branch prune --delete", {"empty", "stashes", "closed", "reflog", "all"}),
+        (
+            "gw prune --delete",
+            CHECKOUT_DELETE,
+        ),
+        (
+            "gw rm --delete",
+            CHECKOUT_DELETE,
+        ),
+        ("gw branch prune --delete", DELETE),
         ("gw branch status --only", {"remove", "keep"}),
     ],
 )

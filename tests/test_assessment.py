@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import shutil
 import subprocess
@@ -236,7 +237,7 @@ def test_a_locked_worktree_whose_directory_is_away_is_kept_and_assessed(world):
     found = {r["branch"]: r for r in rows(world)}
     assert (found["away"]["verdict"], found["away"]["reason"]) == ("keep", "locked")
     assert not found["away"]["eligible"]
-    assert "it is locked" in found["away"]["protections"]
+    assert found["away"]["protections"][0].startswith("it is locked; ")
     assert "its directory is missing" in found["away"]["protections"]
     assert found["done"]["eligible"]
     result = run(world, "gw prune", "--yes")
@@ -1280,3 +1281,111 @@ def test_a_malformed_proof_is_never_evidence(world, payload):
     assert found["unfinished"]["verdict"] == "keep"
     assert found["unfinished"]["proof"] == ""
     assert "patch-id" in log
+
+
+def exited_pid() -> int:
+    """A pid whose process has exited, as a crashed session's has."""
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    return proc.pid
+
+
+def claude_lock(world, path: Path, pid: int) -> str:
+    """The lock Claude Code takes on the worktree a session works in."""
+    reason = f"claude agent a1b2c3 (pid {pid})"
+    world.git("worktree", "lock", "--reason", reason, str(path))
+    return reason
+
+
+def test_git_refuses_to_remove_a_locked_worktree_whatever_holds_the_lock(world):
+    """The raw behaviour: a lock outlives the process that took it, and
+    `git worktree remove` refuses it all the same."""
+    done = world.merged_worktree("done")
+    claude_lock(world, done, exited_pid())
+    raw = subprocess.run(
+        ["git", "-C", str(world.repo), "worktree", "remove", str(done)],
+        capture_output=True,
+        text=True,
+    )
+    assert raw.returncode != 0
+    assert "locked" in raw.stderr
+    assert done.exists()
+
+
+@pytest.mark.parametrize("entry", ["gw prune", "gw remove"])
+def test_a_lock_whose_holder_exited_needs_delete_stale_lock(world, entry):
+    done = world.merged_worktree("done")
+    pid = exited_pid()
+    reason = claude_lock(world, done, pid)
+    target = (str(done),) if entry == "gw remove" else ()
+    row = next(r for r in rows(world, entry, *target) if r["path"] == str(done))
+    assert (row["verdict"], row["reason"], row["eligible"]) == (
+        "remove",
+        "merged",
+        False,
+    )
+    assert row["needs"] == ["stale-lock"]
+    assert row["protections"] == [
+        f"it is locked by pid {pid}, which has exited ({reason}); "
+        "pass --delete stale-lock"
+    ]
+
+    kept = run(world, entry, *target, "--yes")
+    assert done.exists(), kept.stderr
+
+    removed = run(world, entry, *target, "--delete", "stale-lock", "--yes")
+    assert removed.returncode == 0, removed.stderr
+    assert not done.exists()
+    assert str(done) not in world.git("worktree", "list", "--porcelain")
+
+
+@pytest.mark.parametrize("holder", ["alive", "plain", "foreign"])
+def test_a_lock_nothing_proves_stale_names_the_unlock_to_run_by_hand(world, holder):
+    done = world.merged_worktree("done")
+    if holder == "alive":
+        # The test runner outlives the gw it starts.
+        claude_lock(world, done, os.getpid())
+    elif holder == "plain":
+        world.git("worktree", "lock", str(done))
+    else:
+        world.git("worktree", "lock", "--reason", "on a USB disk", str(done))
+    found = rows(world, "gw prune", "--delete", "all")
+    row = next(r for r in found if r["path"] == str(done))
+    assert (row["verdict"], row["reason"], row["eligible"]) == ("keep", "locked", False)
+    assert row["needs"] == []
+    unlock = f"git worktree unlock {shlex.quote(str(done))}"
+    assert row["protections"][0].endswith(
+        f"once you have checked that the lock no longer holds, run {unlock} and retry"
+    )
+    if holder == "foreign":
+        assert row["protections"][0].startswith("it is locked (on a USB disk); ")
+
+    result = run(world, "gw prune", "--delete", "all", "--yes")
+    assert result.returncode == 0, result.stderr
+    assert done.exists()
+
+
+def test_a_lock_taken_after_assessment_refuses_the_removal(world, monkeypatch):
+    """The recheck compares the lock's reason, so a session that locks the
+    worktree after a stale lock was assessed keeps it."""
+    from worktrees import repo, verdicts, worktree
+
+    done = world.merged_worktree("done")
+    claude_lock(world, done, exited_pid())
+    monkeypatch.chdir(world.repo)
+    head = repo.head(world.repo)
+    [row] = worktree.removable(
+        "done",
+        head.ref or "",
+        head.branch,
+        repo=world.repo,
+        ask_forge=False,
+        permissions=verdicts.PERMISSIONS,
+    )
+    assert row.eligible
+    world.git("worktree", "unlock", str(done))
+    claude_lock(world, done, os.getpid())
+    outcome = worktree.remove(row, lambda line: None, repo=world.repo)
+    assert not outcome.worktree_removed
+    assert "worktree changed after assessment" in outcome.failed[0]
+    assert done.exists()

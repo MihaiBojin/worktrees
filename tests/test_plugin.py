@@ -213,6 +213,11 @@ def test_filters_preserve_exact_targets_permissions_and_restore_commands(world) 
     world.merged_branch("loose'quoted")
     world.git("branch", "loose-empty")
     current = world.merged_worktree("current")
+    stale = world.merged_worktree("stale-locked")
+    crashed = subprocess.Popen(["true"])
+    crashed.wait()
+    reason = f"claude agent x (pid {crashed.pid})"
+    world.git("worktree", "lock", "--reason", reason, str(stale))
     unfinished = world.worktree("unfinished")
     world.commit("unfinished-file", at=unfinished)
     (unfinished / "README").write_text("stash me too")
@@ -235,6 +240,7 @@ def test_filters_preserve_exact_targets_permissions_and_restore_commands(world) 
     assert [v["branch"] for v in out["stash_blocked"]] == ["stash-blocked"]
     assert out["stash_blocked"][0]["stashes"]
     assert not any(v["path"] == str(current) for v in out["worktrees"])
+    assert [v["path"] for v in out["stale_lock"]] == [str(stale)]
 
     raw_branches = json.loads(_json(world, "gw branch status"))
     branches = _jq(_filter("gw branch status"), json.dumps(raw_branches))

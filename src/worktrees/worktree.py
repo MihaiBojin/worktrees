@@ -247,7 +247,8 @@ def remove(
                 records[0].branch,
                 records[0].sha,
                 records[0].flags,
-            ) != (snapshot.branch, snapshot.sha, snapshot.flags):
+                records[0].lock,
+            ) != (snapshot.branch, snapshot.sha, snapshot.flags, snapshot.lock):
                 raise Refused(f"{chosen.path}: worktree changed after assessment")
             return records
 
@@ -278,6 +279,11 @@ def remove(
         standing_in = bool(here) and Path(here).resolve() == Path(chosen.path).resolve()
         if standing_in:
             os.chdir(main)
+        if "locked" in snapshot.flags:
+            # Eligible with a lock only under --delete stale-lock, and the
+            # record still holds the lock whose holder the recheck found gone.
+            stage = "unlock"
+            prune.worktree_unlock(chosen.path, repo=main)
         stage = "worktree"
         prune.worktree_remove(chosen.path, repo=main)
         outcome.worktree_removed = True

@@ -234,13 +234,14 @@ def set_head_auto(remote: str) -> None:
 
 
 class Worktree:
-    __slots__ = ("branch", "flags", "main", "path", "sha")
+    __slots__ = ("branch", "flags", "lock", "main", "path", "sha")
 
     path: str
     sha: str
     branch: str  # empty when detached or bare
     flags: frozenset[str]  # any of bare, detached, locked, prunable
     main: bool  # the original checkout, which git lists first
+    lock: str  # the reason `git worktree lock --reason` gave, often empty
 
     def __init__(
         self,
@@ -249,12 +250,14 @@ class Worktree:
         branch: str,
         flags: frozenset[str],
         main: bool = False,
+        lock: str = "",
     ) -> None:
         self.path = path
         self.sha = sha
         self.branch = branch
         self.flags = flags
         self.main = main
+        self.lock = lock
 
     @property
     def label(self) -> str:
@@ -281,11 +284,11 @@ def worktrees(repo: str | os.PathLike[str] | None = None) -> list[Worktree]:
     out = worktree_list(repo=repo).out
     found: list[Worktree] = []
     seen: set[str] = set()
-    path = sha = branch = ""
+    path = sha = branch = lock = ""
     flags: set[str] = set()
 
     def emit() -> None:
-        nonlocal path, sha, branch, flags
+        nonlocal path, sha, branch, flags, lock
         if path:
             # The same directory under two spellings is still one worktree.
             key = str(Path(path).resolve())
@@ -294,8 +297,8 @@ def worktrees(repo: str | os.PathLike[str] | None = None) -> list[Worktree]:
                 # git lists the main checkout first, and that ordering is the
                 # only thing that says which one it is.
                 main = not found
-                found.append(Worktree(path, sha, branch, frozenset(flags), main))
-        path = sha = branch = ""
+                found.append(Worktree(path, sha, branch, frozenset(flags), main, lock))
+        path = sha = branch = lock = ""
         flags = set()
 
     for attr in out.split("\0"):
@@ -308,8 +311,9 @@ def worktrees(repo: str | os.PathLike[str] | None = None) -> list[Worktree]:
             branch = attr[len("branch ") :].removeprefix("refs/heads/")
         elif attr in ("bare", "detached"):
             flags.add(attr)
-        elif attr.startswith("locked"):
+        elif attr == "locked" or attr.startswith("locked "):
             flags.add("locked")
+            lock = attr[len("locked ") :]
         elif attr.startswith("prunable"):
             flags.add("prunable")
     emit()

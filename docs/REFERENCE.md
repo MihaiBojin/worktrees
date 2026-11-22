@@ -127,9 +127,61 @@ locked worktree whose directory is missing is assessed from its record and
 kept. Detached worktrees receive the same checks.
 `gw prune` also protects the current worktree.
 
+### Locked worktrees
+
+`git worktree lock` writes its optional `--reason` to the worktree's
+`locked` file and records nothing else: no owner, process or host. A lock
+outlives whatever took it, and `git worktree remove` refuses a locked
+worktree however finished it is. Claude Code locks the worktree a session
+works in with the reason `claude agent ID (pid N)` or
+`claude session ID (pid N start TIME)`, so a session that crashes leaves a
+lock on a worktree nothing works in any more.
+
+A lock is stale when its reason has that form and process N has exited.
+That is the only lock gw can prove stale, and the protection is then
+`stale-lock`, which `--delete stale-lock` lifts and `--delete all`
+includes:
+
+```
+it is locked by pid 4242, which has exited (claude agent a1b2c3 (pid 4242)); pass --delete stale-lock
+```
+
+A stale lock is not a checkout fact, so the row's reason stays its
+evidence: a merged worktree with a stale lock reads `remove`, not
+eligible, with `needs: --delete stale-lock`. With the permission, removal
+runs `git worktree unlock -- PATH` and then `git worktree remove -- PATH`.
+`--keep-branch` takes `--delete stale-lock`; `gw branch prune` does not,
+since a loose branch has no checkout to lock.
+
+Every other lock is the protection `locked`, which no `--delete` value
+lifts: a reason whose process is alive, one that names no process, and a
+plain `git worktree lock` with no reason at all. The protection shows the
+reason, if there is one, and the command that lifts the lock by hand:
+
+```
+it is locked (on a USB disk); once you have checked that the lock no longer holds, run git worktree unlock /path/to/worktree and retry
+```
+
+Check what the reason names first: a session still running in that
+worktree, a removable disk, or a lock someone took on purpose. gw never
+runs that unlock itself.
+
+The lock's reason is pinned with the worktree's record, so a session that
+locks the worktree again after assessment refuses the removal as
+`worktree changed after assessment`. A removal that fails after the unlock,
+at `failedStage` `worktree`, leaves the worktree unlocked; the lock it
+dropped was stale, and gw does not take it again.
+
+Two limits come from what the reason records. A pid that the system has
+handed to another process since reads as alive, so that lock stays
+`locked`: the safe side. The reason names no host, so a lock that a session
+on another machine took, in a repository both machines share, reads as
+stale here when that pid is not running locally.
+
 Ignored paths are deleted with the worktree and listed before confirmation.
 Branch stashes require `--delete stashes`, an `unused` row `--delete empty`,
-a `closed` row `--delete closed`, and reflog-only commits `--delete reflog`.
+a `closed` row `--delete closed`, reflog-only commits `--delete reflog`, and
+a stale lock `--delete stale-lock`, which `gw branch prune` does not take.
 Repeated values combine, and `all` expands to every one of them.
 `gw branch status` rejects `--delete`. Unsupported combinations fail at
 usage parsing before mutation. `--yes` grants neither permission. A
@@ -141,8 +193,8 @@ passed.
 `gw remove --keep-branch` retains the branch and stashes and needs no completion
 proof for the checkout. A detached checkout has no branch to keep its
 commits and still needs proof. It permits a checkout on a protected branch, while
-all other worktree protections remain. Only `--delete reflog` can be
-combined with it. For a target it keeps, `gw remove` names in full the
+all other worktree protections remain. Only `--delete reflog` and
+`--delete stale-lock` can be combined with it. For a target it keeps, `gw remove` names in full the
 `--delete` command that makes it eligible, carrying the values passed;
 otherwise the `--keep-branch` command, when that does. A target held by
 uncommitted changes or untracked paths, and by no lock, submodule or
@@ -179,7 +231,7 @@ After confirmation, the command assesses again and refuses changed targets,
 head identity, cleanliness, lock state, ignored paths or matching stashes.
 Git can collapse an ignored directory into one status entry; this comparison
 does not fingerprint contents below that entry. The worktree's record, its
-branch, HEAD sha and lock flags, is compared with the assessed one both
+branch, HEAD sha, lock flag and lock reason, is compared with the assessed one both
 before that assessment and after it, just before `git worktree remove`. A
 commit made in the worktree while the recheck runs leaves the tree clean, so
 the record is the only thing that shows it; on a detached HEAD that commit is
@@ -368,7 +420,7 @@ of full SHAs, full SHAs and paths. `removal.outcome` adds:
 | `stashesDropped`, `stashesRetained`, `stashesAbsent` | list of strings | full SHAs |
 | `ignoredDeleted` | list of strings | ignored paths that went with the worktree |
 | `failed` | list of strings | each failure's message |
-| `failedStage` | string or null | null when nothing failed, else `recheck`, `worktree`, `branch` or `stashes`: the step that stopped it |
+| `failedStage` | string or null | null when nothing failed, else `recheck`, `unlock`, `worktree`, `branch` or `stashes`: the step that stopped it |
 
 A `removal.proposed` with no `removal.outcome` in the same run was declined
 or refused before it started.
