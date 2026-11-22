@@ -308,6 +308,38 @@ def test_replace_pushes_over_another_clones_commit_edited_here(world) -> None:
     assert on_remote(bare, "fix-parser") == tip
 
 
+@pytest.mark.parametrize("brought", ["rebase", "merge"])
+def test_another_clones_commit_brought_in_and_dropped_here_is_refused(
+    world, brought
+) -> None:
+    """A rebase onto the remote copy, or a merge of it, brings another
+    clone's commit into the branch's reflog. Dropping it afterwards does
+    not make it this clone's to delete."""
+    bare = upstream(world)
+    world.git("switch", "--quiet", "--create", "fix-parser")
+    world.commit("fix.txt", "w\n")
+    pushed(world)
+    there = other_clone(world, bare)
+    world.git("switch", "--quiet", "fix-parser", at=there)
+    theirs = world.commit("theirs.txt", "t\n", at=there)
+    world.git("push", "--quiet", "origin", "fix-parser", at=there)
+    mine = world.commit("mine.txt", "m\n")
+    world.git("fetch", "--quiet", "origin")
+    if brought == "rebase":
+        world.git("rebase", "--quiet", "origin/fix-parser")
+        world.git("rebase", "--quiet", "--onto", f"{theirs}~1", theirs)
+    else:
+        world.git("merge", "--quiet", "--no-ff", "--no-commit", "origin/fix-parser")
+        world.git("commit", "--quiet", "--no-edit")
+        world.git("reset", "--quiet", "--hard", mine)
+    assert theirs not in world.git("rev-list", "HEAD").split()
+
+    refused = gw_push(world)
+    assert refused.returncode == 3, refused.stderr
+    assert theirs[:7] in refused.stderr
+    assert on_remote(bare, "fix-parser") == theirs
+
+
 def stacked_on_a_squash(world, bare: Path) -> str:
     """fix-parser stacked on parser, whose one commit main squashed; the
     parent's commit, still on fix-parser and on its remote copy."""

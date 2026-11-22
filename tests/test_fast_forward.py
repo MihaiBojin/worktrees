@@ -2095,6 +2095,28 @@ def test_a_rebase_that_stops_moves_the_base_and_pushes_nothing(world, network) -
     assert forge_writes(network) == [EDIT]
 
 
+def test_an_autostash_that_conflicts_still_pushes_the_levelled_branch(
+    world, network
+) -> None:
+    """The commits are level once the rebase finishes; only the stash failed
+    to re-apply. The request now targets main, so its copy must lose the
+    parent's merged commits like any other levelled branch's."""
+    stale(world, network)
+    advance(world, "README", "main\n")
+    world.git("update-ref", "refs/remotes/origin/main", "main")
+    (world.repo / "README").write_text("uncommitted\n")
+
+    p = gw_ff_online(world, network, "--autostash", "--json")
+    assert p.returncode == 1
+    payload = json.loads(p.stdout)
+    assert (payload["result"], payload["retargeted"]["to"]) == (
+        "stash-conflict",
+        "main",
+    )
+    assert payload["pushed"] == world.git("rev-parse", "--short", "child")
+    assert forge_writes(network) == [EDIT, PUSH]
+
+
 def test_a_push_git_refuses_leaves_the_branch_level_and_says_why(
     world, network
 ) -> None:

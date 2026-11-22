@@ -183,18 +183,25 @@ def made_here(
 
     Each entry a commit, an amend, a cherry-pick, a revert, `git am` or a
     rebase wrote brings the commits its tip reaches and the entry before it
-    does not, outside the head. A pull, a merge, a reset or the branch's
-    creation brings commits made elsewhere, and none of those count. A
-    commit of its own that a rebase or an amend here rewrote is the clone's
-    to replace.
+    does not, outside the head and outside what the entry built on: the
+    commit a rebase went onto, which can be another clone's, and a committed
+    merge's parents. A pull, a merge, a reset or the branch's creation
+    brings commits made elsewhere, and none of those count. A commit of its
+    own that a rebase or an amend here rewrote is the clone's to replace.
     """
     entries = [line.partition("\0") for line in merged.reflog(ref, repo=repo).lines]
     made: set[str] = set()
     for (sha, _, subject), (before, _, _) in itertools.pairwise(entries):
-        if subject.startswith((*merged.MADE, "rebase")):
-            made |= set(
-                fast_forward.commits_beyond(sha, [before, head], repo=repo).lines
-            )
+        if not subject.startswith((*merged.MADE, "rebase")):
+            continue
+        known = [before, head]
+        # git writes `rebase (finish): refs/heads/NAME onto SHA`.
+        onto = subject.rpartition(" onto ")[2]
+        if subject.startswith("rebase") and merged._FULL_SHA.fullmatch(onto):
+            known.append(onto)
+        if subject.startswith("commit (merge)"):
+            known.append(f"{sha}^@")
+        made |= set(fast_forward.commits_beyond(sha, known, repo=repo).lines)
     return made
 
 

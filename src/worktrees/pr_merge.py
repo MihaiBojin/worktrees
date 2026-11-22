@@ -555,19 +555,21 @@ def merge(number: int, sha: str, subject: str | None, body: str | None) -> dict:
         raise Refused(checked.waiting)
     if scope.base != pr["baseRef"] or checked != scope:
         raise Refused(f"#{number} changed while it was read; read its CI again")
-    payload = {"sha": sha, "merge_method": "squash", "merge_action": "default"}
-    if subject is not None:
-        payload["commit_title"] = subject
-    if body is not None:
-        payload["commit_message"] = body
+    payload = {
+        "sha": sha,
+        "merge_method": "squash",
+        "merge_action": "default",
+        "commit_title": subject,
+        "commit_message": body,
+    }
     path = f"pulls/{number}/merge-async"
     uuid = ""
     try:
         code, row = _request(repository, path, payload)
         status, details = _outcome(row)
-        if code == 409 and status != "pending":
-            raise Refused("existing merge request has no options to verify")
-        if code == 409 and (subject is not None or body is not None):
+        # Every merge sends a message, and GitHub never echoes the message
+        # of an operation already running, so none can be adopted.
+        if code == 409:
             raise Refused(
                 "existing merge request does not expose its commit message; "
                 "it cannot be verified"
