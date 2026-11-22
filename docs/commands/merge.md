@@ -10,20 +10,24 @@ gw merge 42 --match-head-commit FULL_SHA --subject 'Fix parser (#42)' --body-fil
 gw merge 41 42 43 --json
 ```
 
-With one `NUMBER`, `--match-head-commit` is required, and the merge commit
-takes the `--subject` and `--body-file` given. `--body-file` reads UTF-8
-text, including trailing newlines. Prepare the subject with its
-`(#NUMBER)` suffix and the body with the trailers the commit needs.
+With one `NUMBER`, `--match-head-commit` is required. An omitted
+`--subject` or `--body-file` uses the corresponding field gw builds below.
+An explicit subject is used as given, including its `(#NUMBER)` suffix.
+`--body-file` reads UTF-8 text unchanged, including trailing newlines;
+that file supplies the trailers the commit needs.
 
 With several numbers, gw reads each pull request's head and CI and builds
 each message itself, so `--match-head-commit`, `--subject` and
-`--body-file` are a usage error at exit 2. The subject is the title and
-` (#NUMBER)`. The body is the pull request's body without the
+`--body-file` are a usage error at exit 2.
+
+The generated subject is the title and ` (#NUMBER)`. The generated body
+is the pull request's body without the
 `🤖 Generated with` footer line, a bare `https://claude.ai/code/session_...`
 line and the `<details><summary>Auto-resolution</summary>` block, keeping
 any `release-note` block, followed by each of `pr.trailers` from
 [`gw ci-checks`](ci-checks.md) that the body does not already hold. A pull
-request whose `pr.trailers` is null refuses: its commit list was incomplete.
+request whose `pr.trailers` is null needs an explicit `--body-file`: its
+commit list was incomplete, so gw refuses to build its body.
 
 The command always requests squash and accepts no strategy flag. A direct
 squash receives the subject and body; a merge queue controls its own
@@ -178,10 +182,9 @@ An `enqueued` answer ends polling; it does not mean the PR merged.
 
 HTTP 400 with `status: failed` is a failed outcome at exit 1, including when
 `gh` exits nonzero. `details.message` supplies its reason. HTTP 409 identifies
-an existing operation. The command follows it only when its expected head,
-method, queue action and rule-bypass setting match. A supplied subject or
-body prevents adoption because GitHub does not echo the existing operation's
-commit message.
+an existing operation. The command refuses to adopt it because GitHub
+does not echo that operation's commit message, so its trailers cannot be
+verified.
 
 With one number, a refusal exits 3 and prints its reason on stderr. Invalid
 arguments exit 2. Unknown statuses, malformed responses and network failures

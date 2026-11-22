@@ -17,6 +17,19 @@ not in here, whatever it cost to build.
 A release closes with a `### Choices` section when a decision in it is worth
 the reader's time: what was chosen, and what the alternative failed to do.
 
+## 0.13.2 - 2026-11-22
+
+### Fixed
+
+Single-PR `gw merge` commands preserve commit trailers, including agent
+session IDs, when `--body-file` is omitted. An omitted subject uses the
+pull request title with its number. Explicit message fields remain
+unchanged.
+
+Without a complete commit list, provide `--body-file`; otherwise the
+command refuses at exit 3. It also refuses existing asynchronous merges
+whose commit message cannot be verified.
+
 ## 0.13.1 - 2026-11-21
 
 ### Fixed

@@ -31,6 +31,8 @@ def pull(**extra) -> dict:
         "state": "open",
         "draft": False,
         "merged": False,
+        "title": "Seven",
+        "body": "Body.",
         "head": {"ref": "feature", "sha": HEAD},
         "base": {"ref": "main", "repo": {"full_name": "owner/repo"}},
         **extra,
@@ -147,6 +149,61 @@ def test_merge_pins_head_and_preserves_message_bytes(world, github) -> None:
     assert not any(c[:2] == ["git", "fetch"] for c in github.network_calls())
 
 
+@pytest.mark.parametrize("subject", [None, "Custom (#7)"])
+@pytest.mark.parametrize("body", [None, "", "Override body.\n\n"])
+def test_single_merge_fills_omitted_message_fields(
+    world, github, subject: str | None, body: str | None
+) -> None:
+    commits = [
+        {
+            "oid": HEAD,
+            "messageHeadline": "Change",
+            "messageBody": f"{TRAILER}\nCodex-Session: abc",
+        }
+    ]
+    github.answer(
+        {"$view": _pr(commits=commits), "$api": {PR: pull(), ASYNC: merged()}}
+    )
+    args = []
+    if subject is not None:
+        args.extend(["--subject", subject])
+    if body is not None:
+        path = world.root / "message.txt"
+        path.write_text(body)
+        args.extend(["--body-file", str(path)])
+    proc = run(world, github, *args)
+    assert proc.returncode == 0, proc.stderr
+    calls = writes(github)
+    assert len(calls) == 1
+    expected_title = "Seven (#7)" if subject is None else "Custom (#7)"
+    expected_body = (
+        f"Body.\n\n{TRAILER}\nCodex-Session: abc\n" if body is None else body
+    )
+    assert "sha=" + HEAD in calls[0]
+    assert "commit_title=" + expected_title in calls[0]
+    assert "commit_message=" + expected_body in calls[0]
+
+
+def test_automatic_body_refuses_incomplete_trailers(world, github) -> None:
+    github.answer({"$view": _pr(commits=None), "$api": {PR: pull(), ASYNC: merged()}})
+    proc = run(world, github)
+    assert proc.returncode == 3
+    assert "commit list is incomplete" in proc.stderr
+    assert not writes(github)
+
+
+def test_explicit_body_can_merge_with_incomplete_trailers(world, github) -> None:
+    github.answer({"$view": _pr(commits=None), "$api": {PR: pull(), ASYNC: merged()}})
+    path = world.root / "message.txt"
+    path.write_text("Provided body.\n")
+    proc = run(world, github, "--body-file", str(path))
+    assert proc.returncode == 0, proc.stderr
+    calls = writes(github)
+    assert len(calls) == 1
+    assert "commit_title=Seven (#7)" in calls[0]
+    assert "commit_message=Provided body.\n" in calls[0]
+
+
 def test_native_bottom_pr_merges_without_merging_the_child(world, github) -> None:
     answer(github, **{PR: pull(stack=stack_info()), STACK: stack()})
     proc = run(world, github)
@@ -245,12 +302,12 @@ def test_each_terminal_outcome(world, github, response, expected, code, poll) ->
         assert "Required review missing" in proc.stderr
 
 
-def test_existing_matching_request_is_followed(world, github) -> None:
+def test_existing_request_cannot_verify_an_automatic_message(world, github) -> None:
     answer(github, **{ASYNC: {"$http": 409, "$body": pending()}, OPERATION: merged()})
     proc = run(world, github)
-    assert proc.returncode == 0, proc.stderr
-    assert json.loads(proc.stdout)["uuid"] == UUID
-    assert len(writes(github)) == 1
+    assert proc.returncode == 3
+    assert "message" in proc.stderr
+    assert not any(OPERATION in c for c in github.network_calls())
 
 
 @pytest.mark.parametrize(
