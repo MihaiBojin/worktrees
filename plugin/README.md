@@ -54,6 +54,19 @@ codex plugin marketplace add MihaiBojin/agent-plugins
 codex plugin add worktrees@mihaibojin
 ```
 
+This repository is a marketplace of its own too, named `worktrees`, whose
+one entry is `./plugin` on `main`, so it can be ahead of the released CLI:
+
+```shell
+claude plugin marketplace add MihaiBojin/worktrees
+claude plugin install worktrees@worktrees
+```
+
+```shell
+codex plugin marketplace add MihaiBojin/worktrees
+codex plugin add worktrees@worktrees
+```
+
 ## Requirements
 
 Install the CLI from the same release:

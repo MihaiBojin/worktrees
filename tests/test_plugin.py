@@ -57,6 +57,24 @@ def test_the_portable_manifest_is_the_claude_one_rewritten() -> None:
     assert text == json.dumps(wanted, indent=2, ensure_ascii=False) + "\n"
 
 
+def test_this_repository_is_a_marketplace_of_the_one_plugin() -> None:
+    """`worktrees@worktrees`, from `./plugin`, in both clients. Neither entry
+    names a version, so the release bump has nothing to stamp here."""
+    claude = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
+    codex = json.loads((ROOT / ".agents" / "plugins" / "marketplace.json").read_text())
+    # `mihaibojin` is agent-plugins' name, and a client holds one of a name.
+    assert claude["name"] == codex["name"] == "worktrees"
+    (ours,) = claude["plugins"]
+    (theirs,) = codex["plugins"]
+    assert ours == {
+        "name": "worktrees",
+        "source": "./plugin",
+        "description": _manifest(".claude-plugin/plugin.json")["description"],
+    }
+    assert theirs["name"] == "worktrees"
+    assert theirs["source"] == {"source": "local", "path": "./plugin"}
+
+
 def _frontmatter(path: Path) -> str:
     return path.read_text().split("---")[1]
 

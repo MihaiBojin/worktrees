@@ -1,0 +1,20 @@
+{
+  "name": "worktrees",
+  "interface": {
+    "displayName": "worktrees"
+  },
+  "plugins": [
+    {
+      "name": "worktrees",
+      "source": {
+        "source": "local",
+        "path": "./plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
