@@ -41,7 +41,9 @@ def frame(rows: list[str], symbol: str, width: int) -> str:
     A wrapped line would leave the cursor a row lower than `_erase` counts.
     """
     keep = max(width - 3, 0)
-    return "\n".join(f"{symbol} {render.err(row[:keep], render.DIM)}" for row in rows)
+    return "\n".join(
+        f"{symbol} {render.err(render.fit(row, keep), render.DIM)}" for row in rows
+    )
 
 
 def line(text: str) -> None:

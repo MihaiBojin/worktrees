@@ -63,6 +63,11 @@ With stdin a terminal and neither `--json` nor `--table`:
 - A query whose only match is the worktree you stand in prints
   `already in NAME` and exits 0.
 
+Where the picker redraws in place, each row is cut to the terminal's width
+by the columns it takes, a wide character such as one in a CJK branch name
+taking two, so no row wraps. Its columns are padded by character count, so
+a row holding wide characters sits up to their number of columns off.
+
 The picker prints each remote's name and URL above the rows, so you can see
 which repository it is. Typing filters the rows with the matching above,
 digits included, since branch names carry them. Backspace takes a character

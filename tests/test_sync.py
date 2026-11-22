@@ -1520,3 +1520,11 @@ def test_progress_cuts_every_row_to_fit_the_terminal() -> None:
 
     rows = progress.frame(["a" * 50, "short"], "*", 20).split("\n")
     assert rows == ["* " + "a" * 17, "* short"]
+
+
+def test_progress_cuts_wide_characters_by_their_columns() -> None:
+    from worktrees import progress, render
+
+    rows = progress.frame(["分" * 40, "short"], "*", 20).split("\n")
+    assert rows == ["* " + "分" * 8, "* short"]
+    assert all(render.width(row) < 20 for row in rows)

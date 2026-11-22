@@ -279,8 +279,8 @@ def _select(
             if left is not None:
                 if left <= 0:
                     break
-                text = text[:left]
-                left -= len(text) + 2
+                text = render.fit(text, left)
+                left -= render.width(text) + 2
             out.append(render.err(text, code))
         return "  ".join(out)
 

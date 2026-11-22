@@ -319,3 +319,22 @@ def test_a_reflog_fact_puts_each_command_on_a_line_of_its_own() -> None:
     assert fact.text.endswith(
         "see each with git show aaaaaaaaaaaa and git show bbbbbbbbbbbb"
     )
+
+
+@pytest.mark.parametrize(
+    "text, room, kept, width",
+    [
+        ("abc", 2, "ab", 3),
+        ("分支名", 4, "分支", 6),
+        ("分支名", 5, "分支", 6),
+        ("a分", 2, "a", 3),
+        ("éx", 1, "é", 2),
+        ("", 3, "", 0),
+    ],
+)
+def test_text_is_cut_by_the_columns_it_takes(text, room, kept, width) -> None:
+    """A wide character takes two columns and a combining mark none, so a
+    line cut by `len` to the terminal's width wraps, and the redraw that
+    counts lines leaves a stale one behind."""
+    assert render.fit(text, room) == kept
+    assert render.width(text) == width
