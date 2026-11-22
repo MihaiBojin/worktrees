@@ -253,7 +253,7 @@ A review that is open is the one to ship. A merged one with nothing new is
 step 3's merged change. Otherwise open one against the head branch, with a
 title and body that follow [the format](../describe-pr/format.md), the body
 written to a file with the Write tool. When the agent has the
-technical-writer plugin's `pr-description` skill, write the title and the
+technical-writer plugin's `write-pr-description` skill, write the title and the
 body with it:
 
 ```sh

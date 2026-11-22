@@ -255,7 +255,7 @@ assumes a plugin root or a checkout at a known path.
 `describe-pr` and `ship-it` share `describe-pr/format.md`: the
 review's title and body are the squash commit's subject and body, so one set
 of rules writes both. When the agent has the technical-writer plugin's
-`pr-description` skill, both write the title and the body in that skill's
+`write-pr-description` skill, both write the title and the body in that skill's
 format, and `format.md` keeps what to preserve, the auto-resolution block
 and the four ways a description is wrong. `tests/test_plugin.py` holds every skill's
 `allowed-tools` to reads, `gw sync` and `gw branch create`: no pattern
