@@ -128,8 +128,9 @@ prints every spec, marking the ones that mutate.
 
 A guard runs on the resolved argv inside the wrapper, so no call site can
 assemble its way past it: `reset --hard`, a forced `checkout` or `switch`,
-`clean -f`, a bare `push --force`, `worktree remove --force`, `branch -D`
-and ref deletion without a full expected SHA are refused.
+`clean -f`, a forced push, `--force`, `-f` or a `+` refspec, `worktree
+remove --force`, `branch -D` in any spelling, ref deletion without a full
+expected SHA and a forced fetch into a local ref are refused.
 
 ## Commands that land you somewhere need a shell function
 

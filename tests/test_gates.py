@@ -477,6 +477,20 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
         ("worktree", "remove", "-f", "/tmp/x"),
         ("branch", "-D", "x"),
         ("branch", "--delete", "--force", "x"),
+        ("branch", "-d", "-f", "x"),
+        ("branch", "-df", "x"),
+        ("branch", "-fd", "x"),
+        ("branch", "--delete", "-f", "x"),
+        ("branch", "-d", "--force", "x"),
+        ("branch", "-rD", "x"),
+        ("push", "origin", "+refs/heads/a:refs/heads/a"),
+        ("push", "--force-with-lease", "origin", "+a:a"),
+        ("fetch", "origin", "+refs/heads/main:refs/heads/main"),
+        ("fetch", "origin", "+main:main"),
+        ("fetch", "--force", "origin", "main:main"),
+        ("fetch", "-f", "origin", "refs/heads/*:refs/heads/*"),
+        ("fetch", "origin", "+refs/tags/*:refs/tags/*"),
+        ("fetch", "--force", "origin", "tag", "v1"),
         ("update-ref", "-d", "refs/heads/x"),
         ("update-ref", "-d", "refs/heads/x", ""),
         ("update-ref", "-d", "refs/heads/x", "HEAD"),
@@ -489,6 +503,24 @@ def test_a_detached_worktree_is_named_not_mistaken(world) -> None:
 def test_the_guard_refuses(argv) -> None:
     with pytest.raises(Refused):
         guard(argv)
+
+
+def test_a_forced_fetch_refspec_takes_a_local_branch(world) -> None:
+    """The premise behind the fetch rule, reproduced: `+SRC:DST` moves a
+    local branch to the remote's commit at exit 0, and the commit only that
+    branch reached is gone from every ref."""
+    bare = world.root / "upstream.git"
+    world.git("init", "--quiet", "--bare", str(bare))
+    world.git("push", "--quiet", str(bare), "main")
+    world.git("switch", "--quiet", "--create", "work")
+    mine = world.commit("mine.txt")
+    world.git("switch", "--quiet", "main")
+    world.git("fetch", "--quiet", str(bare), "+main:work")
+    held = world.git("for-each-ref", "--contains", mine, "--format=%(refname)")
+    assert held == "", "git kept the commit, so this premise is stale"
+
+    with pytest.raises(Refused):
+        guard(["fetch", str(bare), "+main:work"])
 
 
 def test_git_reads_an_empty_old_value_as_no_old_value(world) -> None:
@@ -522,6 +554,13 @@ def test_git_reads_an_empty_old_value_as_no_old_value(world) -> None:
         ("push", "--force-with-lease", "origin", "main"),
         ("worktree", "remove", "--", "/tmp/x"),
         ("branch", "-d", "--", "x"),
+        ("branch", "-f", "x", "main"),
+        ("fetch", "--prune", "--tags", "--no-prune-tags", "origin"),
+        ("fetch", "origin", "+refs/heads/*:refs/remotes/origin/*"),
+        ("fetch", "--force", "origin", "main:refs/remotes/origin/main"),
+        ("fetch", "origin", "main:main"),
+        ("fetch", "git@github.com:owner/repo.git", "main"),
+        ("fetch", "origin", "tag", "v1"),
         ("update-ref", "-d", "refs/heads/x", "0" * 40),
         ("update-ref", "-d", "refs/heads/x", "a" * 64),
         ("clean", "-n"),
@@ -617,7 +656,7 @@ def test_the_guard_names_every_rule_it_enforces(world) -> None:
     """The footer --explain prints is generated, so it cannot fall behind."""
     from worktrees.git import RULES
 
-    assert len(RULES) == 7
+    assert len(RULES) == 8
     for rule in RULES:
         assert rule.named
         assert rule.why

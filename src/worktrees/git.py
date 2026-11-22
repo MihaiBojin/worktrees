@@ -147,6 +147,29 @@ def _full_sha(value: str) -> bool:
     return len(value) in (40, 64) and all(c in "0123456789abcdef" for c in value)
 
 
+def _forced_local_fetch(rest: Sequence[str]) -> bool:
+    """A refspec on the command line that overwrites a ref of this clone's own.
+
+    `+SRC:DST`, or any `SRC:DST` under `--force`, moves DST whatever it
+    held, and a local branch or tag there loses the commits only it reached.
+    A remote-tracking ref mirrors the remote and holds nothing of this
+    clone's. Configured refspecs are not in argv; sync checks those before
+    it fetches. The first argument that is not an option is the remote.
+    """
+    forced = _short(rest, "f") or _has(rest, "--force")
+    places = [a for a in rest if not a.startswith("-")][1:]
+    for i, spec in enumerate(places):
+        if spec == "tag" and i + 1 < len(places):
+            target, plus = f"refs/tags/{places[i + 1]}", False
+        elif ":" in spec:
+            target, plus = spec.partition(":")[2], spec.startswith("+")
+        else:
+            continue
+        if (forced or plus) and target and not target.startswith("refs/remotes/"):
+            return True
+    return False
+
+
 class Rule:
     """One command refused absolutely, under the name `--explain` prints.
 
@@ -207,9 +230,15 @@ RULES: tuple[Rule, ...] = (
         "push --force",
         "use --force-with-lease instead",
         lambda head, rest: (
-            head == "push" and (_short(rest, "f") or _has(rest, "--force"))
+            head == "push"
+            and (
+                _short(rest, "f")
+                or _has(rest, "--force")
+                # `+SRC:DST` forces that one ref, lease or none.
+                or any(a.startswith("+") for a in rest)
+            )
         ),
-        phrase="a bare `git push --force`",
+        phrase="a bare `git push --force`, or a `+` refspec",
     ),
     Rule(
         "worktree remove --force",
@@ -225,8 +254,19 @@ RULES: tuple[Rule, ...] = (
         "a branch is deleted on proof of merge or not at all",
         lambda head, rest: (
             head == "branch"
-            and (_has(rest, "-D") or (_has(rest, "--delete") and _has(rest, "--force")))
+            and (
+                _short(rest, "D")
+                or (
+                    (_short(rest, "d") or _has(rest, "--delete"))
+                    and (_short(rest, "f") or _has(rest, "--force"))
+                )
+            )
         ),
+    ),
+    Rule(
+        "a forced fetch into a local ref",
+        "only remote-tracking refs may be overwritten by the remote",
+        lambda head, rest: head == "fetch" and _forced_local_fetch(rest),
     ),
     # --stdin deletes refs with no -d anywhere in argv, so it is refused with
     # the rest: the shape below is the only delete this program may issue.
