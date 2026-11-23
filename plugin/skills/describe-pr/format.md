@@ -68,6 +68,8 @@ Keep, exactly as written:
   adds, such as a `Generated with` footer or a session link.
 - Sections the repository's template requires, filled in.
 - An auto-resolution block, below.
+- The title and body of a release pull request, titled `Release <version>`.
+  Its body is the changelog entry the release reviews and publishes.
 
 ## Auto-resolution block
 
